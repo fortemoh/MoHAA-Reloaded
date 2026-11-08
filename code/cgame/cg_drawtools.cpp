@@ -941,10 +941,10 @@ void CG_DrawPlayerEntInfo()
 void CG_UpdateAttackerDisplay()
 {
     int         iClientNum;
-    const char *pszClientInfo;
     const char *pszName;
-    float       fX, fY;
-    float       color[4];
+    float       fY;
+    float       color[4] = {1.0, 0.5, 0.5, 1.0}; // red, green for a teammate
+    qhandle_t   handle;
 
     if (!cg_hud->integer) {
         return;
@@ -954,24 +954,21 @@ void CG_UpdateAttackerDisplay()
         return;
     }
 
-    iClientNum    = cg.snap->ps.stats[STAT_ATTACKERCLIENT];
-    pszClientInfo = CG_ConfigString(CS_PLAYERS + iClientNum);
-    pszName       = Info_ValueForKey(pszClientInfo, "name");
+    iClientNum = cg.snap->ps.stats[STAT_ATTACKERCLIENT];
+    pszName    = Info_ValueForKey(CG_ConfigString(CS_PLAYERS + iClientNum), "name");
 
-    color[3] = 1.0;
-    fY       = (float)(cgs.glconfig.vidHeight - 90);
-    fX       = 56.0;
+    // In the HUD's units, scaled as the rest of the HUD (pixels up to 1920x1080): the team icon at 56, the name at
+    // 88, both 90 above the bottom
+    fY = cgs.glconfig.vidHeight / cgs.uiHiResScale[1] - 90.0;
 
     if (cgs.gametype > GT_FFA) {
-        qhandle_t handle;
-
         handle = CG_TeamHudShader(cg.clientinfo[iClientNum].team);
 
         if (handle) {
             cgi.R_SetColor(0);
             cgi.R_DrawStretchPic(
                 56.0 * cgs.uiHiResScale[0],
-                fY,
+                fY * cgs.uiHiResScale[1],
                 24.0 * cgs.uiHiResScale[0],
                 24.0 * cgs.uiHiResScale[1],
                 0.0,
@@ -986,24 +983,11 @@ void CG_UpdateAttackerDisplay()
             && cg.clientinfo[iClientNum].team == cg.snap->ps.stats[STAT_TEAM]) {
             color[0] = 0.5;
             color[1] = 1.0;
-            color[2] = 0.5;
-        } else {
-            color[0] = 1.0;
-            color[1] = 0.5;
-            color[2] = 0.5;
         }
-
-        fX = 56.0;
-    } else {
-        color[0] = 1.0;
-        color[1] = 0.5;
-        color[2] = 0.5;
     }
 
     cgi.R_SetColor(color);
-    cgi.R_DrawString(
-        cgs.media.attackerFont, pszName, fX / cgs.uiHiResScale[0] + 32.0, fY / cgs.uiHiResScale[1], -1, cgs.uiHiResScale
-    );
+    cgi.R_DrawString(cgs.media.attackerFont, pszName, 88.0, fY, -1, cgs.uiHiResScale);
 }
 
 void CG_UpdateCountdown()
