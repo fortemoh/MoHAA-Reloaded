@@ -1140,12 +1140,15 @@ static int MTLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder)
 	switch( mac_windowMode )
 	{
 	case MAC_EXCLUSIVE:
-		// the display keeps its mode: the game renders at r_mode's size, scaled to the screen (MTLimp_SetGameRect)
+		// the display keeps its mode: the game renders r_mode's size in the panel's own pixels (on Retina too: not
+		// doubled) and the display hardware does all the scaling to the screen (MTLimp_SetGameRect; 3.1 #60, #68)
 		contentRect = MTLimp_DisplayFrame( mac_display );
-		if( windowWidth > NSWidth( contentRect ) || windowHeight > NSHeight( contentRect ) )
+		if( windowWidth > NSWidth( contentRect ) * screen.backingScaleFactor ||
+			windowHeight > NSHeight( contentRect ) * screen.backingScaleFactor )
 		{
 			ri.Printf( PRINT_DEVELOPER, "%dx%d is larger than the display (%.0fx%.0f)\n", windowWidth, windowHeight,
-				NSWidth( contentRect ), NSHeight( contentRect ) );
+				NSWidth( contentRect ) * screen.backingScaleFactor,
+				NSHeight( contentRect ) * screen.backingScaleFactor );
 			if( desktopMode )
 				CGDisplayModeRelease( desktopMode );
 			MTLimp_DestroyWindow();
@@ -1243,13 +1246,14 @@ static int MTLimp_SetMode(int mode, qboolean fullscreen, qboolean noborder)
 	mac_layer.contentsScale = scale;
 
 	// the game renders at the window's full pixel size (Retina: 2x the window size in points), the drawable's, but
-	// for exclusive fullscreen: at r_mode's size in pixels, and the display scales the drawable to the screen
+	// for exclusive fullscreen: at r_mode's size, counted in pixels, and the display scales the drawable to the
+	// screen; the desktop's size (r_mode -2, given in points) is the whole screen
 	screenWidth = (int)lround( NSWidth( contentRect ) * scale );
 	screenHeight = (int)lround( NSHeight( contentRect ) * scale );
-	if( mac_windowMode == MAC_EXCLUSIVE )
+	if( mac_windowMode == MAC_EXCLUSIVE && mode != -2 )
 	{
-		glConfig.vidWidth = (int)lround( windowWidth * scale );
-		glConfig.vidHeight = (int)lround( windowHeight * scale );
+		glConfig.vidWidth = windowWidth;
+		glConfig.vidHeight = windowHeight;
 	}
 	else
 	{

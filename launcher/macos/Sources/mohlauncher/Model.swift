@@ -108,10 +108,17 @@ final class LauncherModel: ObservableObject {
     let listedSizes: [Resolution]
     /// The main display's size, (0, 0) if unknown: what r_mode -2 shows
     let desktop: Resolution
+    /// The same in its own pixels (twice the points on a Retina display): what exclusive fullscreen counts in
+    let desktopPixels: Resolution
+    /// The sizes for exclusive fullscreen, in pixels
+    let listedPixelSizes: [Resolution]
 
     init() {
-        desktop = CGDisplayCopyDisplayMode(CGMainDisplayID()).map { Resolution($0.width, $0.height) } ?? Resolution(0, 0)
+        let mode = CGDisplayCopyDisplayMode(CGMainDisplayID())
+        desktop = mode.map { Resolution($0.width, $0.height) } ?? Resolution(0, 0)
+        desktopPixels = mode.map { Resolution($0.pixelWidth, $0.pixelHeight) } ?? Resolution(0, 0)
         listedSizes = resolutionList(desktop: desktop)
+        listedPixelSizes = resolutionList(desktop: desktopPixels)
         findGame()
         loadSettings()
         // a temporary copy (Open Anyway) restarts from the real folder first: the question would be for nothing
@@ -400,11 +407,17 @@ final class LauncherModel: ObservableObject {
     var scalingApplies: Bool {
         let size = currentResolution
         return displayMode.wrappedValue == .exclusive
-            && scalingMatters(Resolution(size.width, size.height), desktop: desktop)
+            && scalingMatters(Resolution(size.width, size.height), desktop: desktopPixels)
     }
 
+    /// Exclusive fullscreen counts sizes in the screen's pixels (the game renders that and the display scales it), a
+    /// window in points, as macOS does (twice the pixels on Retina)
+    private var inPixels: Bool { displayMode.wrappedValue == .exclusive }
+
     var resolutionEntries: [ResolutionEntry] {
-        var entries = listedSizes.map { ResolutionEntry(mode: -1, width: $0.width, height: $0.height) }
+        var entries = (inPixels ? listedPixelSizes : listedSizes).map {
+            ResolutionEntry(mode: -1, width: $0.width, height: $0.height)
+        }
         let current = currentResolution
         if !entries.contains(current) {
             // the config's own size, where it belongs in the list
@@ -428,7 +441,8 @@ final class LauncherModel: ObservableObject {
         if rModeSizes.indices.contains(mode) {
             return ResolutionEntry(mode: -1, width: rModeSizes[mode].width, height: rModeSizes[mode].height)
         }
-        let size = desktop.width > 0 ? desktop : listedSizes.first ?? minResolution
+        let screen = inPixels ? desktopPixels : desktop
+        let size = screen.width > 0 ? screen : (inPixels ? listedPixelSizes : listedSizes).first ?? minResolution
         return ResolutionEntry(mode: -1, width: size.width, height: size.height)
     }
 
