@@ -966,9 +966,14 @@ void CG_GameStateReceived(void)
 {
     const char *s;
     int checksum;
+    int clientNum;
 
     // clear everything
+    // Fixed in Reloaded
+    //  Keep our client number (set by CG_Init just before), it was always 0
+    clientNum = cg.clientNum;
     memset(&cg, 0, sizeof(cg));
+    cg.clientNum = clientNum;
     memset(cg_entities, 0, sizeof(cg_entities));
 
     // clear the light styles

@@ -1149,6 +1149,37 @@ void CG_DrawInstantMessageMenu()
     );
 }
 
+/*
+====================
+CG_SpectatorTeam
+
+Added in Reloaded
+When following a player through their eyes, the server presents that player's
+client number and stats, so the team stat is theirs: use our own team instead
+====================
+*/
+static int CG_SpectatorTeam()
+{
+    if (cg.snap->ps.clientNum != cg.clientNum) {
+        return cg.clientinfo[cg.clientNum].team;
+    }
+
+    return cg.snap->ps.stats[STAT_TEAM];
+}
+
+/*
+====================
+CG_IsSpectatorFollowing
+
+Added in Reloaded
+Following a player, from behind (camera view) or through their eyes
+====================
+*/
+static qboolean CG_IsSpectatorFollowing()
+{
+    return (cg.predicted_player_state.pm_flags & PMF_CAMERA_VIEW) || cg.snap->ps.clientNum != cg.clientNum;
+}
+
 void CG_DrawSpectatorView_ver_15()
 {
     const char *pszString;
@@ -1156,15 +1187,23 @@ void CG_DrawSpectatorView_ver_15()
     int         iKey1b, iKey2b;
     float       fX, fY;
     qboolean    bOnTeam;
+    qboolean    bFollowing;
+    int         iTeam;
 
     if (!(cg.predicted_player_state.pm_flags & PMF_SPECTATING)) {
         return;
     }
 
     bOnTeam = qfalse;
-    if (cg.snap->ps.stats[STAT_TEAM] == TEAM_ALLIES || cg.snap->ps.stats[STAT_TEAM] == TEAM_AXIS) {
+    // Changed in Reloaded
+    //  Use our own team when following a player through their eyes
+    iTeam = CG_SpectatorTeam();
+    if (iTeam == TEAM_ALLIES || iTeam == TEAM_AXIS) {
         bOnTeam = 1;
     }
+    // Added in Reloaded
+    //  Also following when seeing through a player's eyes
+    bFollowing = CG_IsSpectatorFollowing();
 
     if (!bOnTeam) {
         cgi.Key_GetKeysForCommand("+attackprimary", &iKey1, &iKey2);
@@ -1179,7 +1218,7 @@ void CG_DrawSpectatorView_ver_15()
         );
     }
 
-    if (cg.predicted_player_state.pm_flags & PMF_CAMERA_VIEW) {
+    if (bFollowing) {
         cgi.Key_GetKeysForCommand("+moveup", &iKey1, &iKey2);
         cgi.Key_GetKeysForCommand("+movedown", &iKey1b, &iKey2b);
 
@@ -1199,7 +1238,7 @@ void CG_DrawSpectatorView_ver_15()
         );
     }
 
-    if (!bOnTeam && (cg.predicted_player_state.pm_flags & PMF_CAMERA_VIEW)) {
+    if (!bOnTeam && bFollowing) {
         cgi.Key_GetKeysForCommand("+use", &iKey1, &iKey2);
         pszString =
             cgi.LV_ConvertString(va("Press Use(%s) to enter free spectate mode.", cgi.Key_KeynumToBindString(iKey1)));
@@ -1214,7 +1253,7 @@ void CG_DrawSpectatorView_ver_15()
         );
     }
 
-    if (!(cg.predicted_player_state.pm_flags & PMF_CAMERA_VIEW)) {
+    if (!bFollowing) {
         cgi.Key_GetKeysForCommand("+use", &iKey1, &iKey2);
 
         pszString = cgi.LV_ConvertString(
@@ -1231,7 +1270,7 @@ void CG_DrawSpectatorView_ver_15()
         );
     }
 
-    if ((cg.predicted_player_state.pm_flags & PMF_CAMERA_VIEW) != 0 && cg.snap
+    if (bFollowing && cg.snap
         && cg.snap->ps.stats[STAT_INFOCLIENT] != -1) {
         int       iClientNum;
         qhandle_t hShader;
@@ -1288,20 +1327,28 @@ void CG_DrawSpectatorView_ver_6()
     int         iKey1b, iKey2b;
     float       fX, fY;
     qboolean    bOnTeam;
+    qboolean    bFollowing;
+    int         iTeam;
 
     if (!(cg.predicted_player_state.pm_flags & PMF_SPECTATING)) {
         return;
     }
 
     bOnTeam = qfalse;
-    if (cg.snap->ps.stats[STAT_TEAM] == TEAM_ALLIES || cg.snap->ps.stats[STAT_TEAM] == TEAM_AXIS) {
+    // Changed in Reloaded
+    //  Use our own team when following a player through their eyes
+    iTeam = CG_SpectatorTeam();
+    if (iTeam == TEAM_ALLIES || iTeam == TEAM_AXIS) {
         bOnTeam = 1;
     }
+    // Added in Reloaded
+    //  Also following when seeing through a player's eyes
+    bFollowing = CG_IsSpectatorFollowing();
 
     // retrieve keys for +use
     cgi.Key_GetKeysForCommand("+use", &iKey1, &iKey2);
 
-    if (cg.predicted_player_state.pm_flags & PMF_CAMERA_VIEW) {
+    if (bFollowing) {
         pszString =
             cgi.LV_ConvertString(va("Press Use(%s) to follow a different player.", cgi.Key_KeynumToBindString(iKey1)));
     } else {
@@ -1317,7 +1364,7 @@ void CG_DrawSpectatorView_ver_6()
         cgs.media.attackerFont, pszString, fX / cgs.uiHiResScale[0], fY / cgs.uiHiResScale[1], -1, cgs.uiHiResScale
     );
 
-    if (!bOnTeam && (cg.predicted_player_state.pm_flags & PMF_CAMERA_VIEW)) {
+    if (!bOnTeam && bFollowing) {
         cgi.Key_GetKeysForCommand("+moveup", &iKey1, &iKey2);
         cgi.Key_GetKeysForCommand("+movedown", &iKey1b, &iKey2b);
         pszString = cgi.LV_ConvertString(
