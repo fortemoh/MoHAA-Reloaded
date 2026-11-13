@@ -503,12 +503,15 @@ void S_StartSound(
     int          streamed
 )
 {
-    if (s_show_sounds->integer > 0 && sfxHandle > 0 && sfxHandle < s_numSfx) {
+    /* Fixed in Omaha: s_show_sounds is created by the omaha driver's init, which
+       S_Init skips with s_initsound 0; it was NULL here and the first sound cgame
+       played (a footstep) crashed the client. */
+    if (s_show_sounds && s_show_sounds->integer > 0 && sfxHandle > 0 && sfxHandle < s_numSfx) {
         Com_DPrintf("S_StartSound: %s\n", s_knownSfx[sfxHandle].name);
     }
 
     if (!s_bSoundStarted) {
-        if (s_show_sounds->integer > 0) {
+        if (s_show_sounds && s_show_sounds->integer > 0) {
             Com_DPrintf("^~^~^ sound system not yet started\n");
         }
         return;
