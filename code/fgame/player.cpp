@@ -2037,6 +2037,9 @@ Player::Player()
     m_bReady                   = false;
     m_iPlayerSpectating        = 0;
     m_iSpectateFollowMode      = -1;
+    m_fSpectateBobPhase        = 0;
+    m_fSpectateBobAmp          = 0;
+    m_iSpectateBobClient       = -1;
     dm_team                    = TEAM_NONE;
     m_fTeamSelectTime          = -30;
     votecount                  = 0;
@@ -7280,6 +7283,88 @@ void Player::CopyStats(Player *player)
     //  for any number of spectators. See SVF_VIEWCLIENT.
     edict->r.svFlags |= SVF_VIEWCLIENT;
     edict->r.viewClient = player->edict - g_entities;
+
+    // Added in Reloaded
+    AddStockClientViewBob(player);
+}
+
+/*
+====================
+AddStockClientViewBob
+
+Added in Reloaded
+The original cgame only bobs the view of a player it predicts the movement of:
+it learns they are walking from its own prediction, which is off when spectating.
+Our cgame works it out from the ground entity, so it bobs on its own. For original
+clients, the bob of CG_OffsetFirstPersonView is worked out here from the followed
+player's movement and added to the view origin sent to this client.
+====================
+*/
+void Player::AddStockClientViewBob(Player *player)
+{
+    const playerState_t *ps = &player->client->ps;
+    int                  iClient = player->edict - g_entities;
+    vec3_t               vVelocity;
+    vec3_t               vAngles;
+    vec3_t               vLeft;
+    float                fVel;
+    float                fPhase;
+
+    if (!g_spectatefollow_stockbob->integer || *Info_ValueForKey(client->pers.userinfo, "shortversion")) {
+        // our clients send their version, and bob on their own
+        m_iSpectateBobClient = -1;
+        return;
+    }
+
+    if (iClient != m_iSpectateBobClient) {
+        m_iSpectateBobClient = iClient;
+        m_fSpectateBobPhase  = 0;
+        m_fSpectateBobAmp    = 0;
+    }
+
+    if (ps->walking && (ps->pm_flags & (PMF_FROZEN | PMF_NO_MOVE))) {
+        VectorClear(vVelocity);
+    } else {
+        VectorCopy(ps->velocity, vVelocity);
+    }
+
+    if (ps->walking) {
+        fVel   = VectorLength(vVelocity);
+        fPhase = fVel * 0.0015 + 0.9;
+        m_fSpectateBobPhase = fmod(m_fSpectateBobPhase + level.frametime * 2 * M_PI * fPhase, 2 * M_PI);
+
+        if (m_fSpectateBobAmp) {
+            m_fSpectateBobAmp = fVel;
+        } else {
+            m_fSpectateBobAmp = fVel * 0.5;
+        }
+
+        if (ps->fLeanAngle) {
+            m_fSpectateBobAmp *= 0.75;
+        }
+
+        m_fSpectateBobAmp *= (1.0 - fabs(AngleNormalize180(ps->viewangles[0])) * (1.0 / 90.0) * 0.5) * 0.5;
+    } else if (m_fSpectateBobAmp > 0) {
+        m_fSpectateBobAmp -= level.frametime * m_fSpectateBobAmp * 2;
+        if (m_fSpectateBobAmp < 0.1) {
+            m_fSpectateBobAmp = 0;
+        }
+    }
+
+    if (m_fSpectateBobAmp <= 0) {
+        return;
+    }
+
+    VectorSet(vAngles, ps->viewangles[0], ps->viewangles[1], 0);
+    AngleVectorsLeft(vAngles, NULL, vLeft, NULL);
+
+    // side to side
+    fPhase = Q_clamp_float(sin(m_fSpectateBobPhase) * m_fSpectateBobAmp * 0.03, -16, 16);
+    VectorMA(client->ps.origin, fPhase, vLeft, client->ps.origin);
+
+    // up and down
+    fPhase = Q_clamp_float((fabs(sin(m_fSpectateBobPhase - 0.94)) - 0.5) * m_fSpectateBobAmp * 0.06, -16, 16);
+    client->ps.origin[2] += fPhase;
 }
 
 void Player::UpdateStats(void)
