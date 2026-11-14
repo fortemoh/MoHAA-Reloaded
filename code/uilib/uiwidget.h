@@ -184,6 +184,9 @@ protected:
     str            m_rotateCvar; // the shapes turned by its degrees, clockwise
     str            m_alphaCvar;  // the widget faded by its value
     str            m_colorCvar;  // the text's and shape's color: the cvar's "r g b a"
+    cvar_t        *m_cvars[4];   // colorcvar's, alphacvar's, rotatecvar's, widthcvar's, found once
+    int            m_colorCount; // colorcvar's modificationCount read
+    float          m_color[4];
     str            m_widthCvar;  // the shape drawn this fraction wide
     bool           m_widthLeft;  // ... from its left, else about its middle
     vec2_t         m_anchor;     // a menu's middle at these fractions of the screen (-1: its align)
@@ -283,6 +286,7 @@ public:
     void LayoutAnchor(Event *ev);
     void Flow(void);
     float getTextRight(void) { return m_textRight; }
+    cvar_t *CvarOf(int i, const str& name);
     bool DesignFrame(void);
     void DrawShapes(void);
     Container<str>& getShapes(void) { return m_shapes; }

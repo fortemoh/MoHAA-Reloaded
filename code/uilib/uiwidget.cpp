@@ -744,6 +744,8 @@ UIWidget::UIWidget()
     m_shapeHandle = 0;
     m_shapeDynamic = false;
     m_widthLeft   = false;
+    memset(m_cvars, 0, sizeof(m_cvars));
+    m_colorCount = -1;
     VectorSet2D(m_anchor, -1, -1);
     m_flowGap     = 0;
     m_textRight   = 0;
@@ -1531,6 +1533,22 @@ void UIWidget::LayoutWidthCvar(Event *ev)
     m_widthLeft = ev->NumArgs() > 1 && !str::icmp(ev->GetString(2), "left");
 }
 
+/*
+================
+CvarOf
+
+Added: the cvar named by colorcvar (0), alphacvar (1), rotatecvar (2) or
+widthcvar (3), found once (a cvar lives as long as the engine)
+================
+*/
+cvar_t *UIWidget::CvarOf(int i, const str& name)
+{
+    if (!m_cvars[i]) {
+        m_cvars[i] = uii.Cvar_Find(name.c_str());
+    }
+    return m_cvars[i];
+}
+
 void UIWidget::LayoutAnchor(Event *ev)
 {
     m_anchor[0] = ev->GetFloat(1);
@@ -1619,21 +1637,21 @@ void UIWidget::DrawShapes(void)
         vec4_t color = {1.0f, 1.0f, 1.0f, 1.0f};
 
         // tinted by colorcvar
-        if (m_colorCvar.length()) {
-            sscanf(uii.Cvar_GetString(m_colorCvar, "1 1 1 1"), "%f %f %f %f", &color[0], &color[1], &color[2], &color[3]);
+        if (m_colorCvar.length() && m_colorCount != -1) {
+            Vector4Copy(m_color, color);
         }
         color[3] *= m_local_alpha;
         uii.Rend_SetColor(color);
     }
     if (m_widthCvar.length()) {
         // a fraction of its width, about its middle or from its left
-        const float fw = floorf(w * Q_clamp_float(UI_GetCvarFloat(m_widthCvar.c_str(), 0.0f), 0.0f, 1.0f) + 0.5f);
+        const float fw = CvarOf(3, m_widthCvar) ? floorf(w * Q_clamp_float(m_cvars[3]->value, 0.0f, 1.0f) + 0.5f) : 0.0f;
 
         if (fw >= 1.0f) {
             uii.Rend_DrawPicStretched(m_widthLeft ? 0 : floorf((w - fw) * 0.5f), 0, fw, h, 0, 0, 1, 1, m_shapeHandle);
         }
     } else if (m_rotateCvar.length()) {
-        const float a = DEG2RAD(UI_GetCvarFloat(m_rotateCvar.c_str(), 0.0f));
+        const float a = CvarOf(2, m_rotateCvar) ? DEG2RAD(m_cvars[2]->value) : 0.0f;
 
         uii.Rend_DrawPicStretched2(0, 0, w, h, 0, 0, 1, 1, cosf(a), sinf(a), m_shapeHandle);
     } else {
@@ -2231,16 +2249,16 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
     if (m_flowAfter.length()) {
         Flow();
     }
-    if (m_colorCvar.length()) {
-        float c[4] = {1, 1, 1, 1};
-
-        sscanf(uii.Cvar_GetString(m_colorCvar, "1 1 1 1"), "%f %f %f %f", &c[0], &c[1], &c[2], &c[3]);
-        m_foreground_color = UColor(c[0], c[1], c[2], c[3]);
+    if (m_colorCvar.length() && CvarOf(0, m_colorCvar) && m_cvars[0]->modificationCount != m_colorCount) {
+        m_color[0] = m_color[1] = m_color[2] = m_color[3] = 1.0f;
+        sscanf(m_cvars[0]->string, "%f %f %f %f", &m_color[0], &m_color[1], &m_color[2], &m_color[3]);
+        m_colorCount       = m_cvars[0]->modificationCount;
+        m_foreground_color = UColor(m_color[0], m_color[1], m_color[2], m_color[3]);
     }
     m_local_alpha = m_alpha * parent_alpha;
     // Added: faded by a cvar, not drawn when clear
     if (m_alphaCvar.length()) {
-        m_local_alpha *= Q_clamp_float(UI_GetCvarFloat(m_alphaCvar.c_str(), 0.0f), 0.0f, 1.0f);
+        m_local_alpha *= CvarOf(1, m_alphaCvar) ? Q_clamp_float(m_cvars[1]->value, 0.0f, 1.0f) : 0.0f;
         if (m_local_alpha <= 0.0f) {
             return;
         }

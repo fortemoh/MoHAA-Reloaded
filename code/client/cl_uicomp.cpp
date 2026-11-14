@@ -470,7 +470,10 @@ static void Comp_Set(const char *name, const char *value)
 
 static void Comp_SetF(const char *name, float value)
 {
-    Comp_Set(name, va("%.3f", value));
+    // (the text made only when the value changed)
+    if (fabsf(Comp_Cvar(name)->value - value) >= 0.0005f || !Comp_Cvar(name)->string[0]) {
+        Comp_Set(name, va("%.3f", value));
+    }
 }
 
 // who is alive and the cards (round modes), and the silent score requests:
@@ -1555,37 +1558,45 @@ static void RM_Picture(void)
 {
     const int         t = rm.texels, w = rm.cw * t, h = rm.ch * t;
     std::vector<byte> px(w * h * 4, 0);
+    const int         start = Sys_Milliseconds();
 
     for (int cy = 0; cy < rm.ch; cy++) {
         for (int cx = 0; cx < rm.cw; cx++) {
             const int n = RM_Nearest(cx, cy, rm.focusZ);
-            float     z, focus, fill;
+            float     z, focus;
+            byte      fill, line, edge[4]; // left, right, north, south
 
             if (n < 0) {
                 continue;
             }
             z     = rm.nodes[n].z;
             focus = Com_Clamp(0.0f, 1.0f, (120.0f - fabsf(z - rm.focusZ)) / 56.0f);
-            fill  = 0.2f + 0.24f * (rm.zMax > rm.zMin ? (z - rm.zMin) / (rm.zMax - rm.zMin) : 1.0f);
-            for (int k = 0; k < t * t; k++) {
-                const int i = k % t, j = k / t;
-                // the edges: no floor beside within a step (a wall, a drop, a ledge)
-                const int side = i == 0 ? 1 : i == t - 1 ? 2 : j == 0 ? 3 : j == t - 1 ? 4 : 0;
-                const int nb   = side == 1 ? RM_Nearest(cx - 1, cy, z) : side == 2 ? RM_Nearest(cx + 1, cy, z)
-                               : side == 3 ? RM_Nearest(cx, cy + 1, z) : side == 4 ? RM_Nearest(cx, cy - 1, z) : n;
-                const qboolean edge = nb < 0 || fabsf(rm.nodes[nb].z - z) > 40.0f;
-                // the picture's top row is the map's north (y up)
-                byte *o = &px[(((rm.ch - 1 - cy) * t + j) * w + cx * t + i) * 4];
+            fill  = (byte)((0.2f + 0.24f * (rm.zMax > rm.zMin ? (z - rm.zMin) / (rm.zMax - rm.zMin) : 1.0f)) * 255.0f);
+            line  = (byte)((0.3f + 0.6f * focus) * 255.0f);
+            // the edges: no floor beside within a step (a wall, a drop, a ledge)
+            for (int k = 0; k < 4; k++) {
+                const int nb = RM_Nearest(cx + (k == 1) - (k == 0), cy + (k == 2) - (k == 3), z);
 
-                o[0] = 235;
-                o[1] = 240;
-                o[2] = 245;
-                o[3] = (byte)((edge ? 0.3f + 0.6f * focus : fill) * 255.0f);
+                edge[k] = nb < 0 || fabsf(rm.nodes[nb].z - z) > 40.0f;
+            }
+            // the picture's top row is the map's north (y up)
+            for (int j = 0; j < t; j++) {
+                byte *o = &px[(((rm.ch - 1 - cy) * t + j) * w + cx * t) * 4];
+
+                for (int i = 0; i < t; i++, o += 4) {
+                    const int side = i == 0 ? 0 : i == t - 1 ? 1 : j == 0 ? 2 : j == t - 1 ? 3 : -1;
+
+                    o[0] = 235;
+                    o[1] = 240;
+                    o[2] = 245;
+                    o[3] = side >= 0 && edge[side] ? line : fill;
+                }
             }
         }
     }
     rm.shader = uii.Rend_RegisterImage2D("ui_bake/radar", px.data(), w, h);
     rm.stamp  = UI_BakeStamp();
+    Com_DPrintf("Radar: a picture %d x %d in %d ms\n", w, h, Sys_Milliseconds() - start);
 }
 
 void UI_CompHud_MapLoaded(void)
