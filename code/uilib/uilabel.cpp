@@ -327,6 +327,10 @@ void UILabel::Draw(void)
                 getClientFrame(), m_iFontAlignmentHorizontal, m_iFontAlignmentVertical, string, getVirtualScale()
             );
         }
+        // Added: where the text ends, for a widget placed after it (flowafter)
+        if (m_designSet && m_iFontAlignmentHorizontal == FONT_JUSTHORZ_LEFT) {
+            m_textRight = m_designRect.pos.x + m_font->getWidth(string, -1);
+        }
     }
 }
 

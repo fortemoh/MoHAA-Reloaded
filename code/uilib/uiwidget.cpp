@@ -458,6 +458,42 @@ Event EV_Layout_AlphaCvar
     "Fades the widget by the cvar's value (0 to 1)"
 );
 
+Event EV_Layout_ColorCvar
+(
+    "colorcvar",
+    EV_DEFAULT,
+    "s",
+    "cvar_name",
+    "The widget's text and shape colored by the cvar's \"r g b a\""
+);
+
+Event EV_Layout_WidthCvar
+(
+    "widthcvar",
+    EV_DEFAULT,
+    "sS",
+    "cvar_name align",
+    "The widget's shape drawn the cvar's fraction of its width, about its middle (or from its left: left)"
+);
+
+Event EV_Layout_FlowAfter
+(
+    "flowafter",
+    EV_DEFAULT,
+    "sf",
+    "widget_name gap",
+    "Placed gap design units after where a sibling's text ends (or its right edge)"
+);
+
+Event EV_Layout_Anchor
+(
+    "anchor",
+    EV_DEFAULT,
+    "ff",
+    "x y",
+    "A menu's middle at these fractions of the screen's width and height"
+);
+
 // Added in 2.0
 Event EV_Layout_FadeSequence
 (
@@ -544,6 +580,10 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Layout_Shape,              &UIWidget::LayoutShape             },
     {&EV_Layout_RotateCvar,         &UIWidget::LayoutRotateCvar        },
     {&EV_Layout_AlphaCvar,          &UIWidget::LayoutAlphaCvar         },
+    {&EV_Layout_ColorCvar,          &UIWidget::LayoutColorCvar         },
+    {&EV_Layout_WidthCvar,          &UIWidget::LayoutWidthCvar         },
+    {&EV_Layout_FlowAfter,          &UIWidget::LayoutFlowAfter         },
+    {&EV_Layout_Anchor,             &UIWidget::LayoutAnchor            },
 
     {NULL,                          NULL                               }
 };
@@ -702,6 +742,10 @@ UIWidget::UIWidget()
     m_shapeW      = 0;
     m_shapeH      = 0;
     m_shapeHandle = 0;
+    m_widthLeft   = false;
+    VectorSet2D(m_anchor, -1, -1);
+    m_flowGap     = 0;
+    m_textRight   = 0;
     m_parent = NULL;
     m_background_color.set(0.075f, 0.097f, 0.139f, 1.0f);
     m_foreground_color         = UColor(UHudColor);
@@ -1474,6 +1518,50 @@ void UIWidget::LayoutAlphaCvar(Event *ev)
     m_alphaCvar = ev->GetString(1);
 }
 
+void UIWidget::LayoutColorCvar(Event *ev)
+{
+    m_colorCvar = ev->GetString(1);
+}
+
+void UIWidget::LayoutWidthCvar(Event *ev)
+{
+    m_widthCvar = ev->GetString(1);
+    m_widthLeft = ev->NumArgs() > 1 && !str::icmp(ev->GetString(2), "left");
+}
+
+void UIWidget::LayoutAnchor(Event *ev)
+{
+    m_anchor[0] = ev->GetFloat(1);
+    m_anchor[1] = ev->GetFloat(2);
+}
+
+void UIWidget::LayoutFlowAfter(Event *ev)
+{
+    m_flowAfter = ev->GetString(1);
+    m_flowGap   = ev->GetFloat(2);
+}
+
+/*
+================
+Flow
+
+Added: a widget of a design-size menu placed after a sibling: gap design
+units after where its text ended this frame (drawn before), or its right
+================
+*/
+void UIWidget::Flow(void)
+{
+    UIWidget *after = m_parent ? m_parent->FindWidget(m_flowAfter) : NULL;
+    UIRect2D  frame = m_frame;
+
+    if (!after || !m_designSet) {
+        return;
+    }
+    m_designRect.pos.x = after->getTextRight() + m_flowGap;
+    frame.pos.x        = floorf(m_designRect.pos.x * m_vVirtualScale[0] + 0.5f);
+    setFrame(frame);
+}
+
 /*
 ================
 DrawShapes
@@ -1512,7 +1600,7 @@ void UIWidget::DrawShapes(void)
         text += "\n";
     }
     if (m_shapeStamp != UI_BakeStamp() || w != m_shapeW || h != m_shapeH || text != m_shapeText) {
-        m_shapeHandle = UI_BakeShape(va("%p", this), layers, n, w, h, m_vVirtualScale[0]);
+        m_shapeHandle = UI_BakeShape("w", layers, n, w, h, m_vVirtualScale[0]);
         m_shapeStamp  = UI_BakeStamp();
         m_shapeW      = w;
         m_shapeH      = h;
@@ -1522,11 +1610,23 @@ void UIWidget::DrawShapes(void)
         return;
     }
     {
-        const vec4_t color = {1.0f, 1.0f, 1.0f, m_local_alpha};
+        vec4_t color = {1.0f, 1.0f, 1.0f, 1.0f};
 
+        // tinted by colorcvar
+        if (m_colorCvar.length()) {
+            sscanf(uii.Cvar_GetString(m_colorCvar, "1 1 1 1"), "%f %f %f %f", &color[0], &color[1], &color[2], &color[3]);
+        }
+        color[3] *= m_local_alpha;
         uii.Rend_SetColor(color);
     }
-    if (m_rotateCvar.length()) {
+    if (m_widthCvar.length()) {
+        // a fraction of its width, about its middle or from its left
+        const float fw = floorf(w * Q_clamp_float(UI_GetCvarFloat(m_widthCvar.c_str(), 0.0f), 0.0f, 1.0f) + 0.5f);
+
+        if (fw >= 1.0f) {
+            uii.Rend_DrawPicStretched(m_widthLeft ? 0 : floorf((w - fw) * 0.5f), 0, fw, h, 0, 0, 1, 1, m_shapeHandle);
+        }
+    } else if (m_rotateCvar.length()) {
         const float a = DEG2RAD(UI_GetCvarFloat(m_rotateCvar.c_str(), 0.0f));
 
         uii.Rend_DrawPicStretched2(0, 0, w, h, 0, 0, 1, 1, cosf(a), sinf(a), m_shapeHandle);
@@ -1805,6 +1905,24 @@ void UIWidget::Disable(void)
 bool UIWidget::isEnabled(void)
 {
     if (!strcmp(m_enabledCvar.c_str(), "")) {
+        return m_enabled;
+    }
+
+    // Added: a&b&!c, each must hold
+    if (strchr(m_enabledCvar.c_str(), '&')) {
+        char        name[MAX_CVAR_VALUE_STRING];
+        const char *p = m_enabledCvar.c_str();
+
+        while (m_enabled && *p) {
+            const char *end = strchr(p, '&');
+            const int   len = end ? (int)(end - p) : (int)strlen(p);
+
+            Q_strncpyz(name, p, Q_min(len + 1, (int)sizeof(name)));
+            if ((name[0] == '!') == (UI_GetCvarInt(name[0] == '!' ? name + 1 : name, 0) != 0)) {
+                return false;
+            }
+            p += len + (end ? 1 : 0);
+        }
         return m_enabled;
     }
 
@@ -2103,6 +2221,16 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
         Motion();
     }
 
+    // Added: after a sibling, colored by a cvar
+    if (m_flowAfter.length()) {
+        Flow();
+    }
+    if (m_colorCvar.length()) {
+        float c[4] = {1, 1, 1, 1};
+
+        sscanf(uii.Cvar_GetString(m_colorCvar, "1 1 1 1"), "%f %f %f %f", &c[0], &c[1], &c[2], &c[3]);
+        m_foreground_color = UColor(c[0], c[1], c[2], c[3]);
+    }
     m_local_alpha = m_alpha * parent_alpha;
     // Added: faded by a cvar, not drawn when clear
     if (m_alphaCvar.length()) {
@@ -2178,7 +2306,8 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
         );
     }
 
-    // Added: its shape
+    // Added: its shape; where it ends for a widget placed after it (a label's text sets its own)
+    m_textRight = m_designSet ? m_designRect.pos.x + m_designRect.size.width : 0;
     if (m_shapes.NumObjects()) {
         DrawShapes();
     }
@@ -2710,6 +2839,12 @@ void UIWidgetContainer::AlignPosition(void)
     } else {
         // default to center (Added: on a whole pixel)
         m_frame.pos.y = floorf((uid.vidHeight - m_frame.size.height) * 0.5f);
+    }
+
+    // Added: its middle at fractions of the screen
+    if (m_anchor[0] >= 0) {
+        m_frame.pos.x = floorf(uid.vidWidth * m_anchor[0] - m_frame.size.width * 0.5f + 0.5f);
+        m_frame.pos.y = floorf(uid.vidHeight * m_anchor[1] - m_frame.size.height * 0.5f + 0.5f);
     }
 
     setFrame(m_frame);

@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "cl_ui.h"
 #include "../uilib/uibake.h"
+#include "cl_uicomp.h"
 #include "cl_uigamespy.h"
 
 #include <chrono>
@@ -1255,6 +1256,33 @@ void UI_GetHighResolutionScale(vec2_t scale)
 
 /*
 ====================
+UI_CompHuds
+
+Added: the Competitive HUD's menus (cg_hudstyle 1, ui/hud_comp_*.urc),
+shown in place of the stock HUD's
+====================
+*/
+static void UI_CompHuds(bool show)
+{
+    static const char *const names[] = {
+        "hud_comp_topleft", "hud_comp_score",  "hud_comp_killfeed", "hud_comp_chat",   "hud_comp_strip",
+        "hud_comp_weapons", "hud_comp_damage", "hud_comp_banners",  "hud_comp_bars",   "hud_comp_killer",
+        "hud_comp_target",  "hud_comp_vote",
+    };
+
+    for (size_t i = 0; i < ARRAY_LEN(names); i++) {
+        Menu *hud = menuManager.FindMenu(names[i]);
+
+        if (hud && show) {
+            hud->ForceShow();
+        } else if (hud) {
+            hud->ForceHide();
+        }
+    }
+}
+
+/*
+====================
 UI_ShowHudList
 ====================
 */
@@ -1306,6 +1334,11 @@ void UI_PrintConsole(const char *msg)
     qboolean      bPrintedDMBox = qfalse;
 
     pszString = msg;
+
+    // Added: the Competitive HUD's chat, game messages and kills
+    if (*msg > 0 && (unsigned char)*msg < MESSAGE_MAX) {
+        UI_CompHud_Print(msg);
+    }
 
     if (*pszString > 0 && (unsigned char)*pszString < MESSAGE_MAX) {
         qboolean bNormalMessage = qfalse;
@@ -2053,12 +2086,13 @@ void UI_Update(void)
         }
     }
 
+    // Changed: the Competitive HUD shows the game messages, the chat and the kills itself
     if (gmbox) {
-        gmbox->setRealShow(true);
+        gmbox->setRealShow(!UI_CompHud_Active());
     }
 
     if (dmbox) {
-        dmbox->setRealShow(true);
+        dmbox->setRealShow(!UI_CompHud_Active());
     }
 
     currentMenu = menuManager.CurrentMenu();
@@ -2177,7 +2211,34 @@ void UI_Update(void)
         }
 
         UI_HideHudList();
+        UI_CompHuds(false);
+    } else if (UI_CompHud_Active()) {
+        // Added: the Competitive HUD's menus instead of the stock HUD's (the boss's health stays)
+        if (crosshairhud) {
+            crosshairhud->ForceHide();
+        }
+        if (hud_weapons) {
+            hud_weapons->ForceHide();
+            ui_weapHudTime = 0;
+        }
+        if (hud_items) {
+            hud_items->ForceHide();
+            ui_itemHudTime = 0;
+        }
+        if (hud_health) {
+            hud_health->ForceHide();
+        }
+        if (hud_ammo) {
+            hud_ammo->ForceHide();
+        }
+        if (hud_compass) {
+            hud_compass->ForceHide();
+        }
+        UI_HideHudList();
+        UI_CompHud_Frame();
+        UI_CompHuds(true);
     } else {
+        UI_CompHuds(false);
         if (crosshairhud) {
             if (ui_crosshair->integer && cl.snap.ps.stats[STAT_CROSSHAIR]) {
                 crosshairhud->ForceShow();
@@ -4356,6 +4417,7 @@ void UI_ClearState(void)
 {
     S_FadeSound(0.0);
     UI_ClearCenterPrint();
+    UI_CompHud_Clear();
 
     if (gmbox) {
         gmbox->Clear();
@@ -5467,6 +5529,7 @@ void CL_InitializeUI(void)
     ui_NumHits             = Cvar_Get("ui_NumHits", "0", 0);
     ui_NumShotsFired       = Cvar_Get("ui_NumShotsFired", "0", 0);
     ui_gmboxspam           = Cvar_Get("ui_gmboxspam", "1", 0);
+    UI_CompHud_Init();
     ui_gotmedal            = Cvar_Get("ui_gotmedal", "0", 0);
     ui_success             = Cvar_Get("ui_success", "0", 0);
     ui_failed              = Cvar_Get("ui_failed", "0", 0);

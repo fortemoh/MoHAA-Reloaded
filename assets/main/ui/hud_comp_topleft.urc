@@ -1,0 +1,174 @@
+// The Competitive HUD (cg_hudstyle 1): top left, the radar or the compass,
+// the game messages under it
+menu "hud_comp_topleft" 420 420 NONE 0
+virtualres 1 1920 1080
+align left top
+bgcolor 0 0 0 0
+borderstyle NONE
+
+// the radar: its disc, the map and what is on it, the damage wedge, its ring
+resource
+HudRadar
+{
+name "radar"
+rect 25 25 248 248
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-semibold-13.5s
+enabledcvar ui_hud_radar_on
+shape circle 0.047 0.055 0.071 0.78
+shape ring 1.127 1 1 1 0.102
+}
+
+resource
+Label
+{
+name "radarwedge"
+rect 25 25 248 248
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_radar_on
+shape poly 0.753 0.188 0.129 1 0.5 0.38 0.64 0.02 0.36 0.02
+rotatecvar ui_hud_dmg_angle
+alphacvar ui_hud_dmg_alpha
+}
+
+resource
+Label
+{
+name "radarring"
+rect 25 25 248 248
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_radar_on
+shape ring 2 0.863 0.894 0.643 0.902
+}
+
+// the compass (no radar): a disc, its bearings turning with the view
+resource
+Label
+{
+name "compass"
+rect 25 25 160 160
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_compass_on
+shape circle 0.047 0.055 0.071 0.78
+shape ring 1 1 1 1 0.102
+}
+
+resource
+Label
+{
+name "compasswedge"
+rect 25 25 160 160
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_compass_on
+shape poly 0.753 0.188 0.129 1 0.5 0.38 0.64 0.02 0.36 0.02
+rotatecvar ui_hud_dmg_angle
+alphacvar ui_hud_dmg_alpha
+}
+
+resource
+Label
+{
+name "bearings"
+rect 25 25 160 160
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_compass_on
+shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 0 N
+shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 45 NE
+shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 90 E
+shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 135 SE
+shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 180 S
+shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 225 SW
+shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 270 W
+shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 315 NW
+rotatecvar ui_hud_north
+}
+
+// the objectives' balls on the rim (the stock compass's stats)
+resource
+Label
+{
+name "objcenter"
+rect 19 19 172 172
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_compass_on
+shape circle 1 1 1 0.102 0.0698 0.5 0.0349
+shape circle 0.988 0.729 0.012 0.502 0.0581 0.5 0.0349
+rotatecvar ui_hud_obj0
+alphacvar ui_hud_obj0_on
+}
+
+resource
+Label
+{
+name "objleft"
+rect 20 20 170 170
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_compass_on
+shape circle 1 1 1 0.102 0.0588 0.5 0.0294
+shape circle 0.29 0.62 1 0.502 0.0471 0.5 0.0294
+rotatecvar ui_hud_obj1
+alphacvar ui_hud_obj1_on
+}
+
+resource
+Label
+{
+name "objright"
+rect 20 20 170 170
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_compass_on
+shape circle 1 1 1 0.102 0.0588 0.5 0.0294
+shape circle 0.29 0.62 1 0.502 0.0471 0.5 0.0294
+rotatecvar ui_hud_obj2
+alphacvar ui_hud_obj2_on
+}
+
+// north's slot, fixed at the top
+resource
+Label
+{
+name "compassslot"
+rect 94 27 22 22
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_compass_on
+shape frame 1 1 1 1 1
+}
+
+// the game messages under the radar, or under the compass
+resource
+HudFeed
+{
+name "messages"
+rect 25 289 360 120
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-16s
+boldfont oswald-semibold-16s
+feed messages
+enabledcvar ui_hud_msgs_r
+}
+
+resource
+HudFeed
+{
+name "messagesc"
+rect 25 201 360 120
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-16s
+boldfont oswald-semibold-16s
+feed messages
+enabledcvar ui_hud_msgs_c
+}
+
+end.

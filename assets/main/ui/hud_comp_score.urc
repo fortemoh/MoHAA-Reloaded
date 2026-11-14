@@ -1,0 +1,239 @@
+// The Competitive HUD (cg_hudstyle 1): top center, Allies | timer | Axis
+// (self | timer | the leader in free-for-all) on a blue panel fading down,
+// "N vs M" alive under it in round modes, the players' cards either side.
+// Two layouts: with the other team's score (ui_hud_p3), and narrower
+// without it, before a scoreboard tells it
+menu "hud_comp_score" 1920 80 NONE 0
+virtualres 1 1920 1080
+align centerx top
+bgcolor 0 0 0 0
+borderstyle NONE
+
+resource
+Label
+{
+name "panel3"
+rect 885 0 150 77
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_score_on&ui_hud_vs_on&ui_hud_p3
+shape vgradient 0 0.62 0.212 0.376 0.494 0.902 0.259 0.424 0.565 0.702
+shape vgradient 0.62 1 0.259 0.424 0.565 0.702 0.282 0.471 0.612 0
+}
+
+resource
+Label
+{
+name "panelshort3"
+rect 885 0 150 44
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_score_on&!ui_hud_vs_on&ui_hud_p3
+shape vgradient 0 0.62 0.212 0.376 0.494 0.902 0.259 0.424 0.565 0.702
+shape vgradient 0.62 1 0.259 0.424 0.565 0.702 0.282 0.471 0.612 0
+}
+
+resource
+Label
+{
+name "scoreleft3"
+rect 885 0 48 44
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-22s
+textalign centerx
+linkcvar ui_hud_score_l
+colorcvar ui_hud_score_lc
+enabledcvar ui_hud_score_on&ui_hud_p3
+}
+
+resource
+Label
+{
+name "timer3"
+rect 933 0 54 44
+bgcolor 0 0 0 0
+borderstyle NONE
+fgcolor 0.988 0.988 0.988 1
+font oswald-medium-22s
+textalign centerx
+linkcvar ui_hud_timer
+enabledcvar cg_hud_timer&ui_hud_p3
+}
+
+resource
+Label
+{
+name "alive3"
+rect 885 44 150 23
+bgcolor 0 0 0 0
+borderstyle NONE
+fgcolor 0.988 0.988 0.988 1
+font oswald-medium-15si
+textalign centerx
+linkcvar ui_hud_vs
+enabledcvar ui_hud_vs_on&ui_hud_p3
+}
+
+resource
+HudCards
+{
+name "cardsallies3"
+rect 453 0 426 60
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-15s
+team allies
+icons iconallies iconaxis
+enabledcvar ui_hud_vs_on&ui_hud_p3
+}
+
+resource
+HudCards
+{
+name "cardsaxis3"
+rect 1041 0 426 60
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-15s
+team axis
+icons iconallies iconaxis
+enabledcvar ui_hud_vs_on&ui_hud_p3
+}
+
+resource
+Label
+{
+name "panel2"
+rect 909 0 102 77
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_score_on&ui_hud_vs_on&!ui_hud_p3
+shape vgradient 0 0.62 0.212 0.376 0.494 0.902 0.259 0.424 0.565 0.702
+shape vgradient 0.62 1 0.259 0.424 0.565 0.702 0.282 0.471 0.612 0
+}
+
+resource
+Label
+{
+name "panelshort2"
+rect 909 0 102 44
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_score_on&!ui_hud_vs_on&!ui_hud_p3
+shape vgradient 0 0.62 0.212 0.376 0.494 0.902 0.259 0.424 0.565 0.702
+shape vgradient 0.62 1 0.259 0.424 0.565 0.702 0.282 0.471 0.612 0
+}
+
+resource
+Label
+{
+name "scoreleft2"
+rect 909 0 48 44
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-22s
+textalign centerx
+linkcvar ui_hud_score_l
+colorcvar ui_hud_score_lc
+enabledcvar ui_hud_score_on&!ui_hud_p3
+}
+
+resource
+Label
+{
+name "timer2"
+rect 957 0 54 44
+bgcolor 0 0 0 0
+borderstyle NONE
+fgcolor 0.988 0.988 0.988 1
+font oswald-medium-22s
+textalign centerx
+linkcvar ui_hud_timer
+enabledcvar cg_hud_timer&!ui_hud_p3
+}
+
+resource
+Label
+{
+name "alive2"
+rect 909 44 102 23
+bgcolor 0 0 0 0
+borderstyle NONE
+fgcolor 0.988 0.988 0.988 1
+font oswald-medium-15si
+textalign centerx
+linkcvar ui_hud_vs
+enabledcvar ui_hud_vs_on&!ui_hud_p3
+}
+
+resource
+HudCards
+{
+name "cardsallies2"
+rect 477 0 426 60
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-15s
+team allies
+icons iconallies iconaxis
+enabledcvar ui_hud_vs_on&!ui_hud_p3
+}
+
+resource
+HudCards
+{
+name "cardsaxis2"
+rect 1017 0 426 60
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-15s
+team axis
+icons iconallies iconaxis
+enabledcvar ui_hud_vs_on&!ui_hud_p3
+}
+
+resource
+Label
+{
+name "scoreright"
+rect 987 0 48 44
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-22s
+textalign centerx
+linkcvar ui_hud_score_r
+colorcvar ui_hud_score_rc
+enabledcvar ui_hud_score_on&ui_hud_p3
+}
+
+// the teams' icons (moh-icons team/allies.svg and team/axis.svg) the cards
+// draw, in hidden widgets
+
+resource
+Label
+{
+name "iconallies"
+rect 0 0 38 38
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_never
+shape circle 0.102 0.118 0.231 1
+shape poly 1 1 1 1 0.5 0 0.61226 0.34549 0.97553 0.34549 0.68164 0.55902 0.79389 0.90451 0.5 0.69098 0.20611 0.90451 0.31836 0.55902 0.02447 0.34549 0.38774 0.34549
+shape circle 0.871 0 0 1 0.30902
+}
+
+resource
+Label
+{
+name "iconaxis"
+rect 0 0 38 38
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_never
+shape circle 0.663 0.012 0.012 1
+shape poly 1 1 1 1 0.28979 0.1 0.71021 0.1 0.61763 0.38237 0.9 0.28979 0.9 0.71021 0.61763 0.61763 0.71021 0.9 0.28979 0.9 0.38237 0.61763 0.1 0.71021 0.1 0.28979 0.38237 0.38237
+shape poly 0 0 0 1 0.345 0.14 0.655 0.14 0.555 0.445 0.86 0.345 0.86 0.655 0.555 0.555 0.655 0.86 0.345 0.86 0.445 0.555 0.14 0.655 0.14 0.345 0.445 0.445
+}
+
+end.

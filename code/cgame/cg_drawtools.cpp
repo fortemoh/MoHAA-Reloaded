@@ -1502,12 +1502,18 @@ void CG_Draw2D(void)
     CG_HudDrawElements();
     CG_DrawObjectives();
     CG_DrawIcons();
-    CG_DrawStopwatch();
-    CG_DrawSpectatorView();
-    CG_DrawPlayerTeam();
-    CG_DrawPlayerEntInfo();
-    CG_UpdateAttackerDisplay();
-    CG_DrawVote();
+    // Added: the Competitive HUD's URC menus (cg_hudstyle 1, the client's
+    // cl_uicomp.cpp) show the stopwatch, the spectator's keys, the team, the
+    // player aimed at, the attacker and the vote their own way
+    static cvar_t *cg_hudstyle = cgi.Cvar_Get("cg_hudstyle", "0", CVAR_ARCHIVE);
+    if (cg_hudstyle->integer != 1) {
+        CG_DrawStopwatch();
+        CG_DrawSpectatorView();
+        CG_DrawPlayerTeam();
+        CG_DrawPlayerEntInfo();
+        CG_UpdateAttackerDisplay();
+        CG_DrawVote();
+    }
     CG_DrawInstantMessageMenu();
     CG_DrawCrosshair();
 }

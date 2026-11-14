@@ -555,7 +555,7 @@ Lengths are design units (times the canvas's scale); positions are
 fractions of the box. The shapes:
   fill COLOR
   vgradient Y0 Y1 COLOR COLOR / hgradient X0 X1 COLOR COLOR
-  circle COLOR [R]              (R: of half the box, 1 by default)
+  circle COLOR [R [X Y]]        (R: of half the box, 1 by default; X Y its middle)
   ring W COLOR                  (W thick, inside the circle's edge)
   frame W COLOR                 (W thick, inside the box's edge)
   roundbox R COLOR [W H ANGLE]  (the box, or W x H in its middle turned ANGLE)
@@ -621,7 +621,8 @@ static void Bake_Layer(uiCanvas_t *cv, const char *text)
         }
         return;
     } else if (t[0] == "circle") {
-        Bake_Circle(cx, cy, r * (n > a ? num(a) : 1.0f), qfalse);
+        // [R [X Y]]: of half the box, its middle
+        Bake_Circle(n > a + 2 ? num(a + 1) * w : cx, n > a + 2 ? num(a + 2) * h : cy, r * (n > a ? num(a) : 1.0f), qfalse);
     } else if (t[0] == "ring") {
         Bake_Circle(cx, cy, r, qfalse);
         Bake_Circle(cx, cy, r - num(1) * cv->scale, qtrue);

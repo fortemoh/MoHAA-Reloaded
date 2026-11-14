@@ -1,0 +1,20 @@
+// The Competitive HUD (cg_hudstyle 1): top right, the kill feed
+menu "hud_comp_killfeed" 445 165 NONE 0
+virtualres 1 1920 1080
+align right top
+bgcolor 0 0 0 0
+borderstyle NONE
+
+resource
+HudFeed
+{
+name "kills"
+rect 0 25 420 140
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-16s
+feed kills
+enabledcvar cg_hud_killfeed
+}
+
+end.

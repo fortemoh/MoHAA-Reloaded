@@ -183,6 +183,13 @@ protected:
     Container<str> m_shapes;     // the "shape" lines, a $cvar in one its value
     str            m_rotateCvar; // the shapes turned by its degrees, clockwise
     str            m_alphaCvar;  // the widget faded by its value
+    str            m_colorCvar;  // the text's and shape's color: the cvar's "r g b a"
+    str            m_widthCvar;  // the shape drawn this fraction wide
+    bool           m_widthLeft;  // ... from its left, else about its middle
+    vec2_t         m_anchor;     // a menu's middle at these fractions of the screen (-1: its align)
+    str            m_flowAfter;  // placed after this sibling's text (or its right)
+    float          m_flowGap;
+    float          m_textRight;  // where the text drawn last ended, in the parent's design units
     str            m_shapeText;  // the lines as last baked
     int            m_shapeStamp;
     int            m_shapeW, m_shapeH;
@@ -269,8 +276,15 @@ public:
     void LayoutShape(Event *ev);
     void LayoutRotateCvar(Event *ev);
     void LayoutAlphaCvar(Event *ev);
+    void LayoutColorCvar(Event *ev);
+    void LayoutWidthCvar(Event *ev);
+    void LayoutFlowAfter(Event *ev);
+    void LayoutAnchor(Event *ev);
+    void Flow(void);
+    float getTextRight(void) { return m_textRight; }
     bool DesignFrame(void);
     void DrawShapes(void);
+    Container<str>& getShapes(void) { return m_shapes; }
 
     // Added in 2.0
     //====
