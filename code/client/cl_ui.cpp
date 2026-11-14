@@ -4200,6 +4200,9 @@ void UI_ResolutionChange(void)
         frame = getDefaultDMBoxRectangle();
         dmbox->setFrame(frame);
     }
+
+    // Added: the Competitive HUD baked at the new size
+    UI_CompHud_PreBake();
 }
 
 /*

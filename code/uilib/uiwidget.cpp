@@ -1592,6 +1592,40 @@ $cvar in them changes, as a new picture), drawn, turned by rotatecvar
 */
 void UIWidget::DrawShapes(void)
 {
+    const int w = (int)(m_frame.size.width + 0.5f), h = (int)(m_frame.size.height + 0.5f);
+
+    BakeShapes();
+    if (!m_shapeHandle) {
+        return;
+    }
+    {
+        vec4_t color = {1.0f, 1.0f, 1.0f, 1.0f};
+
+        // tinted by colorcvar
+        if (m_colorCvar.length() && m_colorCount != -1) {
+            Vector4Copy(m_color, color);
+        }
+        color[3] *= m_local_alpha;
+        uii.Rend_SetColor(color);
+    }
+    if (m_widthCvar.length()) {
+        // a fraction of its width, about its middle or from its left
+        const float fw = CvarOf(3, m_widthCvar) ? floorf(w * Q_clamp_float(m_cvars[3]->value, 0.0f, 1.0f) + 0.5f) : 0.0f;
+
+        if (fw >= 1.0f) {
+            uii.Rend_DrawPicStretched(m_widthLeft ? 0 : floorf((w - fw) * 0.5f), 0, fw, h, 0, 0, 1, 1, m_shapeHandle);
+        }
+    } else if (m_rotateCvar.length()) {
+        const float a = CvarOf(2, m_rotateCvar) ? DEG2RAD(m_cvars[2]->value) : 0.0f;
+
+        uii.Rend_DrawPicStretched2(0, 0, w, h, 0, 0, 1, 1, cosf(a), sinf(a), m_shapeHandle);
+    } else {
+        uii.Rend_DrawPicStretched(0, 0, w, h, 0, 0, 1, 1, m_shapeHandle);
+    }
+}
+
+void UIWidget::BakeShapes(void)
+{
     const int   w = (int)(m_frame.size.width + 0.5f), h = (int)(m_frame.size.height + 0.5f);
     const char *layers[32];
     str         text, resolved[32];
@@ -1629,33 +1663,6 @@ void UIWidget::DrawShapes(void)
         m_shapeW      = w;
         m_shapeH      = h;
         m_shapeText   = text;
-    }
-    if (!m_shapeHandle) {
-        return;
-    }
-    {
-        vec4_t color = {1.0f, 1.0f, 1.0f, 1.0f};
-
-        // tinted by colorcvar
-        if (m_colorCvar.length() && m_colorCount != -1) {
-            Vector4Copy(m_color, color);
-        }
-        color[3] *= m_local_alpha;
-        uii.Rend_SetColor(color);
-    }
-    if (m_widthCvar.length()) {
-        // a fraction of its width, about its middle or from its left
-        const float fw = CvarOf(3, m_widthCvar) ? floorf(w * Q_clamp_float(m_cvars[3]->value, 0.0f, 1.0f) + 0.5f) : 0.0f;
-
-        if (fw >= 1.0f) {
-            uii.Rend_DrawPicStretched(m_widthLeft ? 0 : floorf((w - fw) * 0.5f), 0, fw, h, 0, 0, 1, 1, m_shapeHandle);
-        }
-    } else if (m_rotateCvar.length()) {
-        const float a = CvarOf(2, m_rotateCvar) ? DEG2RAD(m_cvars[2]->value) : 0.0f;
-
-        uii.Rend_DrawPicStretched2(0, 0, w, h, 0, 0, 1, 1, cosf(a), sinf(a), m_shapeHandle);
-    } else {
-        uii.Rend_DrawPicStretched(0, 0, w, h, 0, 0, 1, 1, m_shapeHandle);
     }
 }
 

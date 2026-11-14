@@ -289,6 +289,7 @@ public:
     cvar_t *CvarOf(int i, const str& name);
     bool DesignFrame(void);
     void DrawShapes(void);
+    void BakeShapes(void); // its shape baked at its size now (a load), not at its first draw
     Container<str>& getShapes(void) { return m_shapes; }
 
     // Added in 2.0

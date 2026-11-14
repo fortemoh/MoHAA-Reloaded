@@ -968,19 +968,37 @@ static void Comp_PictureSize(const char *pic, int *w, int *h)
     sizes.push_back({str(pic), {*w, *h}});
 }
 
-// a picture baked at its size (w x h design pixels at x y), tinted
-static void Comp_Picture(const char *pic, float x, float y, float w, float h, float s, const char *align, qboolean mirror, const UColor& c)
+// a picture baked at pw x ph pixels
+static qhandle_t Comp_PictureShader(const char *pic, int pw, int ph, float s, qboolean mirror)
 {
-    char         layer[MAX_QPATH * 2];
-    const char  *layers[1] = {layer};
+    char        layer[MAX_QPATH * 2];
+    const char *layers[1] = {layer};
+
+    Com_sprintf(layer, sizeof(layer), "picture 1 1 1 1 " COMP_PICTURES "%s.png center%s", pic, mirror ? " mirror" : "");
+    return UI_BakeShape("comp", layers, 1, pw, ph, s);
+}
+
+// a picture baked at its size (w x h design pixels at x y), tinted
+static void Comp_Picture(const char *pic, float x, float y, float w, float h, float s, qboolean mirror, const UColor& c)
+{
     const int    pw = (int)(w * s + 0.5f), ph = (int)(h * s + 0.5f);
     const vec4_t color = {c.r, c.g, c.b, c.a};
-    qhandle_t    shader;
+    qhandle_t    shader = Comp_PictureShader(pic, pw, ph, s, mirror);
 
-    Com_sprintf(layer, sizeof(layer), "picture 1 1 1 1 " COMP_PICTURES "%s.png %s%s", pic, align, mirror ? " mirror" : "");
-    shader = UI_BakeShape("comp", layers, 1, pw, ph, s);
     uii.Rend_SetColor(color);
     uii.Rend_DrawPicStretched(floorf(x * s + 0.5f), floorf(y * s + 0.5f), pw, ph, 0, 0, 1, 1, shader);
+}
+
+// a weapon's picture fitted in a box of design pixels: its size there
+static void Comp_Fit(const char *pic, float boxW, float boxH, float s, float *w, float *h)
+{
+    int         sw, sh;
+    float       fit;
+
+    Comp_PictureSize(pic, &sw, &sh);
+    fit = Q_min(boxW / sw, boxH / sh);
+    *w  = floorf(fit * sw * s + 0.5f) / s;
+    *h  = floorf(fit * sh * s + 0.5f) / s;
 }
 
 // text with its capitals' middle on cy (the baked faces' lines are centered so)
@@ -1077,14 +1095,14 @@ void UIHudFeed::DrawKills(float w, float h, float s)
             x += Comp_Text(m_font, x, mid, k->killer, kc, getVirtualScale()) + gap;
         }
         // the pictures point left: the feed's at the victim
-        Comp_Picture(k->pic, x, mid - k->picH * 0.5f, k->picW, k->picH, s, "center", strcmp(k->pic, "skull_50") && strcmp(k->pic, "glove_50"), white);
+        Comp_Picture(k->pic, x, mid - k->picH * 0.5f, k->picW, k->picH, s, strcmp(k->pic, "skull_50") && strcmp(k->pic, "glove_50"), white);
         x += k->picW + gap;
         if (mark) {
-            Comp_Picture("skull_50", x, mid - 9.0f, 18.0f, 18.0f, s, "center", qfalse, white);
+            Comp_Picture("skull_50", x, mid - 9.0f, 18.0f, 18.0f, s, qfalse, white);
             x += 18.0f + gap;
         }
         if (k->headshot) {
-            Comp_Picture("headshot_50", x, mid - 9.0f, 18.0f, 18.0f, s, "center", qfalse, white);
+            Comp_Picture("headshot_50", x, mid - 9.0f, 18.0f, 18.0f, s, qfalse, white);
             x += 18.0f + gap;
         }
         Comp_Text(m_font, x, mid, k->victim, vc, getVirtualScale());
@@ -1154,6 +1172,40 @@ void UIHudFeed::Draw(void)
     }
 }
 
+// a team's cards (alive, you, dead) size design pixels wide: the box, its
+// frame, the team's icon (icon: the widget whose shapes it is) or a skull,
+// the bar under it
+static void Comp_CardShaders(int team, UIWidget *icon, int size, float s, qhandle_t out[3])
+{
+    const float f  = size / (size + 8.0f), bar = (size + 4.0f) / (size + 8.0f);
+    const float px = 5.0f / size, py = 5.0f / (size + 8.0f), dx = 6.0f / size, dy = 6.0f / (size + 8.0f);
+
+    for (int k = 0; k < 3; k++) {
+        std::vector<str> lines;
+        const char      *layers[40];
+        int              numLayers = 0;
+
+        if (k == 2) {
+            lines.push_back(va("in 0 0 1 %g fill 0.11 0.125 0.141 0.702", f));
+            lines.push_back(va("in 0 0 1 %g frame 1 1 1 1 0.2", f));
+            if (size >= 16) {
+                lines.push_back(va("in %g %g %g %g picture 1 1 1 0.5 " COMP_PICTURES "skull_50.png center", dx, dy, 1.0f - dx, f - dy));
+            }
+        } else {
+            lines.push_back(va("in 0 0 1 %g fill %s", f, team == TEAM_AXIS ? "0.549 0.333 0.294 0.851" : "0.294 0.435 0.549 0.851"));
+            for (int l = 1; size >= 16 && icon && l <= icon->getShapes().NumObjects() && l < 30; l++) {
+                lines.push_back(va("in %g %g %g %g %s", px, py, 1.0f - px, f - py, icon->getShapes().ObjectAt(l).c_str()));
+            }
+            lines.push_back(va("in 0 0 1 %g frame %d %s", f, k ? 2 : 1, k ? "0.812 0.875 0.49 1" : "1 1 1 0.2"));
+            lines.push_back(va("in 0 %g 1 1 fill 0.988 0.988 0.988 1", bar));
+        }
+        for (str& l : lines) {
+            layers[numLayers++] = l.c_str();
+        }
+        out[k] = UI_BakeShape("comp_card", layers, numLayers, (int)(size * s + 0.5f), (int)((size + 8) * s + 0.5f), s);
+    }
+}
+
 /*
 ================
 UIHudCards
@@ -1213,37 +1265,9 @@ void UIHudCards::Draw(void)
     if (fit < n) {
         fit--;
     }
-    // a card of each kind (alive, you, dead) baked once at its size: the
-    // box, its frame, the team's icon or a skull, the bar under it
+    // a card of each kind baked once at its size
     if (size != m_size || m_stamp != UI_BakeStamp()) {
-        UIWidget   *icon = m_parent ? m_parent->FindWidget(m_icons[m_team == TEAM_AXIS]) : NULL;
-        const float f    = size / (size + 8.0f), bar = (size + 4.0f) / (size + 8.0f);
-        const float px = 5.0f / size, py = 5.0f / (size + 8.0f), dx = 6.0f / size, dy = 6.0f / (size + 8.0f);
-
-        for (int k = 0; k < 3; k++) {
-            std::vector<str> lines;
-            const char      *layers[40];
-            int              numLayers = 0;
-
-            if (k == 2) {
-                lines.push_back(va("in 0 0 1 %g fill 0.11 0.125 0.141 0.702", f));
-                lines.push_back(va("in 0 0 1 %g frame 1 1 1 1 0.2", f));
-                if (size >= 16) {
-                    lines.push_back(va("in %g %g %g %g picture 1 1 1 0.5 " COMP_PICTURES "skull_50.png center", dx, dy, 1.0f - dx, f - dy));
-                }
-            } else {
-                lines.push_back(va("in 0 0 1 %g fill %s", f, m_team == TEAM_AXIS ? "0.549 0.333 0.294 0.851" : "0.294 0.435 0.549 0.851"));
-                for (int l = 1; size >= 16 && icon && l <= icon->getShapes().NumObjects(); l++) {
-                    lines.push_back(va("in %g %g %g %g %s", px, py, 1.0f - px, f - py, icon->getShapes().ObjectAt(l).c_str()));
-                }
-                lines.push_back(va("in 0 0 1 %g frame %d %s", f, k ? 2 : 1, k ? "0.812 0.875 0.49 1" : "1 1 1 0.2"));
-                lines.push_back(va("in 0 %g 1 1 fill 0.988 0.988 0.988 1", bar));
-            }
-            for (str& l : lines) {
-                layers[numLayers++] = l.c_str();
-            }
-            m_cards[k] = UI_BakeShape("comp_card", layers, numLayers, (int)(size * s + 0.5f), (int)((size + 8) * s + 0.5f), s);
-        }
+        Comp_CardShaders(m_team, m_parent ? m_parent->FindWidget(m_icons[m_team == TEAM_AXIS]) : NULL, size, s, m_cards);
         m_size  = size;
         m_stamp = UI_BakeStamp();
     }
@@ -1304,16 +1328,13 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
     const float  s      = m_vVirtualScale[0];
     const float  lineH  = m_font->getHeight((const float *)NULL);
     const UColor white(0.988f, 0.988f, 0.988f, 1.0f);
-    float        pw[2], ph = 0.0f, w = 0.0f, top, x;
+    float        pw[2], phi[2], ph = 0.0f, w = 0.0f, top, x;
     int          i;
 
-    // each picture's size fitted in the box, the row's width
+    // each picture's size fitted in the box, the row's width and height
     for (i = 0; i < n; i++) {
-        int sw, sh;
-
-        Comp_PictureSize(pics[i], &sw, &sh);
-        pw[i] = floorf(Q_min(boxW / sw, boxH / sh) * sw * s + 0.5f) / s;
-        ph    = Q_max(ph, floorf(Q_min(boxW / sw, boxH / sh) * sh * s + 0.5f) / s);
+        Comp_Fit(pics[i], boxW, boxH, s, &pw[i], &phi[i]);
+        ph = Q_max(ph, phi[i]);
         w += pw[i] + (counts ? 4.0f + m_countFont->getWidth(va("%d", counts[i]), -1) : 0.0f) + (i + 1 < n ? (counts ? 8.0f : 0.0f) + 4.0f : 0.0f);
     }
     top = *bottom - ph - (hand >= 0 ? 8.0f + lineH : 0.0f);
@@ -1322,7 +1343,7 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
     for (i = 0; i < n; i++) {
         const float alpha = hand == i ? 1.0f : 0.55f;
 
-        Comp_Picture(pics[i], x, top, pw[i], ph, s, "center", qfalse, UColor(0.98f, 0.98f, 0.565f, alpha));
+        Comp_Picture(pics[i], x, top + floorf((ph - phi[i]) * 0.5f * s) / s, pw[i], phi[i], s, qfalse, UColor(0.98f, 0.98f, 0.565f, alpha));
         x += pw[i];
         if (counts) {
             x += 4.0f;
@@ -1599,10 +1620,117 @@ static void RM_Picture(void)
     Com_DPrintf("Radar: a picture %d x %d in %d ms\n", w, h, Sys_Milliseconds() - start);
 }
 
+// an objective's diamond (white for the current one), its box d pixels
+static qhandle_t Comp_ObjectiveShader(qboolean current, float k, float s, int *d)
+{
+    const char *layers[2] = {"poly 0.047 0.055 0.071 0.9 0.5 0 1 0.5 0.5 1 0 0.5",
+                             current ? "poly 1 1 1 0.95 0.5 0.12 0.88 0.5 0.5 0.88 0.12 0.5" : "poly 0.75 0.75 0.75 0.8 0.5 0.12 0.88 0.5 0.5 0.88 0.12 0.5"};
+
+    *d = (int)(((current ? 5.5f : 4.25f) + 1.75f) * k * 2.0f * s + 0.5f);
+    return UI_BakeShape("comp_obj", layers, 2, *d, *d, s);
+}
+
+// a teammate's dot, its dark edge and (on the radar, not at its edge) its
+// pointer up, in a box of 2 x 2.6 radii, d pixels
+static qhandle_t Comp_DotShader(int axis, qboolean clamped, float k, float s, int *d)
+{
+    const char *color = axis ? "0.8 0.533 0.533 1" : "0.533 0.569 0.8 1";
+    const float rad = (clamped ? 3.9f : 5.5f) * k, rim = rad + 1.25f * k, half = Q_max(2.6f * rad, rim) + 1.0f;
+    char        lines[3][96];
+    const char *layers[3] = {lines[0], lines[1], lines[2]};
+
+    Com_sprintf(lines[0], 96, clamped ? "fill 0 0 0 0" : "poly %s 0.5 %g %g %g %g %g", color, 0.5f - 2.6f * rad / half * 0.5f,
+                0.5f + 0.85f * rim / half * 0.5f, 0.5f - 0.55f * rim / half * 0.5f, 0.5f - 0.85f * rim / half * 0.5f, 0.5f - 0.55f * rim / half * 0.5f);
+    Com_sprintf(lines[1], 96, "circle 0.047 0.055 0.071 0.9 %g", rim / half);
+    Com_sprintf(lines[2], 96, "circle %s %g", color, rad / half);
+    *d = (int)(half * 2.0f * s + 0.5f);
+    return UI_BakeShape("comp_dot", layers, 3, *d, *d, s);
+}
+
+// the player's arrow, up
+static qhandle_t Comp_ArrowShader(float k, float s, int *d)
+{
+    const char *layers[2] = {"poly 0.047 0.055 0.071 0.9 0.5 0.0625 0.8125 0.8125 0.1875 0.8125", "poly 1 1 1 1 0.5 0.1875 0.7232 0.7232 0.2768 0.7232"};
+
+    *d = (int)(16.0f * 1.4f * k * s + 0.5f);
+    return UI_BakeShape("comp_arrow", layers, 2, *d, *d, s);
+}
+
+static void Comp_PreBakeWidget(UIWidget *w);
+
+/*
+================
+UI_CompHud_PreBake
+
+At a map's load and after the renderer's restart: every picture the HUD can
+draw baked now (the menus' shapes and faces, the kill feed's and the weapons'
+pictures, the cards, the radar's marks), none at its first draw
+================
+*/
+void UI_CompHud_PreBake(void)
+{
+    static const char *const menus[] = {
+        "hud_comp_topleft", "hud_comp_score",  "hud_comp_killfeed", "hud_comp_chat",   "hud_comp_strip",
+        "hud_comp_weapons", "hud_comp_damage", "hud_comp_banners",  "hud_comp_bars",   "hud_comp_killer",
+        "hud_comp_target",  "hud_comp_vote",
+    };
+    const float s = UI_DesignScale(1920.0f, 1080.0f), k = 248.0f / 220.0f;
+    const int   start = Sys_Milliseconds();
+    UIWidget   *icons[2] = {NULL, NULL};
+    qhandle_t   cards[3];
+    int         d;
+    size_t      i;
+
+    if (!UI_CompHud_Active() || !uii.IsRendererLoaded()) {
+        return;
+    }
+    for (i = 0; i < ARRAY_LEN(menus); i++) {
+        Menu *m = menuManager.FindMenu(menus[i]);
+
+        if (m && m->GetContainerWidget()) {
+            Comp_PreBakeWidget(m->GetContainerWidget());
+        }
+    }
+    for (i = 0; i < ARRAY_LEN(comp_killPics); i++) {
+        const compKillPic_t *p = &comp_killPics[i];
+        const qboolean       mirror = strcmp(p->allies, "skull_50") && strcmp(p->allies, "glove_50");
+
+        Comp_PictureShader(p->allies, (int)(p->aw * s + 0.5f), (int)(p->ah * s + 0.5f), s, mirror);
+        Comp_PictureShader(p->axis, (int)(p->xw * s + 0.5f), (int)(p->xh * s + 0.5f), s, mirror);
+    }
+    Comp_PictureShader("skull_50", (int)(18.0f * s + 0.5f), (int)(18.0f * s + 0.5f), s, qfalse);
+    Comp_PictureShader("headshot_50", (int)(18.0f * s + 0.5f), (int)(18.0f * s + 0.5f), s, qfalse);
+    for (i = 0; i < ARRAY_LEN(comp_weapons); i++) {
+        const int kind = comp_weapons[i].kind;
+        float     w, h;
+
+        Comp_Fit(comp_weapons[i].pic, kind == WK_SIDEARM ? 110.0f : kind == WK_PRIMARY ? 160.0f : 200.0f,
+                 kind == WK_SIDEARM ? 30.0f : kind == WK_PRIMARY ? 34.0f : 38.0f, s, &w, &h);
+        Comp_PictureShader(comp_weapons[i].pic, (int)(w * s + 0.5f), (int)(h * s + 0.5f), s, qfalse);
+    }
+    if (menuManager.FindMenu("hud_comp_score")) {
+        UIWidget *score = menuManager.FindMenu("hud_comp_score")->GetContainerWidget();
+
+        icons[0] = score ? score->FindWidget("iconallies") : NULL;
+        icons[1] = score ? score->FindWidget("iconaxis") : NULL;
+    }
+    Comp_CardShaders(TEAM_ALLIES, icons[0], 48, s, cards);
+    Comp_CardShaders(TEAM_AXIS, icons[1], 48, s, cards);
+    for (int axis = 0; axis < 2; axis++) {
+        Comp_DotShader(axis, qfalse, k, s, &d);
+        Comp_DotShader(axis, qtrue, k, s, &d);
+    }
+    Comp_ArrowShader(k, s, &d);
+    Comp_ObjectiveShader(qtrue, k, s, &d);
+    Comp_ObjectiveShader(qfalse, k, s, &d);
+    Com_DPrintf("Competitive HUD: baked in %d ms\n", Sys_Milliseconds() - start);
+}
+
 void UI_CompHud_MapLoaded(void)
 {
     const char *map = Info_ValueForKey(CL_ConfigString(CS_SERVERINFO), "mapname");
 
+    UI_CompHud_PreBake();
     if (!UI_CompHud_Active() || !Comp_Int("cg_hud_radar") || !strcmp(map, rm.map)) {
         return;
     }
@@ -1707,11 +1835,8 @@ void UIHudRadar::Draw(void)
             continue;
         }
         {
-            const qboolean current = i == atoi(CL_ConfigString(CS_CURRENT_OBJECTIVE));
-            const float    half    = (current ? 5.5f : 4.25f) * k;
-            const char    *layers[2] = {"poly 0.047 0.055 0.071 0.9 0.5 0 1 0.5 0.5 1 0 0.5",
-                                        current ? "poly 1 1 1 0.95 0.5 0.12 0.88 0.5 0.5 0.88 0.12 0.5" : "poly 0.75 0.75 0.75 0.8 0.5 0.12 0.88 0.5 0.5 0.88 0.12 0.5"};
-            const int      d       = (int)((half + 1.75f * k) * 2.0f * s + 0.5f);
+            int             d;
+            const qhandle_t sh = Comp_ObjectiveShader(i == atoi(CL_ConfigString(CS_CURRENT_OBJECTIVE)), k, s, &d);
 
             place(loc[0], loc[1], &x, &y);
             if (sqrtf(x * x + y * y) > r - 7.0f * k * s) {
@@ -1720,15 +1845,13 @@ void UIHudRadar::Draw(void)
                 x *= f;
                 y *= f;
             }
-            uii.Rend_DrawPicStretched(floorf(r + x - d * 0.5f), floorf(r + y - d * 0.5f), d, d, 0, 0, 1, 1, UI_BakeShape("comp_obj", layers, 2, d, d, s));
+            uii.Rend_DrawPicStretched(floorf(r + x - d * 0.5f), floorf(r + y - d * 0.5f), d, d, 0, 0, 1, 1, sh);
         }
     }
 
     // the teammates: a dot with a dark edge and a point where they look
     if (g_radarClients && g_radarClientNum >= 0) {
-        const char *color = cl.snap.ps.stats[STAT_TEAM] == TEAM_AXIS ? "0.8 0.533 0.533 1" : "0.533 0.569 0.8 1";
-        char        dotLayers[3][96];
-        const char *layers[3] = {dotLayers[0], dotLayers[1], dotLayers[2]};
+        const int axis = cl.snap.ps.stats[STAT_TEAM] == TEAM_AXIS;
 
         for (int i = 0; i < MAX_CLIENTS; i++) {
             const radarClient_t *c = &g_radarClients[i];
@@ -1746,33 +1869,23 @@ void UIHudRadar::Draw(void)
                 y *= (r - 7.0f * k * s) / dist;
             }
             {
-                // in a box of 2 x 2.6 radii: the pointer up, the edge, the dot
-                const float rad = (clamped ? 3.9f : 5.5f) * k, rim = rad + 1.25f * k, half = Q_max(2.6f * rad, rim) + 1.0f;
-                const int   d   = (int)(half * 2.0f * s + 0.5f);
-                const float yaw = RAD2DEG(atan2f(c->axis[1], c->axis[0]));
+                int             d;
+                const qhandle_t sh  = Comp_DotShader(axis, clamped, k, s, &d);
+                const float     a   = DEG2RAD(AngleSubtract(angles[YAW], RAD2DEG(atan2f(c->axis[1], c->axis[0]))));
+                const vec4_t    white = {1, 1, 1, 1};
 
-                Com_sprintf(dotLayers[0], 96, clamped ? "fill 0 0 0 0" : "poly %s 0.5 %g %g %g %g %g", color, 0.5f - 2.6f * rad / half * 0.5f,
-                            0.5f + 0.85f * rim / half * 0.5f, 0.5f - 0.55f * rim / half * 0.5f, 0.5f - 0.85f * rim / half * 0.5f, 0.5f - 0.55f * rim / half * 0.5f);
-                Com_sprintf(dotLayers[1], 96, "circle 0.047 0.055 0.071 0.9 %g", rim / half);
-                Com_sprintf(dotLayers[2], 96, "circle %s %g", color, rad / half);
-                {
-                    const vec4_t white = {1, 1, 1, 1};
-                    const float  a     = DEG2RAD(AngleSubtract(angles[YAW], yaw));
-
-                    uii.Rend_SetColor(white);
-                    uii.Rend_DrawPicStretched2(floorf(r + x - d * 0.5f), floorf(r + y - d * 0.5f), d, d, 0, 0, 1, 1, cosf(a), sinf(a),
-                                               UI_BakeShape("comp_dot", layers, 3, d, d, s));
-                }
+                uii.Rend_SetColor(white);
+                uii.Rend_DrawPicStretched2(floorf(r + x - d * 0.5f), floorf(r + y - d * 0.5f), d, d, 0, 0, 1, 1, cosf(a), sinf(a), sh);
             }
         }
     }
 
     // the player: an arrow in the middle, up
     {
-        const char *layers[2] = {"poly 0.047 0.055 0.071 0.9 0.5 0.0625 0.8125 0.8125 0.1875 0.8125", "poly 1 1 1 1 0.5 0.1875 0.7232 0.7232 0.2768 0.7232"};
-        const int   d         = (int)(16.0f * 1.4f * k * s + 0.5f);
+        int             d;
+        const qhandle_t sh = Comp_ArrowShader(k, s, &d);
 
-        uii.Rend_DrawPicStretched(floorf(r - d * 0.5f), floorf(r - d * 0.5f), d, d, 0, 0, 1, 1, UI_BakeShape("comp_arrow", layers, 2, d, d, s));
+        uii.Rend_DrawPicStretched(floorf(r - d * 0.5f), floorf(r - d * 0.5f), d, d, 0, 0, 1, 1, sh);
     }
 
     // N E S W inside the edge, turning with the view
@@ -1787,5 +1900,23 @@ void UIHudRadar::Draw(void)
 
             Comp_Text(m_font, lx - lw * 0.5f, ly, letters[i], i ? UColor(0.75f, 0.75f, 0.75f, 1.0f) : UColor(1, 1, 1, 1), getVirtualScale());
         }
+    }
+}
+
+// a menu's widgets: their shapes and faces (the widgets' own faces too)
+static void Comp_PreBakeWidget(UIWidget *w)
+{
+    w->BakeShapes();
+    if (w->getFont()) {
+        w->getFont()->getHeight((const float *)NULL);
+    }
+    if (w->isSubclassOf(UIHudFeed) && ((UIHudFeed *)w)->m_bold) {
+        ((UIHudFeed *)w)->m_bold->getHeight((const float *)NULL);
+    }
+    if (w->isSubclassOf(UIHudWeapons) && ((UIHudWeapons *)w)->m_countFont) {
+        ((UIHudWeapons *)w)->m_countFont->getHeight((const float *)NULL);
+    }
+    for (UIWidget *c = w->getFirstChild(); c; c = w->getNextChild(c)) {
+        Comp_PreBakeWidget(c);
     }
 }
