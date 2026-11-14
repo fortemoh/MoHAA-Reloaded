@@ -29,6 +29,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../qcommon/q_version.h"
 
 #include "cl_ui.h"
+#include "../uilib/uibake.h"
 #include "cl_uigamespy.h"
 
 #include <chrono>
@@ -3977,6 +3978,7 @@ void CL_FillUIImports(void)
     uii.IsRendererLoaded  = CL_IsRendererLoaded;
     uii.Rend_LoadRawImage = re.LoadRawImage;
     uii.Rend_FreeRawImage = re.FreeRawImage;
+    uii.Rend_RegisterImage2D = re.RegisterImage2D;
 
     uii.Rend_Set2DStartTime = re.Set2DInitialShaderTime;
 }
@@ -3991,6 +3993,8 @@ void CL_BeginRegistration(void)
     // init console stuff
     re.BeginRegistration(&cls.glconfig);
     uWinMan.CleanupShadersFromList();
+    // Added: the baked pictures' shaders are looked up again
+    UI_BakeForget();
 }
 
 /*

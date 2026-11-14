@@ -154,6 +154,8 @@ typedef struct glconfig_t;*/
         void (*Rend_FreeRawImage)(byte *pic);
 
         void (*Rend_Set2DStartTime)(float startTime);
+        // Added: an image made in memory (uibake.cpp)
+        qhandle_t (*Rend_RegisterImage2D)(const char *name, byte *rgba, int width, int height);
     } uiimport_t;
 
 #if 1

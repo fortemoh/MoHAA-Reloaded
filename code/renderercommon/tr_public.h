@@ -28,7 +28,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 extern "C" {
 #endif
 
-#define	REF_API_VERSION		16	// 15: DrawBoxes, 16: FrameToken, PresentGate
+#define	REF_API_VERSION		17	// 15: DrawBoxes, 16: FrameToken, PresentGate, 17: RegisterImage2D
 
 typedef struct dtiki_s dtiki_t;
 typedef struct skelAnimFrame_s skelAnimFrame_t;
@@ -183,6 +183,10 @@ typedef struct {
 
     // DrawBox for count boxes (x, y, width, height) in one draw, in the color given (the crosshair)
     void (*DrawBoxes)(const float (*boxes)[4], int count, const float *color);
+
+    // an RGBA image made in memory under a name (made again: its texels replaced),
+    // kept until the renderer restarts; returns its 2D shader
+    qhandle_t (*RegisterImage2D)(const char *name, byte *rgba, int width, int height);
 } refexport_t;
 
 //

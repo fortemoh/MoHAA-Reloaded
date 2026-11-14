@@ -174,6 +174,20 @@ protected:
     //
     float lastShowTime;
 
+    //
+    // Added: a design-size menu's widgets (virtualres 1 W H) and baked shapes
+    //
+    vec2_t         m_designSize; // 0 0: none
+    UIRect2D       m_designRect; // the rect as the URC gave it
+    bool           m_designSet;
+    Container<str> m_shapes;     // the "shape" lines, a $cvar in one its value
+    str            m_rotateCvar; // the shapes turned by its degrees, clockwise
+    str            m_alphaCvar;  // the widget faded by its value
+    str            m_shapeText;  // the lines as last baked
+    int            m_shapeStamp;
+    int            m_shapeW, m_shapeH;
+    qhandle_t      m_shapeHandle;
+
 public:
     CLASS_PROTOTYPE(UIWidget);
 
@@ -251,6 +265,12 @@ public:
     void LayoutAliasCache(Event *ev);
     void SetEnabledCvar(Event *ev);
     void SetScaleCvar(Event *ev);
+    // Added
+    void LayoutShape(Event *ev);
+    void LayoutRotateCvar(Event *ev);
+    void LayoutAlphaCvar(Event *ev);
+    bool DesignFrame(void);
+    void DrawShapes(void);
 
     // Added in 2.0
     //====

@@ -2253,6 +2253,7 @@ refexport_t *GetRefAPI ( int apiVersion, refimport_t *rimp ) {
     re.FreeRawImage = R_FreeRawImage;
 
 	re.Set2DInitialShaderTime = Set2DInitialShaderTime;
+	re.RegisterImage2D = RE_RegisterImage2D;
 
 	return VK_FrameLogExports( &re );
 }

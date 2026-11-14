@@ -133,10 +133,17 @@ add_custom_command(TARGET ${CLIENT_BINARY} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         ${CMAKE_SOURCE_DIR}/code/thirdparty/OMAHA-SOUND-LICENSES.txt
         $<TARGET_FILE_DIR:${CLIENT_BINARY}>/OMAHA-SOUND-LICENSES.txt
-    COMMENT "Copy sound assets and license notices"
+    # the Competitive HUD's menus, faces and pictures (cg_hudstyle 1)
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/assets/main/ui
+        $<TARGET_FILE_DIR:${CLIENT_BINARY}>/main/ui
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/assets/main/fonts
+        $<TARGET_FILE_DIR:${CLIENT_BINARY}>/main/fonts
+    COMMENT "Copy sound and HUD assets and license notices"
 )
 
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/main/sound
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/main/sound ${CMAKE_SOURCE_DIR}/assets/main/ui ${CMAKE_SOURCE_DIR}/assets/main/fonts
     DESTINATION ${INSTALL_BINDIR_FULL}/main)
 install(FILES ${CMAKE_SOURCE_DIR}/code/thirdparty/OMAHA-SOUND-LICENSES.txt
     DESTINATION ${INSTALL_BINDIR_FULL})

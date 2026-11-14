@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include "ui_local.h"
+#include "uibake.h"
 
 qboolean UI_FontDBCSIsLeadByte(fontheader_t *font, unsigned short uch);
 int      UI_FontCodeSearch(const fontheader_t *font, unsigned short uch);
@@ -303,7 +304,11 @@ void UIFont::setAlpha(float alpha)
 
 void UIFont::setFont(const char *fontname)
 {
-    m_font = uii.Rend_LoadFont(fontname);
+    // Added: a TrueType face baked at the size drawn (uibake.cpp), else a RitualFont
+    m_font = UI_BakeFont(fontname);
+    if (!m_font) {
+        m_font = uii.Rend_LoadFont(fontname);
+    }
     if (!m_font) {
         uii.Sys_Error(ERR_DROP, "Couldn't load font %s\n", fontname);
     }

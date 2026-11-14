@@ -2009,6 +2009,8 @@ image_t* R_CreateImageOld(
 );
 
 qboolean R_ImageExists(const char* name);
+qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height);
+qboolean R_ShaderTextExists(const char *name);
 int R_CountTextureMemory();
 qboolean R_LoadRawImage(const char *name, byte **pic, int *width, int *height);
 void R_FreeRawImage(byte *pic);

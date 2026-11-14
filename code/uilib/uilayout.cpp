@@ -161,6 +161,11 @@ void UILayout::ProcessCommands(bool bFullLoad)
                     if (m_currentcontainer->m_bVirtual) {
                         ev = new Event(EV_Layout_VirtualRes);
                         ev->AddInteger(1);
+                        // Added: the menu's design size
+                        if (m_currentcontainer->m_designSize[0] > 0) {
+                            ev->AddFloat(m_currentcontainer->m_designSize[0]);
+                            ev->AddFloat(m_currentcontainer->m_designSize[1]);
+                        }
                         widget->ProcessEvent(ev);
                     }
 

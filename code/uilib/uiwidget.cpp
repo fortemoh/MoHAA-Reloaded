@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "ui_local.h"
 #include "../qcommon/localization.h"
+#include "uibake.h"
 
 Event W_Destroyed
 (
@@ -288,9 +289,10 @@ Event EV_Layout_VirtualRes
 (
     "virtualres",
     EV_DEFAULT,
-    "i",
-    "usevirtualres",
+    "iFF",
+    "usevirtualres design_width design_height",
     "Set the widget to be modified horizontally or vertically across the screen to account for resolutions != 640x480"
+    " (Added: with a design's size, scaled alike both ways to fit the screen, on whole pixels)"
 );
 
 Event EV_Layout_InitData
@@ -428,6 +430,34 @@ Event EV_Layout_DontLocalize
     "Disables localization for this widget"
 );
 
+// Added
+Event EV_Layout_Shape
+(
+    "shape",
+    EV_DEFAULT,
+    "sSSSSSSSSSSSSSSS",
+    "kind color ...",
+    "Adds a layer to the shape baked at the widget's size (uibake.cpp, Bake_Layer); $name: cvar name's value"
+);
+
+Event EV_Layout_RotateCvar
+(
+    "rotatecvar",
+    EV_DEFAULT,
+    "s",
+    "cvar_name",
+    "Turns the widget's shape by the cvar's degrees, clockwise"
+);
+
+Event EV_Layout_AlphaCvar
+(
+    "alphacvar",
+    EV_DEFAULT,
+    "s",
+    "cvar_name",
+    "Fades the widget by the cvar's value (0 to 1)"
+);
+
 // Added in 2.0
 Event EV_Layout_FadeSequence
 (
@@ -509,6 +539,11 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
 
     {&EV_Layout_DontLocalize,       &UIWidget::SetDontLocalize         },
     {&EV_Layout_FadeSequence,       &UIWidget::EventFadeSequence       },
+
+    // Added
+    {&EV_Layout_Shape,              &UIWidget::LayoutShape             },
+    {&EV_Layout_RotateCvar,         &UIWidget::LayoutRotateCvar        },
+    {&EV_Layout_AlphaCvar,          &UIWidget::LayoutAlphaCvar         },
 
     {NULL,                          NULL                               }
 };
@@ -661,6 +696,12 @@ str UIReggedMaterial::GetName(void)
 UIWidget::UIWidget()
 {
     VectorSet2D(m_vVirtualScale, 1, 1);
+    VectorSet2D(m_designSize, 0, 0);
+    m_designSet   = false;
+    m_shapeStamp  = -1;
+    m_shapeW      = 0;
+    m_shapeH      = 0;
+    m_shapeHandle = 0;
     m_parent = NULL;
     m_background_color.set(0.075f, 0.097f, 0.139f, 1.0f);
     m_foreground_color         = UColor(UHudColor);
@@ -1056,7 +1097,9 @@ void UIWidget::Motion(void)
 
 void UIWidget::AlignPosition(void)
 {
-    if (m_bVirtual) {
+    if (DesignFrame()) {
+        // Added: a design-size menu's
+    } else if (m_bVirtual) {
         vec2_t vNewVirtualScale;
 
         SetVirtualScale(vNewVirtualScale);
@@ -1359,6 +1402,136 @@ void UIWidget::LayoutVirtualRes(Event *ev)
 {
     if (ev->GetInteger(1)) {
         m_bVirtual = true;
+        // Added: a design's size
+        if (ev->NumArgs() >= 3) {
+            m_designSize[0] = ev->GetFloat(2);
+            m_designSize[1] = ev->GetFloat(3);
+        }
+    }
+}
+
+/*
+================
+DesignFrame
+
+Added: a widget of a design-size menu (virtualres 1 W H): its frame the
+URC's rect times the scale the design fits the screen with, on whole pixels
+================
+*/
+bool UIWidget::DesignFrame(void)
+{
+    float s;
+
+    if (m_designSize[0] <= 0 || m_designSize[1] <= 0) {
+        return false;
+    }
+    if (!m_designSet) {
+        m_designRect = UIRect2D(
+            m_frame.pos.x / m_vVirtualScale[0],
+            m_frame.pos.y / m_vVirtualScale[1],
+            m_frame.size.width / m_vVirtualScale[0],
+            m_frame.size.height / m_vVirtualScale[1]
+        );
+        m_designSet = true;
+    }
+    s = UI_DesignScale(m_designSize[0], m_designSize[1]);
+    VectorSet2D(m_vVirtualScale, s, s);
+    m_frame.pos.x       = floorf(m_designRect.pos.x * s + 0.5f);
+    m_frame.pos.y       = floorf(m_designRect.pos.y * s + 0.5f);
+    m_frame.size.width  = floorf((m_designRect.pos.x + m_designRect.size.width) * s + 0.5f) - m_frame.pos.x;
+    m_frame.size.height = floorf((m_designRect.pos.y + m_designRect.size.height) * s + 0.5f) - m_frame.pos.y;
+    return true;
+}
+
+void UIWidget::LayoutShape(Event *ev)
+{
+    str line;
+
+    for (int i = 1; i <= ev->NumArgs(); i++) {
+        str token = ev->GetString(i);
+
+        if (i > 1) {
+            line += " ";
+        }
+        // (a string with spaces keeps its quotes)
+        if (strchr(token.c_str(), ' ')) {
+            line += "\"" + token + "\"";
+        } else {
+            line += token;
+        }
+    }
+    m_shapes.AddObject(line);
+    m_shapeStamp = -1;
+}
+
+void UIWidget::LayoutRotateCvar(Event *ev)
+{
+    m_rotateCvar = ev->GetString(1);
+}
+
+void UIWidget::LayoutAlphaCvar(Event *ev)
+{
+    m_alphaCvar = ev->GetString(1);
+}
+
+/*
+================
+DrawShapes
+
+Added: the shape's layers baked at the widget's size (made again when a
+$cvar in them changes, as a new picture), drawn, turned by rotatecvar
+================
+*/
+void UIWidget::DrawShapes(void)
+{
+    const int   w = (int)(m_frame.size.width + 0.5f), h = (int)(m_frame.size.height + 0.5f);
+    const char *layers[32];
+    str         text, resolved[32];
+    int         i, n = Q_min(m_shapes.NumObjects(), 32);
+
+    for (i = 0; i < n; i++) {
+        const char *p = m_shapes.ObjectAt(i + 1).c_str();
+
+        // $name: the cvar's value
+        while (*p) {
+            if (*p == '$') {
+                char name[MAX_QPATH];
+                int  k = 0;
+
+                for (p++; (isalnum((byte)*p) || *p == '_') && k < MAX_QPATH - 1; p++) {
+                    name[k++] = *p;
+                }
+                name[k] = 0;
+                resolved[i] += uii.Cvar_GetString(name, "");
+            } else {
+                resolved[i] += *p++;
+            }
+        }
+        layers[i] = resolved[i].c_str();
+        text += resolved[i];
+        text += "\n";
+    }
+    if (m_shapeStamp != UI_BakeStamp() || w != m_shapeW || h != m_shapeH || text != m_shapeText) {
+        m_shapeHandle = UI_BakeShape(va("%p", this), layers, n, w, h, m_vVirtualScale[0]);
+        m_shapeStamp  = UI_BakeStamp();
+        m_shapeW      = w;
+        m_shapeH      = h;
+        m_shapeText   = text;
+    }
+    if (!m_shapeHandle) {
+        return;
+    }
+    {
+        const vec4_t color = {1.0f, 1.0f, 1.0f, m_local_alpha};
+
+        uii.Rend_SetColor(color);
+    }
+    if (m_rotateCvar.length()) {
+        const float a = DEG2RAD(UI_GetCvarFloat(m_rotateCvar.c_str(), 0.0f));
+
+        uii.Rend_DrawPicStretched2(0, 0, w, h, 0, 0, 1, 1, cosf(a), sinf(a), m_shapeHandle);
+    } else {
+        uii.Rend_DrawPicStretched(0, 0, w, h, 0, 0, 1, 1, m_shapeHandle);
     }
 }
 
@@ -1931,6 +2104,13 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
     }
 
     m_local_alpha = m_alpha * parent_alpha;
+    // Added: faded by a cvar, not drawn when clear
+    if (m_alphaCvar.length()) {
+        m_local_alpha *= Q_clamp_float(UI_GetCvarFloat(m_alphaCvar.c_str(), 0.0f), 0.0f, 1.0f);
+        if (m_local_alpha <= 0.0f) {
+            return;
+        }
+    }
     set2D();
 
     if (m_font) {
@@ -1996,6 +2176,11 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
         uii.Rend_DrawPicStretched(
             0, 0, m_frame.size.width, m_frame.size.height, 0, 0, 1, 1, m_hovermaterial->GetMaterial()
         );
+    }
+
+    // Added: its shape
+    if (m_shapes.NumObjects()) {
+        DrawShapes();
     }
 
     Draw();
@@ -2148,7 +2333,10 @@ void UIWidget::Realign(void)
 {
     bool bScaled = false;
 
-    if (m_bVirtual) {
+    if (DesignFrame()) {
+        // Added: a design-size menu's
+        bScaled = true;
+    } else if (m_bVirtual) {
         vec2_t vNewVirtualScale;
 
         SetVirtualScale(vNewVirtualScale);
@@ -2435,7 +2623,10 @@ void UIWidget::SetScaleCvar(Event *ev)
 
 void UIWidget::SetVirtualScale(vec2_t out)
 {
-    if (m_scaleCvar) {
+    if (m_designSize[0] > 0 && m_designSize[1] > 0) {
+        // Added: a design's size, alike both ways
+        out[0] = out[1] = UI_DesignScale(m_designSize[0], m_designSize[1]);
+    } else if (m_scaleCvar) {
         const float vidRatio  = (float)uid.vidWidth / (float)uid.vidHeight;
         const float minHeight = 480;
         const float minWidth  = minHeight * vidRatio;
@@ -2488,7 +2679,9 @@ UIWidgetContainer::UIWidgetContainer()
 
 void UIWidgetContainer::AlignPosition(void)
 {
-    if (m_bVirtual) {
+    if (DesignFrame()) {
+        // Added: a design-size menu
+    } else if (m_bVirtual) {
         vec2_t vNewVirtualScale;
 
         SetVirtualScale(vNewVirtualScale);
@@ -2506,8 +2699,8 @@ void UIWidgetContainer::AlignPosition(void)
     } else if (m_align & WA_RIGHT) {
         m_frame.pos.x = uid.vidWidth - m_frame.size.width;
     } else {
-        // default to center
-        m_frame.pos.x = (uid.vidWidth - m_frame.size.width) * 0.5;
+        // default to center (Added: on a whole pixel)
+        m_frame.pos.x = floorf((uid.vidWidth - m_frame.size.width) * 0.5f);
     }
 
     if (m_align & WA_BOTTOM) {
@@ -2515,8 +2708,8 @@ void UIWidgetContainer::AlignPosition(void)
     } else if (m_align & WA_TOP) {
         m_frame.pos.y = 0;
     } else {
-        // default to center
-        m_frame.pos.y = (uid.vidHeight - m_frame.size.height) * 0.5;
+        // default to center (Added: on a whole pixel)
+        m_frame.pos.y = floorf((uid.vidHeight - m_frame.size.height) * 0.5f);
     }
 
     setFrame(m_frame);

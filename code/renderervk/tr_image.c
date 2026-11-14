@@ -2452,6 +2452,10 @@ static void R_LoadImage(const char* name, byte** pic, int* width, int* height, q
 			LoadJPG(name, pic, width, height);
 			*piMipmapsAvailable = 1;
         }
+		else if (!Q_stricmp(name + len - 4, ".png")) {
+			R_LoadPNG(name, pic, width, height);
+			*piMipmapsAvailable = 1;
+		}
 		else if (!Q_stricmp(name + len - 4, ".gst")) {
 			LoadGHOST(name, pic, width, height);
 			*piMipmapsAvailable = 0;
@@ -3242,6 +3246,50 @@ void	R_SkinList_f( void ) {
 		}
 	}
 	ri.Printf (PRINT_ALL, "------------------\n");
+}
+
+/*
+===============
+RE_RegisterImage2D
+
+An image made in memory (RGBA, the texels may be changed) under a name, for
+the UI's baked text faces, shapes and pictures. Made again under the same
+name, its texels and size are replaced. No map load frees it; its 2D shader
+is found by its name as a file's would be
+===============
+*/
+qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height)
+{
+	char	fileName[MAX_QPATH];
+	image_t	*image;
+
+	if (!name || !name[0] || width <= 0 || height <= 0) {
+		return 0;
+	}
+	// the queued draws and the open 2D batch with the texels they were made with
+	R_IssuePendingRenderCommands();
+	R_FrontEndSync();
+	R_End2DBatch();
+
+	Q_strncpyz(fileName, name, sizeof(fileName));
+	COM_DefaultExtension(fileName, sizeof(fileName), ".tga");
+	for (image = hashTable[generateHashValue(fileName)]; image; image = image->next) {
+		if (!strcmp(fileName, image->imgName)) {
+			break;
+		}
+	}
+	if (image) {
+		if (width != image->uploadWidth || height != image->uploadHeight) {
+			image->width = image->uploadWidth = width;
+			image->height = image->uploadHeight = height;
+			vk_create_texture(image, width, height, 1, TEXFMT_RGBA8);
+		}
+		vk_upload_texture(image, 0, 0, 0, width, height, rgba);
+	} else {
+		image = R_CreateImageOld(fileName, rgba, width, height, 0, 0, qfalse, qtrue, qtrue, 0, WRAP_CLAMP, WRAP_CLAMP);
+	}
+	image->r_sequence = -1;
+	return RE_RegisterShaderNoMip(name);
 }
 
 /*
