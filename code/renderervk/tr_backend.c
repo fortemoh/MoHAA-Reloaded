@@ -55,7 +55,8 @@ void R_Bind( image_t *image ) {
 		ri.Printf( PRINT_WARNING, "R_Bind: NULL image\n" );
 		bound = tr.defaultImage;
 	} else {
-		bound = image;
+		// an image in a 2D atlas page is drawn from the page
+		bound = image->atlas ? image->atlas : image;
 		image->UseCount++;
 	}
 

@@ -1465,6 +1465,7 @@ typedef struct {
 	image_t					*identityLightImage;	// full of tr.identityLightByte
 
 	shader_t				*defaultShader;
+	shader_t				*white2D;		// the 2D atlas's white texel (R_White2D)
 	shader_t				*shadowShader;
 	shader_t				*projectionShadowShader;
 
@@ -1957,16 +1958,15 @@ void RE_Scissor(int x, int y, int width, int height);
 void DrawLineLoop(const vec2_t* points, int count, int stipple_factor, int stipple_mask);
 
 // 2D batches (tr_draw.c)
-typedef enum {
-	R2D_STREAM,		// RB_Vertex2f and friends: vertex colors from the 2D color
-	R2D_GLYPHS		// R_DrawString_sgl: no vertex colors
-} r2dSource_t;
-
 extern cvar_t *r_batch2D;	// 1: 2D draws of one shader in one surface, 2: transparent boxes left out
 extern cvar_t *r_sortPipelines;	// 1: opaque shaders ordered by the pipelines their draws bind
 
 void R_IssuePending2DCommands( void );
-void R_Begin2D( shader_t *shader, r2dSource_t source, int numVertexes, int numIndexes );
+void R_Begin2D( shader_t *shader, int numVertexes, int numIndexes );
+void R_2DReserve( int numVertexes, int numIndexes );
+void R_2DTransform( float *x, float *y );
+void R_2DScissor( qboolean clip );
+shader_t *R_White2D( void );	// the atlas's white texel (tr_image.c)
 void R_End2D( void );
 void R_End2DBatch( void );
 void R_Forget2DBatch( void );
@@ -2011,6 +2011,7 @@ image_t* R_CreateImageOld(
 
 qboolean R_ImageExists(const char* name);
 qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height);
+void R_AtlasShutdown( void );
 qboolean R_ShaderTextExists(const char *name);
 int R_CountTextureMemory();
 qboolean R_LoadRawImage(const char *name, byte **pic, int *width, int *height);
@@ -2148,6 +2149,7 @@ typedef struct shaderCommands_s
 	shaderStage_t	**xstages;
     qboolean no_global_fog;
     qboolean vertexColorValid;
+    qboolean colors2D;		// the 2D color is in the vertexes: a global color's stage reads it there (tr_draw.c)
 
 	// a batch drawn from the static geometry (tr_staticgeom.c,
 	// STATIC_BATCH_ON) doesn't fill the vertex arrays above: numVertexes

@@ -74,6 +74,12 @@ typedef struct image_s {
     int			wrapClampModeY;
 	int			r_sequence;
 	int			UseCount;
+
+	// Added: an image in a 2D atlas page (renderervk, RegisterImage2D): the
+	// page bound for it, its room there (x y w h, texels), its place (s t w h)
+	struct image_s	*atlas;
+	int			atlasRoom[4];
+	float		atlasRect[4];
 } image_t;
 
 // any change in the LIGHTMAP_* defines here MUST be reflected in

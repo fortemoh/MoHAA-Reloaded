@@ -213,6 +213,7 @@ void RB_BeginSurface( shader_t *shader ) {
 	tess.lightmapDlights = 0;
 	tess.lightmapDlightFaces = qfalse;
 	tess.vertexColorValid = r_vertexLight->integer != 0;
+	tess.colors2D = qfalse;
 	tess.xstages = shader->unfoggedStages;
 	tess.numPasses = shader->numUnfoggedPasses;
 	tess.currentStageIteratorFunc = shader->optimalStageIteratorFunc;
@@ -748,6 +749,10 @@ static void ComputeColors( shaderStage_t *pStage )
 			RB_CalcColorFromConstant((unsigned char*)tess.svars.colors, pStage->colorConst);
 			break;
 		case CGEN_GLOBAL_COLOR:
+			if (tess.colors2D) {
+				Com_Memcpy(tess.svars.colors, tess.vertexColors, tess.numVertexes * sizeof(tess.vertexColors[0]));
+				break;
+			}
 			RB_CalcColorFromConstant((unsigned char*)tess.svars.colors, backEnd.color2D);
 			break;
 		case CGEN_SCOORD:
@@ -867,6 +872,12 @@ static void ComputeColors( shaderStage_t *pStage )
 		RB_CalcAlphaFromConstant((unsigned char*)tess.svars.colors, pStage->colorConst[3]);
 		break;
 	case AGEN_GLOBAL_ALPHA:
+		if (tess.colors2D) {
+			for (i = 0; i < tess.numVertexes; i++) {
+				tess.svars.colors[i][3] = tess.vertexColors[i][3];
+			}
+			break;
+		}
 		RB_CalcAlphaFromConstant((unsigned char*)tess.svars.colors, backEnd.color2D[3]);
 		break;
 	case AGEN_SKYALPHA:

@@ -591,7 +591,7 @@ void R_DrawString_sgl(fontheader_sgl_t* font, const char* text, float x, float y
     }
 
     charHeight = s_fontHeightScale * font->height * s_fontGeneralScale;
-    R_Begin2D((shader_t*)font->shader, R2D_GLYPHS, 0, 0);
+    R_Begin2D((shader_t*)font->shader, 0, 0);
 
     for (i = 0; text[i]; i++) {
         unsigned char c;
@@ -639,7 +639,7 @@ void R_DrawString_sgl(fontheader_sgl_t* font, const char* text, float x, float y
 				font->indirection[c] = indirected;
             }
 
-            RB_CHECKOVERFLOW(4, 6);
+            R_2DReserve(4, 6);
 
             loc = &font->locations[indirected];
 
@@ -666,6 +666,11 @@ void R_DrawString_sgl(fontheader_sgl_t* font, const char* text, float x, float y
             tess.xyz[tess.numVertexes + 3][0] = x + s_fontGeneralScale * loc->size[0] * 256.0;
             tess.xyz[tess.numVertexes + 3][1] = y + charHeight;
             tess.xyz[tess.numVertexes + 3][2] = s_fontZ;
+
+            // the 2D color (a global color's stage reads it there)
+            for (v = 0; v < 4; v++) {
+                Com_Memcpy(tess.vertexColors[tess.numVertexes + v], backEnd.color2D, 4);
+            }
 
             // indices
             tess.indexes[tess.numIndexes] = tess.numVertexes;
