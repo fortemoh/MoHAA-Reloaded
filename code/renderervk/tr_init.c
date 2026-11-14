@@ -2259,6 +2259,7 @@ refexport_t *GetRefAPI ( int apiVersion, refimport_t *rimp ) {
 	re.End2DList = RE_End2DList;
 	re.Draw2DList = RE_Draw2DList;
 	re.Free2DList = RE_Free2DList;
+	re.DrawPolygon2D = DrawPolygon2D;
 
 	return VK_FrameLogExports( &re );
 }

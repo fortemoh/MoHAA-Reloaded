@@ -2906,11 +2906,11 @@ R_DeleteTextures
 void R_DeleteTextures( void ) {
 	int		i;
 
+	R_AtlasShutdown();
 	for ( i=0; i<tr.numImages ; i++ ) {
         R_FreeImage(&tr.images[i]);
 	}
 	Com_Memset( tr.images, 0, sizeof( tr.images ) );
-	R_AtlasShutdown();
 
 	tr.numImages = 0;
 
@@ -3398,6 +3398,25 @@ static void R_AtlasFill( image_t *image, const byte *rgba ) {
 	}
 	vk_upload_texture( atlas.page, 0, x0, y0, w + 2, h + 2, room );
 	ri.Hunk_FreeTempMemory( room );
+
+	// the tiles holding anything (tr_draw.c, R_2DTiles)
+	if ( image->atlasTiles ) {
+		ri.Free( image->atlasTiles );
+		image->atlasTiles = NULL;
+	}
+	if ( w >= 48 && h >= 48 ) {
+		const int tw = ( w + 15 ) / 16, th = ( h + 15 ) / 16;
+
+		image->atlasTiles = ri.Malloc( tw * th );
+		Com_Memset( image->atlasTiles, 0, tw * th );
+		for ( y = 0; y < h; y++ ) {
+			for ( x = 0; x < w; x++ ) {
+				if ( rgba[( y * w + x ) * 4 + 3] ) {
+					image->atlasTiles[( y / 16 ) * tw + x / 16] = 1;
+				}
+			}
+		}
+	}
 }
 
 // a room for a w x h image in the page, grown as needed
@@ -3425,6 +3444,14 @@ static qboolean R_AtlasRoom( image_t *image, int w, int h ) {
 }
 
 void R_AtlasShutdown( void ) {
+	int i;
+
+	for ( i = 0; i < tr.numImages; i++ ) {
+		if ( tr.images[i].atlasTiles ) {
+			ri.Free( tr.images[i].atlasTiles );
+			tr.images[i].atlasTiles = NULL;
+		}
+	}
 	if ( atlas.texels ) {
 		ri.Free( atlas.texels );
 	}
@@ -3481,6 +3508,10 @@ qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height
 		return RE_RegisterShaderNoMip(name);
 	}
 	image->atlas = NULL;
+	if ( image->atlasTiles ) {
+		ri.Free( image->atlasTiles );
+		image->atlasTiles = NULL;
+	}
 	if (width != image->uploadWidth || height != image->uploadHeight || image->internalFormat != TEXFMT_RGBA8) {
 		image->width = image->uploadWidth = width;
 		image->height = image->uploadHeight = height;

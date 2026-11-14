@@ -1946,6 +1946,7 @@ void Draw_StretchPic2(float x, float y, float w, float h, float s1, float t1, fl
 void Draw_TilePic(float x, float y, float w, float h, qhandle_t hShader);
 void Draw_TilePicOffset(float x, float y, float w, float h, qhandle_t hShader, int offsetX, int offsetY);
 void Draw_TrianglePic(const vec2_t vPoints[3], const vec2_t vTexCoords[3], qhandle_t hShader);
+void DrawPolygon2D(const float (*points)[4], int count, qhandle_t hShader);
 void DrawBox(float x, float y, float w, float h);
 void AddBox(float x, float y, float w, float h);
 void DrawBoxes(const float (*boxes)[4], int count, const float *color);
@@ -2876,6 +2877,12 @@ typedef struct {
 	const struct r2dList_s	*list;
 } list2DCommand_t;
 
+typedef struct {
+	int			commandId;
+	int			count;			// float points[count][4] follow
+	qhandle_t	hShader;
+} polygon2DCommand_t;
+
 // r_smp: a terrain pool slot the front end's tessellation changed, for the
 // render thread's copy of the pool (tr_terrain.c, vk_sync_terrain_pool_smp)
 typedef struct terrainSlotChange_s {
@@ -2953,6 +2960,7 @@ typedef enum {
 	RC_2D_SCISSOR,
 	RC_2D_SHADER_TIME,
 	RC_2D_LIST,
+	RC_2D_POLYGON,
 	RC_SET_RENDER_TIME
 } renderCommand_t;
 

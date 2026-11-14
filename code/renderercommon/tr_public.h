@@ -28,7 +28,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 extern "C" {
 #endif
 
-#define	REF_API_VERSION		18	// 15: DrawBoxes, 16: FrameToken, PresentGate, 17: RegisterImage2D, 18: 2D lists
+#define	REF_API_VERSION		19	// 15: DrawBoxes, 16: FrameToken, PresentGate, 17: RegisterImage2D, 18: 2D lists, 19: DrawPolygon2D
 
 typedef struct dtiki_s dtiki_t;
 typedef struct skelAnimFrame_s skelAnimFrame_t;
@@ -195,6 +195,9 @@ typedef struct {
     void (*End2DList)(void);
     void (*Draw2DList)(int handle);
     void (*Free2DList)(int handle);
+
+    // a convex polygon of count points (x, y, s, t each), a fan, in one draw
+    void (*DrawPolygon2D)(const float (*points)[4], int count, qhandle_t shader);
 } refexport_t;
 
 //

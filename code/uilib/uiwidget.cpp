@@ -2347,8 +2347,12 @@ int UIWidget::DrawState(void)
     }
     st.material = m_material;
     st.key      = DrawKey();
-    for (size_t i = 0; i < sizeof(st); i++) {
-        h = (h ^ ((const byte *)&st)[i]) * 16777619;
+    // (a word at a time)
+    for (size_t i = 0; i + 4 <= sizeof(st); i += 4) {
+        int w;
+
+        memcpy(&w, (const byte *)&st + i, 4);
+        h = (h ^ w) * 16777619;
     }
     return h;
 }

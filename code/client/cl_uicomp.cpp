@@ -2011,33 +2011,31 @@ void UIHudRadar::Draw(void)
             rm.focusZ = eye[2] - 64.0f;
             RM_Picture();
         }
-        // a fan of the circle's points, their texels the world's under them
+        // the circle's points, their texels the world's under them
         {
-            static float circle[49][2];
+            static float circle[48][2];
             const float  tw = rm.cw * RM_CELL, th = rm.ch * RM_CELL;
             const vec4_t white = {1, 1, 1, 1};
-            vec2_t       pts[3], st[3];
+            float        pts[48][4];
 
             if (!circle[0][0]) {
-                for (int i = 0; i <= 48; i++) {
+                for (int i = 0; i < 48; i++) {
                     circle[i][0] = cosf(i * 2.0f * M_PI / 48.0f);
                     circle[i][1] = sinf(i * 2.0f * M_PI / 48.0f);
                 }
             }
-            uii.Rend_SetColor(white);
             for (int i = 0; i < 48; i++) {
-                for (int v = 0; v < 3; v++) {
-                    const float px = v ? circle[i + (v == 2)][0] * r : 0.0f, py = v ? circle[i + (v == 2)][1] * r : 0.0f;
-                    // the screen offset back to the world
-                    const float wx = eye[0] + (px * sn - py * cn) * upp, wy = eye[1] + (-px * cn - py * sn) * upp;
+                const float px = circle[i][0] * r, py = circle[i][1] * r;
+                // the screen offset back to the world
+                const float wx = eye[0] + (px * sn - py * cn) * upp, wy = eye[1] + (-px * cn - py * sn) * upp;
 
-                    pts[v][0] = r + px;
-                    pts[v][1] = r + py;
-                    st[v][0]  = (wx - rm.x0) / tw;
-                    st[v][1]  = 1.0f - (wy - rm.y0) / th;
-                }
-                re.DrawTrianglePic(pts, st, rm.shader);
+                pts[i][0] = r + px;
+                pts[i][1] = r + py;
+                pts[i][2] = (wx - rm.x0) / tw;
+                pts[i][3] = 1.0f - (wy - rm.y0) / th;
             }
+            uii.Rend_SetColor(white);
+            re.DrawPolygon2D(pts, 48, rm.shader);
         }
     }
     (void)place;
