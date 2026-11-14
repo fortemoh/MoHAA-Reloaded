@@ -3363,6 +3363,8 @@ static void R_AtlasResize( int side ) {
 
 		atlas.page = R_CreateImageOld( "*atlas2D", clear, 1, 1, 0, 0, qfalse, qtrue, qtrue, 0, WRAP_CLAMP, WRAP_CLAMP );
 		atlas.page->r_sequence = -1;
+		// (its clear and uniform areas compressed: most of what the 2D draws read)
+		atlas.page->flags |= IMGFLAG_COLORTARGET;
 		atlas.nodes[0][0] = atlas.nodes[0][1] = 0;
 		atlas.nodes[0][2] = side;
 		atlas.numNodes = 1;
@@ -3564,6 +3566,7 @@ qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height
 		image->height = image->uploadHeight = height;
 		image->numMipmaps = 0;
 		image->internalFormat = TEXFMT_RGBA8;
+		image->flags |= IMGFLAG_COLORTARGET;
 		vk_create_texture(image, width, height, 1, TEXFMT_RGBA8);
 	}
 	vk_upload_texture(image, 0, 0, 0, width, height, rgba);

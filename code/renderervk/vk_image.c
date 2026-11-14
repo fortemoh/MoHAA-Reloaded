@@ -540,7 +540,7 @@ static void VK_TransitionToTransfer( VkCommandBuffer cmd, vkTexture_t *texture, 
 		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT );
 }
 
-static vkTexture_t *VK_CreateTextureStorage( int width, int height, int mipLevels, texFormat_t texFormat, int wrapX, int wrapY ) {
+static vkTexture_t *VK_CreateTextureStorage( int width, int height, int mipLevels, texFormat_t texFormat, int wrapX, int wrapY, qboolean colorTarget ) {
 	VkImageCreateInfo imageInfo;
 	VkImageViewCreateInfo viewInfo;
 	vkTexture_t *texture;
@@ -576,6 +576,10 @@ static vkTexture_t *VK_CreateTextureStorage( int width, int height, int mipLevel
 	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 	imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	if ( colorTarget && !texture->compressed ) {
+		// IMGFLAG_COLORTARGET: never drawn to, but kept compressed
+		imageInfo.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	}
 	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	VK_CHECK( qvkCreateImage( vk.device, &imageInfo, NULL, &texture->image ) );
@@ -1056,7 +1060,8 @@ void vk_create_texture( image_t *image, int width, int height, int mipLevels, te
 		format = TEXFMT_RGBA8;
 	}
 
-	vk_slots[slot].texture = VK_CreateTextureStorage( width, height, mipLevels, format, image->wrapClampModeX, image->wrapClampModeY );
+	vk_slots[slot].texture = VK_CreateTextureStorage( width, height, mipLevels, format, image->wrapClampModeX, image->wrapClampModeY,
+		( image->flags & IMGFLAG_COLORTARGET ) != 0 );
 	vk_slots[slot].texture->slot = slot;
 	VK_TextureArrayMark( slot );
 }
@@ -1203,7 +1208,7 @@ void VK_InitTextures( void ) {
 
 	// what a unit samples when its image has no storage, like an
 	// incomplete GL texture
-	vk_defaultTexture = VK_CreateTextureStorage( 1, 1, 1, TEXFMT_RGBA8, WRAP_REPEAT, WRAP_REPEAT );
+	vk_defaultTexture = VK_CreateTextureStorage( 1, 1, 1, TEXFMT_RGBA8, WRAP_REPEAT, WRAP_REPEAT, qfalse );
 	vk_defaultTexture->slot = VK_MAX_TEXTURES - 1;	// bindless textures: the slot the table never hands out
 	data = VK_StagingAlloc( 4, 16, &buffer, &offset );
 	Com_Memcpy( data, black, 4 );

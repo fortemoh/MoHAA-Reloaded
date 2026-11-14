@@ -47,6 +47,11 @@ typedef enum
 	IMGFLAG_NOLIGHTSCALE   = 0x0020,
 	IMGFLAG_CLAMPTOEDGE    = 0x0040,
 	IMGFLAG_GENNORMALMAP   = 0x0080,
+	// Added: also made a color attachment (renderervk), which GPUs keep
+	// compressed (AMD's DCC, lossless): what draws read of it costs less
+	// memory traffic where its texels repeat (the 2D atlas's clear and
+	// uniform areas)
+	IMGFLAG_COLORTARGET    = 0x0100,
 } imgFlags_t;
 
 typedef struct image_s {
