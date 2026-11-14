@@ -1273,10 +1273,12 @@ static void UI_CompHuds(bool show)
     for (size_t i = 0; i < ARRAY_LEN(names); i++) {
         Menu *hud = menuManager.FindMenu(names[i]);
 
-        if (hud && show) {
-            hud->ForceShow();
-        } else if (hud) {
-            hud->ForceHide();
+        if (hud && show != !!hud->isVisible()) {
+            if (show) {
+                hud->ForceShow();
+            } else {
+                hud->ForceHide();
+            }
         }
     }
 }

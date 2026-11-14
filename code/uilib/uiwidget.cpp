@@ -742,6 +742,7 @@ UIWidget::UIWidget()
     m_shapeW      = 0;
     m_shapeH      = 0;
     m_shapeHandle = 0;
+    m_shapeDynamic = false;
     m_widthLeft   = false;
     VectorSet2D(m_anchor, -1, -1);
     m_flowGap     = 0;
@@ -1505,7 +1506,8 @@ void UIWidget::LayoutShape(Event *ev)
         }
     }
     m_shapes.AddObject(line);
-    m_shapeStamp = -1;
+    m_shapeStamp   = -1;
+    m_shapeDynamic = m_shapeDynamic || strchr(line.c_str(), '$');
 }
 
 void UIWidget::LayoutRotateCvar(Event *ev)
@@ -1577,6 +1579,10 @@ void UIWidget::DrawShapes(void)
     str         text, resolved[32];
     int         i, n = Q_min(m_shapes.NumObjects(), 32);
 
+    // (the same lines, size and pictures: what was baked)
+    if (!m_shapeDynamic && m_shapeStamp == UI_BakeStamp() && w == m_shapeW && h == m_shapeH) {
+        n = 0;
+    }
     for (i = 0; i < n; i++) {
         const char *p = m_shapes.ObjectAt(i + 1).c_str();
 
@@ -1599,7 +1605,7 @@ void UIWidget::DrawShapes(void)
         text += resolved[i];
         text += "\n";
     }
-    if (m_shapeStamp != UI_BakeStamp() || w != m_shapeW || h != m_shapeH || text != m_shapeText) {
+    if (n && (m_shapeStamp != UI_BakeStamp() || w != m_shapeW || h != m_shapeH || text != m_shapeText)) {
         m_shapeHandle = UI_BakeShape("w", layers, n, w, h, m_vVirtualScale[0]);
         m_shapeStamp  = UI_BakeStamp();
         m_shapeW      = w;

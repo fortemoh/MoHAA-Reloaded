@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // cl_cgame.c  -- client system interaction with client game
 
 #include "client.h"
+#include "cl_uicomp.h"
 #include "cl_ui.h"
 #include "cl_uiradar.h"
 #include "../corepp/tiki.h"
@@ -999,6 +1000,9 @@ void CL_InitCGame( void ) {
 	// we will send a usercmd this frame, which
 	// will cause the server to send us the first snapshot
 	clc.state = CA_PRIMED;
+
+	// Added: the Competitive HUD's radar walks the map now, while it loads
+	UI_CompHud_MapLoaded();
 
 	CL_EndRegistration();
 

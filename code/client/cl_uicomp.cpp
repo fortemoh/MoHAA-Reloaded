@@ -34,6 +34,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
 
+#include <unordered_map>
 #include <vector>
 
 #define COMP_PICTURES "ui/competitive/"
@@ -441,12 +442,29 @@ THE FRAME: the ui_hud_* cvars
 ====================================================================
 */
 
+// a cvar by name, found once (the names are the callers' literals and the few made below)
+static cvar_t *Comp_Cvar(const char *name)
+{
+    static std::unordered_map<const char *, cvar_t *> found;
+    cvar_t                                         *&v = found[name];
+
+    if (!v) {
+        v = Cvar_Get(name, "", 0);
+    }
+    return v;
+}
+
+static int Comp_Int(const char *name)
+{
+    return Comp_Cvar(name)->integer;
+}
+
 static void Comp_Set(const char *name, const char *value)
 {
-    cvar_t *v = Cvar_Get(name, "", 0);
+    cvar_t *v = Comp_Cvar(name);
 
     if (strcmp(v->string, value)) {
-        Cvar_Set(name, value);
+        Cvar_Set(v->name, value);
     }
 }
 
@@ -462,7 +480,7 @@ static void Comp_Roster(int gametype)
     const playerState_t *ps      = &cl.snap.ps;
     const qboolean       playing = !(ps->pm_flags & PMF_SPECTATING) && ps->stats[STAT_HEALTH] > 0;
     const char          *roundStart = CL_ConfigString(CS_WARMUP);
-    cvar_t              *sb = Cvar_Get("ui_hud_sb", "", 0);
+    cvar_t              *sb = Comp_Cvar("ui_hud_sb");
     int                  i, t;
 
     if (strcmp(roundStart, comp.roundStart)) {
@@ -634,6 +652,11 @@ static const char *Comp_SpectatorText(void)
     ));
 }
 
+static const char *const comp_arcAlpha[3] = {"ui_hud_arc0_alpha", "ui_hud_arc1_alpha", "ui_hud_arc2_alpha"};
+static const char *const comp_arcAngle[3] = {"ui_hud_arc0_angle", "ui_hud_arc1_angle", "ui_hud_arc2_angle"};
+static const char *const comp_objOn[3]    = {"ui_hud_obj0_on", "ui_hud_obj1_on", "ui_hud_obj2_on"};
+static const char *const comp_obj[3]      = {"ui_hud_obj0", "ui_hud_obj1", "ui_hud_obj2"};
+
 // the angle on screen (clockwise, up the view) of a world yaw
 static float Comp_ScreenAngle(float viewYaw, float yaw)
 {
@@ -665,7 +688,7 @@ void UI_CompHud_Frame(void)
         return;
     }
     // (copied: va's buffer is used again below)
-    Q_strncpyz(spec, Cvar_VariableIntegerValue("cg_hud_spectator") ? Comp_SpectatorText() : "", sizeof(spec));
+    Q_strncpyz(spec, Comp_Int("cg_hud_spectator") ? Comp_SpectatorText() : "", sizeof(spec));
     cge->CG_EyeAngles(&angles);
     viewYaw = angles[YAW];
     Comp_Roster(gametype);
@@ -674,7 +697,7 @@ void UI_CompHud_Frame(void)
     // the strip: health, badge, ammo, weapons (not while free spectating)
     Comp_Set("ui_hud_strip", !spectating || following ? "1" : "0");
     {
-        const qboolean icon = teams && (!spectating || following) && Cvar_VariableIntegerValue("cg_hud_badge") && Cvar_VariableIntegerValue("cg_hud_teamicon");
+        const qboolean icon = teams && (!spectating || following) && Comp_Int("cg_hud_badge") && Comp_Int("cg_hud_teamicon");
 
         Comp_Set("ui_hud_allies", icon && team == TEAM_ALLIES ? "1" : "0");
         Comp_Set("ui_hud_axis", icon && team == TEAM_AXIS ? "1" : "0");
@@ -684,7 +707,7 @@ void UI_CompHud_Frame(void)
         maxHealth = 100;
     }
     Comp_Set("ui_hud_health", va("%d", health));
-    Comp_Set("ui_hud_health_col", health < Cvar_VariableValue("cg_hud_lowhealth") * maxHealth ? "0.753 0.188 0.129 1" : "0.965 0.965 0.478 1");
+    Comp_Set("ui_hud_health_col", health < Comp_Cvar("cg_hud_lowhealth")->value * maxHealth ? "0.753 0.188 0.129 1" : "0.965 0.965 0.478 1");
     Comp_Set("ui_hud_ammo_on", weapon[0] ? "1" : "0");
     Comp_Set("ui_hud_clip", va("%d", ps->stats[STAT_CLIPAMMO]));
     Comp_Set("ui_hud_ammo", va("%d", ps->stats[STAT_AMMO]));
@@ -717,7 +740,7 @@ void UI_CompHud_Frame(void)
             banner1 = "";
         } else {
             Comp_Set("ui_hud_timer", "");
-            banner1 = Cvar_VariableIntegerValue("cg_hud_timer") ? Sys_LV_CL_ConvertString(Cvar_VariableString("ui_timemessage")) : "";
+            banner1 = Comp_Int("cg_hud_timer") ? Sys_LV_CL_ConvertString(Comp_Cvar("ui_timemessage")->string) : "";
         }
         if (rounds) {
             const int alive[2] = {(int)strlen(comp.cards[0]) - (int)(strchr(comp.cards[0], 'd') ? strlen(strchr(comp.cards[0], 'd')) : 0),
@@ -843,8 +866,8 @@ void UI_CompHud_Frame(void)
         for (i = 0; i < 3; i++) {
             const int age = cls.realtime - comp.arcTime[i];
 
-            Comp_SetF(va("ui_hud_arc%d_alpha", i), comp.arcTime[i] && age < 1500 ? 1.0f - age / 1500.0f : 0.0f);
-            Comp_SetF(va("ui_hud_arc%d_angle", i), Comp_ScreenAngle(viewYaw, comp.arcStat[i] / 10.0f + 180.0f));
+            Comp_SetF(comp_arcAlpha[i], comp.arcTime[i] && age < 1500 ? 1.0f - age / 1500.0f : 0.0f);
+            Comp_SetF(comp_arcAngle[i], Comp_ScreenAngle(viewYaw, comp.arcStat[i] / 10.0f + 180.0f));
         }
         Comp_SetF("ui_hud_dmg_alpha", dmg > 0 && comp.flashTime ? Com_Clamp(0.0f, 1.0f, 1.0f - (cls.realtime - comp.flashTime) / 1500.0f) : 0.0f);
         Comp_SetF("ui_hud_dmg_angle", Comp_ScreenAngle(viewYaw, dmg / 10.0f + 180.0f));
@@ -853,34 +876,34 @@ void UI_CompHud_Frame(void)
     // the elements' flags (enabledcvar): shown and turned on
     {
         const qboolean strip = !(ps->pm_flags & PMF_SPECTATING) || following;
-        const qboolean radar = Cvar_VariableIntegerValue("cg_hud_radar") != 0;
-        const qboolean msgs  = Cvar_VariableIntegerValue("cg_hud_messages") != 0;
+        const qboolean radar = Comp_Int("cg_hud_radar") != 0;
+        const qboolean msgs  = Comp_Int("cg_hud_messages") != 0;
         auto           flag  = [](const char *name, qboolean on) { Comp_Set(name, on ? "1" : "0"); };
 
         flag("ui_hud_radar_on", radar);
-        flag("ui_hud_compass_on", !radar && Cvar_VariableIntegerValue("ui_compass"));
+        flag("ui_hud_compass_on", !radar && Comp_Int("ui_compass"));
         flag("ui_hud_msgs_r", msgs && radar);
         flag("ui_hud_msgs_c", msgs && !radar);
-        flag("ui_hud_score_on", Cvar_VariableIntegerValue("cg_hud_score") && gametype != GT_SINGLE_PLAYER);
-        flag("ui_hud_vs_on", rounds && Cvar_VariableIntegerValue("cg_hud_alive"));
+        flag("ui_hud_score_on", Comp_Int("cg_hud_score") && gametype != GT_SINGLE_PLAYER);
+        flag("ui_hud_vs_on", rounds && Comp_Int("cg_hud_alive"));
         // the panel with the other team's score, or without it (not known yet): narrower
-        flag("ui_hud_p3", Cvar_VariableString("ui_hud_score_r")[0] != 0);
-        flag("ui_hud_health_on", strip && Cvar_VariableIntegerValue("cg_hud_health"));
-        flag("ui_hud_badge_on", strip && Cvar_VariableIntegerValue("cg_hud_badge"));
-        flag("ui_hud_ammo_on", strip && weapon[0] && Cvar_VariableIntegerValue("cg_hud_ammo"));
-        flag("ui_hud_weapons_on", strip && Cvar_VariableIntegerValue("cg_hud_ammo"));
-        flag("ui_hud_killer_on", Cvar_VariableString("ui_hud_killer")[0] && Cvar_VariableIntegerValue("cg_hud_killer"));
-        flag("ui_hud_target_on", Cvar_VariableString("ui_hud_target")[0] && Cvar_VariableIntegerValue("cg_hud_targetinfo"));
-        flag("ui_hud_follow_on", following && Cvar_VariableIntegerValue("cg_hud_following"));
-        flag("ui_hud_hurt_on", Cvar_VariableString("ui_hud_hurt")[0] && Cvar_VariableIntegerValue("cg_hud_attacker"));
-        flag("ui_hud_charge_on", comp.charging && Cvar_VariableIntegerValue("cg_hud_grenadecharge"));
-        flag("ui_hud_vote_on", atoi(CL_ConfigString(CS_VOTE_TIME)) && Cvar_VariableIntegerValue("cg_hud_vote"));
-        if (!Cvar_VariableIntegerValue("cg_hud_stopwatch")) {
+        flag("ui_hud_p3", Comp_Cvar("ui_hud_score_r")->string[0] != 0);
+        flag("ui_hud_health_on", strip && Comp_Int("cg_hud_health"));
+        flag("ui_hud_badge_on", strip && Comp_Int("cg_hud_badge"));
+        flag("ui_hud_ammo_on", strip && weapon[0] && Comp_Int("cg_hud_ammo"));
+        flag("ui_hud_weapons_on", strip && Comp_Int("cg_hud_ammo"));
+        flag("ui_hud_killer_on", Comp_Cvar("ui_hud_killer")->string[0] && Comp_Int("cg_hud_killer"));
+        flag("ui_hud_target_on", Comp_Cvar("ui_hud_target")->string[0] && Comp_Int("cg_hud_targetinfo"));
+        flag("ui_hud_follow_on", following && Comp_Int("cg_hud_following"));
+        flag("ui_hud_hurt_on", Comp_Cvar("ui_hud_hurt")->string[0] && Comp_Int("cg_hud_attacker"));
+        flag("ui_hud_charge_on", comp.charging && Comp_Int("cg_hud_grenadecharge"));
+        flag("ui_hud_vote_on", atoi(CL_ConfigString(CS_VOTE_TIME)) && Comp_Int("cg_hud_vote"));
+        if (!Comp_Int("cg_hud_stopwatch")) {
             Comp_Set("ui_hud_stopwatch", "0");
         }
-        if (!Cvar_VariableIntegerValue("cg_hud_damage")) {
+        if (!Comp_Int("cg_hud_damage")) {
             for (i = 0; i < 3; i++) {
-                Comp_Set(va("ui_hud_arc%d_alpha", i), "0");
+                Comp_Set(comp_arcAlpha[i], "0");
             }
             Comp_Set("ui_hud_dmg_alpha", "0");
         }
@@ -893,8 +916,8 @@ void UI_CompHud_Frame(void)
 
         Comp_SetF("ui_hud_north", anglemod(viewYaw - ps->stats[STAT_COMPASSNORTH] / 182.0f));
         for (i = 0; i < 3; i++) {
-            Comp_Set(va("ui_hud_obj%d_on", i), stats[i] != rest[i] ? "1" : "0");
-            Comp_SetF(va("ui_hud_obj%d", i), (stats[i] - 1800) / 10.0f);
+            Comp_Set(comp_objOn[i], stats[i] != rest[i] ? "1" : "0");
+            Comp_SetF(comp_obj[i], (stats[i] - 1800) / 10.0f);
         }
     }
 }
@@ -955,15 +978,6 @@ static void Comp_Picture(const char *pic, float x, float y, float w, float h, fl
     shader = UI_BakeShape("comp", layers, 1, pw, ph, s);
     uii.Rend_SetColor(color);
     uii.Rend_DrawPicStretched(floorf(x * s + 0.5f), floorf(y * s + 0.5f), pw, ph, 0, 0, 1, 1, shader);
-}
-
-static void Comp_Box(float x, float y, float w, float h, float s, const UColor& c)
-{
-    const vec4_t color = {c.r, c.g, c.b, c.a};
-    const float  x0 = floorf(x * s + 0.5f), y0 = floorf(y * s + 0.5f);
-
-    uii.Rend_SetColor(color);
-    uii.Rend_DrawBox(x0, y0, floorf((x + w) * s + 0.5f) - x0, floorf((y + h) * s + 0.5f) - y0);
 }
 
 // text with its capitals' middle on cy (the baked faces' lines are centered so)
@@ -1100,13 +1114,14 @@ void UIHudFeed::Draw(void)
 
         while (*p) {
             const char *brk = NULL, *q = p;
-            str         row;
+            float       width = 0.0f;
 
             for (; *q; q++) {
                 if (*q == ' ') {
                     brk = q;
                 }
-                if (q > p && font->getWidth(p, (int)(q - p + 1)) > w) {
+                width += font->getCharWidth((byte)*q);
+                if (q > p && width > w) {
                     break;
                 }
             }
@@ -1153,10 +1168,12 @@ class UIHudCards : public UIWidget
 public:
     CLASS_PROTOTYPE(UIHudCards);
 
-    int m_team;
-    str m_icons[2];
+    int       m_team;
+    str       m_icons[2];
+    int       m_size, m_stamp;
+    qhandle_t m_cards[3]; // alive, you, dead
 
-    UIHudCards() : m_team(TEAM_ALLIES) {}
+    UIHudCards() : m_team(TEAM_ALLIES), m_size(0), m_stamp(-1) {}
     void SetTeam(Event *ev) { m_team = !str::icmp(ev->GetString(1), "axis") ? TEAM_AXIS : TEAM_ALLIES; }
     void SetIcons(Event *ev)
     {
@@ -1182,10 +1199,6 @@ void UIHudCards::Draw(void)
     const int   n     = (int)strlen(cards);
     const int   most  = Q_max(1, Q_max((int)strlen(Cvar_VariableString("ui_hud_cards_allies")), (int)strlen(Cvar_VariableString("ui_hud_cards_axis"))));
     int         size  = Q_max(20, Q_min(48, 400 / most - 4)), fit, i;
-    UIWidget   *icon  = m_parent ? m_parent->FindWidget(m_icons[m_team == TEAM_AXIS]) : NULL;
-    const char *layers[32];
-    int         numLayers = 0;
-    qhandle_t   iconShader = 0;
 
     if (!n) {
         return;
@@ -1197,38 +1210,50 @@ void UIHudCards::Draw(void)
     if (fit < n) {
         fit--;
     }
-    if (icon) {
-        for (i = 1; i <= icon->getShapes().NumObjects() && numLayers < 32; i++) {
-            layers[numLayers++] = icon->getShapes().ObjectAt(i).c_str();
+    // a card of each kind (alive, you, dead) baked once at its size: the
+    // box, its frame, the team's icon or a skull, the bar under it
+    if (size != m_size || m_stamp != UI_BakeStamp()) {
+        UIWidget   *icon = m_parent ? m_parent->FindWidget(m_icons[m_team == TEAM_AXIS]) : NULL;
+        const float f    = size / (size + 8.0f), bar = (size + 4.0f) / (size + 8.0f);
+        const float px = 5.0f / size, py = 5.0f / (size + 8.0f), dx = 6.0f / size, dy = 6.0f / (size + 8.0f);
+
+        for (int k = 0; k < 3; k++) {
+            std::vector<str> lines;
+            const char      *layers[40];
+            int              numLayers = 0;
+
+            if (k == 2) {
+                lines.push_back(va("in 0 0 1 %g fill 0.11 0.125 0.141 0.702", f));
+                lines.push_back(va("in 0 0 1 %g frame 1 1 1 1 0.2", f));
+                if (size >= 16) {
+                    lines.push_back(va("in %g %g %g %g picture 1 1 1 0.5 " COMP_PICTURES "skull_50.png center", dx, dy, 1.0f - dx, f - dy));
+                }
+            } else {
+                lines.push_back(va("in 0 0 1 %g fill %s", f, m_team == TEAM_AXIS ? "0.549 0.333 0.294 0.851" : "0.294 0.435 0.549 0.851"));
+                for (int l = 1; size >= 16 && icon && l <= icon->getShapes().NumObjects(); l++) {
+                    lines.push_back(va("in %g %g %g %g %s", px, py, 1.0f - px, f - py, icon->getShapes().ObjectAt(l).c_str()));
+                }
+                lines.push_back(va("in 0 0 1 %g frame %d %s", f, k ? 2 : 1, k ? "0.812 0.875 0.49 1" : "1 1 1 0.2"));
+                lines.push_back(va("in 0 %g 1 1 fill 0.988 0.988 0.988 1", bar));
+            }
+            for (str& l : lines) {
+                layers[numLayers++] = l.c_str();
+            }
+            m_cards[k] = UI_BakeShape("comp_card", layers, numLayers, (int)(size * s + 0.5f), (int)((size + 8) * s + 0.5f), s);
         }
-        iconShader = UI_BakeShape(va("comp_card%d", m_team), layers, numLayers, (int)((size - 10) * s + 0.5f), (int)((size - 10) * s + 0.5f), s);
+        m_size  = size;
+        m_stamp = UI_BakeStamp();
+    }
+    {
+        const vec4_t white = {1, 1, 1, 1};
+
+        uii.Rend_SetColor(white);
     }
     for (i = 0; i < fit; i++) {
-        const float x  = m_team == TEAM_AXIS ? 2.0f + i * (size + 4) : w - 2.0f - size - i * (size + 4);
-        const float e  = Q_max(1.0f / s, 1.0f), me = cards[i] == 'm' ? e * 2.0f : e;
-        const UColor edge = cards[i] == 'm' ? UColor(0.812f, 0.875f, 0.49f, 1.0f) : UColor(1, 1, 1, 0.2f);
+        const float x = m_team == TEAM_AXIS ? 2.0f + i * (size + 4) : w - 2.0f - size - i * (size + 4);
 
-        if (cards[i] == 'd') {
-            Comp_Box(x, 0, size, size, s, UColor(0.11f, 0.125f, 0.141f, 0.702f));
-        } else {
-            Comp_Box(x, 0, size, size, s, m_team == TEAM_AXIS ? UColor(0.549f, 0.333f, 0.294f, 0.851f) : UColor(0.294f, 0.435f, 0.549f, 0.851f));
-            Comp_Box(x, size + 4.0f, size, 4.0f, s, UColor(0.988f, 0.988f, 0.988f, 1.0f));
-        }
-        Comp_Box(x, 0, size, me, s, edge);
-        Comp_Box(x, size - me, size, me, s, edge);
-        Comp_Box(x, me, me, size - me * 2.0f, s, edge);
-        Comp_Box(x + size - me, me, me, size - me * 2.0f, s, edge);
-        if (size < 16) {
-            continue;
-        }
-        if (cards[i] == 'd') {
-            Comp_Picture("skull_50", x + 6.0f, 6.0f, size - 12.0f, size - 12.0f, s, "center", qfalse, UColor(1, 1, 1, 0.5f));
-        } else if (iconShader) {
-            const vec4_t white = {1, 1, 1, 1};
-
-            uii.Rend_SetColor(white);
-            uii.Rend_DrawPicStretched(floorf((x + 5.0f) * s + 0.5f), floorf(5.0f * s + 0.5f), (int)((size - 10) * s + 0.5f), (int)((size - 10) * s + 0.5f), 0, 0, 1, 1, iconShader);
-        }
+        uii.Rend_DrawPicStretched(floorf(x * s + 0.5f), 0, (int)(size * s + 0.5f), (int)((size + 8) * s + 0.5f), 0, 0, 1, 1,
+                                  m_cards[cards[i] == 'd' ? 2 : cards[i] == 'm' ? 1 : 0]);
     }
     if (fit < n) {
         const char *more = va("+%d", n - fit);
@@ -1345,7 +1370,7 @@ void UIHudWeapons::Draw(void)
 
         Item(right, &bottom, &pic, NULL, 1, handSlot == primarySlot ? 0 : -1, va("%d", primarySlot), 160.0f, 34.0f);
     }
-    if (Cvar_VariableIntegerValue("cg_hud_grenades") && (comp.frags > 0 || comp.smokes > 0)) {
+    if (Comp_Int("cg_hud_grenades") && (comp.frags > 0 || comp.smokes > 0)) {
         const char *pics[2];
         int         counts[2], n = 0, hand = -1;
 
@@ -1563,6 +1588,18 @@ static void RM_Picture(void)
     rm.stamp  = UI_BakeStamp();
 }
 
+void UI_CompHud_MapLoaded(void)
+{
+    const char *map = Info_ValueForKey(CL_ConfigString(CS_SERVERINFO), "mapname");
+
+    if (!UI_CompHud_Active() || !Comp_Int("cg_hud_radar") || !strcmp(map, rm.map)) {
+        return;
+    }
+    Q_strncpyz(rm.map, map, sizeof(rm.map));
+    RM_Walk();
+    rm.stamp = -1;
+}
+
 /*
 ================
 UIHudRadar
@@ -1609,11 +1646,10 @@ void UIHudRadar::Draw(void)
         *y = fy;
     };
 
-    // the map: walked once a map, drawn again a storey away or after a restart
+    // the map: walked once a map (at its load: UI_CompHud_MapLoaded), drawn
+    // again a storey away or after a restart
     if (strcmp(map, rm.map)) {
-        Q_strncpyz(rm.map, map, sizeof(rm.map));
-        RM_Walk();
-        rm.stamp = -1;
+        UI_CompHud_MapLoaded();
     }
     if (!rm.nodes.empty()) {
         const int texels = Q_max(1, Q_min(6, (int)(RM_CELL / upp + 0.5f)));

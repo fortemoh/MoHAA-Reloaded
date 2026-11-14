@@ -190,6 +190,7 @@ protected:
     str            m_flowAfter;  // placed after this sibling's text (or its right)
     float          m_flowGap;
     float          m_textRight;  // where the text drawn last ended, in the parent's design units
+    bool           m_shapeDynamic; // a $cvar in its lines
     str            m_shapeText;  // the lines as last baked
     int            m_shapeStamp;
     int            m_shapeW, m_shapeH;

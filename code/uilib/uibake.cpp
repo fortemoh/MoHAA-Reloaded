@@ -579,11 +579,49 @@ fractions of the box. The shapes:
   text COLOR FONT X Y ANGLE STRING   (FONT a face's name; its capitals'
                                 middle at X Y, turned ANGLE about the middle)
   picture COLOR FILE [left|center|right] [mirror]
+A layer can start with "in X0 Y0 X1 Y1": drawn in that part of the box.
 ================
 */
 static void Bake_Layer(uiCanvas_t *cv, const char *text)
 {
     std::vector<std::string> t;
+
+    // in X0 Y0 X1 Y1 <layer>: the layer in that part of the box, over the rest
+    if (!strncmp(text, "in ", 3)) {
+        float      b[4];
+        int        used = 0;
+        uiCanvas_t sub;
+
+        if (sscanf(text + 3, "%f %f %f %f %n", &b[0], &b[1], &b[2], &b[3], &used) < 4) {
+            return;
+        }
+        {
+            const int x0 = (int)floorf(b[0] * cv->w + 0.5f), y0 = (int)floorf(b[1] * cv->h + 0.5f);
+
+            sub.w     = (int)floorf(b[2] * cv->w + 0.5f) - x0;
+            sub.h     = (int)floorf(b[3] * cv->h + 0.5f) - y0;
+            sub.scale = cv->scale;
+            if (sub.w <= 0 || sub.h <= 0) {
+                return;
+            }
+            sub.px.assign(sub.w * sub.h * 4, 0.0f);
+            Bake_Layer(&sub, text + 3 + used);
+            for (int y = 0; y < sub.h; y++) {
+                for (int x = 0; x < sub.w; x++) {
+                    const float *p = &sub.px[(y * sub.w + x) * 4];
+                    float       *d = &cv->px[((y0 + y) * cv->w + x0 + x) * 4];
+
+                    if (x0 + x < 0 || y0 + y < 0 || x0 + x >= cv->w || y0 + y >= cv->h) {
+                        continue;
+                    }
+                    for (int k = 0; k < 4; k++) {
+                        d[k] = p[k] + d[k] * (1.0f - p[3]);
+                    }
+                }
+            }
+        }
+        return;
+    }
     const int                n  = Bake_Tokens(text, t);
     const float              w  = (float)cv->w, h = (float)cv->h;
     const float              cx = w * 0.5f, cy = h * 0.5f, r = Q_min(w, h) * 0.5f;
