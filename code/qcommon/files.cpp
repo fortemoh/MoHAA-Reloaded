@@ -2079,6 +2079,30 @@ Filename are relative to the quake search path
 a null buffer will just return the file length without loading
 ============
 */
+/*
+============
+FS_SetBuiltinFiles
+
+Added: the files compiled in, a list ending with a NULL name
+============
+*/
+static const builtinFile_t *fs_builtinFiles;
+
+void FS_SetBuiltinFiles( const builtinFile_t *files ) {
+	fs_builtinFiles = files;
+}
+
+static const builtinFile_t *FS_BuiltinFile( const char *qpath ) {
+	const builtinFile_t *f;
+
+	for ( f = fs_builtinFiles; f && f->name; f++ ) {
+		if ( !FS_FilenameCompare( f->name, qpath ) ) {
+			return f;
+		}
+	}
+	return NULL;
+}
+
 long FS_ReadFileEx( const char *qpath, void **buffer, qboolean quiet ) {
 	fileHandle_t	h;
 	byte*			buf;
@@ -2148,6 +2172,20 @@ long FS_ReadFileEx( const char *qpath, void **buffer, qboolean quiet ) {
 
 	// look for it in the filesystem or pack files
 	len = FS_FOpenFileRead( qpath, &h, qfalse, qtrue );
+	if ( h == 0 && FS_BuiltinFile( qpath ) ) {
+		// Added: one compiled in
+		const builtinFile_t *f = FS_BuiltinFile( qpath );
+
+		if ( buffer ) {
+			fs_loadCount++;
+			fs_loadStack++;
+			buf = (byte*)Hunk_AllocateTempMemory( f->size + 1 );
+			Com_Memcpy( buf, f->data, f->size );
+			buf[f->size] = 0;
+			*buffer = buf;
+		}
+		return f->size;
+	}
 	if ( h == 0 ) {
 		if ( buffer ) {
 			*buffer = NULL;
@@ -2688,6 +2726,23 @@ char **FS_ListFilteredFiles( const char *path, const char *extension, const char
 					Sys_FreeFileList( sysFiles );
 				}
 			}
+		}
+
+		// Added: the files compiled in
+		for ( const builtinFile_t *f = fs_builtinFiles; f && f->name && !bDirSearch; f++ ) {
+			const int nameLength = strlen( f->name );
+			int depth;
+
+			FS_ReturnPath( f->name, zpath, &depth );
+			if ( Q_stricmpn( f->name, path, pathLength ) || ( pathLength && f->name[pathLength] != '/' )
+				|| ( !wantSubs && depth - pathDepth != 1 ) || nameLength < extensionLength
+				|| Q_stricmp( f->name + nameLength - extensionLength, currentExtension ) ) {
+				continue;
+			}
+			if ( filter && !Com_FilterPath( filter, f->name + pathLength + ( pathLength ? 1 : 0 ), qfalse ) ) {
+				continue;
+			}
+			nfiles = FS_AddFileToList( (char *)f->name + pathLength + ( pathLength ? 1 : 0 ), list, nfiles );
 		}
 
 		pExtension = pExtToken;

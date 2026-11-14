@@ -1034,8 +1034,13 @@ void UI_CompHud_Frame(void)
     }
 }
 
+// the HUD's menus, faces and pictures compiled in (cmake/utils/embed_files.cmake)
+extern "C" const builtinFile_t builtin_files[];
+
 void UI_CompHud_Init(void)
 {
+    // (a file on disk or in a pak of the name is read instead)
+    FS_SetBuiltinFiles(builtin_files);
     cg_hudstyle = Cvar_Get("cg_hudstyle", "0", CVAR_ARCHIVE);
     for (size_t i = 0; i < ARRAY_LEN(comp_toggles); i++) {
         Cvar_Get(comp_toggles[i], "1", CVAR_ARCHIVE);

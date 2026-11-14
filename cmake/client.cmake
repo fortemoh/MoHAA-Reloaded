@@ -102,6 +102,22 @@ if(USE_DISCORD)
     list(APPEND CLIENT_LIBRARY_SOURCES ${SOURCE_DIR}/client/cl_discord.c)
 endif()
 
+# the Competitive HUD's menus, faces and pictures (cg_hudstyle 1) compiled
+# in: the files the filesystem reads when no file on disk or in a pak has
+# the name (cl_uicomp.cpp, FS_SetBuiltinFiles)
+file(GLOB BUILTIN_FILES CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/assets/main/ui/*.urc
+    ${CMAKE_SOURCE_DIR}/assets/main/ui/competitive/*.png
+    ${CMAKE_SOURCE_DIR}/assets/main/fonts/*)
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/builtin_files.c
+    COMMAND ${CMAKE_COMMAND} -DROOT=${CMAKE_SOURCE_DIR}/assets/main -DOUT=${CMAKE_BINARY_DIR}/builtin_files.c
+        "-DFILES=${BUILTIN_FILES}" -P ${CMAKE_SOURCE_DIR}/cmake/utils/embed_files.cmake
+    DEPENDS ${BUILTIN_FILES} ${CMAKE_SOURCE_DIR}/cmake/utils/embed_files.cmake
+    COMMENT "Compiling in the Competitive HUD's files"
+    VERBATIM)
+list(APPEND CLIENT_SOURCES ${CMAKE_BINARY_DIR}/builtin_files.c)
+
 list(APPEND CLIENT_BINARY_SOURCES
     ${SERVER_SOURCES}
     ${CLIENT_SOURCES}
@@ -134,17 +150,10 @@ add_custom_command(TARGET ${CLIENT_BINARY} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         ${CMAKE_SOURCE_DIR}/code/thirdparty/OMAHA-SOUND-LICENSES.txt
         $<TARGET_FILE_DIR:${CLIENT_BINARY}>/OMAHA-SOUND-LICENSES.txt
-    # the Competitive HUD's menus, faces and pictures (cg_hudstyle 1)
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/assets/main/ui
-        $<TARGET_FILE_DIR:${CLIENT_BINARY}>/main/ui
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/assets/main/fonts
-        $<TARGET_FILE_DIR:${CLIENT_BINARY}>/main/fonts
-    COMMENT "Copy sound and HUD assets and license notices"
+    COMMENT "Copy sound assets and license notices"
 )
 
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/main/sound ${CMAKE_SOURCE_DIR}/assets/main/ui ${CMAKE_SOURCE_DIR}/assets/main/fonts
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/main/sound
     DESTINATION ${INSTALL_BINDIR_FULL}/main)
 install(FILES ${CMAKE_SOURCE_DIR}/code/thirdparty/OMAHA-SOUND-LICENSES.txt
     DESTINATION ${INSTALL_BINDIR_FULL})

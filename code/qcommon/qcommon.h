@@ -813,6 +813,15 @@ void	FS_FCloseFile( fileHandle_t f );
 // note: you can't just fclose from another DLL, due to MS libc issues
 
 long		FS_ReadFileEx(const char* qpath, void** buffer, qboolean quiet);
+
+// Added: files compiled in (the client's, cmake/utils/embed_files.cmake),
+// read when no file on disk or in a pak has the name, pure or not, and listed
+typedef struct builtinFile_s {
+	const char			*name;
+	const unsigned char	*data;
+	int					size;
+} builtinFile_t;
+void		FS_SetBuiltinFiles(const builtinFile_t *files);
 long		FS_ReadFile(const char* qpath, void** buffer);
 const char	*FS_Gamedir( void );
 // returns the length of the file
