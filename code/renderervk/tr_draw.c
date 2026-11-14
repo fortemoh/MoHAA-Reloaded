@@ -73,7 +73,13 @@ static struct {
 	int				window[4];		// the window: x0 y0 x1 y1
 	float			zNear, zFar;	// the window's depth range, the GPU's while in 2D
 	qboolean		clipScissor;	// the GPU's scissor is the clip (lines, additive boxes), else the screen
+	shader_t		*drawShader;	// the draw's own shader (tess.shader is the batch's)
+	qboolean		fan;			// the draw is a convex polygon, a fan from its first vertex
+	struct r2dList_s *capture;		// the 2D list whose draws' geometry is being kept (2D lists)
 } r2d;
+
+static void R_2DCapture( void );
+static void R_2DCaptureLost( void );
 
 /*
 ================
@@ -276,6 +282,12 @@ static void R_2DStartDraw( const shader_t *shader ) {
 	r2d.firstVertex = tess.numVertexes;
 	r2d.firstIndex = tess.numIndexes;
 	r2d.atlas = image && image->atlas ? image : NULL;
+	r2d.drawShader = (shader_t *)shader;
+	r2d.fan = qfalse;
+	if ( r2d.capture && ( shader->flags & BUNDLE_ANIMATE_ONCE ) ) {
+		// (it draws from the shader's start time)
+		R_2DCaptureLost();
+	}
 }
 
 /*
@@ -366,6 +378,45 @@ static void R_2DClip( qboolean image ) {
 	tess.numVertexes = r2d.firstVertex;
 	tess.numIndexes = r2d.firstIndex;
 
+	if ( r2d.fan && numVertexes <= 1024 ) {
+		// a convex polygon: clipped whole, its vertexes in order
+		static float pa[1024 + 8][R2D_ATTRS], pb[1024 + 8][R2D_ATTRS];
+		float (*in)[R2D_ATTRS] = pa, (*out)[R2D_ATTRS] = pb, (*sw)[R2D_ATTRS];
+
+		Com_Memcpy( pa, verts, numVertexes * sizeof( verts[0] ) );
+		n = numVertexes;
+		for ( j = 0; j < ( image ? 8 : 4 ) && n >= 3; j++ ) {
+			n = R_2DClipEdge( (const float (*)[R2D_ATTRS])in, n, out, (int)planes[j][0], planes[j][1], planes[j][2] );
+			sw = in, in = out, out = sw;
+		}
+		if ( tess.numVertexes + n >= SHADER_MAX_VERTEXES || tess.numIndexes + 3 * n >= SHADER_MAX_INDEXES ) {
+			shader_t *shader = tess.shader;
+
+			R_2DCaptureLost();
+			RB_EndSurface();
+			RB_BeginSurface( shader );
+			tess.colors2D = qtrue;
+			tess.vertexColorValid = qtrue;
+		}
+		for ( j = 0; j < n; j++ ) {
+			const int v = tess.numVertexes + j;
+
+			VectorCopy( in[j], tess.xyz[v] );
+			tess.texCoords[v][0][0] = r2d.atlas ? r2d.atlas->atlasRect[0] + in[j][3] * r2d.atlas->atlasRect[2] : in[j][3];
+			tess.texCoords[v][0][1] = r2d.atlas ? r2d.atlas->atlasRect[1] + in[j][4] * r2d.atlas->atlasRect[3] : in[j][4];
+			for ( k = 0; k < 4; k++ ) {
+				tess.vertexColors[v][k] = (byte)( Com_Clamp( 0, 255, in[j][5 + k] ) + 0.5f );
+			}
+			if ( j >= 2 ) {
+				tess.indexes[tess.numIndexes++] = tess.numVertexes;
+				tess.indexes[tess.numIndexes++] = v - 1;
+				tess.indexes[tess.numIndexes++] = v;
+			}
+		}
+		tess.numVertexes += n >= 3 ? n : 0;
+		return;
+	}
+
 	for ( i = 0; i + 2 < numIndexes; i += 3 ) {
 		for ( j = 0; j < 3; j++ ) {
 			Com_Memcpy( poly[0][j], verts[indexes[i + j]], sizeof( poly[0][0] ) );
@@ -380,7 +431,8 @@ static void R_2DClip( qboolean image ) {
 		if ( tess.numVertexes + n >= SHADER_MAX_VERTEXES || tess.numIndexes + 3 * ( n - 2 ) >= SHADER_MAX_INDEXES ) {
 			shader_t *shader = tess.shader;
 
-			// what is clipped so far is drawn
+			// what is clipped so far is drawn (not kept by a 2D list then)
+			R_2DCaptureLost();
 			RB_EndSurface();
 			RB_BeginSurface( shader );
 			tess.colors2D = qtrue;
@@ -526,6 +578,7 @@ static void R_2DPlace( void ) {
 	if ( bounds[0] < r2d.clip[0] || bounds[2] > r2d.clip[2] || bounds[1] < r2d.clip[1] || bounds[3] > r2d.clip[3]
 		|| ( r2d.atlas && ( st[0] < 0 || st[1] < 0 || st[2] > 1 || st[3] > 1 ) ) ) {
 		R_2DClip( r2d.atlas && ( st[0] < 0 || st[1] < 0 || st[2] > 1 || st[3] > 1 ) );
+		R_2DCapture();
 		return;
 	}
 	if ( r2d.atlas ) {
@@ -536,6 +589,7 @@ static void R_2DPlace( void ) {
 			tc[1] = r2d.atlas->atlasRect[1] + tc[1] * r2d.atlas->atlasRect[3];
 		}
 	}
+	R_2DCapture();
 }
 
 /*
@@ -833,6 +887,7 @@ void RB_DrawPolygon2D(const float (*points)[4], int count, qhandle_t hShader) {
 	R_IssuePending2DCommands();
 	RB_Color4bv(backEnd.color2D);
 	R_Begin2D(shader, count, 3 * (count - 2));
+	r2d.fan = qtrue;
 	for (i = 0; i < count; i++) {
 		RB_Texcoord2f(points[i][2], points[i][3]);
 		RB_Vertex2f(points[i][0], points[i][1]);
@@ -951,6 +1006,7 @@ AddBox
 */
 void RB_AddBox(float x, float y, float w, float h) {
 	R_IssuePendingRenderCommands();
+	R_2DCaptureLost();
 	R_2DScissor(qtrue);
 
 	RB_SetColor4ubv(backEnd.color2D);
@@ -1001,6 +1057,7 @@ void RB_DrawBox(float x, float y, float w, float h) {
 	}
 
 	R_IssuePendingRenderCommands();
+	R_2DCaptureLost();
 	R_2DScissor(qtrue);
 	RB_SetColor4ubv(backEnd.color2D);
 	R_EnableTexture(qfalse);
@@ -1045,6 +1102,7 @@ void RB_DrawBoxes(const float (*boxes)[4], int count, const float *color) {
 	}
 
 	R_IssuePendingRenderCommands();
+	R_2DCaptureLost();
 	R_2DScissor(qtrue);
 	RB_SetColor4ubv(rgba);
 	R_EnableTexture(qfalse);
@@ -1076,6 +1134,7 @@ void RB_DrawLineLoop(const vec2_t* points, int count, int stipple_factor, int st
 	int		i;
 
 	R_IssuePendingRenderCommands();
+	R_2DCaptureLost();
 	R_2DScissor(qtrue);
 
 	R_EnableTexture(qfalse);
@@ -1238,7 +1297,26 @@ typedef struct r2dList_s {
 	int					used, size;
 	int					retired;	// the frame it was replaced at
 	struct r2dList_s	*next;		// the next retired one
+	// what its draws made the first time it ran (the render thread's): each
+	// draw's shader, vertexes on the screen and indexes, and the 2D state at
+	// its start and end; drawn from that after (geo 1), or from its commands
+	// when it can't be (geo -1: lines, additive boxes, a shader animating
+	// once, a draw parted by a full tess)
+	byte				*geoData;
+	int					geoUsed, geoSize, geo, geoAtlas;
+	float				winStart[10];	// its first Set2DWindow's arguments
+	qboolean			hasWin;
+	float				xform[4], clip[4], zNear, zFar, startTime;
+	int					window[4];
+	byte				color[4];
 } r2dList_t;
+
+typedef struct {
+	shader_t	*shader;
+	int			numVertexes, numIndexes;	// vec3 xyz, vec2 st, rgba vertexes, then int indexes follow
+} r2dGeoDraw_t;
+
+#define R2D_GEO_VERTEX	( sizeof( vec3_t ) + sizeof( vec2_t ) + 4 )
 
 static struct {
 	r2dList_t	*lists[MAX_2D_LISTS];
@@ -1280,15 +1358,128 @@ static void R_Retire2DList( r2dList_t *l ) {
 }
 
 static void R_Free2DListData( r2dList_t *l ) {
+	free( l->geoData );
 	ri.Free( l->data );
 	ri.Free( l );
 }
 
-static void RB_Run2DList( const r2dList_t *l ) {
-	const byte *data = l->data, *end = l->data + l->used;
+// a placed draw's geometry kept by the list running
+static void R_2DCapture( void ) {
+	r2dList_t		*l = r2d.capture;
+	const int		nv = tess.numVertexes - r2d.firstVertex, ni = tess.numIndexes - r2d.firstIndex;
+	const int		bytes = sizeof( r2dGeoDraw_t ) + nv * R2D_GEO_VERTEX + ni * sizeof( int );
+	r2dGeoDraw_t	*d;
+	byte			*p;
+	int				i;
 
+	if ( !l || l->geo < 0 || nv <= 0 || ni <= 0 ) {
+		return;
+	}
+	if ( l->geoUsed + bytes > l->geoSize ) {
+		l->geoSize = Q_max( l->geoSize * 2, l->geoUsed + bytes + 4096 );
+		l->geoData = realloc( l->geoData, l->geoSize );
+	}
+	d = (r2dGeoDraw_t *)( l->geoData + l->geoUsed );
+	d->shader = r2d.drawShader;
+	d->numVertexes = nv;
+	d->numIndexes = ni;
+	p = (byte *)( d + 1 );
+	for ( i = 0; i < nv; i++, p += R2D_GEO_VERTEX ) {
+		const int v = r2d.firstVertex + i;
+
+		Com_Memcpy( p, tess.xyz[v], sizeof( vec3_t ) );
+		Com_Memcpy( p + sizeof( vec3_t ), tess.texCoords[v][0], sizeof( vec2_t ) );
+		Com_Memcpy( p + sizeof( vec3_t ) + sizeof( vec2_t ), tess.vertexColors[v], 4 );
+	}
+	for ( i = 0; i < ni; i++, p += sizeof( int ) ) {
+		const int index = tess.indexes[r2d.firstIndex + i] - r2d.firstVertex;
+
+		Com_Memcpy( p, &index, sizeof( int ) );
+	}
+	l->geoUsed += bytes;
+}
+
+static void R_2DCaptureLost( void ) {
+	if ( r2d.capture ) {
+		r2d.capture->geo = -1;
+	}
+}
+
+// the list drawn from the geometry it kept, its 2D state as it left it
+static void RB_Draw2DGeometry( const r2dList_t *l ) {
+	const byte *p = l->geoData, *end = l->geoData + l->geoUsed;
+	int i;
+
+	if ( l->hasWin ) {
+		const float *w = l->winStart;
+
+		RB_Set2DWindow( (int)w[0], (int)w[1], (int)w[2], (int)w[3], w[4], w[5], w[6], w[7], w[8], w[9] );
+	}
+	while ( p < end ) {
+		const r2dGeoDraw_t *d = (const r2dGeoDraw_t *)p;
+		const byte *v = (const byte *)( d + 1 ), *idx = v + d->numVertexes * R2D_GEO_VERTEX;
+		int first;
+
+		R_Begin2D( d->shader, d->numVertexes, d->numIndexes );
+		first = tess.numVertexes;
+		for ( i = 0; i < d->numVertexes; i++, v += R2D_GEO_VERTEX ) {
+			Com_Memcpy( tess.xyz[first + i], v, sizeof( vec3_t ) );
+			Com_Memcpy( tess.texCoords[first + i][0], v + sizeof( vec3_t ), sizeof( vec2_t ) );
+			Com_Memcpy( tess.vertexColors[first + i], v + sizeof( vec3_t ) + sizeof( vec2_t ), 4 );
+		}
+		for ( i = 0; i < d->numIndexes; i++, idx += sizeof( int ) ) {
+			int index;
+
+			Com_Memcpy( &index, idx, sizeof( int ) );
+			tess.indexes[tess.numIndexes + i] = first + index;
+		}
+		tess.numVertexes += d->numVertexes;
+		tess.numIndexes += d->numIndexes;
+		if ( r2d.batching ) {
+			r2d.open = qtrue;
+		} else {
+			RB_EndSurface();
+		}
+		p = idx;
+	}
+	Com_Memcpy( r2d.xform, l->xform, sizeof( r2d.xform ) );
+	Com_Memcpy( r2d.clip, l->clip, sizeof( r2d.clip ) );
+	Com_Memcpy( r2d.window, l->window, sizeof( r2d.window ) );
+	Com_Memcpy( backEnd.color2D, l->color, sizeof( backEnd.color2D ) );
+	RB_SetColor4ubv( backEnd.color2D );
+	backEnd.shaderStartTime = l->startTime;
+}
+
+static void RB_Run2DList( const r2dList_t *cl ) {
+	r2dList_t	*l = (r2dList_t *)cl;	// (its geometry: the render thread's)
+	const byte	*data = l->data, *end = l->data + l->used;
+	qboolean	capture;
+
+	if ( l->geo > 0 && l->geoAtlas == R_AtlasGeneration() ) {
+		RB_Draw2DGeometry( l );
+		return;
+	}
+	capture = l->geo >= 0 && !r2d.capture;
+	if ( capture ) {
+		r2d.capture = l;
+		l->geo = 1;
+		l->geoUsed = 0;
+		l->hasWin = qfalse;
+	}
 	for ( data = PADP( data, sizeof( void * ) ); data < end; data = PADP( data, sizeof( void * ) ) ) {
 		data = RB_2DCommand( data );
+	}
+	if ( capture ) {
+		r2d.capture = NULL;
+		l->geoAtlas = R_AtlasGeneration();
+		Com_Memcpy( l->xform, r2d.xform, sizeof( l->xform ) );
+		Com_Memcpy( l->clip, r2d.clip, sizeof( l->clip ) );
+		Com_Memcpy( l->window, r2d.window, sizeof( l->window ) );
+		Com_Memcpy( l->color, backEnd.color2D, sizeof( l->color ) );
+		l->startTime = backEnd.shaderStartTime;
+		if ( !l->hasWin ) {
+			l->geo = -1;	// (it draws in a window it was not given)
+		}
 	}
 }
 
@@ -1652,6 +1843,12 @@ const void *RB_2DCommand( const void *data ) {
 	}
 	case RC_2D_WINDOW: {
 		const window2DCommand_t *c = data;
+		if ( r2d.capture && !r2d.capture->hasWin ) {
+			const float w[10] = { (float)c->x, (float)c->y, (float)c->w, (float)c->h, c->left, c->right, c->bottom, c->top, c->n, c->f };
+
+			Com_Memcpy( r2d.capture->winStart, w, sizeof( w ) );
+			r2d.capture->hasWin = qtrue;
+		}
 		RB_Set2DWindow( c->x, c->y, c->w, c->h, c->left, c->right, c->bottom, c->top, c->n, c->f );
 		return R_2D_NEXT( window2DCommand_t );
 	}

@@ -828,6 +828,7 @@ UIWidget::UIWidget()
     m_colorCount = -1;
     VectorSet2D(m_anchor, -1, -1);
     m_baseSet     = false;
+    m_flowing     = false;
     m_fitWidth    = 0;
     m_parent = NULL;
     m_background_color.set(0.075f, 0.097f, 0.139f, 1.0f);
@@ -1691,10 +1692,11 @@ void UIWidget::Flow(void)
     static int depth; // (rules naming each other: no deeper)
     UIRect2D   r, frame;
 
-    if (!m_designSet || m_rules.empty() || depth > 8) {
+    if (!m_designSet || m_rules.empty() || depth > 8 || m_flowing) {
         return;
     }
     depth++;
+    m_flowing = true;
     if (!m_baseSet) {
         m_designBase = m_designRect;
         m_baseSet    = true;
@@ -1759,6 +1761,7 @@ void UIWidget::Flow(void)
         }
     }
     depth--;
+    m_flowing    = false;
     m_designRect = r;
     // the frame as the design's (DesignFrame)
     frame             = m_frame;

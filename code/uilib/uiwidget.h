@@ -213,6 +213,7 @@ protected:
     std::vector<uiRule_t> m_rules;
     UIRect2D       m_designBase; // the URC's rect
     bool           m_baseSet;
+    bool           m_flowing;    // in its Flow (its own text measured: as it is)
     float          m_fitWidth;   // a longer text drawn smaller to fit (fitwidth), 0 none
     bool           m_shapeDynamic; // a $cvar in its lines
     str            m_shapeText;  // the lines as last baked

@@ -3337,8 +3337,15 @@ static qboolean R_AtlasPack( int w, int h, int *outX, int *outY ) {
 	return qtrue;
 }
 
+static int atlasGeneration;	// changes with the page's size (the 2D lists' kept geometry)
+
+int R_AtlasGeneration( void ) {
+	return atlasGeneration;
+}
+
 // the page made, or at twice its side: its texels again, its images' places
 static void R_AtlasResize( int side ) {
+	atlasGeneration++;
 	byte	*texels = ri.Malloc( side * side * 4 );
 	int		i;
 
