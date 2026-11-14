@@ -201,9 +201,19 @@ protected:
     str            m_widthCvar;  // the shape drawn this fraction wide
     bool           m_widthLeft;  // ... from its left, else about its middle
     vec2_t         m_anchor;     // a menu's middle at these fractions of the screen (-1: its align)
-    str            m_flowAfter;  // placed after this sibling's text (or its right)
-    float          m_flowGap;
-    float          m_textRight;  // where the text drawn last ended, in the parent's design units
+    // the layout rules (flowafter flowbefore flowbelow fitbelow fitto
+    // fittext moveif): applied in order to the URC's rect each frame, from
+    // the siblings' boxes as they are then (Flow)
+    struct uiRule_t {
+        int       kind;
+        str       name;
+        UIWidget *sibling;
+        float     a, b, c;
+    };
+    std::vector<uiRule_t> m_rules;
+    UIRect2D       m_designBase; // the URC's rect
+    bool           m_baseSet;
+    float          m_fitWidth;   // a longer text drawn smaller to fit (fitwidth), 0 none
     bool           m_shapeDynamic; // a $cvar in its lines
     str            m_shapeText;  // the lines as last baked
     int            m_shapeStamp;
@@ -307,7 +317,16 @@ public:
     void LayoutFlowAfter(Event *ev);
     void LayoutAnchor(Event *ev);
     void Flow(void);
-    float getTextRight(void) { return m_textRight; }
+    virtual UIRect2D ContentBox(void); // its text's box (a label's), else its rect: design units
+    bool             Shown(void);      // enabled and visible
+    void             AddRule(int kind, Event *ev, int floats);
+    void             LayoutFlowBefore(Event *ev);
+    void             LayoutFlowBelow(Event *ev);
+    void             LayoutFitBelow(Event *ev);
+    void             LayoutFitTo(Event *ev);
+    void             LayoutFitText(Event *ev);
+    void             LayoutMoveIf(Event *ev);
+    void             LayoutFitWidth(Event *ev);
     cvar_t *CvarOf(int i, const str& name);
     bool DesignFrame(void);
     void DrawShapes(void);

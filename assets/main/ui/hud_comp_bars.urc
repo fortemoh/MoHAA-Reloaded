@@ -17,6 +17,7 @@ bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_charge_on
 shape fill 0.047 0.055 0.071 0.78
+moveif stopwatch 0 -16
 }
 
 resource
@@ -29,6 +30,7 @@ borderstyle NONE
 enabledcvar ui_hud_charge_on
 widthcvar ui_hud_charge
 shape fill 0.102 0.435 0.831 0.667
+moveif stopwatch 0 -16
 }
 
 resource
@@ -44,6 +46,7 @@ shape poly 1 1 1 0.102 0.2 0 0.20333 0 0.20333 1 0.2 1
 shape poly 1 1 1 0.102 0.4 0 0.40333 0 0.40333 1 0.4 1
 shape poly 1 1 1 0.102 0.6 0 0.60333 0 0.60333 1 0.6 1
 shape poly 1 1 1 0.102 0.8 0 0.80333 0 0.80333 1 0.8 1
+moveif stopwatch 0 -16
 }
 
 resource
@@ -55,6 +58,8 @@ bgcolor 0 0 0 0
 borderstyle NONE
 widthcvar ui_hud_stopwatch
 shape fill 0.102 0.435 0.831 0.667
+enabledcvar ui_hud_stopwatch_on
+moveif chargeback 0 16
 }
 
 end.

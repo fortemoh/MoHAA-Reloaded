@@ -1262,7 +1262,7 @@ Added: the Competitive HUD's menus (cg_hudstyle 1, ui/hud_comp_*.urc),
 shown in place of the stock HUD's
 ====================
 */
-static void UI_CompHuds(bool show)
+static void UI_CompHuds(bool show, bool messages = false)
 {
     static const char *const names[] = {
         "hud_comp_topleft", "hud_comp_score",  "hud_comp_killfeed", "hud_comp_chat",   "hud_comp_strip",
@@ -1281,10 +1281,12 @@ static void UI_CompHuds(bool show)
         }
     }
     for (size_t i = 0; i < ARRAY_LEN(names); i++) {
-        Menu *hud = menus[i];
+        Menu      *hud = menus[i];
+        // (messages only: the menus with the game messages, the chat, the kills and the vote)
+        const bool on  = show || (messages && (i == 0 || i == 2 || i == 3 || i == 11));
 
-        if (hud && show != !!hud->isVisible()) {
-            if (show) {
+        if (hud && on != !!hud->isVisible()) {
+            if (on) {
                 hud->ForceShow();
             } else {
                 hud->ForceHide();
@@ -2223,7 +2225,14 @@ void UI_Update(void)
         }
 
         UI_HideHudList();
-        UI_CompHuds(false);
+        // Added: through the intermission, the Competitive HUD's messages, chat, kills and vote stay
+        if (UI_CompHud_Active() && ui_hud && clc.state == CA_ACTIVE && !server_loading && !view3d->LetterboxActive()
+            && !(currentMenu && currentMenu->isFullscreen())) {
+            UI_CompHud_Frame();
+            UI_CompHuds(false, true);
+        } else {
+            UI_CompHuds(false);
+        }
     } else if (UI_CompHud_Active()) {
         // Added: the Competitive HUD's menus instead of the stock HUD's (the
         // boss's health stays), those hidden when shown, not each frame
@@ -5356,6 +5365,7 @@ CL_ShutdownUI
 */
 void CL_ShutdownUI(void)
 {
+    UI_CompHud_Shutdown();
     if (!cls.uiStarted) {
         return;
     }

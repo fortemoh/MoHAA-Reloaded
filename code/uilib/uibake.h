@@ -35,8 +35,13 @@ float UI_BakedFontScale(const fontheader_t *font);
 // pixels a design unit; key names it among the others
 qhandle_t UI_BakeShape(const char *key, const char *const *layers, int numLayers, int w, int h, float scale);
 
-// pixels a unit of a w x h design: the screen fitted both ways
+// pixels a unit of a w x h design: the screen fitted both ways, times the
+// scale set (UI_SetDesignScale: true when it changed, the faces and shapes
+// then baked again; the menus are to be aligned again)
 float UI_DesignScale(float w, float h);
+bool  UI_SetDesignScale(float scale);
+// changes when a face is to be baked again: the renderer's restart, the scale
+int UI_FontStamp(void);
 
 // a map load: the shaders of the baked images are looked up again
 void UI_BakeForget(void);

@@ -19,6 +19,7 @@ textalign centerx
 linkcvar ui_hud_target
 colorcvar ui_hud_target_col
 enabledcvar ui_hud_target_on
+fitwidth 400
 }
 
 resource

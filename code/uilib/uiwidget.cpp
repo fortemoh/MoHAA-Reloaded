@@ -485,6 +485,69 @@ Event EV_Layout_FlowAfter
     "Placed gap design units after where a sibling's text ends (or its right edge)"
 );
 
+Event EV_Layout_FlowBefore
+(
+    "flowbefore",
+    EV_DEFAULT,
+    "sf",
+    "widget_name gap",
+    "Its right edge gap design units before where a sibling's text starts (or its left edge)"
+);
+
+Event EV_Layout_FlowBelow
+(
+    "flowbelow",
+    EV_DEFAULT,
+    "sf",
+    "widget_name gap",
+    "Its top gap design units under a sibling's text (or its bottom edge)"
+);
+
+Event EV_Layout_FitBelow
+(
+    "fitbelow",
+    EV_DEFAULT,
+    "sf",
+    "widget_name pad",
+    "Its bottom pad design units under a sibling's text (or its bottom edge)"
+);
+
+Event EV_Layout_FitTo
+(
+    "fitto",
+    EV_DEFAULT,
+    "sfF",
+    "widget_name pad min",
+    "As wide as a sibling's text and pad on each side (no narrower than min), about its middle"
+);
+
+Event EV_Layout_FitText
+(
+    "fittext",
+    EV_DEFAULT,
+    "fFF",
+    "pad min max",
+    "As wide as its text and pad on each side, between min and max, about where its text is aligned"
+);
+
+Event EV_Layout_MoveIf
+(
+    "moveif",
+    EV_DEFAULT,
+    "sff",
+    "widget_name dx dy",
+    "Moved dx dy design units while a sibling is shown"
+);
+
+Event EV_Layout_FitWidth
+(
+    "fitwidth",
+    EV_DEFAULT,
+    "f",
+    "width",
+    "Its text drawn smaller when wider than this (to half its size)"
+);
+
 Event EV_Layout_DrawCache
 (
     "drawcache",
@@ -592,6 +655,13 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Layout_ColorCvar,          &UIWidget::LayoutColorCvar         },
     {&EV_Layout_WidthCvar,          &UIWidget::LayoutWidthCvar         },
     {&EV_Layout_FlowAfter,          &UIWidget::LayoutFlowAfter         },
+    {&EV_Layout_FlowBefore,         &UIWidget::LayoutFlowBefore        },
+    {&EV_Layout_FlowBelow,          &UIWidget::LayoutFlowBelow         },
+    {&EV_Layout_FitBelow,           &UIWidget::LayoutFitBelow          },
+    {&EV_Layout_FitTo,              &UIWidget::LayoutFitTo             },
+    {&EV_Layout_FitText,            &UIWidget::LayoutFitText           },
+    {&EV_Layout_MoveIf,             &UIWidget::LayoutMoveIf            },
+    {&EV_Layout_FitWidth,           &UIWidget::LayoutFitWidth          },
     {&EV_Layout_Anchor,             &UIWidget::LayoutAnchor            },
     {&EV_Layout_DrawCache,          &UIWidget::LayoutDrawCache         },
 
@@ -757,8 +827,8 @@ UIWidget::UIWidget()
     memset(m_cvars, 0, sizeof(m_cvars));
     m_colorCount = -1;
     VectorSet2D(m_anchor, -1, -1);
-    m_flowGap     = 0;
-    m_textRight   = 0;
+    m_baseSet     = false;
+    m_fitWidth    = 0;
     m_parent = NULL;
     m_background_color.set(0.075f, 0.097f, 0.139f, 1.0f);
     m_foreground_color         = UColor(UHudColor);
@@ -1582,31 +1652,124 @@ void UIWidget::LayoutAnchor(Event *ev)
     m_anchor[1] = ev->GetFloat(2);
 }
 
-void UIWidget::LayoutFlowAfter(Event *ev)
+enum { RULE_FLOWAFTER, RULE_FLOWBEFORE, RULE_FLOWBELOW, RULE_FITBELOW, RULE_FITTO, RULE_FITTEXT, RULE_MOVEIF };
+
+void UIWidget::AddRule(int kind, Event *ev, int floats)
 {
-    m_flowAfter = ev->GetString(1);
-    m_flowGap   = ev->GetFloat(2);
+    const int first = kind == RULE_FITTEXT ? 1 : 2;
+    uiRule_t  r     = {kind, kind == RULE_FITTEXT ? str() : ev->GetString(1), NULL, 0, 0, 0};
+    float    *v[3]  = {&r.a, &r.b, &r.c};
+
+    for (int i = 0; i < floats && first + i <= ev->NumArgs(); i++) {
+        *v[i] = ev->GetFloat(first + i);
+    }
+    m_rules.push_back(r);
 }
 
-/*
-================
-Flow
+void UIWidget::LayoutFlowAfter(Event *ev) { AddRule(RULE_FLOWAFTER, ev, 1); }
+void UIWidget::LayoutFlowBefore(Event *ev) { AddRule(RULE_FLOWBEFORE, ev, 1); }
+void UIWidget::LayoutFlowBelow(Event *ev) { AddRule(RULE_FLOWBELOW, ev, 1); }
+void UIWidget::LayoutFitBelow(Event *ev) { AddRule(RULE_FITBELOW, ev, 1); }
+void UIWidget::LayoutFitTo(Event *ev) { AddRule(RULE_FITTO, ev, 2); }
+void UIWidget::LayoutFitText(Event *ev) { AddRule(RULE_FITTEXT, ev, 3); }
+void UIWidget::LayoutMoveIf(Event *ev) { AddRule(RULE_MOVEIF, ev, 2); }
+void UIWidget::LayoutFitWidth(Event *ev) { m_fitWidth = ev->GetFloat(1); }
 
-Added: a widget of a design-size menu placed after a sibling: gap design
-units after where its text ended this frame (drawn before), or its right
-================
-*/
+bool UIWidget::Shown(void)
+{
+    return isEnabled() && (m_enabledCvar.length() || IsVisible());
+}
+
+UIRect2D UIWidget::ContentBox(void)
+{
+    Flow();
+    return m_designRect;
+}
+
 void UIWidget::Flow(void)
 {
-    UIWidget *after = m_parent ? m_parent->FindWidget(m_flowAfter) : NULL;
-    UIRect2D  frame = m_frame;
+    static int depth; // (rules naming each other: no deeper)
+    UIRect2D   r, frame;
 
-    if (!after || !m_designSet) {
+    if (!m_designSet || m_rules.empty() || depth > 8) {
         return;
     }
-    m_designRect.pos.x = after->getTextRight() + m_flowGap;
-    frame.pos.x        = floorf(m_designRect.pos.x * m_vVirtualScale[0] + 0.5f);
-    setFrame(frame);
+    depth++;
+    if (!m_baseSet) {
+        m_designBase = m_designRect;
+        m_baseSet    = true;
+    }
+    r = m_designBase;
+    for (uiRule_t& rule : m_rules) {
+        UIRect2D b;
+
+        if (rule.kind != RULE_FITTEXT && !rule.sibling) {
+            rule.sibling = m_parent ? m_parent->FindWidget(rule.name) : NULL;
+            if (!rule.sibling || rule.sibling == this) {
+                rule.sibling = NULL;
+                continue;
+            }
+        }
+        if (rule.kind == RULE_MOVEIF) {
+            if (rule.sibling->Shown()) {
+                r.pos.x += rule.a;
+                r.pos.y += rule.b;
+            }
+            continue;
+        }
+        if (rule.kind == RULE_FITTEXT) {
+            // its own text's width, about where it is aligned
+            float w;
+
+            m_designRect = r;
+            b            = ContentBox();
+            w            = b.size.width + rule.a * 2.0f;
+            w            = Q_max(w, rule.b);
+            w            = rule.c > 0.0f ? Q_min(w, rule.c) : w;
+            if (m_iFontAlignmentHorizontal == FONT_JUSTHORZ_CENTER) {
+                r.pos.x += (r.size.width - w) * 0.5f;
+            } else if (m_iFontAlignmentHorizontal == FONT_JUSTHORZ_RIGHT) {
+                r.pos.x += r.size.width - w;
+            }
+            r.size.width = w;
+            continue;
+        }
+        // (a gap after a sibling only when it has something)
+        b = rule.sibling->ContentBox();
+        switch (rule.kind) {
+        case RULE_FLOWAFTER:
+            r.pos.x = b.pos.x + b.size.width + (b.size.width > 0.0f ? rule.a : 0.0f);
+            break;
+        case RULE_FLOWBEFORE:
+            r.pos.x = b.pos.x - (b.size.width > 0.0f ? rule.a : 0.0f) - r.size.width;
+            break;
+        case RULE_FLOWBELOW:
+            r.pos.y = b.pos.y + b.size.height + (b.size.height > 0.0f ? rule.a : 0.0f);
+            break;
+        case RULE_FITBELOW:
+            r.size.height = Q_max(0.0f, b.pos.y + b.size.height + rule.a - r.pos.y);
+            break;
+        case RULE_FITTO: {
+            const float w = Q_max(b.size.width + rule.a * 2.0f, rule.b);
+
+            r.pos.x += (r.size.width - w) * 0.5f;
+            r.size.width = w;
+            break;
+        }
+        }
+    }
+    depth--;
+    m_designRect = r;
+    // the frame as the design's (DesignFrame)
+    frame             = m_frame;
+    frame.pos.x       = floorf(r.pos.x * m_vVirtualScale[0] + 0.5f);
+    frame.pos.y       = floorf(r.pos.y * m_vVirtualScale[1] + 0.5f);
+    frame.size.width  = floorf((r.pos.x + r.size.width) * m_vVirtualScale[0] + 0.5f) - frame.pos.x;
+    frame.size.height = floorf((r.pos.y + r.size.height) * m_vVirtualScale[1] + 0.5f) - frame.pos.y;
+    if (frame.pos.x != m_frame.pos.x || frame.pos.y != m_frame.pos.y || frame.size.width != m_frame.size.width
+        || frame.size.height != m_frame.size.height) {
+        setFrame(frame);
+    }
 }
 
 /*
@@ -2374,7 +2537,7 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
         return;
     }
     ui_drawScope++;
-    if (m_flowAfter.length()) {
+    if (!m_rules.empty()) {
         Flow();
     }
     state = DrawState();
@@ -2416,7 +2579,8 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
         m_drawKeys.clear();
         ui_drawMaking.push_back(this);
     }
-    if (!CacheDraw()) {
+    // (a class drawing from more than its cvars: live while shown)
+    if (!CacheDraw() && isEnabled() && (m_enabledCvar.length() || IsVisible())) {
         UI_DrawLive();
     }
     DisplayNow(drawframe, parent_alpha);
@@ -2455,8 +2619,8 @@ void UIWidget::DisplayNow(const UIRect2D& drawframe, float parent_alpha)
         Motion();
     }
 
-    // Added: after a sibling, colored by a cvar
-    if (m_flowAfter.length()) {
+    // Added: laid out by its rules, colored by a cvar
+    if (!m_rules.empty()) {
         Flow();
     }
     if (m_colorCvar.length() && CvarOf(0, m_colorCvar) && m_cvars[0]->modificationCount != m_colorCount) {
@@ -2540,8 +2704,7 @@ void UIWidget::DisplayNow(const UIRect2D& drawframe, float parent_alpha)
         );
     }
 
-    // Added: its shape; where it ends for a widget placed after it (a label's text sets its own)
-    m_textRight = m_designSet ? m_designRect.pos.x + m_designRect.size.width : 0;
+    // Added: its shape
     if (m_shapes.NumObjects()) {
         DrawShapes();
     }

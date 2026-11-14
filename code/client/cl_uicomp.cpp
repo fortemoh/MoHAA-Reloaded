@@ -34,6 +34,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
 
+#include <atomic>
+#include <thread>
 #include <vector>
 
 #define COMP_PICTURES "ui/competitive/"
@@ -741,6 +743,34 @@ static const char *Comp_SpectatorText(void)
     ));
 }
 
+// text broken between words into lines of a width (design units), up to
+// lines of them
+static str Comp_Wrap(UIFont *font, const char *p, float width, int lines)
+{
+    str text;
+
+    for (int line = 0; *p && line < lines; line++) {
+        const char *brk = NULL, *q = p;
+
+        for (; *q; q++) {
+            if (*q == ' ') {
+                brk = q;
+            }
+            if (q > p && font->getWidth(p, (int)(q - p + 1)) > width) {
+                break;
+            }
+        }
+        if (*q && brk && brk > p && line + 1 < lines) {
+            q = brk;
+        }
+        text += str(p, 0, (int)(q - p));
+        text += line + 1 < lines && *q ? "\n" : "";
+        for (p = q; *p == ' '; p++) {
+        }
+    }
+    return text;
+}
+
 static const char *const comp_arcAlpha[3] = {"ui_hud_arc0_alpha", "ui_hud_arc1_alpha", "ui_hud_arc2_alpha"};
 static const char *const comp_arcAngle[3] = {"ui_hud_arc0_angle", "ui_hud_arc1_angle", "ui_hud_arc2_angle"};
 static const char *const comp_objOn[3]    = {"ui_hud_obj0_on", "ui_hud_obj1_on", "ui_hud_obj2_on"};
@@ -777,6 +807,18 @@ void UI_CompHud_Frame(void)
 
     if (!cl.snap.valid) {
         return;
+    }
+    // cg_hud_scale: the menus at the new size, their faces and shapes baked again
+    {
+        const char *v = Comp_Cvar("cg_hud_scale")->string;
+        char       *end;
+        float       scale = strtof(v, &end);
+
+        scale = end == v || scale != scale ? 1.0f : Com_Clamp(0.25f, 2.0f, scale);
+        if (UI_SetDesignScale(scale)) {
+            menuManager.RealignMenus();
+            UI_CompHud_PreBake();
+        }
     }
     cge->CG_EyeAngles(&angles);
     viewYaw = angles[YAW];
@@ -877,6 +919,7 @@ void UI_CompHud_Frame(void)
                  : Com_Clamp(0.0f, 1.0f, (float)(sw->iEndTime + 250 - cl.serverTime) / (sw->iEndTime - sw->iStartTime + 250));
         }
         Comp_SetF("ui_hud_stopwatch", frac);
+        Comp_Set("ui_hud_stopwatch_on", frac > 0.0f && Comp_Int("cg_hud_stopwatch") ? "1" : "0");
         if (comp.charging) {
             // the stock scripts' charge: 0.6 to 4 s, 0.5 to 1.5 for the secondary throw
             const float lo = comp.chargeSecondary ? 0.5f : 0.6f, hi = comp.chargeSecondary ? 1.5f : 4.0f;
@@ -910,40 +953,20 @@ void UI_CompHud_Frame(void)
         Comp_Set("ui_hud_vote_on", voteTime ? "1" : "0");
         if (voteTime) {
             Comp_Set("ui_hud_vote_time", va("%ds", Q_max(0, (30000 - (cl.serverTime - voteTime)) / 1000 + 1)));
-            static UIFont *font;
-            const char    *p = CL_ConfigString(CS_VOTE_STRING);
-            str            text;
-
-            // the subject wrapped in the panel (two lines)
+            static UIFont *font, *small;
             const float    vs[2] = {UI_DesignScale(1920.0f, 1080.0f), UI_DesignScale(1920.0f, 1080.0f)};
 
             if (!font) {
-                font = new UIFont("oswald-medium-16s");
+                font  = new UIFont("oswald-medium-16s");
+                small = new UIFont("oswald-medium-12s");
             }
             font->setVirtualScale(vs);
-            for (int line = 0; *p && line < 2; line++) {
-                const char *brk = NULL, *q = p;
-
-                for (; *q; q++) {
-                    if (*q == ' ') {
-                        brk = q;
-                    }
-                    if (q > p && font->getWidth(p, (int)(q - p + 1)) > 252.0f) {
-                        break;
-                    }
-                }
-                if (*q && brk && brk > p && line == 0) {
-                    q = brk;
-                }
-                text += str(p, 0, (int)(q - p));
-                text += line == 0 && *q ? "\n" : "";
-                for (p = q; *p == ' '; p++) {
-                }
-            }
-            Comp_Set("ui_hud_vote_text", text);
+            small->setVirtualScale(vs);
+            // the subject and the prompt wrapped in the panel (up to six lines each)
+            Comp_Set("ui_hud_vote_text", Comp_Wrap(font, CL_ConfigString(CS_VOTE_STRING), 252.0f, 6));
             Comp_Set("ui_hud_vote_tally", va("%s  %s     %s  %s", Sys_LV_CL_ConvertString("Yes"), CL_ConfigString(CS_VOTE_YES),
                                              Sys_LV_CL_ConvertString("No"), CL_ConfigString(CS_VOTE_NO)));
-            Comp_Set("ui_hud_vote_prompt", ps->voted ? "" : Sys_LV_CL_ConvertString("To vote Yes, press F1. To vote No, press F2."));
+            Comp_Set("ui_hud_vote_prompt", ps->voted ? "" : Comp_Wrap(small, Sys_LV_CL_ConvertString("To vote Yes, press F1. To vote No, press F2."), 252.0f, 6));
         }
     }
 
@@ -987,13 +1010,16 @@ void UI_CompHud_Frame(void)
 
     // the elements' flags (enabledcvar): shown and turned on
     if (full) {
-        const qboolean strip = !(ps->pm_flags & PMF_SPECTATING) || following;
+        // through the intermission (and with no HUD) only the messages, the
+        // chat, the kills and the vote (cl_ui.cpp: the other menus hidden)
+        const qboolean show  = !(ps->pm_flags & (PMF_NO_HUD | PMF_INTERMISSION));
+        const qboolean strip = (!(ps->pm_flags & PMF_SPECTATING) || following) && show;
         const qboolean radar = Comp_Int("cg_hud_radar") != 0;
         const qboolean msgs  = Comp_Int("cg_hud_messages") != 0;
         auto           flag  = [](const char *name, qboolean on) { Comp_Set(name, on ? "1" : "0"); };
 
-        flag("ui_hud_radar_on", radar);
-        flag("ui_hud_compass_on", !radar && Comp_Int("ui_compass"));
+        flag("ui_hud_radar_on", radar && show);
+        flag("ui_hud_compass_on", !radar && Comp_Int("ui_compass") && show);
         flag("ui_hud_msgs_r", msgs && radar);
         flag("ui_hud_msgs_c", msgs && !radar);
         flag("ui_hud_score_on", Comp_Int("cg_hud_score") && gametype != GT_SINGLE_PLAYER);
@@ -1006,8 +1032,8 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_weapons_on", strip && Comp_Int("cg_hud_ammo"));
         flag("ui_hud_killer_on", Comp_Cvar("ui_hud_killer")->string[0] && Comp_Int("cg_hud_killer"));
         flag("ui_hud_target_on", Comp_Cvar("ui_hud_target")->string[0] && Comp_Int("cg_hud_targetinfo"));
-        flag("ui_hud_follow_on", following && Comp_Int("cg_hud_following"));
-        flag("ui_hud_hurt_on", Comp_Cvar("ui_hud_hurt")->string[0] && Comp_Int("cg_hud_attacker"));
+        flag("ui_hud_follow_on", following && Comp_Int("cg_hud_following") && show);
+        flag("ui_hud_hurt_on", Comp_Cvar("ui_hud_hurt")->string[0] && Comp_Int("cg_hud_attacker") && show);
         flag("ui_hud_charge_on", comp.charging && Comp_Int("cg_hud_grenadecharge"));
         flag("ui_hud_vote_on", atoi(CL_ConfigString(CS_VOTE_TIME)) && Comp_Int("cg_hud_vote"));
         if (!Comp_Int("cg_hud_stopwatch")) {
@@ -1046,6 +1072,8 @@ void UI_CompHud_Init(void)
         Cvar_Get(comp_toggles[i], "1", CVAR_ARCHIVE);
     }
     Cvar_Get("cg_hud_lowhealth", "0.4", CVAR_ARCHIVE);
+    // the HUD's size: its 1920x1080 design fitted in the screen, times this (0.25 to 2)
+    Cvar_Get("cg_hud_scale", "1", CVAR_ARCHIVE);
     // the menus' never shown widgets (the teams' icons, the cards' shapes)
     Cvar_Get("ui_hud_never", "0", 0);
     UI_CompHud_Clear();
@@ -1117,12 +1145,34 @@ static void Comp_Fit(const char *pic, float boxW, float boxH, float s, float *w,
     *h  = floorf(fit * sh * s + 0.5f) / s;
 }
 
-// text with its capitals' middle on cy (the baked faces' lines are centered so)
-static float Comp_Text(UIFont *font, float x, float cy, const char *text, const UColor& c, const float *scale)
+// how much smaller text is drawn to fit a width (to half its size; 0: any)
+static float Comp_Fit(UIFont *font, const char *text, float fit)
 {
+    float w;
+
+    font->setFit(1.0f);
+    w = font->getWidth(text, -1);
+    return fit > 0.0f && w > fit ? Q_max(0.5f, fit / w) : 1.0f;
+}
+
+// a text's width, smaller to fit
+static float Comp_TextW(UIFont *font, const char *text, float fit = 0.0f)
+{
+    return font->getWidth(text, -1) * Comp_Fit(font, text, fit);
+}
+
+// text with its capitals' middle on cy (the baked faces' lines are centered
+// so), smaller to fit a width; its width
+static float Comp_Text(UIFont *font, float x, float cy, const char *text, const UColor& c, const float *scale, float fit = 0.0f)
+{
+    float w;
+
+    font->setFit(Comp_Fit(font, text, fit));
     font->setColor(c);
     font->Print(x, cy - font->getHeight((const float *)NULL) * 0.5f, text, -1, scale);
-    return font->getWidth(text, -1);
+    w = font->getWidth(text, -1);
+    font->setFit(1.0f);
+    return w;
 }
 
 static float Comp_Fade(int time, int life, int fade)
@@ -1246,10 +1296,11 @@ void UIHudFeed::DrawKills(float w, float h, float s)
         sscanf(Comp_TeamColor(k->killerTeam), "%f %f %f", &kc.r, &kc.g, &kc.b);
         sscanf(Comp_TeamColor(k->victimTeam), "%f %f %f", &vc.r, &vc.g, &vc.b);
         kc.a = vc.a = alpha;
-        x = w - m_font->getWidth(k->victim, -1) - k->picW - gap - (mark ? 18.0f + gap : 0.0f) - (k->headshot ? 18.0f + gap : 0.0f)
-          - (k->killer[0] ? m_font->getWidth(k->killer, -1) + gap : 0.0f);
+        // a long name smaller, to fit 150 px
+        x = w - Comp_TextW(m_font, k->victim, 150.0f) - k->picW - gap - (mark ? 18.0f + gap : 0.0f) - (k->headshot ? 18.0f + gap : 0.0f)
+          - (k->killer[0] ? Comp_TextW(m_font, k->killer, 150.0f) + gap : 0.0f);
         if (k->killer[0]) {
-            x += Comp_Text(m_font, x, mid, k->killer, kc, getVirtualScale()) + gap;
+            x += Comp_Text(m_font, x, mid, k->killer, kc, getVirtualScale(), 150.0f) + gap;
         }
         // the pictures point left: the feed's at the victim
         Comp_Picture(k->pic, x, mid - k->picH * 0.5f, k->picW, k->picH, s, strcmp(k->pic, "skull_50") && strcmp(k->pic, "glove_50"), white);
@@ -1262,7 +1313,7 @@ void UIHudFeed::DrawKills(float w, float h, float s)
             Comp_Picture("headshot_50", x, mid - 9.0f, 18.0f, 18.0f, s, qfalse, white);
             x += 18.0f + gap;
         }
-        Comp_Text(m_font, x, mid, k->victim, vc, getVirtualScale());
+        Comp_Text(m_font, x, mid, k->victim, vc, getVirtualScale(), 150.0f);
         y += rowH + 3.0f;
     }
 }
@@ -1532,7 +1583,8 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
     if (hand >= 0) {
         const char *name = CL_ConfigString(CS_WEAPONS + cl.snap.ps.activeItems[ITEM_WEAPON]);
 
-        Comp_Text(m_font, right - m_font->getWidth(name, -1), top + ph + 8.0f + lineH * 0.5f, name, white, getVirtualScale());
+        // a long name smaller, to fit 200 px
+        Comp_Text(m_font, right - Comp_TextW(m_font, name, 200.0f), top + ph + 8.0f + lineH * 0.5f, name, white, getVirtualScale(), 200.0f);
     }
     *bottom = top - 14.0f;
 }
@@ -1592,55 +1644,90 @@ void UIHudWeapons::Draw(void)
 
 THE RADAR'S MAP
 
-The floors a player can reach, walked from the spawn points over a grid of
-16 units at the map's load (box traces down from a jump's height above each
-floor); drawn top down into a picture once, again when the player changes
-storey: each cell's floor nearest the player's height filled, brighter the
-higher, its edges (no floor beside, or a ledge) as lines, the player's
-storey's bright
+The floors a player can reach, walked over a grid of 16 units (box traces
+down from a jump's height above each floor, on the world and the brush
+entities: crates, bridges) from the spawn points and the tops of the
+ladders at the map's load, and again from where a player stands that the
+walk didn't reach (every 250 ms, a few thousand cells a frame). Drawn top
+down into a picture on a thread of its own, again when the player changes
+storey or the walk grew: each cell's floor nearest the player's height
+filled, brighter the higher, its edges (no floor beside, or a ledge) as
+lines, stairs and ramps striped across the way up, the player's storey's
+bright
 
 ====================================================================
 */
 
-#define RM_CELL  16.0f
-#define RM_RANGE 1000.0f // units from the radar's middle to its edge
+#define RM_CELL     16.0f
+#define RM_RANGE    1000.0f // units from the radar's middle to its edge
+#define RM_STAIR    7.0f    // a floor this much higher beside: a stair (to a ledge's 40)
+#define RM_PER_STEP 2000    // cells walked a frame after the load
 
 typedef struct {
     float z;
     int   next; // the column's next floor, -1 none
 } rmNode_t;
 
+typedef struct {
+    clipHandle_t model;
+    vec3_t       origin, mins, maxs; // its bounds in the world
+} rmSolid_t;
+
 static struct {
-    char                  map[MAX_QPATH];
-    float                 x0, y0, zMin, zMax;
-    int                   cw, ch;
-    std::vector<int>      head; // a column's first floor, -1 none
-    std::vector<rmNode_t> nodes;
+    char                   map[MAX_QPATH];
+    float                  x0, y0, zMin, zMax;
+    int                    cw, ch;
+    std::vector<int>       head; // a column's first floor, -1 none
+    std::vector<rmNode_t>  nodes;
+    std::vector<rmSolid_t> solids;          // the brush entities stood on
+    std::vector<int>       queue, queueCell; // the floors still to walk out from
+    size_t                 queued;
+    int                    walked, seedTime; // the floors the picture has, the players' last check
     // the picture
     int       texels; // a cell's, across
     float     focusZ;
     qhandle_t shader;
     int       stamp;
+    // ... made on its thread
+    std::thread       worker;
+    std::atomic<bool> done{false};
+    std::vector<byte> px;
+    int               pxW, pxH;
 } rm;
 
+// the first floor straight down from top to bottom (the world's or a brush
+// entity's, the higher), not too steep, with room for a crouched player
 static qboolean RM_Floor(float x, float y, float top, float bottom, float *z)
 {
-    static const vec3_t mins = {-7, -7, 0}, maxs = {7, 7, 1};
+    static const vec3_t mins = {-7, -7, 0}, maxs = {7, 7, 1}, cmins = {-15, -15, 18}, cmaxs = {15, 15, 50};
     const vec3_t        start = {x, y, top}, end = {x, y, bottom};
-    trace_t             tr;
+    trace_t             tr, t;
 
     CM_BoxTrace(&tr, start, end, mins, maxs, 0, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, qfalse);
+    for (const rmSolid_t& s : rm.solids) {
+        if (x < s.mins[0] - 8 || x > s.maxs[0] + 8 || y < s.mins[1] - 8 || y > s.maxs[1] + 8 || s.mins[2] > top || s.maxs[2] < bottom) {
+            continue;
+        }
+        CM_TransformedBoxTrace(&t, start, end, mins, maxs, s.model, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, s.origin, vec3_origin, qfalse);
+        if (t.startsolid || t.fraction < tr.fraction) {
+            tr = t;
+        }
+    }
     if (tr.startsolid || tr.allsolid || tr.fraction >= 1.0f || tr.plane.normal[2] < 0.7f) {
         return qfalse;
     }
     *z = tr.endpos[2];
-    {
-        // a crouched player has room there
-        static const vec3_t cmins = {-15, -15, 18}, cmaxs = {15, 15, 50};
-
-        CM_BoxTrace(&tr, tr.endpos, tr.endpos, cmins, cmaxs, 0, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, qfalse);
+    // a crouched player has room there
+    CM_BoxTrace(&t, tr.endpos, tr.endpos, cmins, cmaxs, 0, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, qfalse);
+    for (const rmSolid_t& s : rm.solids) {
+        if (t.startsolid || t.allsolid) {
+            break;
+        }
+        if (x >= s.mins[0] - 16 && x <= s.maxs[0] + 16 && y >= s.mins[1] - 16 && y <= s.maxs[1] + 16) {
+            CM_TransformedBoxTrace(&t, tr.endpos, tr.endpos, cmins, cmaxs, s.model, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, s.origin, vec3_origin, qfalse);
+        }
     }
-    return !tr.startsolid && !tr.allsolid;
+    return !t.startsolid && !t.allsolid;
 }
 
 // the column's floor within 24 units of z, else a new one; -1 when full
@@ -1661,58 +1748,31 @@ static int RM_Node(int c, float z, qboolean *added)
     return rm.head[c];
 }
 
-static void RM_Walk(void)
+// a floor to walk out from: the one under x y below z
+static void RM_Seed(float x, float y, float top, float bottom)
 {
-    const char       *p = CM_EntityString();
-    std::vector<int>  queue, cellOf;
-    vec3_t            mins, maxs;
-    qboolean          added;
-    const int         start = Sys_Milliseconds();
+    const int cx = (int)((x - rm.x0) / RM_CELL), cy = (int)((y - rm.y0) / RM_CELL);
+    qboolean  added;
+    float     z;
 
-    CM_ModelBounds(CM_InlineModel(0), mins, maxs);
-    rm.x0 = mins[0];
-    rm.y0 = mins[1];
-    rm.cw = Q_min(2048, (int)((maxs[0] - mins[0]) / RM_CELL) + 1);
-    rm.ch = Q_min(2048, (int)((maxs[1] - mins[1]) / RM_CELL) + 1);
-    rm.head.assign(rm.cw * rm.ch, -1);
-    rm.nodes.clear();
-    rm.zMin = 99999.0f;
-    rm.zMax = -99999.0f;
-    // the spawn points
-    for (const char *tok = COM_Parse((char **)&p); p && tok[0] == '{'; tok = COM_Parse((char **)&p)) {
-        char   classname[64] = "";
-        vec3_t origin        = {0, 0, 0};
+    if (cx >= 0 && cy >= 0 && cx < rm.cw && cy < rm.ch
+        && RM_Floor(rm.x0 + (cx + 0.5f) * RM_CELL, rm.y0 + (cy + 0.5f) * RM_CELL, top, bottom, &z)) {
+        const int n = RM_Node(cy * rm.cw + cx, z, &added);
 
-        for (tok = COM_Parse((char **)&p); p && tok[0] != '}'; tok = COM_Parse((char **)&p)) {
-            char key[64];
-
-            Q_strncpyz(key, tok, sizeof(key));
-            tok = COM_Parse((char **)&p);
-            if (!Q_stricmp(key, "classname")) {
-                Q_strncpyz(classname, tok, sizeof(classname));
-            } else if (!Q_stricmp(key, "origin")) {
-                sscanf(tok, "%f %f %f", &origin[0], &origin[1], &origin[2]);
-            }
-        }
-        if (!Q_stricmpn(classname, "info_player_", 12) && Q_stricmp(classname, "info_player_intermission")) {
-            const int cx = (int)((origin[0] - rm.x0) / RM_CELL), cy = (int)((origin[1] - rm.y0) / RM_CELL);
-            float     z;
-
-            if (cx >= 0 && cy >= 0 && cx < rm.cw && cy < rm.ch
-                && RM_Floor(rm.x0 + (cx + 0.5f) * RM_CELL, rm.y0 + (cy + 0.5f) * RM_CELL, origin[2] + 40.0f, origin[2] - 200.0f, &z)) {
-                const int n = RM_Node(cy * rm.cw + cx, z, &added);
-
-                if (added) {
-                    queue.push_back(n);
-                    cellOf.push_back(cy * rm.cw + cx);
-                }
-            }
+        if (added) {
+            rm.queue.push_back(n);
+            rm.queueCell.push_back(cy * rm.cw + cx);
         }
     }
-    // out from them: onto what a jump reaches, and down from any height
-    for (size_t q = 0; q < queue.size(); q++) {
-        const int   c = cellOf[q], cx = c % rm.cw, cy = c / rm.cw;
-        const float z = rm.nodes[queue[q]].z;
+}
+
+// out from the floors queued: onto what a jump reaches, and down from any height
+static void RM_Step(size_t most)
+{
+    for (; rm.queued < rm.queue.size() && most; rm.queued++, most--) {
+        const int   c = rm.queueCell[rm.queued], cx = c % rm.cw, cy = c / rm.cw;
+        const float z = rm.nodes[rm.queue[rm.queued]].z;
+        qboolean    added;
 
         rm.zMin = Q_min(rm.zMin, z);
         rm.zMax = Q_max(rm.zMax, z);
@@ -1727,12 +1787,105 @@ static void RM_Walk(void)
             const int n = RM_Node(ny * rm.cw + nx, nz, &added);
 
             if (added) {
-                queue.push_back(n);
-                cellOf.push_back(ny * rm.cw + nx);
+                rm.queue.push_back(n);
+                rm.queueCell.push_back(ny * rm.cw + nx);
             }
         }
     }
-    Com_DPrintf("Radar: %d floors in %d ms\n", (int)rm.nodes.size(), Sys_Milliseconds() - start);
+    if (rm.queued == rm.queue.size()) {
+        rm.queue.clear();
+        rm.queueCell.clear();
+        rm.queued = 0;
+    }
+}
+
+static void RM_Walk(void)
+{
+    const char *p = CM_EntityString();
+    vec3_t      mins, maxs;
+    const int   start = Sys_Milliseconds();
+
+    CM_ModelBounds(CM_InlineModel(0), mins, maxs);
+    rm.x0 = mins[0];
+    rm.y0 = mins[1];
+    rm.cw = Q_min(2048, (int)((maxs[0] - mins[0]) / RM_CELL) + 1);
+    rm.ch = Q_min(2048, (int)((maxs[1] - mins[1]) / RM_CELL) + 1);
+    rm.head.assign(rm.cw * rm.ch, -1);
+    rm.nodes.clear();
+    rm.solids.clear();
+    rm.queue.clear();
+    rm.queueCell.clear();
+    rm.queued = 0;
+    rm.zMin   = 99999.0f;
+    rm.zMax   = -99999.0f;
+    // the brush entities one stands on (not the triggers, ladders, doors or
+    // windows) first, then the spawn points and the tops of the ladders
+    for (int pass = 0; pass < 2; pass++) {
+        p = CM_EntityString();
+        for (const char *tok = COM_Parse((char **)&p); p && tok[0] == '{'; tok = COM_Parse((char **)&p)) {
+            char   classname[64] = "", model[16] = "";
+            vec3_t origin        = {0, 0, 0};
+
+            for (tok = COM_Parse((char **)&p); p && tok[0] != '}'; tok = COM_Parse((char **)&p)) {
+                char key[64];
+
+                Q_strncpyz(key, tok, sizeof(key));
+                tok = COM_Parse((char **)&p);
+                if (!Q_stricmp(key, "classname")) {
+                    Q_strncpyz(classname, tok, sizeof(classname));
+                } else if (!Q_stricmp(key, "origin")) {
+                    sscanf(tok, "%f %f %f", &origin[0], &origin[1], &origin[2]);
+                } else if (!Q_stricmp(key, "model")) {
+                    Q_strncpyz(model, tok, sizeof(model));
+                }
+            }
+            const int index = model[0] == '*' ? atoi(model + 1) : 0;
+
+            if (index > 0 && index < CM_NumInlineModels()) {
+                rmSolid_t s;
+
+                s.model = CM_InlineModel(index);
+                VectorCopy(origin, s.origin);
+                CM_ModelBounds(s.model, s.mins, s.maxs);
+                VectorAdd(s.mins, origin, s.mins);
+                VectorAdd(s.maxs, origin, s.maxs);
+                if (!pass && Q_stricmpn(classname, "trigger_", 8) && Q_stricmp(classname, "func_ladder") && !Q_stristr(classname, "door")
+                    && Q_stricmp(classname, "func_window") && Q_stricmp(classname, "func_areaportal")) {
+                    rm.solids.push_back(s);
+                } else if (pass && !Q_stricmp(classname, "func_ladder")) {
+                    // its top: the floors beside it
+                    for (float x = s.mins[0] - RM_CELL; x <= s.maxs[0] + RM_CELL; x += RM_CELL) {
+                        for (float y = s.mins[1] - RM_CELL; y <= s.maxs[1] + RM_CELL; y += RM_CELL) {
+                            RM_Seed(x, y, s.maxs[2] + 72.0f, s.maxs[2] - 64.0f);
+                        }
+                    }
+                }
+            }
+            if (pass && !Q_stricmpn(classname, "info_player_", 12) && Q_stricmp(classname, "info_player_intermission")) {
+                RM_Seed(origin[0], origin[1], origin[2] + 40.0f, origin[2] - 200.0f);
+            }
+        }
+    }
+    RM_Step((size_t)-1);
+    rm.walked = (int)rm.nodes.size();
+    Com_DPrintf("Radar: %d floors (%d brush entities) in %d ms\n", (int)rm.nodes.size(), (int)rm.solids.size(), Sys_Milliseconds() - start);
+}
+
+// where a player stands that the walk didn't reach: walked out from too
+static void RM_SeedPlayers(const vec3_t eye)
+{
+    if ((unsigned)(cls.realtime - rm.seedTime) < 250) {
+        return;
+    }
+    rm.seedTime = cls.realtime;
+    RM_Seed(eye[0], eye[1], eye[2] - 32.0f, eye[2] - 160.0f);
+    for (int i = 0; g_radarClients && i < MAX_CLIENTS; i++) {
+        const radarClient_t *c = &g_radarClients[i];
+
+        if (c->time && cl.snap.serverTime - c->time < 5000) {
+            RM_Seed(c->origin[0], c->origin[1], c->origin[2] + 32.0f, c->origin[2] - 96.0f);
+        }
+    }
 }
 
 // a column's floor nearest z, -1 none
@@ -1751,49 +1904,81 @@ static int RM_Nearest(int cx, int cy, float z)
     return best;
 }
 
-static void RM_Picture(void)
+// the picture's texels (on the worker thread: the walk doesn't change meanwhile)
+static void RM_Draw(void)
 {
-    const int         t = rm.texels, w = rm.cw * t, h = rm.ch * t;
-    std::vector<byte> px(w * h * 4, 0);
-    const int         start = Sys_Milliseconds();
+    const int t = rm.texels, w = rm.cw * t, h = rm.ch * t;
 
+    rm.px.assign(w * h * 4, 0);
     for (int cy = 0; cy < rm.ch; cy++) {
         for (int cx = 0; cx < rm.cw; cx++) {
             const int n = RM_Nearest(cx, cy, rm.focusZ);
             float     z, focus;
-            byte      fill, line, edge[4]; // left, right, north, south
+            byte      fill, line, stairLine, edge[4], stair[4]; // left, right, north, south
 
             if (n < 0) {
                 continue;
             }
-            z     = rm.nodes[n].z;
-            focus = Com_Clamp(0.0f, 1.0f, (120.0f - fabsf(z - rm.focusZ)) / 56.0f);
-            fill  = (byte)((0.2f + 0.24f * (rm.zMax > rm.zMin ? (z - rm.zMin) / (rm.zMax - rm.zMin) : 1.0f)) * 255.0f);
-            line  = (byte)((0.3f + 0.6f * focus) * 255.0f);
-            // the edges: no floor beside within a step (a wall, a drop, a ledge)
+            z         = rm.nodes[n].z;
+            focus     = Com_Clamp(0.0f, 1.0f, (120.0f - fabsf(z - rm.focusZ)) / 56.0f);
+            fill      = (byte)((0.2f + 0.24f * (rm.zMax > rm.zMin ? (z - rm.zMin) / (rm.zMax - rm.zMin) : 1.0f)) * 255.0f);
+            line      = (byte)((0.3f + 0.6f * focus) * 255.0f);
+            stairLine = (byte)((fill / 255.0f + (0.22f + 0.3f * focus - fill / 255.0f) * 0.8f) * 255.0f);
+            // the edges: no floor beside within a step (a wall, a drop, a
+            // ledge); a stair: one a little higher, striped every other cell
             for (int k = 0; k < 4; k++) {
                 const int nb = RM_Nearest(cx + (k == 1) - (k == 0), cy + (k == 2) - (k == 3), z);
+                const float dz = nb < 0 ? 0.0f : rm.nodes[nb].z - z;
 
-                edge[k] = nb < 0 || fabsf(rm.nodes[nb].z - z) > 40.0f;
+                edge[k]  = nb < 0 || fabsf(dz) > 40.0f;
+                stair[k] = !edge[k] && dz >= RM_STAIR && ((k < 2 ? cx : cy) & 1) == 0;
             }
             // the picture's top row is the map's north (y up)
             for (int j = 0; j < t; j++) {
-                byte *o = &px[(((rm.ch - 1 - cy) * t + j) * w + cx * t) * 4];
+                byte *o = &rm.px[(((rm.ch - 1 - cy) * t + j) * w + cx * t) * 4];
 
                 for (int i = 0; i < t; i++, o += 4) {
-                    const int side = i == 0 ? 0 : i == t - 1 ? 1 : j == 0 ? 2 : j == t - 1 ? 3 : -1;
+                    const int side = i == 0 ? 0 : i == t - 1 ? 1 : j == t - 1 ? 2 : j == 0 ? 3 : -1;
 
                     o[0] = 235;
                     o[1] = 240;
                     o[2] = 245;
-                    o[3] = side >= 0 && edge[side] ? line : fill;
+                    o[3] = side >= 0 && edge[side] ? line : side >= 0 && stair[side] ? stairLine : fill;
                 }
             }
         }
     }
-    rm.shader = uii.Rend_RegisterImage2D("ui_bake/radar", px.data(), w, h);
+    rm.pxW = w;
+    rm.pxH = h;
+    rm.done = true;
+}
+
+// a picture begun on its thread (none while one is being made)
+static void RM_Picture(void)
+{
+    if (rm.worker.joinable()) {
+        return;
+    }
+    rm.done   = false;
+    rm.worker = std::thread(RM_Draw);
+}
+
+void UI_CompHud_Shutdown(void)
+{
+    if (rm.worker.joinable()) {
+        rm.worker.join();
+    }
+}
+
+// a picture made: the radar's (the main thread's: the renderer)
+static void RM_PictureDone(void)
+{
+    if (!rm.worker.joinable() || !rm.done) {
+        return;
+    }
+    rm.worker.join();
+    rm.shader = uii.Rend_RegisterImage2D("ui_bake/radar", rm.px.data(), rm.pxW, rm.pxH);
     rm.stamp  = UI_BakeStamp();
-    Com_DPrintf("Radar: a picture %d x %d in %d ms\n", w, h, Sys_Milliseconds() - start);
 }
 
 // an objective's diamond (white for the current one), its box d pixels
@@ -1947,6 +2132,9 @@ void UI_CompHud_MapLoaded(void)
     if (!UI_CompHud_Active() || !Comp_Int("cg_hud_radar") || !strcmp(map, rm.map)) {
         return;
     }
+    if (rm.worker.joinable()) {
+        rm.worker.join();
+    }
     Q_strncpyz(rm.map, map, sizeof(rm.map));
     RM_Walk();
     rm.stamp = -1;
@@ -2006,11 +2194,22 @@ void UIHudRadar::Draw(void)
     if (!rm.nodes.empty()) {
         const int texels = Q_max(1, Q_min(6, (int)(RM_CELL / upp + 0.5f)));
 
-        if (rm.stamp != UI_BakeStamp() || texels != rm.texels || fabsf(eye[2] - 64.0f - rm.focusZ) > 24.0f) {
+        // (the walk changes only while no picture is being made of it)
+        RM_PictureDone();
+        if (!rm.worker.joinable()) {
+            RM_SeedPlayers(eye);
+            RM_Step(RM_PER_STEP);
+        }
+        if (!rm.worker.joinable()
+            && (rm.stamp != UI_BakeStamp() || texels != rm.texels || fabsf(eye[2] - 64.0f - rm.focusZ) > 24.0f
+                || (rm.walked != (int)rm.nodes.size() && rm.queue.empty()))) {
             rm.texels = Q_min(texels, 4096 / Q_max(rm.cw, rm.ch));
             rm.focusZ = eye[2] - 64.0f;
+            rm.walked = (int)rm.nodes.size();
             RM_Picture();
         }
+    }
+    if (!rm.nodes.empty() && rm.shader) {
         // the circle's points, their texels the world's under them
         {
             static float circle[48][2];

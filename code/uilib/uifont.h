@@ -72,6 +72,9 @@ public:
         const float      *vVirtualScale
     );
     void setColor(UColor col);
+    // Added: drawn and measured this much smaller (a long text in a width, UILabel's fitwidth)
+    void setFit(float fit) { m_fit = fit; }
+    float m_fit;
     void setAlpha(float alpha);
     void setFont(const char *fontname);
     int  getMaxWidthIndex(const char *text, int maxlen);

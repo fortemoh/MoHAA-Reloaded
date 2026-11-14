@@ -23,7 +23,7 @@ resource
 Label
 {
 name "follow"
-rect 25 168 360 27
+rect 25 199 360 27
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-18s
@@ -31,6 +31,8 @@ textalign left
 linkcvar ui_hud_follow
 colorcvar ui_hud_follow_col
 enabledcvar ui_hud_follow_on
+moveif hurt 0 -31
+fitwidth 360
 }
 
 resource
@@ -45,6 +47,7 @@ textalign left
 linkcvar ui_hud_hurt
 colorcvar ui_hud_hurt_col
 enabledcvar ui_hud_hurt_on
+fitwidth 360
 }
 
 end.

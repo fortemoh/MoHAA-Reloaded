@@ -274,15 +274,17 @@ UIFont::UIFont()
     color = UBlack;
     setColor(color);
 
-    refHandle  = uii.GetRefSequence();
+    refHandle  = UI_FontStamp();
     name       = "verdana-14";
     widthRatio = 1.0f;
+    m_fit      = 1.0f;
 }
 
 UIFont::UIFont(const char *fn)
 {
     setFont(fn);
     widthRatio = 1.0f;
+    m_fit      = 1.0f;
 }
 
 void UIFont::setVirtualScale(const float *virtualScale)
@@ -319,7 +321,7 @@ void UIFont::setFont(const char *fontname)
         uii.Sys_Error(ERR_DROP, "Couldn't load font %s\n", fontname);
     }
 
-    refHandle = uii.GetRefSequence();
+    refHandle = UI_FontStamp();
     name      = fontname;
 }
 
@@ -335,10 +337,16 @@ void UIFont::Print(float x, float y, const char *text, size_t maxlen, const floa
     // Added: a baked face across at its page's scale, a texel a pixel (its
     // start where the virtual screen puts it; the renderer rounds it)
     if (virtualScreen && UI_BakedFontScale(m_font) > 0.0f) {
-        const float page  = UI_BakedFontScale(m_font);
-        const float vs[2] = {page, virtualScreen[1]};
+        const float page  = UI_BakedFontScale(m_font) * m_fit;
+        const float vs[2] = {page, virtualScreen[1] * m_fit};
 
-        uii.Rend_DrawString(m_font, text, x * virtualScreen[0] / page, y, maxlen, vs);
+        uii.Rend_DrawString(m_font, text, x * virtualScreen[0] / page, y / m_fit, maxlen, vs);
+        return;
+    }
+    if (virtualScreen && m_fit != 1.0f) {
+        const float vs[2] = {virtualScreen[0] * m_fit, virtualScreen[1] * m_fit};
+
+        uii.Rend_DrawString(m_font, text, x / m_fit, y / m_fit, maxlen, vs);
         return;
     }
     // Round to integer to avoid blurry text
@@ -573,7 +581,7 @@ float UIFont::getWidth(const char *text, int maxlen)
         return 0;
     }
 
-    return UI_FontStringWidth(m_font, text, maxlen) * widthRatio;
+    return UI_FontStringWidth(m_font, text, maxlen) * widthRatio * m_fit;
 }
 
 float UIFont::getCharWidth(unsigned short ch)
@@ -610,7 +618,7 @@ float UIFont::getCharWidth(unsigned short ch)
         index = 0;
     }
 
-    return m_font->sgl[index]->locations[indirected].size[0] * 256.0 * widthMul * widthRatio;
+    return m_font->sgl[index]->locations[indirected].size[0] * 256.0 * widthMul * widthRatio * m_fit;
 }
 
 int UIFont::getHeight(const char *text, int maxlen, const float *virtualScale)
@@ -645,15 +653,15 @@ int UIFont::getHeight(const float *virtualScale)
 
     if (virtualScale) {
         if (m_font) {
-            return (m_font->sgl[0]->height * virtualScale[0]);
+            return (m_font->sgl[0]->height * virtualScale[0] * m_fit);
         } else {
-            return (16.0 * virtualScale[1]);
+            return (16.0 * virtualScale[1] * m_fit);
         }
     } else {
         if (m_font) {
-            return m_font->sgl[0]->height;
+            return m_font->sgl[0]->height * m_fit;
         } else {
-            return 16;
+            return 16 * m_fit;
         }
     }
 }
@@ -819,7 +827,7 @@ int UI_FontStringWidth(fontheader_t *pFont, const char *pszString, int iMaxLen)
 
 void UIFont::CheckRefreshFont()
 {
-    if (refHandle != uii.GetRefSequence()) {
+    if (refHandle != UI_FontStamp()) {
         setFont(name);
     } else if (!uii.IsRendererLoaded()) {
         m_font = NULL;

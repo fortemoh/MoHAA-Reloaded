@@ -85,9 +85,28 @@ static int                                        bake_gen;
 
 static const float SLANT = 0.21256f; // tan 12 degrees: CSS's text-skew -12deg
 
+static float bake_designScale = 1.0f; // the design's scale times this (cg_hud_scale)
+static int   bake_scaleGen;            // ... its changes
+
 float UI_DesignScale(float w, float h)
 {
-    return Q_min(uid.vidWidth / w, uid.vidHeight / h);
+    return Q_min(uid.vidWidth / w, uid.vidHeight / h) * bake_designScale;
+}
+
+bool UI_SetDesignScale(float scale)
+{
+    if (scale == bake_designScale) {
+        return false;
+    }
+    bake_designScale = scale;
+    bake_scaleGen++;
+    bake_gen++;
+    return true;
+}
+
+int UI_FontStamp(void)
+{
+    return uii.GetRefSequence() ^ (bake_scaleGen << 20);
 }
 
 void UI_BakeForget(void)
@@ -364,7 +383,7 @@ fontheader_t *UI_BakeFont(const char *name)
             break;
         }
     }
-    if (f && f->seq == uii.GetRefSequence()) {
+    if (f && f->seq == UI_FontStamp()) {
         return &f->header;
     }
     if (!Bake_ParseFont(name, &spec)) {
@@ -375,7 +394,7 @@ fontheader_t *UI_BakeFont(const char *name)
         f->name = name;
         bake_fonts.push_back(f);
     }
-    f->seq = uii.GetRefSequence();
+    f->seq = UI_FontStamp();
     Bake_FontPage(f, &spec);
     return &f->header;
 }
@@ -579,7 +598,9 @@ fractions of the box. The shapes:
   text COLOR FONT X Y ANGLE STRING   (FONT a face's name; its capitals'
                                 middle at X Y, turned ANGLE about the middle)
   picture COLOR FILE [left|center|right] [mirror]
-A layer can start with "in X0 Y0 X1 Y1": drawn in that part of the box.
+A layer can start with "in X0 Y0 X1 Y1": drawn in that part of the box
+(fractions, or design units with "px", from the right or bottom edge when
+negative: "in -2px 0 1 1" the box's 2 units at its right).
 ================
 */
 static void Bake_Layer(uiCanvas_t *cv, const char *text)
@@ -592,8 +613,29 @@ static void Bake_Layer(uiCanvas_t *cv, const char *text)
         int        used = 0;
         uiCanvas_t sub;
 
-        if (sscanf(text + 3, "%f %f %f %f %n", &b[0], &b[1], &b[2], &b[3], &used) < 4) {
-            return;
+        {
+            const char *p = text + 3;
+
+            for (int k = 0; k < 4; k++) {
+                char *end;
+
+                b[k] = strtof(p, &end);
+                if (end == p) {
+                    return;
+                }
+                if (!strncmp(end, "px", 2)) {
+                    // design units, from the far edge when negative
+                    const float px = b[k] * cv->scale, side = (k & 1) ? cv->h : cv->w;
+
+                    b[k] = (px < 0.0f || (px == 0.0f && *p == '-') ? side + px : px) / side;
+                    end += 2;
+                }
+                p = end;
+            }
+            while (*p == ' ') {
+                p++;
+            }
+            used = (int)(p - (text + 3));
         }
         {
             const int x0 = (int)floorf(b[0] * cv->w + 0.5f), y0 = (int)floorf(b[1] * cv->h + 0.5f);

@@ -18,6 +18,7 @@ textalign centerx
 linkcvar ui_hud_killer
 colorcvar ui_hud_killer_col
 enabledcvar ui_hud_killer_on
+fitwidth 400
 }
 
 end.
