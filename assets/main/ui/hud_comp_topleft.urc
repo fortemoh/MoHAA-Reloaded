@@ -2,6 +2,7 @@
 // the game messages under it
 menu "hud_comp_topleft" 420 420 NONE 0
 virtualres 1 1920 1080
+drawcache 1
 align left top
 bgcolor 0 0 0 0
 borderstyle NONE

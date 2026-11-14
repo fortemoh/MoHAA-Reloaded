@@ -30,5 +30,6 @@ qboolean UI_CompHud_Active(void);         // cg_hudstyle 1
 void     UI_CompHud_Frame(void);          // the ui_hud_* cvars, before the menus draw
 void     UI_CompHud_Print(const char *msg); // a console line: the chat, the game messages, the kills
 void     UI_CompHud_Clear(void);          // a new map or server
+void     UI_CompHud_ConfigString(void);   // a configstring changed
 void     UI_CompHud_MapLoaded(void);      // the radar's walk and the pictures, at the load
 void     UI_CompHud_PreBake(void);        // the pictures (after the renderer's restart)

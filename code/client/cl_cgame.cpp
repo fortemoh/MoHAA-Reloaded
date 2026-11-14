@@ -318,6 +318,7 @@ void CL_ConfigstringModified(int index, char* s) {
 	if ( !strcmp( old, s ) ) {
 		return;		// unchanged
 	}
+	UI_CompHud_ConfigString();
 
 	len = strlen( s );
 	if ( cl_csAppend->integer && len + 1 + cl.gameState.dataCount <= MAX_GAMESTATE_CHARS ) {

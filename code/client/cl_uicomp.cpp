@@ -34,7 +34,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
 
-#include <unordered_map>
 #include <vector>
 
 #define COMP_PICTURES "ui/competitive/"
@@ -258,19 +257,66 @@ PLAYERS
 ====================================================================
 */
 
+// what the HUD reads of the configstrings, parsed again only after one
+// changed (UI_CompHud_ConfigString), not each frame
+static struct {
+    int      changes, parsed;
+    int      gametype;
+    qboolean floodProtect;
+    char     map[MAX_QPATH];
+    char     name[MAX_CLIENTS][MAX_NAME_LENGTH];
+    int      team[MAX_CLIENTS];
+    int      objFlags[MAX_OBJECTIVES], objCurrent;
+    vec3_t   objLoc[MAX_OBJECTIVES];
+} cs = {1};
+
+void UI_CompHud_ConfigString(void)
+{
+    cs.changes++;
+}
+
+static void Comp_ConfigStrings(void)
+{
+    const char *info = CL_ConfigString(CS_SERVERINFO);
+
+    if (cs.parsed == cs.changes) {
+        return;
+    }
+    cs.parsed       = cs.changes;
+    cs.gametype     = atoi(Info_ValueForKey(info, "g_gametype"));
+    cs.floodProtect = atoi(Info_ValueForKey(info, "sv_floodProtect")) != 0;
+    Q_strncpyz(cs.map, Info_ValueForKey(info, "mapname"), sizeof(cs.map));
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        Q_strncpyz(cs.name[i], Info_ValueForKey(CL_ConfigString(CS_PLAYERS + i), "name"), sizeof(cs.name[i]));
+        cs.team[i] = atoi(Info_ValueForKey(CL_ConfigString(CS_PLAYERS + i), "team"));
+    }
+    for (int i = 0; i < MAX_OBJECTIVES; i++) {
+        const char *o = CL_ConfigString(CS_OBJECTIVES + i);
+
+        cs.objFlags[i] = atoi(Info_ValueForKey(o, "flags"));
+        if (sscanf(Info_ValueForKey(o, "loc"), "%f %f %f", &cs.objLoc[i][0], &cs.objLoc[i][1], &cs.objLoc[i][2]) != 3) {
+            cs.objFlags[i] = 0;
+        }
+    }
+    cs.objCurrent = atoi(CL_ConfigString(CS_CURRENT_OBJECTIVE));
+}
+
 static int Comp_Gametype(void)
 {
-    return atoi(Info_ValueForKey(CL_ConfigString(CS_SERVERINFO), "g_gametype"));
+    Comp_ConfigStrings();
+    return cs.gametype;
 }
 
 static const char *Comp_Name(int client)
 {
-    return Info_ValueForKey(CL_ConfigString(CS_PLAYERS + client), "name");
+    Comp_ConfigStrings();
+    return client >= 0 && client < MAX_CLIENTS ? cs.name[client] : "";
 }
 
 static int Comp_Team(int client)
 {
-    return client >= 0 && client < MAX_CLIENTS ? atoi(Info_ValueForKey(CL_ConfigString(CS_PLAYERS + client), "team")) : 0;
+    Comp_ConfigStrings();
+    return client >= 0 && client < MAX_CLIENTS ? cs.team[client] : 0;
 }
 
 // the one client called name, -1 none or more
@@ -429,6 +475,7 @@ void UI_CompHud_Print(const char *msg)
 
 void UI_CompHud_Clear(void)
 {
+    cs.changes++;
     memset(&comp, 0, sizeof(comp));
     comp.sbScore[0] = comp.sbScore[1] = -1;
     comp.lastDmg                      = -999999;
@@ -442,16 +489,24 @@ THE FRAME: the ui_hud_* cvars
 ====================================================================
 */
 
-// a cvar by name, found once (the names are the callers' literals and the few made below)
+// a cvar by name, found once: the names are the callers' literals, a table
+// by their addresses
 static cvar_t *Comp_Cvar(const char *name)
 {
-    static std::unordered_map<const char *, cvar_t *> found;
-    cvar_t                                         *&v = found[name];
+    static struct {
+        const char *name;
+        cvar_t     *cvar;
+    } found[512];
+    unsigned i = (unsigned)((uintptr_t)name >> 2) % ARRAY_LEN(found);
 
-    if (!v) {
-        v = Cvar_Get(name, "", 0);
+    while (found[i].name && found[i].name != name) {
+        i = (i + 1) % ARRAY_LEN(found);
     }
-    return v;
+    if (!found[i].name) {
+        found[i].name = name;
+        found[i].cvar = Cvar_Get(name, "", 0);
+    }
+    return found[i].cvar;
 }
 
 static int Comp_Int(const char *name)
@@ -468,11 +523,26 @@ static void Comp_Set(const char *name, const char *value)
     }
 }
 
+static void Comp_SetI(const char *name, int value)
+{
+    cvar_t *v = Comp_Cvar(name);
+
+    if (v->integer != value || !v->string[0]) {
+        Comp_Set(name, va("%d", value));
+    }
+}
+
 static void Comp_SetF(const char *name, float value)
 {
-    // (the text made only when the value changed)
-    if (fabsf(Comp_Cvar(name)->value - value) >= 0.0005f || !Comp_Cvar(name)->string[0]) {
-        Comp_Set(name, va("%.3f", value));
+    cvar_t *v = Comp_Cvar(name);
+
+    // (the text made only when the value changed: "%.3f")
+    if (fabsf(v->value - value) >= 0.0005f || !v->string[0]) {
+        const int k = (int)(fabsf(value) * 1000.0f + 0.5f);
+        char      text[32];
+
+        Com_sprintf(text, sizeof(text), "%s%d.%03d", value < 0 && k ? "-" : "", k / 1000, k % 1000);
+        Comp_Set(name, text);
     }
 }
 
@@ -526,7 +596,7 @@ static void Comp_Roster(int gametype)
         comp.wantScores = qtrue;
     }
     comp.wasPlaying = playing;
-    if (gametype >= GT_TEAM && (comp.wantScores || !atoi(Info_ValueForKey(CL_ConfigString(CS_SERVERINFO), "sv_floodProtect")))
+    if (gametype >= GT_TEAM && (comp.wantScores || !cs.floodProtect)
         && (unsigned)(cls.realtime - comp.scoreTime) >= 2000) {
         comp.wantScores = qfalse;
         comp.scoreTime  = cls.realtime;
@@ -590,11 +660,27 @@ static void Comp_Weapons(const char *inHand, qboolean following)
     // the grenades: the pouch's (by the ammo's name), and the one a grenade
     // keeps loaded, which a spawn or a round gives back
     for (i = 0; i < MAX_AMMO; i++) {
-        const char *name = ps->ammo_name_index[i] > 0 ? CL_ConfigString(ps->ammo_name_index[i]) : "";
+        static char kinds[MAX_CONFIGSTRINGS]; // 1 none, 2 smoke, 3 frag (0: not read since a change)
+        static int  read = -1;
+        const int   idx  = ps->ammo_name_index[i];
 
-        if (Q_stristr(name, "smoke")) {
+        Comp_ConfigStrings();
+        if (read != cs.parsed) {
+            memset(kinds, 0, sizeof(kinds));
+            read = cs.parsed;
+        }
+        if (idx <= 0 || idx >= MAX_CONFIGSTRINGS) {
+            continue;
+        }
+        if (!kinds[idx]) {
+            const char *name = CL_ConfigString(idx);
+
+            kinds[idx] = Q_stristr(name, "smoke") ? 2
+                      : (Q_stristr(name, "grenade") && !Q_stristr(name, "riflegrenade")) || !Q_stricmp(name, "agrenade") ? 3 : 1;
+        }
+        if (kinds[idx] == 2) {
             smokes = Q_max(smokes, ps->ammo_amount[i]);
-        } else if ((Q_stristr(name, "grenade") && !Q_stristr(name, "riflegrenade")) || !Q_stricmp(name, "agrenade")) {
+        } else if (kinds[idx] == 3) {
             frags = Q_max(frags, ps->ammo_amount[i]);
         }
     }
@@ -687,13 +773,24 @@ void UI_CompHud_Frame(void)
     int         health = ps->stats[STAT_HEALTH], maxHealth = Q_max(1, ps->stats[STAT_MAXHEALTH]);
     int         i;
 
+    static int  lastSnap = -1, lastChange = -1, lastFull;
+
     if (!cl.snap.valid) {
         return;
     }
-    // (copied: va's buffer is used again below)
-    Q_strncpyz(spec, Comp_Int("cg_hud_spectator") ? Comp_SpectatorText() : "", sizeof(spec));
     cge->CG_EyeAngles(&angles);
     viewYaw = angles[YAW];
+
+    // what comes with a snapshot or a configstring: made again with a new
+    // one, and every 100 ms (the toggles, the keys); the view's and time's each frame
+    const bool full = cl.snap.messageNum != lastSnap || cs.changes != lastChange || (unsigned)(cls.realtime - lastFull) >= 100;
+
+    if (full) {
+    lastSnap   = cl.snap.messageNum;
+    lastChange = cs.changes;
+    lastFull   = cls.realtime;
+    // (copied: va's buffer is used again below)
+    Q_strncpyz(spec, Comp_Int("cg_hud_spectator") ? Comp_SpectatorText() : "", sizeof(spec));
     Comp_Roster(gametype);
     Comp_Weapons(weapon, following);
 
@@ -709,11 +806,11 @@ void UI_CompHud_Frame(void)
         health    = ps->stats[STAT_INFOCLIENT_HEALTH];
         maxHealth = 100;
     }
-    Comp_Set("ui_hud_health", va("%d", health));
+    Comp_SetI("ui_hud_health", health);
     Comp_Set("ui_hud_health_col", health < Comp_Cvar("cg_hud_lowhealth")->value * maxHealth ? "0.753 0.188 0.129 1" : "0.965 0.965 0.478 1");
     Comp_Set("ui_hud_ammo_on", weapon[0] ? "1" : "0");
-    Comp_Set("ui_hud_clip", va("%d", ps->stats[STAT_CLIPAMMO]));
-    Comp_Set("ui_hud_ammo", va("%d", ps->stats[STAT_AMMO]));
+    Comp_SetI("ui_hud_clip", ps->stats[STAT_CLIPAMMO]);
+    Comp_SetI("ui_hud_ammo", ps->stats[STAT_AMMO]);
 
     // the score panel: Allies | timer | Axis, or self | timer | the leader
     {
@@ -736,13 +833,7 @@ void UI_CompHud_Frame(void)
         Comp_Set("ui_hud_score_r", score[1] >= 0 ? va("%d", score[1]) : "");
         Comp_Set("ui_hud_score_lc", teams ? "0.804 0.937 0.98 1" : "0.988 0.988 0.988 1");
         Comp_Set("ui_hud_score_rc", teams ? "0.961 0.812 0.784 1" : "0.988 0.988 0.988 1");
-        if (atoi(CL_ConfigString(CS_WARMUP)) != -1 && matchEnd && gametype != GT_LIBERATION && matchEnd > cl.serverTime) {
-            const int s = (matchEnd - cl.serverTime) / 1000;
-
-            Comp_Set("ui_hud_timer", va("%d:%02d", s / 60, s % 60));
-            banner1 = "";
-        } else {
-            Comp_Set("ui_hud_timer", "");
+        if (!(atoi(CL_ConfigString(CS_WARMUP)) != -1 && matchEnd && gametype != GT_LIBERATION && matchEnd > cl.serverTime)) {
             banner1 = Comp_Int("cg_hud_timer") ? Sys_LV_CL_ConvertString(Comp_Cvar("ui_timemessage")->string) : "";
         }
         if (rounds) {
@@ -761,6 +852,20 @@ void UI_CompHud_Frame(void)
     Comp_Set("ui_hud_banner2", banner1[0] ? spec : "");
     Comp_Set("ui_hud_banner1_on", banner1[0] || spec[0] ? "1" : "0");
     Comp_Set("ui_hud_banner2_on", banner1[0] && spec[0] ? "1" : "0");
+    }
+
+    // the timer: its seconds
+    {
+        static int  shown = -2;
+        const int   matchEnd = atoi(CL_ConfigString(CS_MATCHEND));
+        const int   left = atoi(CL_ConfigString(CS_WARMUP)) != -1 && matchEnd && gametype != GT_LIBERATION && matchEnd > cl.serverTime
+                         ? (matchEnd - cl.serverTime) / 1000 : -1;
+
+        if (left != shown || !Comp_Cvar("ui_hud_timer")->modificationCount) {
+            shown = left;
+            Comp_Set("ui_hud_timer", left >= 0 ? va("%d:%02d", left / 60, left % 60) : "");
+        }
+    }
 
     // the stopwatch (Omaha's bar outlasts the wait by a quarter second) and the grenade's charge
     {
@@ -781,7 +886,7 @@ void UI_CompHud_Frame(void)
     }
 
     // who killed you, the player aimed at, who you follow, who last hurt you
-    {
+    if (full) {
         const qboolean killer = health <= 0 && !spectating && attacker >= 0 && attacker < MAX_CLIENTS && attacker != ps->clientNum;
         const int      info   = ps->stats[STAT_INFOCLIENT], infoHealth = ps->stats[STAT_INFOCLIENT_HEALTH];
         const qboolean target = info >= 0 && info < MAX_CLIENTS && infoHealth > 0 && !following;
@@ -799,7 +904,7 @@ void UI_CompHud_Frame(void)
     }
 
     // a vote
-    {
+    if (full) {
         const int voteTime = atoi(CL_ConfigString(CS_VOTE_TIME));
 
         Comp_Set("ui_hud_vote_on", voteTime ? "1" : "0");
@@ -870,14 +975,18 @@ void UI_CompHud_Frame(void)
             const int age = cls.realtime - comp.arcTime[i];
 
             Comp_SetF(comp_arcAlpha[i], comp.arcTime[i] && age < 1500 ? 1.0f - age / 1500.0f : 0.0f);
-            Comp_SetF(comp_arcAngle[i], Comp_ScreenAngle(viewYaw, comp.arcStat[i] / 10.0f + 180.0f));
+            if (comp.arcTime[i] && age < 1500) {
+                Comp_SetF(comp_arcAngle[i], Comp_ScreenAngle(viewYaw, comp.arcStat[i] / 10.0f + 180.0f));
+            }
         }
         Comp_SetF("ui_hud_dmg_alpha", dmg > 0 && comp.flashTime ? Com_Clamp(0.0f, 1.0f, 1.0f - (cls.realtime - comp.flashTime) / 1500.0f) : 0.0f);
-        Comp_SetF("ui_hud_dmg_angle", Comp_ScreenAngle(viewYaw, dmg / 10.0f + 180.0f));
+        if (Comp_Cvar("ui_hud_dmg_alpha")->value > 0.0f) {
+            Comp_SetF("ui_hud_dmg_angle", Comp_ScreenAngle(viewYaw, dmg / 10.0f + 180.0f));
+        }
     }
 
     // the elements' flags (enabledcvar): shown and turned on
-    {
+    if (full) {
         const qboolean strip = !(ps->pm_flags & PMF_SPECTATING) || following;
         const qboolean radar = Comp_Int("cg_hud_radar") != 0;
         const qboolean msgs  = Comp_Int("cg_hud_messages") != 0;
@@ -913,7 +1022,7 @@ void UI_CompHud_Frame(void)
     }
 
     // the compass: its bearings turn with the view, the objectives' balls on its rim
-    {
+    if (Comp_Cvar("ui_hud_compass_on")->integer) {
         const int stats[3] = {ps->stats[STAT_OBJECTIVECENTER], ps->stats[STAT_OBJECTIVELEFT], ps->stats[STAT_OBJECTIVERIGHT]};
         const int rest[3]  = {1800, 1730, 1870};
 
@@ -932,6 +1041,8 @@ void UI_CompHud_Init(void)
         Cvar_Get(comp_toggles[i], "1", CVAR_ARCHIVE);
     }
     Cvar_Get("cg_hud_lowhealth", "0.4", CVAR_ARCHIVE);
+    // the menus' never shown widgets (the teams' icons, the cards' shapes)
+    Cvar_Get("ui_hud_never", "0", 0);
     UI_CompHud_Clear();
 }
 
@@ -1014,6 +1125,15 @@ static float Comp_Fade(int time, int life, int fade)
     return Com_Clamp(0.0f, 1.0f, (float)(life - (cls.realtime - time)) / fade);
 }
 
+// what a widget draws from, for the draw cache (DrawKey)
+static int Comp_Hash(int h, const void *data, size_t size)
+{
+    for (size_t i = 0; i < size; i++) {
+        h = (h ^ ((const byte *)data)[i]) * 16777619;
+    }
+    return h;
+}
+
 /*
 ================
 UIHudFeed
@@ -1037,6 +1157,17 @@ public:
     void SetFeed(Event *ev);
     void SetBoldFont(Event *ev);
     void Draw(void) override;
+    // kept while no line fades: the lines shown
+    bool Lines(int *key);
+    bool CacheDraw(void) override { return Lines(NULL); }
+    bool DrawKeyed(void) override { return true; }
+    int  DrawKey(void) override
+    {
+        int key = 0;
+
+        Lines(&key);
+        return key;
+    }
     void DrawKills(float w, float h, float s);
 };
 
@@ -1048,6 +1179,27 @@ CLASS_DECLARATION(UIWidget, UIHudFeed, NULL) {
     {&EV_HudFeed_BoldFont, &UIHudFeed::SetBoldFont},
     {NULL,                 NULL                   }
 };
+
+bool UIHudFeed::Lines(int *key)
+{
+    const int life = m_kind ? 8000 : 6000, fade = m_kind ? 2000 : 1500;
+    const int count = m_kind == 0 ? comp.numKills : m_kind == 1 ? comp.numChat : comp.numMsgs;
+    bool      steady = true;
+    int       h = 0;
+
+    for (int i = 0; i < count; i++) {
+        const int time = m_kind == 0 ? comp.kills[i].time : m_kind == 1 ? comp.chat[i].time : comp.msgs[i].time;
+
+        if (cls.realtime - time < life) {
+            steady = steady && cls.realtime - time < life - fade;
+            h      = Comp_Hash(h, &time, sizeof(time));
+        }
+    }
+    if (key) {
+        *key = h;
+    }
+    return steady;
+}
 
 void UIHudFeed::SetFeed(Event *ev)
 {
@@ -1236,6 +1388,7 @@ public:
         m_icons[1] = ev->GetString(2);
     }
     void Draw(void) override;
+    bool CacheDraw(void) override { return true; }
 };
 
 Event EV_HudCards_Team("team", EV_DEFAULT, "s", "team", "allies or axis");
@@ -1249,10 +1402,14 @@ CLASS_DECLARATION(UIWidget, UIHudCards, NULL) {
 
 void UIHudCards::Draw(void)
 {
-    const float s     = m_vVirtualScale[0], w = m_frame.size.width / s;
-    const char *cards = Cvar_VariableString(m_team == TEAM_AXIS ? "ui_hud_cards_axis" : "ui_hud_cards_allies");
-    const int   n     = (int)strlen(cards);
-    const int   most  = Q_max(1, Q_max((int)strlen(Cvar_VariableString("ui_hud_cards_allies")), (int)strlen(Cvar_VariableString("ui_hud_cards_axis"))));
+    static cvar_t *const allies = Cvar_Get("ui_hud_cards_allies", "", 0), *const axis = Cvar_Get("ui_hud_cards_axis", "", 0);
+    const float          s      = m_vVirtualScale[0], w = m_frame.size.width / s;
+    const char          *cards  = (m_team == TEAM_AXIS ? axis : allies)->string;
+    const int            n      = (int)strlen(cards);
+    const int            most   = Q_max(1, Q_max((int)strlen(allies->string), (int)strlen(axis->string)));
+
+    UI_DrawDep(allies);
+    UI_DrawDep(axis);
     int         size  = Q_max(20, Q_min(48, 400 / most - 4)), fit, i;
 
     if (!n) {
@@ -1314,6 +1471,20 @@ public:
     void SetCountFont(Event *ev) { m_countFont = new UIFont(ev->GetString(1)); }
     void Item(float right, float *bottom, const char **pics, const int *counts, int n, int hand, const char *key, float boxW, float boxH);
     void Draw(void) override;
+    bool CacheDraw(void) override { return true; }
+    bool DrawKeyed(void) override { return true; }
+    int  DrawKey(void) override
+    {
+        const playerState_t *ps   = &cl.snap.ps;
+        const int            v[6] = {comp.frags, comp.smokes, comp.nation, ps->stats[STAT_WEAPONS], ps->stats[STAT_EQUIPPED_WEAPON],
+                                     Comp_Int("cg_hud_grenades")};
+        const char          *hand = CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON]);
+        int                  h    = Comp_Hash(0, v, sizeof(v));
+
+        h = Comp_Hash(h, comp.primary, strlen(comp.primary));
+        h = Comp_Hash(h, comp.sidearm, strlen(comp.sidearm));
+        return Comp_Hash(h, hand, strlen(hand));
+    }
 };
 
 Event EV_HudWeapons_CountFont("countfont", EV_DEFAULT, "s", "font", "the grenades' counts' font");
@@ -1621,19 +1792,51 @@ static void RM_Picture(void)
 }
 
 // an objective's diamond (white for the current one), its box d pixels
+// a mark's shader and size kept while its scale and the baked images stay
+typedef struct {
+    int       stamp, d;
+    float     k, s;
+    qhandle_t h;
+} compMark_t;
+
+static bool Comp_MarkKept(compMark_t *m, float k, float s, int *d)
+{
+    if (m->h && m->stamp == UI_BakeStamp() && m->k == k && m->s == s) {
+        *d = m->d;
+        return true;
+    }
+    return false;
+}
+
+static qhandle_t Comp_MarkKeep(compMark_t *m, float k, float s, int d, qhandle_t h)
+{
+    *m = {UI_BakeStamp(), d, k, s, h};
+    return h;
+}
+
 static qhandle_t Comp_ObjectiveShader(qboolean current, float k, float s, int *d)
 {
+    static compMark_t kept[2];
+
+    if (Comp_MarkKept(&kept[current], k, s, d)) {
+        return kept[current].h;
+    }
     const char *layers[2] = {"poly 0.047 0.055 0.071 0.9 0.5 0 1 0.5 0.5 1 0 0.5",
                              current ? "poly 1 1 1 0.95 0.5 0.12 0.88 0.5 0.5 0.88 0.12 0.5" : "poly 0.75 0.75 0.75 0.8 0.5 0.12 0.88 0.5 0.5 0.88 0.12 0.5"};
 
     *d = (int)(((current ? 5.5f : 4.25f) + 1.75f) * k * 2.0f * s + 0.5f);
-    return UI_BakeShape("comp_obj", layers, 2, *d, *d, s);
+    return Comp_MarkKeep(&kept[current], k, s, *d, UI_BakeShape("comp_obj", layers, 2, *d, *d, s));
 }
 
 // a teammate's dot, its dark edge and (on the radar, not at its edge) its
 // pointer up, in a box of 2 x 2.6 radii, d pixels
 static qhandle_t Comp_DotShader(int axis, qboolean clamped, float k, float s, int *d)
 {
+    static compMark_t kept[2][2];
+
+    if (Comp_MarkKept(&kept[axis][clamped], k, s, d)) {
+        return kept[axis][clamped].h;
+    }
     const char *color = axis ? "0.8 0.533 0.533 1" : "0.533 0.569 0.8 1";
     const float rad = (clamped ? 3.9f : 5.5f) * k, rim = rad + 1.25f * k, half = Q_max(2.6f * rad, rim) + 1.0f;
     char        lines[3][96];
@@ -1644,16 +1847,21 @@ static qhandle_t Comp_DotShader(int axis, qboolean clamped, float k, float s, in
     Com_sprintf(lines[1], 96, "circle 0.047 0.055 0.071 0.9 %g", rim / half);
     Com_sprintf(lines[2], 96, "circle %s %g", color, rad / half);
     *d = (int)(half * 2.0f * s + 0.5f);
-    return UI_BakeShape("comp_dot", layers, 3, *d, *d, s);
+    return Comp_MarkKeep(&kept[axis][clamped], k, s, *d, UI_BakeShape("comp_dot", layers, 3, *d, *d, s));
 }
 
 // the player's arrow, up
 static qhandle_t Comp_ArrowShader(float k, float s, int *d)
 {
+    static compMark_t kept;
+
+    if (Comp_MarkKept(&kept, k, s, d)) {
+        return kept.h;
+    }
     const char *layers[2] = {"poly 0.047 0.055 0.071 0.9 0.5 0.0625 0.8125 0.8125 0.1875 0.8125", "poly 1 1 1 1 0.5 0.1875 0.7232 0.7232 0.2768 0.7232"};
 
     *d = (int)(16.0f * 1.4f * k * s + 0.5f);
-    return UI_BakeShape("comp_arrow", layers, 2, *d, *d, s);
+    return Comp_MarkKeep(&kept, k, s, *d, UI_BakeShape("comp_arrow", layers, 2, *d, *d, s));
 }
 
 static void Comp_PreBakeWidget(UIWidget *w);
@@ -1728,7 +1936,7 @@ void UI_CompHud_PreBake(void)
 
 void UI_CompHud_MapLoaded(void)
 {
-    const char *map = Info_ValueForKey(CL_ConfigString(CS_SERVERINFO), "mapname");
+    const char *map = (Comp_ConfigStrings(), cs.map);
 
     UI_CompHud_PreBake();
     if (!UI_CompHud_Active() || !Comp_Int("cg_hud_radar") || !strcmp(map, rm.map)) {
@@ -1765,8 +1973,8 @@ void UIHudRadar::Draw(void)
     const float s = m_vVirtualScale[0], r = m_frame.size.width * 0.5f, k = m_frame.size.width / s / 220.0f;
     const float upp = RM_RANGE / r; // world units a pixel
     vec3_t      angles, eye;
-    float       fx, fy, sn, cs;
-    const char *map = Info_ValueForKey(CL_ConfigString(CS_SERVERINFO), "mapname");
+    float       fx, fy, sn, cn;
+    const char *map = (Comp_ConfigStrings(), cs.map);
 
     if (!cl.snap.valid) {
         return;
@@ -1774,13 +1982,13 @@ void UIHudRadar::Draw(void)
     cge->CG_EyeAngles(&angles);
     cge->CG_EyePosition(&eye);
     sn = sinf(DEG2RAD(angles[YAW]));
-    cs = cosf(DEG2RAD(angles[YAW]));
+    cn = cosf(DEG2RAD(angles[YAW]));
     // world offset to screen: up the view's forward, right its right
     auto place = [&](float wx, float wy, float *x, float *y) {
         const float dx = wx - eye[0], dy = wy - eye[1];
 
-        fx = (dx * sn - dy * cs) / upp;
-        fy = -(dx * cs + dy * sn) / upp;
+        fx = (dx * sn - dy * cn) / upp;
+        fy = -(dx * cn + dy * sn) / upp;
         *x = fx;
         *y = fy;
     };
@@ -1800,17 +2008,23 @@ void UIHudRadar::Draw(void)
         }
         // a fan of the circle's points, their texels the world's under them
         {
+            static float circle[49][2];
             const float  tw = rm.cw * RM_CELL, th = rm.ch * RM_CELL;
             const vec4_t white = {1, 1, 1, 1};
             vec2_t       pts[3], st[3];
 
+            if (!circle[0][0]) {
+                for (int i = 0; i <= 48; i++) {
+                    circle[i][0] = cosf(i * 2.0f * M_PI / 48.0f);
+                    circle[i][1] = sinf(i * 2.0f * M_PI / 48.0f);
+                }
+            }
             uii.Rend_SetColor(white);
             for (int i = 0; i < 48; i++) {
                 for (int v = 0; v < 3; v++) {
-                    const float a  = (i + (v == 2)) * 2.0f * M_PI / 48.0f;
-                    const float px = v ? cosf(a) * r : 0.0f, py = v ? sinf(a) * r : 0.0f;
+                    const float px = v ? circle[i + (v == 2)][0] * r : 0.0f, py = v ? circle[i + (v == 2)][1] * r : 0.0f;
                     // the screen offset back to the world
-                    const float wx = eye[0] + (px * sn - py * cs) * upp, wy = eye[1] + (-px * cs - py * sn) * upp;
+                    const float wx = eye[0] + (px * sn - py * cn) * upp, wy = eye[1] + (-px * cn - py * sn) * upp;
 
                     pts[v][0] = r + px;
                     pts[v][1] = r + py;
@@ -1825,20 +2039,17 @@ void UIHudRadar::Draw(void)
 
     // the objectives: a diamond, white for the current one
     for (int i = 0; i < MAX_OBJECTIVES; i++) {
-        const char *o     = CL_ConfigString(CS_OBJECTIVES + i);
-        const int   flags = atoi(Info_ValueForKey(o, "flags"));
-        vec3_t      loc;
-        float       x, y;
+        const int flags = cs.objFlags[i];
+        float     x, y;
 
-        if (!(flags & OBJ_FLAG_CURRENT) || (flags & (OBJ_FLAG_HIDDEN | OBJ_FLAG_COMPLETED))
-            || sscanf(Info_ValueForKey(o, "loc"), "%f %f %f", &loc[0], &loc[1], &loc[2]) != 3) {
+        if (!(flags & OBJ_FLAG_CURRENT) || (flags & (OBJ_FLAG_HIDDEN | OBJ_FLAG_COMPLETED))) {
             continue;
         }
         {
             int             d;
-            const qhandle_t sh = Comp_ObjectiveShader(i == atoi(CL_ConfigString(CS_CURRENT_OBJECTIVE)), k, s, &d);
+            const qhandle_t sh = Comp_ObjectiveShader(i == cs.objCurrent, k, s, &d);
 
-            place(loc[0], loc[1], &x, &y);
+            place(cs.objLoc[i][0], cs.objLoc[i][1], &x, &y);
             if (sqrtf(x * x + y * y) > r - 7.0f * k * s) {
                 const float f = (r - 7.0f * k * s) / sqrtf(x * x + y * y);
 

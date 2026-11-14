@@ -1270,8 +1270,18 @@ static void UI_CompHuds(bool show)
         "hud_comp_target",  "hud_comp_vote",
     };
 
+    static Menu *menus[ARRAY_LEN(names)];
+    static int   generation = -1;
+
+    // found again when the menus change
+    if (generation != menuManager.Generation()) {
+        generation = menuManager.Generation();
+        for (size_t i = 0; i < ARRAY_LEN(names); i++) {
+            menus[i] = menuManager.FindMenu(names[i]);
+        }
+    }
     for (size_t i = 0; i < ARRAY_LEN(names); i++) {
-        Menu *hud = menuManager.FindMenu(names[i]);
+        Menu *hud = menus[i];
 
         if (hud && show != !!hud->isVisible()) {
             if (show) {
@@ -2215,28 +2225,21 @@ void UI_Update(void)
         UI_HideHudList();
         UI_CompHuds(false);
     } else if (UI_CompHud_Active()) {
-        // Added: the Competitive HUD's menus instead of the stock HUD's (the boss's health stays)
-        if (crosshairhud) {
-            crosshairhud->ForceHide();
+        // Added: the Competitive HUD's menus instead of the stock HUD's (the
+        // boss's health stays), those hidden when shown, not each frame
+        Menu *const stock[] = {crosshairhud, hud_weapons, hud_items, hud_health, hud_ammo, hud_compass};
+
+        for (Menu *m : stock) {
+            if (m && m->isVisible()) {
+                m->ForceHide();
+            }
         }
-        if (hud_weapons) {
-            hud_weapons->ForceHide();
-            ui_weapHudTime = 0;
+        ui_weapHudTime = ui_itemHudTime = 0;
+        for (int i = 1; i <= hudList.NumObjects(); i++) {
+            if (hudList.ObjectAt(i)->isVisible()) {
+                hudList.ObjectAt(i)->ForceHide();
+            }
         }
-        if (hud_items) {
-            hud_items->ForceHide();
-            ui_itemHudTime = 0;
-        }
-        if (hud_health) {
-            hud_health->ForceHide();
-        }
-        if (hud_ammo) {
-            hud_ammo->ForceHide();
-        }
-        if (hud_compass) {
-            hud_compass->ForceHide();
-        }
-        UI_HideHudList();
         UI_CompHud_Frame();
         UI_CompHuds(true);
     } else {
@@ -4042,6 +4045,10 @@ void CL_FillUIImports(void)
     uii.Rend_LoadRawImage = re.LoadRawImage;
     uii.Rend_FreeRawImage = re.FreeRawImage;
     uii.Rend_RegisterImage2D = re.RegisterImage2D;
+    uii.Rend_Begin2DList     = re.Begin2DList;
+    uii.Rend_End2DList       = re.End2DList;
+    uii.Rend_Draw2DList      = re.Draw2DList;
+    uii.Rend_Free2DList      = re.Free2DList;
 
     uii.Rend_Set2DStartTime = re.Set2DInitialShaderTime;
 }

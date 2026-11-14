@@ -2016,6 +2016,7 @@ void RE_Shutdown( qboolean destroyWindow ) {
 
 	// what tess holds doesn't outlive the renderer
 	R_Forget2DBatch();
+	R_2DListsShutdown();
 
 	tr.registered = qfalse;
 }
@@ -2254,6 +2255,10 @@ refexport_t *GetRefAPI ( int apiVersion, refimport_t *rimp ) {
 
 	re.Set2DInitialShaderTime = Set2DInitialShaderTime;
 	re.RegisterImage2D = RE_RegisterImage2D;
+	re.Begin2DList = RE_Begin2DList;
+	re.End2DList = RE_End2DList;
+	re.Draw2DList = RE_Draw2DList;
+	re.Free2DList = RE_Free2DList;
 
 	return VK_FrameLogExports( &re );
 }

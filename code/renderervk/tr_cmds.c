@@ -594,6 +594,7 @@ void RE_EndFrame( int *frontEndMsec, int *backEndMsec ) {
 
 	R_IssueRenderCommands( qtrue );
 	vk_probe_frame_end();
+	R_2DListsEndFrame();
 
 	R_InitNextFrame();
 

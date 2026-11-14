@@ -942,7 +942,7 @@ static void R_LoadFontShaders(fontheader_t* font) {
 }
 
 void R_DrawString(fontheader_t* font, const char* text, float x, float y, int maxlen, const float *pvVirtualScreen) {
-    if (glConfig.smpActive && !R_OnRenderThread()) {
+    if (R_2DQueued()) {
         string2DCommand_t *cmd;
         size_t len = strlen(text);
 
@@ -950,7 +950,7 @@ void R_DrawString(fontheader_t* font, const char* text, float x, float y, int ma
         if (len > 8191) {
             len = 8191;
         }
-        cmd = (string2DCommand_t *)R_GetCommandBuffer((int)(sizeof(*cmd) + PAD(len + 1, sizeof(void *))));
+        cmd = (string2DCommand_t *)R_2DCommandBuffer((int)(sizeof(*cmd) + PAD(len + 1, sizeof(void *))));
         if (!cmd) {
             return;
         }

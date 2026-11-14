@@ -104,4 +104,10 @@ public:
     void StatCircleTexCoord(float fAng, vec3_t vTexCoord);
 
     void Draw(void) override;
+    // Added: kept by the draw cache when drawn as a UILabel (no stat, item or model)
+    bool CacheDraw(void) override
+    {
+        return m_stat_alpha == -1 && m_stat == -1 && m_itemindex == -1 && m_inventoryrendermodelindex == -1
+            && m_stat_configstring == -1 && !m_rendermodel && m_statbar_or == L_STATBAR_NONE && !m_sDrawModelName.length();
+    }
 };

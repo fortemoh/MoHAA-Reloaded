@@ -111,6 +111,8 @@ UILabel::UILabel()
     m_iNextStateTime    = 0;
     m_iLastDrawTime     = 0;
     m_bOutlinedText     = false;
+    m_linkVar           = NULL;
+    m_linkCount         = -1;
 }
 
 void UILabel::MouseEntered(Event *ev)
@@ -239,20 +241,39 @@ void UILabel::Draw(void)
     str         val;
 
     ProcessSounds();
+    // (sounds: not kept by the draw cache)
+    if (m_sOneShotSoundName.length() || m_sLoopingSoundName.length()) {
+        UI_DrawLive();
+    }
 
     m_iLastDrawTime = uii.Sys_Milliseconds();
 
     if (m_cvarname.length()) {
-        string = uii.Cvar_GetString(m_cvarname, "");
-
-        //
-        // localize the cvar value when possible
-        //
-        for (int i = 0; localizableVars[i]; i++) {
-            if (!strcmp(localizableVars[i], string)) {
-                string = Sys_LV_CL_ConvertString(localizableVars[i]);
-            }
+        // Added: found once, the text made again only when it changed
+        if (!m_linkVar || Q_stricmp(m_linkVar->name, m_cvarname)) {
+            m_linkVar   = UI_FindCvar(m_cvarname);
+            m_linkCount = -1;
         }
+        if (m_linkVar) {
+            UI_DrawDep(m_linkVar);
+        } else {
+            UI_DrawLive();
+        }
+        if (m_linkVar && m_linkVar->modificationCount != m_linkCount) {
+            string = m_linkVar->latchedString && *m_linkVar->latchedString ? m_linkVar->latchedString : m_linkVar->string;
+
+            //
+            // localize the cvar value when possible
+            //
+            for (int i = 0; localizableVars[i]; i++) {
+                if (!strcmp(localizableVars[i], string)) {
+                    string = Sys_LV_CL_ConvertString(localizableVars[i]);
+                }
+            }
+            m_linkText  = string;
+            m_linkCount = m_linkVar->modificationCount;
+        }
+        string = m_linkVar ? m_linkText.c_str() : "";
 
         if (m_linkstrings.NumObjects()) {
             cvar_t *cvar = UI_FindCvar(m_cvarname);

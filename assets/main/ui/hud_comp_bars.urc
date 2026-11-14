@@ -3,6 +3,7 @@
 // shrinking to its middle
 menu "hud_comp_bars" 300 80 NONE 0
 virtualres 1 1920 1080
+drawcache 1
 anchor 0.5 0.75
 bgcolor 0 0 0 0
 borderstyle NONE

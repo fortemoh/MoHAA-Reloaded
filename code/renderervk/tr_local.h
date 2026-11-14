@@ -1964,6 +1964,14 @@ extern cvar_t *r_sortPipelines;	// 1: opaque shaders ordered by the pipelines th
 void R_IssuePending2DCommands( void );
 void R_Begin2D( shader_t *shader, int numVertexes, int numIndexes );
 void R_2DReserve( int numVertexes, int numIndexes );
+qboolean R_2DQueued( void );
+void *R_2DCommandBuffer( int bytes );
+int RE_Begin2DList( int handle );
+void RE_End2DList( void );
+void RE_Draw2DList( int handle );
+void RE_Free2DList( int handle );
+void R_2DListsEndFrame( void );
+void R_2DListsShutdown( void );
 void R_2DTransform( float *x, float *y );
 void R_2DScissor( qboolean clip );
 shader_t *R_White2D( void );	// the atlas's white texel (tr_image.c)
@@ -2863,6 +2871,11 @@ typedef struct {
 	int		commandId;
 } end2DBatchCommand_t;
 
+typedef struct {
+	int						commandId;
+	const struct r2dList_s	*list;
+} list2DCommand_t;
+
 // r_smp: a terrain pool slot the front end's tessellation changed, for the
 // render thread's copy of the pool (tr_terrain.c, vk_sync_terrain_pool_smp)
 typedef struct terrainSlotChange_s {
@@ -2939,6 +2952,7 @@ typedef enum {
 	RC_2D_WINDOW,
 	RC_2D_SCISSOR,
 	RC_2D_SHADER_TIME,
+	RC_2D_LIST,
 	RC_SET_RENDER_TIME
 } renderCommand_t;
 

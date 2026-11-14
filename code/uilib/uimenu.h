@@ -91,6 +91,7 @@ public:
     void  DeleteMenu(Menu *m);
     void  DeleteAllMenus(void);
     Menu *FindMenu(str name);
+    int   Generation(void) const { return m_generation; } // changes when the list does
     bool  PushMenu(str name);
     bool  ShowMenu(str name);
     void  PushMenu(Event *ev);

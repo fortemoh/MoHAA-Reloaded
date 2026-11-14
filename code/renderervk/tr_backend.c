@@ -1593,6 +1593,7 @@ void RB_ExecuteRenderCommands( const void *data ) {
 		case RC_2D_WINDOW:
 		case RC_2D_SCISSOR:
 		case RC_2D_SHADER_TIME:
+		case RC_2D_LIST:
 		case RC_SET_RENDER_TIME:
 			data = RB_2DCommand( data );
 			break;

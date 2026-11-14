@@ -3,6 +3,7 @@
 // a thin line out to the ammo (clip | reserve and a bullet)
 menu "hud_comp_strip" 800 104 NONE 0
 virtualres 1 1920 1080
+drawcache 1
 align centerx bottom
 bgcolor 0 0 0 0
 borderstyle NONE

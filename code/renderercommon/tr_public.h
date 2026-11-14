@@ -28,7 +28,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 extern "C" {
 #endif
 
-#define	REF_API_VERSION		17	// 15: DrawBoxes, 16: FrameToken, PresentGate, 17: RegisterImage2D
+#define	REF_API_VERSION		18	// 15: DrawBoxes, 16: FrameToken, PresentGate, 17: RegisterImage2D, 18: 2D lists
 
 typedef struct dtiki_s dtiki_t;
 typedef struct skelAnimFrame_s skelAnimFrame_t;
@@ -187,6 +187,14 @@ typedef struct {
     // an RGBA image made in memory under a name (made again: its texels replaced),
     // kept until the renderer restarts; returns its 2D shader
     qhandle_t (*RegisterImage2D)(const char *name, byte *rgba, int width, int height);
+
+    // 2D lists: what the 2D calls between Begin2DList (0: a new handle, returned)
+    // and End2DList draw, kept; drawn at End2DList and by Draw2DList again as one
+    // command. Free2DList frees one; the renderer's restart frees all
+    int (*Begin2DList)(int handle);
+    void (*End2DList)(void);
+    void (*Draw2DList)(int handle);
+    void (*Free2DList)(int handle);
 } refexport_t;
 
 //

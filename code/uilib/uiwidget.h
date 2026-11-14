@@ -22,6 +22,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #pragma once
 
+#include <vector>
+
 #include "usignal.h"
 #include "../qcommon/q_shared.h"
 #include "../corepp/str.h"
@@ -99,6 +101,11 @@ typedef enum {
     SEQUENCE_FADEOUT
 } fadesequence_t;
 
+// Added: the draw cache (drawcache): a cvar a widget drew from, something
+// drawn that changes by itself (not to be kept)
+void UI_DrawDep(cvar_t *cvar);
+void UI_DrawLive(void);
+
 class UIWidget : public USignal
 {
     friend class Menu;
@@ -164,6 +171,10 @@ protected:
     fontvertjustify_t     m_iFontAlignmentVertical;
     qboolean              m_bVirtual;
     str                   m_enabledCvar;
+    // Added: enabledcvar's terms (a&b&!c), their cvars found once
+    str                   m_enabledNames[8];
+    cvar_t               *m_enabledVars[8];
+    int                   m_numEnabled; // -1: not split yet
     //
     // Added in 2.0
     //
@@ -198,6 +209,17 @@ protected:
     int            m_shapeStamp;
     int            m_shapeW, m_shapeH;
     qhandle_t      m_shapeHandle;
+    // the draw cache (drawcache): what it and its children drew, a 2D list,
+    // drawn again while what it was drawn from stays: the cvars read
+    // (UI_DrawDep), its frames, the alpha given, DrawKey
+    bool                                 m_drawCache;
+    int                                  m_drawList;
+    bool                                 m_drawValid, m_drawLive;
+    int                                  m_drawStamp, m_drawKey;
+    float                                m_drawAlpha;
+    UIRect2D                             m_drawRects[3];
+    std::vector<std::pair<cvar_t *, int>> m_drawDeps;
+    std::vector<std::pair<UIWidget *, int>> m_drawKeys; // its children drawing from more (DrawKey), their states
 
 public:
     CLASS_PROTOTYPE(UIWidget);
@@ -355,6 +377,15 @@ public:
     virtual void       setBackgroundAlpha(float f);
     float              getBackgroundAlpha(void);
     void               Display(const UIRect2D& drawframe, float parent_alpha);
+    void               DisplayNow(const UIRect2D& drawframe, float parent_alpha);
+    // Added: the draw cache: whether it draws only from its rect, colors,
+    // shapes and the cvars it reads (UI_DrawDep), and what else it draws from
+    virtual bool       CacheDraw(void);
+    virtual int        DrawKey(void) { return 0; }
+    virtual bool       DrawKeyed(void) { return false; } // DrawKey or CacheDraw change with more than cvars
+    int                DrawState(void);
+    void               AddDrawDep(cvar_t *cvar);
+    void               LayoutDrawCache(Event *ev);
     virtual qboolean   KeyEvent(int key, unsigned int time);
     virtual void       CharEvent(int ch);
     virtual void       UpdateData(void);

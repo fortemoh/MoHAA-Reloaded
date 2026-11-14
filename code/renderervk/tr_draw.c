@@ -1104,14 +1104,194 @@ list. The bodies' R_IssuePending*Commands do nothing on the thread.
 */
 
 #define R_2D_COMMAND( type, id ) \
-	type *cmd = R_GetCommandBuffer( sizeof( *cmd ) ); \
+	type *cmd = R_2DCommandBuffer( sizeof( *cmd ) ); \
 	if ( !cmd ) { \
 		return; \
 	} \
 	cmd->commandId = id;
 
-static qboolean R_2DQueued( void ) {
-	return glConfig.smpActive && !R_OnRenderThread();
+/*
+====================================================================
+
+2D LISTS
+
+What a part of the UI draws, kept to be drawn again: the 2D exports between
+Begin2DList and End2DList go into the list as the render thread's commands
+(RB_2DCommand) instead of running or being queued, and the list is drawn at
+its end; Draw2DList draws it again as one command (a list drawn while
+another is made is copied into it). A list made again or freed keeps its
+old commands until no queued frame can still run them
+
+====================================================================
+*/
+
+#define MAX_2D_LISTS	4096
+
+typedef struct r2dList_s {
+	byte				*data;
+	int					used, size;
+	int					retired;	// the frame it was replaced at
+	struct r2dList_s	*next;		// the next retired one
+} r2dList_t;
+
+static struct {
+	r2dList_t	*lists[MAX_2D_LISTS];
+	r2dList_t	*recording;		// the list being made
+	int			handle;			// ... its handle
+	r2dList_t	*retired;
+	int			frame;
+} r2dl;
+
+qboolean R_2DQueued( void ) {
+	return !R_OnRenderThread() && ( glConfig.smpActive || r2dl.recording );
+}
+
+// room for a 2D command in the list being made, else in the frame's
+void *R_2DCommandBuffer( int bytes ) {
+	r2dList_t *l = r2dl.recording;
+
+	if ( !l ) {
+		return R_GetCommandBuffer( bytes );
+	}
+	bytes = PAD( bytes, sizeof( void * ) );
+	if ( l->used + bytes > l->size ) {
+		const int	size = Q_max( l->size * 2, l->used + bytes + 1024 );
+		byte		*data = ri.Malloc( size );
+
+		Com_Memcpy( data, l->data, l->used );
+		ri.Free( l->data );
+		l->data = data;
+		l->size = size;
+	}
+	l->used += bytes;
+	return l->data + l->used - bytes;
+}
+
+static void R_Retire2DList( r2dList_t *l ) {
+	l->retired = r2dl.frame;
+	l->next = r2dl.retired;
+	r2dl.retired = l;
+}
+
+static void R_Free2DListData( r2dList_t *l ) {
+	ri.Free( l->data );
+	ri.Free( l );
+}
+
+static void RB_Run2DList( const r2dList_t *l ) {
+	const byte *data = l->data, *end = l->data + l->used;
+
+	for ( data = PADP( data, sizeof( void * ) ); data < end; data = PADP( data, sizeof( void * ) ) ) {
+		data = RB_2DCommand( data );
+	}
+}
+
+// a list's handle (a new one for 0): the 2D exports go into it until End2DList
+int RE_Begin2DList( int handle ) {
+	int i;
+
+	if ( R_OnRenderThread() || r2dl.recording ) {
+		return 0;
+	}
+	if ( handle <= 0 || handle > MAX_2D_LISTS ) {
+		for ( i = 0; i < MAX_2D_LISTS && r2dl.lists[i]; i++ ) {
+		}
+		if ( i == MAX_2D_LISTS ) {
+			return 0;
+		}
+		handle = i + 1;
+	}
+	r2dl.recording = ri.Malloc( sizeof( r2dList_t ) );
+	Com_Memset( r2dl.recording, 0, sizeof( r2dList_t ) );
+	r2dl.recording->size = 1024;
+	r2dl.recording->data = ri.Malloc( r2dl.recording->size );
+	r2dl.handle = handle;
+	// held while made, so no other Begin2DList takes it
+	if ( !r2dl.lists[handle - 1] ) {
+		r2dl.lists[handle - 1] = r2dl.recording;
+	}
+	return handle;
+}
+
+void RE_Draw2DList( int handle ) {
+	const r2dList_t *l = handle > 0 && handle <= MAX_2D_LISTS ? r2dl.lists[handle - 1] : NULL;
+
+	if ( !l || l == r2dl.recording ) {
+		return;
+	}
+	if ( r2dl.recording ) {
+		Com_Memcpy( R_2DCommandBuffer( l->used ), l->data, l->used );
+		return;
+	}
+	if ( R_2DQueued() ) {
+		R_2D_COMMAND( list2DCommand_t, RC_2D_LIST );
+		cmd->list = l;
+		return;
+	}
+	RB_Run2DList( l );
+}
+
+// the list made: kept, and drawn
+void RE_End2DList( void ) {
+	r2dList_t	*l = r2dl.recording;
+	r2dList_t	*old;
+
+	if ( !l ) {
+		return;
+	}
+	r2dl.recording = NULL;
+	old = r2dl.lists[r2dl.handle - 1];
+	r2dl.lists[r2dl.handle - 1] = l;
+	if ( old && old != l ) {
+		R_Retire2DList( old );
+	}
+	RE_Draw2DList( r2dl.handle );
+}
+
+void RE_Free2DList( int handle ) {
+	if ( handle <= 0 || handle > MAX_2D_LISTS || !r2dl.lists[handle - 1] || r2dl.lists[handle - 1] == r2dl.recording ) {
+		return;
+	}
+	R_Retire2DList( r2dl.lists[handle - 1] );
+	r2dl.lists[handle - 1] = NULL;
+}
+
+// the front end's frame: lists retired three frames ago are freed
+void R_2DListsEndFrame( void ) {
+	r2dList_t **p = &r2dl.retired;
+
+	r2dl.frame++;
+	while ( *p ) {
+		r2dList_t *l = *p;
+
+		if ( r2dl.frame - l->retired >= 3 ) {
+			*p = l->next;
+			R_Free2DListData( l );
+		} else {
+			p = &l->next;
+		}
+	}
+}
+
+// the renderer's shutdown (no queued frame left): every list
+void R_2DListsShutdown( void ) {
+	int i;
+
+	if ( r2dl.recording && r2dl.lists[r2dl.handle - 1] != r2dl.recording ) {
+		R_Free2DListData( r2dl.recording );
+	}
+	for ( i = 0; i < MAX_2D_LISTS; i++ ) {
+		if ( r2dl.lists[i] ) {
+			R_Free2DListData( r2dl.lists[i] );
+		}
+	}
+	while ( r2dl.retired ) {
+		r2dList_t *l = r2dl.retired;
+
+		r2dl.retired = l->next;
+		R_Free2DListData( l );
+	}
+	Com_Memset( &r2dl, 0, sizeof( r2dl ) );
 }
 
 void Draw_SetColor(const vec4_t rgba) {
@@ -1211,7 +1391,7 @@ void DrawBoxes(const float (*boxes)[4], int count, const float *color) {
 		if ( count <= 0 ) {
 			return;
 		}
-		cmd = R_GetCommandBuffer( sizeof( *cmd ) + PAD( sizeof( float ) * 4 * count, sizeof( void * ) ) );
+		cmd = R_2DCommandBuffer( sizeof( *cmd ) + PAD( sizeof( float ) * 4 * count, sizeof( void * ) ) );
 		if ( !cmd ) {
 			return;
 		}
@@ -1231,7 +1411,7 @@ void DrawLineLoop(const vec2_t* points, int count, int stipple_factor, int stipp
 		if ( count <= 0 ) {
 			return;
 		}
-		cmd = R_GetCommandBuffer( sizeof( *cmd ) + PAD( sizeof( vec2_t ) * count, sizeof( void * ) ) );
+		cmd = R_2DCommandBuffer( sizeof( *cmd ) + PAD( sizeof( vec2_t ) * count, sizeof( void * ) ) );
 		if ( !cmd ) {
 			return;
 		}
@@ -1359,6 +1539,11 @@ const void *RB_2DCommand( const void *data ) {
 		const shaderTime2DCommand_t *c = data;
 		RB_Set2DInitialShaderTime( c->startTime );
 		return R_2D_NEXT( shaderTime2DCommand_t );
+	}
+	case RC_2D_LIST: {
+		const list2DCommand_t *c = data;
+		RB_Run2DList( c->list );
+		return R_2D_NEXT( list2DCommand_t );
 	}
 	case RC_SET_RENDER_TIME: {
 		const renderTimeCommand_t *c = data;

@@ -485,6 +485,15 @@ Event EV_Layout_FlowAfter
     "Placed gap design units after where a sibling's text ends (or its right edge)"
 );
 
+Event EV_Layout_DrawCache
+(
+    "drawcache",
+    EV_DEFAULT,
+    "i",
+    "on",
+    "What it and its children draw kept and drawn again while the cvars they read, their frames and alpha stay"
+);
+
 Event EV_Layout_Anchor
 (
     "anchor",
@@ -584,6 +593,7 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Layout_WidthCvar,          &UIWidget::LayoutWidthCvar         },
     {&EV_Layout_FlowAfter,          &UIWidget::LayoutFlowAfter         },
     {&EV_Layout_Anchor,             &UIWidget::LayoutAnchor            },
+    {&EV_Layout_DrawCache,          &UIWidget::LayoutDrawCache         },
 
     {NULL,                          NULL                               }
 };
@@ -783,6 +793,14 @@ UIWidget::UIWidget()
     m_bVirtual                 = false;
     m_scaleCvar                = NULL;
     m_enabledCvar              = "";
+    m_numEnabled               = -1;
+    m_drawCache                = false;
+    m_drawList                 = 0;
+    m_drawValid                = false;
+    m_drawLive                 = false;
+    m_drawStamp                = 0;
+    m_drawKey                  = 0;
+    m_drawAlpha                = 0;
 
     m_fadeSequenceDelay    = 0;
     m_fadeSequenceFadeIn   = 0;
@@ -802,6 +820,10 @@ UIWidget::~UIWidget()
     //int i;
 
     m_dying = true;
+
+    if (m_drawList && uii.Rend_Free2DList && uii.IsRendererLoaded()) {
+        uii.Rend_Free2DList(m_drawList);
+    }
 
     if (IsActive()) {
         uWinMan.DeactivateCurrentSmart();
@@ -1546,6 +1568,11 @@ cvar_t *UIWidget::CvarOf(int i, const str& name)
     if (!m_cvars[i]) {
         m_cvars[i] = uii.Cvar_Find(name.c_str());
     }
+    if (m_cvars[i]) {
+        UI_DrawDep(m_cvars[i]);
+    } else {
+        UI_DrawLive();
+    }
     return m_cvars[i];
 }
 
@@ -1648,6 +1675,11 @@ void UIWidget::BakeShapes(void)
                     name[k++] = *p;
                 }
                 name[k] = 0;
+                if (uii.Cvar_Find(name)) {
+                    UI_DrawDep(uii.Cvar_Find(name));
+                } else {
+                    UI_DrawLive();
+                }
                 resolved[i] += uii.Cvar_GetString(name, "");
             } else {
                 resolved[i] += *p++;
@@ -1935,42 +1967,44 @@ void UIWidget::Disable(void)
 
 bool UIWidget::isEnabled(void)
 {
-    if (!strcmp(m_enabledCvar.c_str(), "")) {
+    if (!m_enabledCvar.length() || !m_enabled) {
         return m_enabled;
     }
 
-    // Added: a&b&!c, each must hold
-    if (strchr(m_enabledCvar.c_str(), '&')) {
-        char        name[MAX_CVAR_VALUE_STRING];
+    // Added: the terms split once (a&b&!c, each must hold; !a, added in
+    // 2.30: true if the cvar is 0), each cvar found once
+    if (m_numEnabled < 0) {
         const char *p = m_enabledCvar.c_str();
 
-        while (m_enabled && *p) {
+        for (m_numEnabled = 0; *p && m_numEnabled < 8; m_numEnabled++) {
             const char *end = strchr(p, '&');
             const int   len = end ? (int)(end - p) : (int)strlen(p);
 
-            Q_strncpyz(name, p, Q_min(len + 1, (int)sizeof(name)));
-            if ((name[0] == '!') == (UI_GetCvarInt(name[0] == '!' ? name + 1 : name, 0) != 0)) {
-                return false;
-            }
+            m_enabledNames[m_numEnabled]  = str(p, 0, len);
+            m_enabledVars[m_numEnabled]   = NULL;
             p += len + (end ? 1 : 0);
         }
-        return m_enabled;
     }
+    for (int i = 0; i < m_numEnabled; i++) {
+        const char *name = m_enabledNames[i].c_str();
+        const bool  neg  = name[0] == '!';
+        cvar_t     *cvar = m_enabledVars[i];
+        int         value;
 
-    if (m_enabledCvar[0] == '!') {
-        //
-        // Added in 2.30
-        //  True if the cvar is 0
-        if (m_enabled) {
-            return !UI_GetCvarInt(m_enabledCvar.c_str() + 1, 0);
+        if (!cvar) {
+            cvar = m_enabledVars[i] = uii.Cvar_Find(name + neg);
         }
-    } else {
-        if (m_enabled) {
-            return UI_GetCvarInt(m_enabledCvar.c_str(), 0) != 0;
+        if (cvar) {
+            UI_DrawDep(cvar);
+        } else {
+            UI_DrawLive();
+        }
+        value = !cvar ? 0 : cvar->latchedString ? atoi(cvar->latchedString) : cvar->integer;
+        if ((value != 0) == neg) {
+            return false;
         }
     }
-
-    return false;
+    return true;
 }
 
 bool UIWidget::IsDying(void)
@@ -2233,7 +2267,171 @@ float UIWidget::getBackgroundAlpha(void)
     return m_alpha;
 }
 
+/*
+====================================================================
+
+THE DRAW CACHE
+
+A widget with drawcache, and its children, keep what they drew as a 2D list
+(the renderer's): drawn again as one command while what it was drawn from
+stays, instead of being drawn widget by widget. That is the cvars read
+(UI_DrawDep: the enabled terms, a label's linked cvar, colorcvar, alphacvar,
+rotatecvar, widthcvar, a shape's $cvar), its frames, the alpha its parent
+gives, DrawKey, the baked images and the screen. A class drawing from
+anything else isn't kept (CacheDraw), nor what moves or fades by itself;
+their parents draw as before, their other children each from its list. One
+list is made at once: the children of one being made are drawn into it (or
+their own lists copied in)
+
+====================================================================
+*/
+
+static bool UI_SameRect(const UIRect2D& a, const UIRect2D& b)
+{
+    return a.pos.x == b.pos.x && a.pos.y == b.pos.y && a.size.width == b.size.width && a.size.height == b.size.height;
+}
+
+static std::vector<UIWidget *> ui_drawMaking; // the widget whose list is being made
+static int                     ui_drawScope;  // within a drawcache widget
+static int                     ui_drawLive;   // live draws so far
+
+void UI_DrawDep(cvar_t *cvar)
+{
+    for (UIWidget *w : ui_drawMaking) {
+        w->AddDrawDep(cvar);
+    }
+}
+
+void UI_DrawLive(void)
+{
+    ui_drawLive++;
+}
+
+void UIWidget::AddDrawDep(cvar_t *cvar)
+{
+    for (auto& d : m_drawDeps) {
+        if (d.first == cvar) {
+            return;
+        }
+    }
+    m_drawDeps.push_back({cvar, cvar->modificationCount});
+}
+
+void UIWidget::LayoutDrawCache(Event *ev)
+{
+    m_drawCache = ev->GetInteger(1) != 0;
+}
+
+// what of its own state it draws from (shown, alpha, colors, material), and DrawKey
+int UIWidget::DrawState(void)
+{
+    struct {
+        bool        visible, enabled;
+        float       alpha, colors[8];
+        const void *material;
+        int         key;
+    } st;
+    int h = 0;
+
+    memset(&st, 0, sizeof(st));
+    st.visible = m_visible;
+    st.enabled = m_enabled;
+    st.alpha   = m_alpha;
+    for (int i = 0; i < 2; i++) {
+        const UColor& c = i ? m_background_color : m_foreground_color;
+
+        st.colors[i * 4 + 0] = c.r;
+        st.colors[i * 4 + 1] = c.g;
+        st.colors[i * 4 + 2] = c.b;
+        st.colors[i * 4 + 3] = c.a;
+    }
+    st.material = m_material;
+    st.key      = DrawKey();
+    for (size_t i = 0; i < sizeof(st); i++) {
+        h = (h ^ ((const byte *)&st)[i]) * 16777619;
+    }
+    return h;
+}
+
+bool UIWidget::CacheDraw(void)
+{
+    return classinfo() == &UIWidget::ClassInfo || classinfo() == &UILabel::ClassInfo || classinfo() == &UIWidgetContainer::ClassInfo;
+}
+
 void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
+{
+    const int stamp = UI_BakeStamp() ^ (uid.vidWidth << 3) ^ (uid.vidHeight << 17);
+    const int live  = ui_drawLive;
+    int       state;
+    bool      make;
+
+    if ((!m_drawCache && !ui_drawScope) || !uii.Rend_Begin2DList) {
+        DisplayNow(drawframe, parent_alpha);
+        return;
+    }
+    ui_drawScope++;
+    if (m_flowAfter.length()) {
+        Flow();
+    }
+    state = DrawState();
+    // a class drawing from more than cvars: its state to the list being made
+    if (!ui_drawMaking.empty() && DrawKeyed()) {
+        ui_drawMaking[0]->m_drawKeys.push_back({this, state});
+    }
+    if (m_drawValid && m_drawStamp == stamp && m_drawAlpha == parent_alpha && UI_SameRect(m_drawRects[0], drawframe)
+        && UI_SameRect(m_drawRects[1], m_screenframe) && UI_SameRect(m_drawRects[2], m_clippedframe) && m_drawKey == state
+        && CacheDraw()) {
+        size_t i, k;
+
+        for (i = 0; i < m_drawDeps.size() && m_drawDeps[i].first->modificationCount == m_drawDeps[i].second; i++) {
+        }
+        for (k = 0; k < m_drawKeys.size() && m_drawKeys[k].first->CacheDraw() && m_drawKeys[k].first->DrawState() == m_drawKeys[k].second; k++) {
+        }
+        if (i == m_drawDeps.size() && k == m_drawKeys.size()) {
+            // the list again; what it was drawn from to the lists being made
+            for (auto& d : m_drawDeps) {
+                UI_DrawDep(d.first);
+            }
+            if (!ui_drawMaking.empty()) {
+                ui_drawMaking[0]->m_drawKeys.insert(ui_drawMaking[0]->m_drawKeys.end(), m_drawKeys.begin(), m_drawKeys.end());
+            }
+            uii.Rend_Draw2DList(m_drawList);
+            ui_drawScope--;
+            return;
+        }
+    }
+
+    // a list made unless one is being made or it drew live last time
+    make = ui_drawMaking.empty() && !m_drawLive;
+    if (make) {
+        m_drawList = uii.Rend_Begin2DList(m_drawList);
+        make       = m_drawList != 0;
+    }
+    if (make) {
+        m_drawDeps.clear();
+        m_drawKeys.clear();
+        ui_drawMaking.push_back(this);
+    }
+    if (!CacheDraw()) {
+        UI_DrawLive();
+    }
+    DisplayNow(drawframe, parent_alpha);
+    if (make) {
+        ui_drawMaking.pop_back();
+        uii.Rend_End2DList();
+    }
+    m_drawLive  = ui_drawLive != live;
+    m_drawValid = make && !m_drawLive;
+    m_drawStamp = stamp;
+    m_drawAlpha = parent_alpha;
+    m_drawRects[0] = drawframe;
+    m_drawRects[1] = m_screenframe;
+    m_drawRects[2] = m_clippedframe;
+    m_drawKey      = state;
+    ui_drawScope--;
+}
+
+void UIWidget::DisplayNow(const UIRect2D& drawframe, float parent_alpha)
 {
     int    i;
     int    n;
@@ -2249,6 +2447,7 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
     }
 
     if (m_direction || m_fadetime || m_fadeSequenceState != fadesequence_t::SEQUENCE_NONE) {
+        UI_DrawLive();
         Motion();
     }
 
@@ -2774,6 +2973,7 @@ const vec2_t& UIWidget::getHighResScale() const
 void UIWidget::SetEnabledCvar(Event *ev)
 {
     m_enabledCvar = ev->GetString(1);
+    m_numEnabled  = -1;
 }
 
 void UIWidget::SetScaleCvar(Event *ev)
