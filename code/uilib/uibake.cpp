@@ -66,6 +66,7 @@ typedef struct {
 typedef struct {
     std::string      name;
     int              seq;
+    float            pageScale; // the page's width over 256 (a texel a pixel at this scale)
     fontheader_t     header;
     fontheader_sgl_t sgl;
 } uiBakedFont_t;
@@ -267,7 +268,7 @@ static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
 {
     const float       s     = UI_DesignScale(1920.0f, 1080.0f);
     const float       slant = spec->slant ? SLANT : 0.0f;
-    const int         pageW = Q_max(32, (int)(256.0f * s + 0.5f));
+    const int         pageW = Q_max(32, (int)(256.0f * s + 0.001f));
     const uiFace_t   *face  = spec->face;
     fontheader_sgl_t *sgl   = &f->sgl;
     uiMetrics_t       m;
@@ -327,6 +328,7 @@ static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
         sgl->locations[c].size[0]  = (float)w / pageW;
         sgl->locations[c].size[1]  = (float)m.lineH / pageH;
     }
+    f->pageScale     = pageW / 256.0f;
     sgl->height      = m.lineH / s;
     sgl->aspectRatio = 1.0f;
     sgl->trhandle    = -1;
@@ -339,6 +341,16 @@ static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
     memset(&f->header, 0, sizeof(f->header));
     f->header.sgl[0] = sgl;
     Q_strncpyz(f->header.name, f->name.c_str(), sizeof(f->header.name));
+}
+
+float UI_BakedFontScale(const fontheader_t *font)
+{
+    for (uiBakedFont_t *b : bake_fonts) {
+        if (&b->header == font) {
+            return b->pageScale;
+        }
+    }
+    return 0.0f;
 }
 
 fontheader_t *UI_BakeFont(const char *name)
@@ -624,10 +636,11 @@ static void Bake_Layer(uiCanvas_t *cv, const char *text)
         // [R [X Y]]: of half the box, its middle
         Bake_Circle(n > a + 2 ? num(a + 1) * w : cx, n > a + 2 ? num(a + 2) * h : cy, r * (n > a ? num(a) : 1.0f), qfalse);
     } else if (t[0] == "ring") {
+        // (edges on whole pixels, at least one)
         Bake_Circle(cx, cy, r, qfalse);
-        Bake_Circle(cx, cy, r - num(1) * cv->scale, qtrue);
+        Bake_Circle(cx, cy, r - Q_max(1.0f, floorf(num(1) * cv->scale + 0.5f)), qtrue);
     } else if (t[0] == "frame") {
-        const float p = num(1) * cv->scale;
+        const float p = Q_max(1.0f, floorf(num(1) * cv->scale + 0.5f));
 
         Bake_RoundBox(cx, cy, w, h, 0.0f, 0.0f, qfalse);
         Bake_RoundBox(cx, cy, w - p * 2.0f, h - p * 2.0f, 0.0f, 0.0f, qtrue);

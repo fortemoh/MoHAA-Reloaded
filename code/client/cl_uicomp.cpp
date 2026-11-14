@@ -652,7 +652,7 @@ void UI_CompHud_Frame(void)
     const char *weapon = ps->activeItems[ITEM_WEAPON] >= 0 && ps->activeItems[ITEM_WEAPON] < MAX_WEAPONS
                            ? CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON])
                            : "";
-    const char *spec   = Comp_SpectatorText();
+    char        spec[256];
     const char *banner1 = "";
     const int   team   = ps->stats[STAT_TEAM];
     const int   attacker = ps->stats[STAT_ATTACKERCLIENT];
@@ -664,15 +664,17 @@ void UI_CompHud_Frame(void)
     if (!cl.snap.valid) {
         return;
     }
+    // (copied: va's buffer is used again below)
+    Q_strncpyz(spec, Cvar_VariableIntegerValue("cg_hud_spectator") ? Comp_SpectatorText() : "", sizeof(spec));
     cge->CG_EyeAngles(&angles);
     viewYaw = angles[YAW];
     Comp_Roster(gametype);
     Comp_Weapons(weapon, following);
 
     // the strip: health, badge, ammo, weapons (not while free spectating)
-    Comp_Set("ui_hud_strip", !spec[0] || following ? "1" : "0");
+    Comp_Set("ui_hud_strip", !spectating || following ? "1" : "0");
     {
-        const qboolean icon = teams && (!spec[0] || following) && Cvar_VariableIntegerValue("cg_hud_badge") && Cvar_VariableIntegerValue("cg_hud_teamicon");
+        const qboolean icon = teams && (!spectating || following) && Cvar_VariableIntegerValue("cg_hud_badge") && Cvar_VariableIntegerValue("cg_hud_teamicon");
 
         Comp_Set("ui_hud_allies", icon && team == TEAM_ALLIES ? "1" : "0");
         Comp_Set("ui_hud_axis", icon && team == TEAM_AXIS ? "1" : "0");
@@ -729,9 +731,6 @@ void UI_CompHud_Frame(void)
         Comp_Set("ui_hud_cards_axis", rounds ? comp.cards[1] : "");
     }
     // the banners, the time message's first
-    if (!Cvar_VariableIntegerValue("cg_hud_spectator")) {
-        spec = "";
-    }
     Comp_Set("ui_hud_banner1", banner1[0] ? banner1 : spec);
     Comp_Set("ui_hud_banner2", banner1[0] ? spec : "");
     Comp_Set("ui_hud_banner1_on", banner1[0] || spec[0] ? "1" : "0");
@@ -785,9 +784,12 @@ void UI_CompHud_Frame(void)
             str            text;
 
             // the subject wrapped in the panel (two lines)
+            const float    vs[2] = {UI_DesignScale(1920.0f, 1080.0f), UI_DesignScale(1920.0f, 1080.0f)};
+
             if (!font) {
                 font = new UIFont("oswald-medium-16s");
             }
+            font->setVirtualScale(vs);
             for (int line = 0; *p && line < 2; line++) {
                 const char *brk = NULL, *q = p;
 
@@ -850,7 +852,7 @@ void UI_CompHud_Frame(void)
 
     // the elements' flags (enabledcvar): shown and turned on
     {
-        const qboolean strip = !Comp_SpectatorText()[0] || following;
+        const qboolean strip = !(ps->pm_flags & PMF_SPECTATING) || following;
         const qboolean radar = Cvar_VariableIntegerValue("cg_hud_radar") != 0;
         const qboolean msgs  = Cvar_VariableIntegerValue("cg_hud_messages") != 0;
         auto           flag  = [](const char *name, qboolean on) { Comp_Set(name, on ? "1" : "0"); };
@@ -1083,6 +1085,9 @@ void UIHudFeed::Draw(void)
     float             lineH = m_font->getHeight((const float *)NULL), y;
     int               i;
 
+    if (m_bold) {
+        m_bold->setVirtualScale(getVirtualScale());
+    }
     if (!m_kind) {
         DrawKills(w, h, s);
         return;
@@ -1321,6 +1326,7 @@ void UIHudWeapons::Draw(void)
     if (!m_countFont) {
         m_countFont = m_font;
     }
+    m_countFont->setVirtualScale(getVirtualScale());
     for (i = 0; i < 6; i++) {
         if (!handSlot && (equipped & slots[i])) {
             handSlot = i + 1;

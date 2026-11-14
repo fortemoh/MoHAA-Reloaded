@@ -28,6 +28,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // a face: "<file>-<px>[s][i]", fonts/<file>.ttf at px pixels of a 1080-line
 // screen (UI_DesignScale), s a drop shadow, i slanted; NULL when not a face
 fontheader_t *UI_BakeFont(const char *name);
+// a baked face's page scale: drawn across at it, a texel is a pixel (0: not baked)
+float UI_BakedFontScale(const fontheader_t *font);
 
 // a shape's layers (the URC's "shape" lines) baked at w x h pixels, scale
 // pixels a design unit; key names it among the others

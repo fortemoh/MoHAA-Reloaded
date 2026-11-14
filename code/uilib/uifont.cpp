@@ -287,9 +287,15 @@ UIFont::UIFont(const char *fn)
 
 void UIFont::setVirtualScale(const float *virtualScale)
 {
+    const float page = UI_BakedFontScale(m_font);
+
     // the renderer scales glyphs across no more than down: on a wide screen,
     // text is narrower than its 640x480 layout width
     widthRatio = virtualScale[0] > virtualScale[1] ? virtualScale[1] / virtualScale[0] : 1.0f;
+    // Added: a baked face is drawn across at its page's scale (Print)
+    if (page > 0.0f) {
+        widthRatio = page / virtualScale[0];
+    }
 }
 
 void UIFont::setColor(UColor col)
@@ -326,6 +332,15 @@ void UIFont::Print(float x, float y, const char *text, size_t maxlen, const floa
     }
 
     uii.Rend_SetColor(color);
+    // Added: a baked face across at its page's scale, a texel a pixel (its
+    // start where the virtual screen puts it; the renderer rounds it)
+    if (virtualScreen && UI_BakedFontScale(m_font) > 0.0f) {
+        const float page  = UI_BakedFontScale(m_font);
+        const float vs[2] = {page, virtualScreen[1]};
+
+        uii.Rend_DrawString(m_font, text, x * virtualScreen[0] / page, y, maxlen, vs);
+        return;
+    }
     // Round to integer to avoid blurry text
     uii.Rend_DrawString(m_font, text, (int)x, (int)y, maxlen, virtualScreen);
 }

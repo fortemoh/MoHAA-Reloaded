@@ -3278,16 +3278,20 @@ qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height
 			break;
 		}
 	}
-	if (image) {
-		if (width != image->uploadWidth || height != image->uploadHeight) {
-			image->width = image->uploadWidth = width;
-			image->height = image->uploadHeight = height;
-			vk_create_texture(image, width, height, 1, TEXFMT_RGBA8);
-		}
-		vk_upload_texture(image, 0, 0, 0, width, height, rgba);
-	} else {
-		image = R_CreateImageOld(fileName, rgba, width, height, 0, 0, qfalse, qtrue, qtrue, 0, WRAP_CLAMP, WRAP_CLAMP);
+	if (!image) {
+		// (made 1 x 1, then at its size below: not resampled to powers of two)
+		static byte clear[4];
+
+		image = R_CreateImageOld(fileName, clear, 1, 1, 0, 0, qfalse, qtrue, qtrue, 0, WRAP_CLAMP, WRAP_CLAMP);
 	}
+	if (width != image->uploadWidth || height != image->uploadHeight || image->internalFormat != TEXFMT_RGBA8) {
+		image->width = image->uploadWidth = width;
+		image->height = image->uploadHeight = height;
+		image->numMipmaps = 0;
+		image->internalFormat = TEXFMT_RGBA8;
+		vk_create_texture(image, width, height, 1, TEXFMT_RGBA8);
+	}
+	vk_upload_texture(image, 0, 0, 0, width, height, rgba);
 	image->r_sequence = -1;
 	return RE_RegisterShaderNoMip(name);
 }
