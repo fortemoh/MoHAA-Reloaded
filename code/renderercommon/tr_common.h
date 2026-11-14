@@ -80,7 +80,8 @@ typedef struct image_s {
 	struct image_s	*atlas;
 	int			atlasRoom[4];
 	float		atlasRect[4];
-	byte		*atlasTiles;	// its 16 x 16 texel tiles holding any texel not clear (1), rows of them
+	short		(*atlasRects)[4];	// what covers its texels not clear when drawn whole (x0 y0 x1 y1, texels; NULL: all of it)
+	int			numAtlasRects;
 } image_t;
 
 // any change in the LIGHTMAP_* defines here MUST be reflected in

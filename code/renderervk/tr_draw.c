@@ -467,72 +467,53 @@ static void R_2DClip( qboolean image ) {
 R_2DTiles
 
 An atlas image drawn whole at its size on whole pixels (a texel a pixel), as
-one quad, blended by its alpha: drawn as the runs of its 16 x 16 tiles
-holding anything instead (R_AtlasFill): its clear texels change no pixel
+one quad, blended by its alpha (fog and the alpha test aside: neither makes
+a clear texel's alpha more than 0): drawn as the rectangles covering its
+texels not clear instead (R_AtlasFill), its clear texels changing no pixel
 ================
 */
 static void R_2DTiles( void ) {
 	const image_t	*image = r2d.atlas;
-	const int		v = r2d.firstVertex;
-	const int		w = image->width, h = image->height, tw = ( w + 15 ) / 16, th = ( h + 15 ) / 16;
+	const int		v = r2d.firstVertex, n = image->numAtlasRects;
 	const float		*p0 = tess.xyz[v], *p3 = tess.xyz[v + 3];
-	const float		x0 = p0[0], y0 = p0[1];
+	const float		x0 = p0[0], y0 = p0[1], z0 = p0[2];
 	color4ub_t		color;
-	float			z0;
-	int				tx, ty, run, n = 0;
+	int				i, k;
 
-	if ( !image->atlasTiles || tess.numVertexes - v != 4 || tess.numIndexes - r2d.firstIndex != 6
-		|| tess.shader->unfoggedStages[0]->stateBits != ( GLS_DEPTHTEST_DISABLE | GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA )
-		|| x0 != floorf( x0 ) || y0 != floorf( y0 ) || p3[0] - x0 != w || p3[1] - y0 != h
+	if ( !image->atlasRects || r2d.fan || tess.numVertexes - v != 4 || tess.numIndexes - r2d.firstIndex != 6
+		|| ( tess.shader->unfoggedStages[0]->stateBits & ( GLS_SRCBLEND_BITS | GLS_DSTBLEND_BITS | GLS_DEPTHMASK_TRUE | GLS_POLYMODE_LINE ) )
+			!= ( GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA )
+		|| x0 != floorf( x0 ) || y0 != floorf( y0 ) || p3[0] - x0 != image->width || p3[1] - y0 != image->height
 		|| tess.xyz[v + 1][0] != p3[0] || tess.xyz[v + 1][1] != y0 || tess.xyz[v + 2][0] != x0 || tess.xyz[v + 2][1] != p3[1]
 		|| tess.texCoords[v][0][0] != 0 || tess.texCoords[v][0][1] != 0 || tess.texCoords[v + 3][0][0] != 1 || tess.texCoords[v + 3][0][1] != 1
-		|| tess.texCoords[v + 1][0][0] != 1 || tess.texCoords[v + 2][0][1] != 1 ) {
-		return;
-	}
-	// (room for the runs' quads, else the one quad)
-	for ( ty = 0; ty < th; ty++ ) {
-		for ( tx = 0; tx < tw; tx++ ) {
-			n += image->atlasTiles[ty * tw + tx] && ( !tx || !image->atlasTiles[ty * tw + tx - 1] );
-		}
-	}
-	if ( v + 4 * n >= SHADER_MAX_VERTEXES || r2d.firstIndex + 6 * n >= SHADER_MAX_INDEXES ) {
+		|| tess.texCoords[v + 1][0][0] != 1 || tess.texCoords[v + 2][0][1] != 1
+		|| v + 4 * n >= SHADER_MAX_VERTEXES || r2d.firstIndex + 6 * n >= SHADER_MAX_INDEXES ) {
 		return;
 	}
 	Com_Memcpy( color, tess.vertexColors[v], sizeof( color ) );
-	z0 = p0[2];
 	tess.numVertexes = v;
 	tess.numIndexes = r2d.firstIndex;
-	for ( ty = 0; ty < th; ty++ ) {
-		for ( tx = 0; tx < tw; tx = run ) {
-			for ( ; tx < tw && !image->atlasTiles[ty * tw + tx]; tx++ ) {
-			}
-			for ( run = tx; run < tw && image->atlasTiles[ty * tw + run]; run++ ) {
-			}
-			if ( tx < run ) {
-				// the run's quad: its texels' place, (its corners' in that order)
-				const float	s[2] = { tx * 16 / (float)w, Q_min( run * 16, w ) / (float)w };
-				const float	t[2] = { ty * 16 / (float)h, Q_min( ty * 16 + 16, h ) / (float)h };
-				int			k;
+	for ( i = 0; i < n; i++ ) {
+		// the rectangle's quad, its corners in the quad's order
+		const short *r = image->atlasRects[i];
 
-				for ( k = 0; k < 4; k++ ) {
-					const int i = tess.numVertexes + k;
+		for ( k = 0; k < 4; k++ ) {
+			const int j = tess.numVertexes + k, x = r[( k & 1 ) ? 2 : 0], y = r[( k & 2 ) ? 3 : 1];
 
-					tess.xyz[i][0] = x0 + s[k & 1] * w;
-					tess.xyz[i][1] = y0 + t[k >> 1] * h;
-					tess.xyz[i][2] = z0;
-					tess.texCoords[i][0][0] = s[k & 1];
-					tess.texCoords[i][0][1] = t[k >> 1];
-					Com_Memcpy( tess.vertexColors[i], color, sizeof( color ) );
-				}
-				tess.indexes[tess.numIndexes++] = tess.numVertexes;
-				tess.indexes[tess.numIndexes++] = tess.numVertexes + 1;
-				tess.indexes[tess.numIndexes++] = tess.numVertexes + 2;
-				tess.indexes[tess.numIndexes++] = tess.numVertexes + 2;
-				tess.indexes[tess.numIndexes++] = tess.numVertexes + 1;
-				tess.indexes[tess.numIndexes++] = tess.numVertexes + 3;
-				tess.numVertexes += 4;
-			}
+			tess.xyz[j][0] = x0 + x;
+			tess.xyz[j][1] = y0 + y;
+			tess.xyz[j][2] = z0;
+			tess.texCoords[j][0][0] = x / (float)image->width;
+			tess.texCoords[j][0][1] = y / (float)image->height;
+			Com_Memcpy( tess.vertexColors[j], color, sizeof( color ) );
 		}
+		tess.indexes[tess.numIndexes++] = tess.numVertexes;
+		tess.indexes[tess.numIndexes++] = tess.numVertexes + 1;
+		tess.indexes[tess.numIndexes++] = tess.numVertexes + 2;
+		tess.indexes[tess.numIndexes++] = tess.numVertexes + 2;
+		tess.indexes[tess.numIndexes++] = tess.numVertexes + 1;
+		tess.indexes[tess.numIndexes++] = tess.numVertexes + 3;
+		tess.numVertexes += 4;
 	}
 }
 

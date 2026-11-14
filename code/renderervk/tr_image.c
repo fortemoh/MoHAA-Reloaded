@@ -3406,23 +3406,61 @@ static void R_AtlasFill( image_t *image, const byte *rgba ) {
 	vk_upload_texture( atlas.page, 0, x0, y0, w + 2, h + 2, room );
 	ri.Hunk_FreeTempMemory( room );
 
-	// the tiles holding anything (tr_draw.c, R_2DTiles)
-	if ( image->atlasTiles ) {
-		ri.Free( image->atlasTiles );
-		image->atlasTiles = NULL;
+	// what covers its texels not clear (tr_draw.c, R_2DTiles): the runs of its
+	// 16 x 16 tiles holding any in each row of them, a run as wide as the one
+	// above it joining it; kept when it leaves out a tenth of the image
+	if ( image->atlasRects ) {
+		ri.Free( image->atlasRects );
+		image->atlasRects = NULL;
 	}
+	image->numAtlasRects = 0;
 	if ( w >= 48 && h >= 48 ) {
-		const int tw = ( w + 15 ) / 16, th = ( h + 15 ) / 16;
+		const int	tw = ( w + 15 ) / 16, th = ( h + 15 ) / 16;
+		byte		*tiles = ri.Hunk_AllocateTempMemory( tw * th );
+		short		(*rects)[4] = ri.Hunk_AllocateTempMemory( tw * th * sizeof( *rects ) );
+		int			tx, ty, run, i, n = 0, area = 0;
 
-		image->atlasTiles = ri.Malloc( tw * th );
-		Com_Memset( image->atlasTiles, 0, tw * th );
+		Com_Memset( tiles, 0, tw * th );
 		for ( y = 0; y < h; y++ ) {
 			for ( x = 0; x < w; x++ ) {
 				if ( rgba[( y * w + x ) * 4 + 3] ) {
-					image->atlasTiles[( y / 16 ) * tw + x / 16] = 1;
+					tiles[( y / 16 ) * tw + x / 16] = 1;
 				}
 			}
 		}
+		for ( ty = 0; ty < th; ty++ ) {
+			for ( tx = 0; tx < tw; tx = run ) {
+				int x1, y1;
+
+				for ( ; tx < tw && !tiles[ty * tw + tx]; tx++ ) {
+				}
+				for ( run = tx; run < tw && tiles[ty * tw + run]; run++ ) {
+				}
+				if ( tx == run ) {
+					continue;
+				}
+				x1 = Q_min( run * 16, w );
+				y1 = Q_min( ty * 16 + 16, h );
+				for ( i = 0; i < n && !( rects[i][0] == tx * 16 && rects[i][2] == x1 && rects[i][3] == ty * 16 ); i++ ) {
+				}
+				if ( i == n ) {
+					rects[n][0] = tx * 16;
+					rects[n][1] = ty * 16;
+					rects[n][2] = x1;
+					n++;
+				}
+				rects[i][3] = y1;
+				area += ( x1 - tx * 16 ) * ( y1 - ty * 16 );
+			}
+		}
+		if ( area * 10 < w * h * 9 ) {
+			// (none: it draws nothing)
+			image->atlasRects = ri.Malloc( Q_max( 1, n ) * sizeof( *rects ) );
+			Com_Memcpy( image->atlasRects, rects, n * sizeof( *rects ) );
+			image->numAtlasRects = n;
+		}
+		ri.Hunk_FreeTempMemory( rects );
+		ri.Hunk_FreeTempMemory( tiles );
 	}
 }
 
@@ -3454,9 +3492,10 @@ void R_AtlasShutdown( void ) {
 	int i;
 
 	for ( i = 0; i < tr.numImages; i++ ) {
-		if ( tr.images[i].atlasTiles ) {
-			ri.Free( tr.images[i].atlasTiles );
-			tr.images[i].atlasTiles = NULL;
+		if ( tr.images[i].atlasRects ) {
+			ri.Free( tr.images[i].atlasRects );
+			tr.images[i].atlasRects = NULL;
+			tr.images[i].numAtlasRects = 0;
 		}
 	}
 	if ( atlas.texels ) {
@@ -3515,9 +3554,10 @@ qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height
 		return RE_RegisterShaderNoMip(name);
 	}
 	image->atlas = NULL;
-	if ( image->atlasTiles ) {
-		ri.Free( image->atlasTiles );
-		image->atlasTiles = NULL;
+	if ( image->atlasRects ) {
+		ri.Free( image->atlasRects );
+		image->atlasRects = NULL;
+		image->numAtlasRects = 0;
 	}
 	if (width != image->uploadWidth || height != image->uploadHeight || image->internalFormat != TEXFMT_RGBA8) {
 		image->width = image->uploadWidth = width;
