@@ -3908,6 +3908,13 @@ void vk_draw( primType_t prim, const drawGeometry_t *geometry, int numIndexes, c
 		return;
 	}
 
+	// r_speeds 7
+	backEnd.pc.c_draws++;
+	if ( backEnd.in2D ) {
+		backEnd.pc.c_draws2D++;
+		backEnd.pc.c_vertexes2D += geometry->numVertexes;
+	}
+
 	VK_BeginRenderPass();
 	cmd = vk.frame->mainCmd;
 

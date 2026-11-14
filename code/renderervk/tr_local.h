@@ -1373,6 +1373,7 @@ typedef struct {
 
 typedef struct {
 	int		c_surfaces, c_shaders, c_vertexes, c_indexes, c_totalIndexes, c_characterlights;
+	int		c_draws, c_draws2D, c_vertexes2D;	// GPU draws (vk_draw), those in 2D and their vertexes: r_speeds 7
 	float	c_overDraw;
 	
 	int		c_dlightVertexes;
