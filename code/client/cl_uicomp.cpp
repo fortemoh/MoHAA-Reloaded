@@ -1795,8 +1795,9 @@ void UIHudCards::Draw(void)
 UIHudWeapons
 
 The weapons carried, up from the widget's bottom right: the sidearm, the
-primary, the grenades (frags then smokes, each with how many); the one in
-hand bright and named under it. countfont: the grenades' counts'
+primary, the grenades (frags then smokes, each with how many), each with
+room for its name under it so that a switch moves nothing (CS:GO's); the
+one in hand bright and named. countfont: the grenades' counts'
 ================
 */
 class UIHudWeapons : public UIWidget
@@ -1847,7 +1848,8 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
         ph = Q_max(ph, phi[i]);
         w += pw[i] + (counts ? 4.0f + m_countFont->getWidth(va("%d", counts[i]), -1) : 0.0f) + (i + 1 < n ? (counts ? 8.0f : 0.0f) + 4.0f : 0.0f);
     }
-    top = *bottom - ph - (hand >= 0 ? 8.0f + lineH : 0.0f);
+    // the name's line kept in hand or not: the list stays put
+    top = *bottom - ph - 8.0f - lineH;
     x = right - w;
     for (i = 0; i < n; i++) {
         const float alpha = hand == i ? 1.0f : 0.55f;
