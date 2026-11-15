@@ -52,8 +52,8 @@ static cvar_t *cg_hudstyle;
 
 const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
     "hud_comp_topleft",     "hud_comp_topleft_compass", "hud_comp_score",      "hud_comp_killfeed", "hud_comp_chat",
-    "hud_comp_strip",       "hud_comp_weapons",         "hud_comp_damage",     "hud_comp_banners",  "hud_comp_bars",
-    "hud_comp_killer",      "hud_comp_target",          "hud_comp_vote",       "hud_comp_csgo_health",
+    "hud_comp_strip",       "hud_comp_weapons",         "hud_comp_damage",     "hud_comp_bars",     "hud_comp_killer",
+    "hud_comp_target",      "hud_comp_vote",            "hud_comp_csgo_health",
     "hud_comp_csgo_ammo",   "hud_comp_cs2_health",      "hud_comp_cs2_ammo",
 };
 
@@ -63,7 +63,7 @@ const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
 // UI_CompHuds), not drawn; all are baked (a change of layout bakes nothing)
 #define COMP_LAYOUTS 3
 static const signed char comp_menuLayout[UI_COMPHUD_MENUS] = {
-    -1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, 1, 1, 2, 2,
+    -1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, 1, 1, 2, 2,
 };
 
 bool ui_compHudInLayout[UI_COMPHUD_MENUS];
@@ -72,16 +72,15 @@ bool ui_compHudInLayout[UI_COMPHUD_MENUS];
 static const char *const comp_toggles[] = {
     "cg_hud_radar", "cg_hud_killfeed", "cg_hud_chat", "cg_hud_messages", "cg_hud_health", "cg_hud_ammo",
     "cg_hud_grenades", "cg_hud_grenadecharge", "cg_hud_score", "cg_hud_timer", "cg_hud_alive", "cg_hud_teamicon",
-    "cg_hud_killer", "cg_hud_targetinfo", "cg_hud_vote", "cg_hud_spectator", "cg_hud_following", "cg_hud_attacker",
+    "cg_hud_killer", "cg_hud_targetinfo", "cg_hud_vote", "cg_hud_following", "cg_hud_attacker",
     "cg_hud_stopwatch", "cg_hud_damage",
 };
 
 // what the menus (ui/hud_comp_*.urc) read and this file sets
 static const char *const comp_menuCvars[] = {
-    "ui_hud_acc", "ui_hud_acc_banner", "ui_hud_acc_line", "ui_hud_acc_radar", "ui_hud_acc_ring",
+    "ui_hud_acc", "ui_hud_acc_line", "ui_hud_acc_radar", "ui_hud_acc_ring",
     "ui_hud_allies", "ui_hud_ammo", "ui_hud_ammo_on", "ui_hud_arc0_alpha", "ui_hud_arc0_angle", "ui_hud_arc1_alpha",
-    "ui_hud_arc1_angle", "ui_hud_arc2_alpha", "ui_hud_arc2_angle", "ui_hud_axis", "ui_hud_badge_on", "ui_hud_banner1",
-    "ui_hud_banner1_on", "ui_hud_banner2", "ui_hud_banner2_on", "ui_hud_charge", "ui_hud_charge_on", "ui_hud_clip",
+    "ui_hud_arc1_angle", "ui_hud_arc2_alpha", "ui_hud_arc2_angle", "ui_hud_axis", "ui_hud_badge_on", "ui_hud_charge", "ui_hud_charge_on", "ui_hud_clip",
     "ui_hud_compass_on", "ui_hud_corners", "ui_hud_dmg_alpha", "ui_hud_dmg_angle", "ui_hud_follow",
     "ui_hud_follow_col", "ui_hud_follow_on", "ui_hud_health", "ui_hud_health_col", "ui_hud_health_frac",
     "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col", "ui_hud_hurt_on", "ui_hud_killer", "ui_hud_killer_col",
@@ -99,7 +98,7 @@ static const char *const comp_menuCvars[] = {
 // (its spread between its brightest and darkest channel against the
 // accent's), so a paler shade stays a paler shade of a new accent. The menus
 // read them as ui_hud_acc* (a shape's $cvar, colorcvar)
-enum { ACC_MAIN, ACC_LINE, ACC_RING, ACC_RADAR, ACC_BANNER, ACC_WEAPON };
+enum { ACC_MAIN, ACC_LINE, ACC_RING, ACC_RADAR, ACC_WEAPON };
 
 static const struct {
     const char *cvar;
@@ -109,7 +108,6 @@ static const struct {
     {"ui_hud_acc_line",   {0.933f, 0.941f, 0.659f}}, // the badge's lines, the ammo's separator
     {"ui_hud_acc_ring",   {0.91f, 0.922f, 0.643f} }, // the badge's ring
     {"ui_hud_acc_radar",  {0.863f, 0.894f, 0.643f}}, // the radar's ring
-    {"ui_hud_acc_banner", {0.706f, 0.753f, 0.549f}}, // the banners' edges
     {NULL,                {0.98f, 0.98f, 0.565f}  }, // the weapons carried
 };
 
@@ -878,31 +876,6 @@ static void Comp_Weapons(const char *inHand)
     }
 }
 
-static const char *Comp_SpectatorText(void)
-{
-    const int pmFlags = cl.snap.ps.pm_flags;
-    const int team    = cl.snap.ps.stats[STAT_TEAM];
-    int       key1, key2;
-
-    if (!(pmFlags & PMF_SPECTATING)) {
-        return "";
-    }
-    Key_GetKeysForCommand(team != TEAM_ALLIES && team != TEAM_AXIS && com_target_game->integer >= TG_MOHTA ? "+attackprimary" : "+use", &key1, &key2);
-    if (com_target_game->integer >= TG_MOHTA) {
-        if (team != TEAM_ALLIES && team != TEAM_AXIS) {
-            return Sys_LV_CL_ConvertString(va("Press Fire(%s) to join the battle!", Key_KeynumToBindString(key1)));
-        }
-        return Sys_LV_CL_ConvertString(va(
-            (pmFlags & PMF_CAMERA_VIEW) ? "Press Use(%s) to enter free spectate mode." : "Press Use(%s) to enter player following spectate mode.",
-            Key_KeynumToBindString(key1)
-        ));
-    }
-    return Sys_LV_CL_ConvertString(va(
-        (pmFlags & PMF_CAMERA_VIEW) ? "Press Use(%s) to follow a different player." : "Press Use(%s) to follow a player.",
-        Key_KeynumToBindString(key1)
-    ));
-}
-
 // text broken between words into lines of a width (design units), up to
 // lines of them
 static str Comp_Wrap(UIFont *font, const char *p, float width, int lines)
@@ -954,8 +927,6 @@ void UI_CompHud_Frame(void)
     const char *weapon = ps->activeItems[ITEM_WEAPON] >= 0 && ps->activeItems[ITEM_WEAPON] < MAX_WEAPONS
                            ? CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON])
                            : "";
-    char        spec[256];
-    const char *banner1 = "";
     const int   team   = ps->stats[STAT_TEAM];
     const int   attacker = ps->stats[STAT_ATTACKERCLIENT];
     vec3_t      angles;
@@ -1017,8 +988,6 @@ void UI_CompHud_Frame(void)
     lastSnap   = cl.snap.messageNum;
     lastChange = cs.changes;
     lastFull   = cls.realtime;
-    // (copied: va's buffer is used again below)
-    Q_strncpyz(spec, Comp_Int("cg_hud_spectator") ? Comp_SpectatorText() : "", sizeof(spec));
     Comp_Roster(gametype);
     Comp_Weapons(weapon);
 
@@ -1048,7 +1017,6 @@ void UI_CompHud_Frame(void)
     // below ours, and 0 for it in round modes while both are 0 (a team's
     // score there is its rounds won)
     {
-        const int matchEnd = atoi(CL_ConfigString(CS_MATCHEND));
         int       score[2] = {ps->stats[STAT_KILLS], ps->stats[STAT_HIGHEST_SCORE]};
         qboolean  known[2] = {qtrue, qtrue};
 
@@ -1078,17 +1046,9 @@ void UI_CompHud_Frame(void)
         Comp_Set("ui_hud_score_r", known[1] ? va("%d", score[1]) : "-");
         Comp_Set("ui_hud_score_lc", teams ? "0.588 0.729 0.871 1" : "0.922 0.933 0.949 1");
         Comp_Set("ui_hud_score_rc", teams ? "0.902 0.478 0.408 1" : "0.922 0.933 0.949 1");
-        if (!(atoi(CL_ConfigString(CS_WARMUP)) != -1 && matchEnd && gametype != GT_LIBERATION && matchEnd > cl.serverTime)) {
-            banner1 = Comp_Int("cg_hud_timer") ? Sys_LV_CL_ConvertString(Comp_Cvar("ui_timemessage")->string) : "";
-        }
         Comp_Set("ui_hud_cards_allies", rounds ? comp.cards[0] : "");
         Comp_Set("ui_hud_cards_axis", rounds ? comp.cards[1] : "");
     }
-    // the banners, the time message's first
-    Comp_Set("ui_hud_banner1", banner1[0] ? banner1 : spec);
-    Comp_Set("ui_hud_banner2", banner1[0] ? spec : "");
-    Comp_Set("ui_hud_banner1_on", banner1[0] || spec[0] ? "1" : "0");
-    Comp_Set("ui_hud_banner2_on", banner1[0] && spec[0] ? "1" : "0");
     }
 
     // the timer: its seconds

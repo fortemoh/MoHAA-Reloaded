@@ -1288,7 +1288,7 @@ static void UI_CompHuds(bool show, bool messages = false)
         Menu      *hud = menus[i];
         // (messages only: the menus with the game messages, the chat, the kills and the vote;
         // the bottom's health and ammo: cg_hud_layout's)
-        const bool on  = (show && ui_compHudInLayout[i]) || (messages && (i == 1 || i == 3 || i == 4 || i == 12));
+        const bool on  = (show && ui_compHudInLayout[i]) || (messages && (i == 1 || i == 3 || i == 4 || i == 11));
 
         if (hud && containers[i] && on != containers[i]->IsVisible()) {
             if (on) {
