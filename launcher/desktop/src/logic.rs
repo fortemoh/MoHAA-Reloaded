@@ -1,6 +1,6 @@
 //! The launcher's logic, without UI: the game's config file, the settings the launcher edits, the game's command
-//! line, the crosshair's geometry and the launcher's own settings. launcher/macos's LauncherCore is the same logic
-//! in Swift; `cargo test` checks this one.
+//! line, the crosshair's geometry and CS2's crosshair codes, and the launcher's own settings. launcher/macos's
+//! LauncherCore is the same logic in Swift; `cargo test` checks this one.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -293,30 +293,193 @@ pub fn color_hex(rgb: u32) -> String {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CrossArm {
+pub struct CrossBox {
     pub x: i32,
     pub y: i32,
     pub w: i32,
     pub h: i32,
 }
 
-/// The crosshair as cg_drawtools.cpp lays it out, in HUD pixels: the four arms around a center square of the
-/// thickness, whose top left corner is (0, 0), and the width (and height) the arms span
-pub fn crosshair_boxes(length: f64, gap: f64, thickness: f64) -> ([CrossArm; 4], i32) {
-    fn pixels(value: f64, maximum: f64) -> i32 {
-        let v = if value.is_nan() || value < 1.0 { 1.0 } else { value.min(maximum) };
-        (v + 0.5) as i32
+/// The crosshair's settings that shape it: sizes in pixels at 1080 lines, the outline 0 (none), 1 (full) or 2 (half)
+pub struct Crosshair {
+    pub length: f64,
+    pub gap: f64,
+    pub thickness: f64,
+    pub outline: i32,
+    pub dot: bool,
+    pub t: bool,
+}
+
+/// The crosshair as cg_drawtools.cpp's CG_UpdateCrosshair lays it out at 1080 lines (CS2's static cross), in HUD
+/// pixels from the screen's middle pixel
+pub struct CrossLayout {
+    /// the arms and the dot, joined into boxes that don't overlap
+    pub boxes: Vec<CrossBox>,
+    /// the outline, drawn first, joined the same way, less the pieces
+    pub outline: Vec<CrossBox>,
+    /// the square around the crosshair's middle that holds it all: its width (and height), and its top left corner
+    /// (the same both ways)
+    pub extent: i32,
+    pub start: i32,
+}
+
+pub fn crosshair_boxes(c: &Crosshair) -> CrossLayout {
+    // in whole pixels as the game computes them, at 1080 lines: half away from zero, at least 1 above 0, else 0
+    fn pixels(value: f64) -> i32 {
+        let v = value as f32;
+        if !(v > 0.0) {
+            return 0; // NaN too
+        }
+        ((v.min(4096.0) * 1080.0 / 1080.0 + 0.5) as i32).max(1)
     }
-    let l = pixels(length, 128.0);
-    let t = pixels(thickness, 16.0);
-    let s = (pixels(gap, 64.0) - t / 2).max(1);
-    let arms = [
-        CrossArm { x: -s - l, y: 0, w: l, h: t },
-        CrossArm { x: t + s, y: 0, w: l, h: t },
-        CrossArm { x: 0, y: -s - l, w: t, h: l },
-        CrossArm { x: 0, y: t + s, w: t, h: l },
-    ];
-    (arms, 2 * (s + l) + t)
+    let b = |x, y, w, h| CrossBox { x, y, w, h };
+    let (l, t, g) = (pixels(c.length), pixels(c.thickness), pixels(c.gap));
+    // a line t thick has (t + 1) / 2 pixels before the middle one; the gap counts from it, a pixel less after it
+    // when t is odd
+    let (before, odd) = ((t + 1) / 2, t & 1);
+    let mut pieces = Vec::new();
+    if t > 0 && l > 0 {
+        pieces.extend([b(-g - l, -before, l, t), b(g - odd, -before, l, t), b(-before, g - odd, t, l)]);
+        if !c.t {
+            pieces.push(b(-before, -g - l, t, l));
+        }
+    }
+    if t > 0 && c.dot {
+        pieces.push(b(-before, -before, t, t));
+    }
+    // a pixel above (over the corners) and left of every piece; full: below and right too; nowhere under a piece
+    let mode = c.outline.clamp(0, 2);
+    let mut strips = Vec::new();
+    for p in pieces.iter().filter(|_| mode != 0) {
+        strips.extend([b(p.x - 1, p.y - 1, p.w + if mode == 1 { 2 } else { 1 }, 1), b(p.x - 1, p.y, 1, p.h)]);
+        if mode == 1 {
+            strips.extend([b(p.x - 1, p.y + p.h, p.w + 2, 1), b(p.x + p.w, p.y, 1, p.h)]);
+        }
+    }
+    // the middle is -odd / 2 both ways: the farthest edge from it, twice, is the square's width
+    let edges = pieces.iter().chain(&strips).flat_map(|r| [r.x, r.x + r.w, r.y, r.y + r.h]);
+    let extent = edges.map(|e| (2 * e + odd).abs()).max().unwrap_or(0);
+    let (boxes, outline) = (crosshair_union(&pieces, &[]), crosshair_union(&strips, &pieces));
+    CrossLayout { boxes, outline, extent, start: -(extent + odd) / 2 }
+}
+
+/// The pixels of boxes less those of others, as boxes that don't overlap, as CG_CrosshairUnion joins them (at most
+/// 64): in each band between the boxes' top and bottom edges, the first boxes' spans less the others', a box going on
+/// down into the next band when it has the same span there. A see-through crosshair blends each pixel once, and the
+/// outline nowhere under a piece
+fn crosshair_union(boxes: &[CrossBox], minus: &[CrossBox]) -> Vec<CrossBox> {
+    // the boxes' spans across the band y0 to y1, sorted and joined where they touch
+    fn spans(boxes: &[CrossBox], y0: i32, y1: i32) -> Vec<(i32, i32)> {
+        let mut all: Vec<(i32, i32)> =
+            boxes.iter().filter(|r| r.y <= y0 && r.y + r.h >= y1 && r.w > 0).map(|r| (r.x, r.x + r.w)).collect();
+        all.sort_by_key(|s| s.0);
+        let mut joined: Vec<(i32, i32)> = Vec::new();
+        for (x0, x1) in all {
+            match joined.last_mut() {
+                Some(last) if x0 <= last.1 => last.1 = last.1.max(x1),
+                _ => joined.push((x0, x1)),
+            }
+        }
+        joined
+    }
+    let mut edges: Vec<i32> = boxes.iter().chain(minus).flat_map(|r| [r.y, r.y + r.h]).collect();
+    edges.sort();
+    let mut out: Vec<CrossBox> = Vec::new();
+    for band in edges.windows(2).filter(|e| e[0] != e[1]) {
+        let (y0, y1, above) = (band[0], band[1], out.len());
+        let cuts = spans(minus, y0, y1);
+        for (s0, s1) in spans(boxes, y0, y1) {
+            // the span up to each cut, then on from its end
+            let mut x0 = s0;
+            for j in 0..=cuts.len() {
+                if x0 >= s1 {
+                    break;
+                }
+                let x1 = cuts.get(j).map_or(s1, |c| c.0.max(x0).min(s1));
+                if x1 > x0 {
+                    if let Some(r) = out[..above].iter_mut().find(|r| r.x == x0 && r.w == x1 - x0 && r.y + r.h == y0) {
+                        r.h += y1 - y0;
+                    } else if out.len() < 64 {
+                        out.push(CrossBox { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+                    }
+                }
+                if let Some(c) = cuts.get(j) {
+                    x0 = x0.max(c.1);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The characters of CS2's crosshair codes, a digit of base 57 each
+const CODE_DIGITS: &[u8; 57] = b"ABCDEFGHJKLMNOPQRSTUVWXYZabcdefhijkmnopqrstuvwxyz23456789";
+
+/// The settings a CS2 crosshair code sets, as the game's crosshair_import sets them (code/client/cl_crosshair.c,
+/// which describes the format): the text's first word, else why it isn't a code CS2 writes now
+pub fn crosshair_import(text: &str) -> Result<Vec<(&'static str, String)>, String> {
+    let code = text.split([' ', '\t', '\r', '\n']).find(|w| !w.is_empty()).unwrap_or("");
+    if code.is_empty() {
+        return Err("no code: copy the crosshair's code in CS2 first".into());
+    }
+    if code.starts_with("CSGO") {
+        let why = "an old CSGO- code: CS2 no longer takes those either, copy the crosshair's new code from CS2";
+        return Err(why.into());
+    }
+    if !code.starts_with("CS") || code.len() != 46 {
+        return Err("not a crosshair code (CS and 44 letters and digits)".into());
+    }
+    // a number in base 57, its last character the most significant digit, into 32 bytes, byte 0 the most significant
+    let mut b = [0u8; 32];
+    for c in code.bytes().skip(2).rev() {
+        let Some(digit) = CODE_DIGITS.iter().position(|&d| d == c) else {
+            return Err("not a crosshair code (a character CS2 never writes: a typo?)".into());
+        };
+        let mut carry = digit as u32;
+        for byte in b.iter_mut().rev() {
+            carry += *byte as u32 * 57;
+            *byte = carry as u8;
+            carry >>= 8;
+        }
+        if carry != 0 {
+            return Err("not a crosshair code (a typo?)".into());
+        }
+    }
+    if b[0] != b[1..].iter().fold(0u8, |sum, &x| sum.wrapping_add(x)) {
+        return Err("the code is garbled (its checksum doesn't match: a typo?)".into());
+    }
+    if b[1] != 1 {
+        return Err(format!("a crosshair code of a newer kind (version {}) than this game reads", b[1]));
+    }
+    let height = u16::from_le_bytes([b[2], b[3]]);
+    if height == 0 {
+        return Err("the code has no screen height".into());
+    }
+
+    // sizes are pixels at the code's height (240 at least): at 1080 lines, in the game's float and printf's "%g"
+    // (they stay within 0.01 to 150000: never its exponent form)
+    let scale = 1080.0f32 / height.max(240) as f32;
+    let size = |pixels: f32| {
+        let v = (pixels * scale) as f64;
+        let exponent: i32 = format!("{v:.5e}").rsplit('e').next().and_then(|e| e.parse().ok()).unwrap_or(0);
+        let fixed = format!("{:.*}", (5 - exponent).max(0) as usize, v);
+        if fixed.contains('.') { fixed.trim_end_matches('0').trim_end_matches('.').to_string() } else { fixed }
+    };
+    let dot_only = b[4] & 31 == 6;
+    let hex = |rgb: &[u8]| format!("{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]);
+    Ok(vec![
+        ("cg_crosshair_length", if dot_only { "0".into() } else { size(b[16] as f32) }),
+        ("cg_crosshair_gap", size(i16::from_le_bytes([b[14], b[15]]) as f32)),
+        ("cg_crosshair_thickness", size((b[13] & 63) as f32)),
+        ("cg_crosshair_color", hex(&b[5..8])),
+        ("cg_crosshair_alpha", b[8].to_string()),
+        ("cg_crosshair_outline", (b[13] >> 6).to_string()),
+        ("cg_crosshair_outline_color", hex(&b[9..12])),
+        ("cg_crosshair_outline_alpha", b[12].to_string()),
+        ("cg_crosshair_dot", ((dot_only || b[4] & 64 != 0) as i32).to_string()),
+        ("cg_crosshair_t", (b[4] >> 7).to_string()),
+        ("cg_crosshair_code", code.to_string()),
+    ])
 }
 
 /// The game's window modes on the Vulkan port, as r_fullscreen and r_noborder pick them
@@ -611,6 +774,7 @@ pub fn plain_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     #[test]
     fn parses_configs() {
@@ -709,6 +873,114 @@ mod tests {
         );
     }
 
+    /// CG_UpdateCrosshair's layout (CS2's static cross) as the pixels it fills at 1920x1080, the middle one 960, 540
+    #[test]
+    fn crosshair() {
+        let shape = |length, gap, thickness, outline, dot, t| Crosshair { length, gap, thickness, outline, dot, t };
+        // the screen's pixels the boxes fill, each once
+        let screen = |boxes: &[CrossBox]| {
+            let mut filled = BTreeSet::new();
+            for r in boxes {
+                for (x, y) in (r.x..r.x + r.w).flat_map(|x| (r.y..r.y + r.h).map(move |y| (x, y))) {
+                    assert!(filled.insert((960 + x, 540 + y)), "{x}, {y} twice");
+                }
+            }
+            filled
+        };
+        // columns x0 to x1 by rows y0 to y1
+        let pixels = |rects: &[(i32, i32, i32, i32)]| -> BTreeSet<(i32, i32)> {
+            let rect = |&(x0, x1, y0, y1): &(i32, i32, i32, i32)| {
+                (x0..=x1).flat_map(move |x| (y0..=y1).map(move |y| (x, y)))
+            };
+            rects.iter().flat_map(rect).collect()
+        };
+
+        // the default, as before: arms at x 948-955 and 964-971 (rows 539-540), y 528-535 and 544-551 (columns 959-960)
+        let c = crosshair_boxes(&shape(8.0, 4.0, 2.0, 0, false, false));
+        let arms = pixels(&[(948, 955, 539, 540), (964, 971, 539, 540), (959, 960, 528, 535), (959, 960, 544, 551)]);
+        assert_eq!(screen(&c.boxes), arms);
+        assert!(c.outline.is_empty());
+        assert_eq!((c.extent, c.start), (24, -12));
+        // full outline: a pixel round each piece, not scaled
+        let c = crosshair_boxes(&shape(8.0, 4.0, 2.0, 1, false, false));
+        let around = pixels(&[(947, 956, 538, 541), (963, 972, 538, 541), (958, 961, 527, 536), (958, 961, 543, 552)]);
+        assert_eq!(screen(&c.outline), &around - &arms);
+        assert_eq!((c.extent, c.start), (26, -13));
+
+        // thickness 1: the line on the pixel before the middle, the gap a pixel less after it
+        let c = crosshair_boxes(&shape(8.0, 4.0, 1.0, 0, false, false));
+        let want = pixels(&[(948, 955, 539, 539), (963, 970, 539, 539), (959, 959, 528, 535), (959, 959, 543, 550)]);
+        assert_eq!(screen(&c.boxes), want);
+        assert_eq!((c.extent, c.start), (23, -12));
+
+        // length 1, gap 2, thickness 8, half outline, as in a CS2 screenshot; the outline above and left of each piece,
+        // nowhere under one: the game's boxes
+        let c = crosshair_boxes(&shape(1.0, 2.0, 8.0, 2, false, false));
+        let want = pixels(&[(957, 957, 536, 543), (962, 962, 536, 543), (956, 963, 537, 537), (956, 963, 542, 542)]);
+        assert_eq!(screen(&c.boxes), want);
+        let outline = [
+            (956, 535, 2, 1), (961, 535, 2, 1), (955, 536, 2, 1), (958, 536, 4, 1), (963, 536, 1, 1),
+            (955, 537, 1, 1), (956, 538, 1, 3), (961, 538, 1, 3), (955, 541, 2, 1), (958, 541, 4, 1),
+            (963, 541, 1, 1), (955, 542, 1, 1), (956, 543, 1, 1), (961, 543, 1, 1),
+        ];
+        let on_screen = |r: &CrossBox| (960 + r.x, 540 + r.y, r.w, r.h);
+        assert_eq!(c.outline.iter().map(on_screen).collect::<Vec<_>>(), outline);
+        assert!(screen(&c.outline).is_disjoint(&want));
+
+        // gap 0: the arms meet; the dot over them, each pixel once; T-style: no top arm
+        let c = crosshair_boxes(&shape(5.0, 0.0, 2.0, 0, true, true));
+        assert_eq!(screen(&c.boxes), pixels(&[(955, 964, 539, 540), (959, 960, 541, 544)]));
+        // length 0: the dot alone, the middle t by t; thickness 0: nothing
+        let c = crosshair_boxes(&shape(0.0, 4.0, 4.0, 0, true, false));
+        assert_eq!(screen(&c.boxes), pixels(&[(958, 961, 538, 541)]));
+        assert!(crosshair_boxes(&shape(8.0, 4.0, 0.0, 1, true, false)).boxes.is_empty());
+
+        // half away from zero, at least 1 above 0, 4096 at most; a negative gap (or NaN) draws as 0; outline 0 to 2
+        let c = crosshair_boxes(&shape(0.2, -3.0, 2.5, 7, false, false));
+        assert_eq!(screen(&c.boxes), pixels(&[(959, 959, 538, 540), (958, 960, 539, 539)]));
+        assert!(!c.outline.is_empty());
+        let c = crosshair_boxes(&shape(5000.0, f64::NAN, 1.0, -1, false, false));
+        assert_eq!((c.boxes[1], c.outline.len()), (CrossBox { x: -4096, y: -1, w: 8191, h: 1 }, 0));
+    }
+
+    /// The game's own test codes (code/client/tests/test_crosshair.c)
+    #[test]
+    fn crosshair_code() {
+        let get = |text: &str| crosshair_import(text).map(|v| v.into_iter().collect::<BTreeMap<_, _>>());
+        // red, dot, at 768 lines: sizes at 1080 lines as the game writes them
+        let v = get("CSvbPubOq37zTGqtsPTP5QTrp5CB4xFXiKRLfzJsm49ZRe").unwrap();
+        let want = [("length", "7.03125"), ("gap", "0"), ("thickness", "1.40625"), ("color", "FF0000")];
+        for (name, value) in want.into_iter().chain([("alpha", "255"), ("outline", "0"), ("dot", "1"), ("t", "0")]) {
+            assert_eq!(v[format!("cg_crosshair_{name}").as_str()], value, "{name}");
+        }
+        assert_eq!(v["cg_crosshair_code"], "CSvbPubOq37zTGqtsPTP5QTrp5CB4xFXiKRLfzJsm49ZRe");
+        assert_eq!(v.len(), 11);
+        // the first word, as copied with spaces or a line break around it
+        let v = get(" CSHt3ObzKS3ikGJLRBVrKjPUrhOCikyke53na8cJFtNZKa\r\n").unwrap();
+        assert_eq!(v["cg_crosshair_code"], "CSHt3ObzKS3ikGJLRBVrKjPUrhOCikyke53na8cJFtNZKa");
+        // Dot Only: no arms, the dot
+        let v = get("CSUyBmKsvnUffbDXZTmd9GxnFxzmKaO6VAvnEphKt6jQfJ").unwrap();
+        assert_eq!((v["cg_crosshair_length"].as_str(), v["cg_crosshair_dot"].as_str()), ("0", "1"));
+        // height 100 (240 then), gap -32768, thickness 63, outline 3
+        let v = get("CS7uw3wMkJBJ4rMDLEaYbyfTJFFPvkLAhOmBFi8zOM6H2d").unwrap();
+        let got = ["gap", "thickness", "outline"].map(|name| v[format!("cg_crosshair_{name}").as_str()].clone());
+        assert_eq!(got, ["-147456", "283.5", "3"]);
+
+        let rejected = [
+            ("CSkSCHQKunGr2yPsJr2U3RTd8ycMA2pEs9jWnxK5KjMmWL", "garbled"),
+            ("CSoQhciXBHZUKAbfexZBeMWFKxkrXL5MLumDLj3JYW4snP", "no screen height"),
+            ("CSuZhVyU8icUwjTjopBSVi6ctEbq5GiOXJBRdC6LNLKaFL", "version 2"),
+            ("CSGO-9JzcN-4dZtA-DdXis-8qz5T-rCnkP", "old CSGO"),
+            ("CSvbPubOq37zTGqtsPTP5QTrp5CB4xFXiKRLfzJsm49ZR0", "never writes"),
+            ("CSvbPubOq37zTGqtsPTP5QTrp5CB4xFXiKRLfzJsm49ZR", "44 letters"),
+            ("CS99999999999999999999999999999999999999999999", "typo?"),
+            (" \r\n", "no code"),
+        ];
+        for (code, why) in rejected {
+            assert!(get(code).unwrap_err().contains(why), "{code}");
+        }
+    }
+
     #[test]
     fn misc() {
         assert!(same_address("Host.Example", "host.example:12203"));
@@ -717,14 +989,6 @@ mod tests {
         assert_eq!(parse_color("12345"), None);
         assert_eq!(parse_color("GGGGGG"), None);
         assert_eq!(color_hex(0x0A0B0C), "0A0B0C");
-
-        let (arms, extent) = crosshair_boxes(4.0, 3.0, 1.0);
-        assert_eq!(arms[0], CrossArm { x: -7, y: 0, w: 4, h: 1 });
-        assert_eq!((arms[1].x, arms[3].y, arms[2].y, extent), (4, 4, -7, 15));
-        let (arms, extent) = crosshair_boxes(5.0, 3.0, 2.0);
-        assert_eq!((arms[1].x, arms[0].x, extent), (4, -7, 16));
-        let (arms, _) = crosshair_boxes(0.0, 1000.0, 99.0);
-        assert_eq!((arms[1].w, arms[0].h, arms[1].x), (1, 16, 16 + 56));
 
         assert_eq!(mode_from_cvars("1", "1"), MODE_FULLSCREEN);
         assert_eq!(mode_from_cvars("0", "1"), MODE_BORDERLESS);
