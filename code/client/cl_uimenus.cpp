@@ -20,8 +20,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
-// cl_uimenus.cpp: the Reloaded menus (Added). Team select (FFA's soldier
-// select too), weapon select, the Esc menu and the scoreboard, each a URC
+// cl_uimenus.cpp: the Reloaded menus (Added). The weapon select (which picks
+// the side and the model too: the team menus show it), the Esc menu and
+// the scoreboard, each a URC
 // menu (ui/reloaded_*.urc) of a ReloadedMenu widget, which lays the screen
 // out and draws it, and the stock 3D player model views it places. They are
 // shown for the stock menus' names (SelectTeam, ObjSelectTeam,
@@ -45,7 +46,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <vector>
 
 #define RL_OUTLINES "ui/outlines/"
-// the model views' modelscale (ui/reloaded_team.urc, reloaded_weapon.urc)
+// the model views' modelscale (ui/reloaded_weapon.urc)
 #define RL_MODELSCALE 1.12f
 
 static cvar_t *ui_classicmenus;
@@ -419,29 +420,6 @@ static void RL_Box(const rlView_t& v, float x, float y, float w, float h, rlColo
     uii.Rend_DrawBox(x0, y0, x1 - x0, y1 - y0);
 }
 
-// a hairline: a pixel at least
-static void RL_HLine(const rlView_t& v, float x0, float x1, float y, rlColor_t c)
-{
-    const int px = RL_P(v, Q_min(x0, x1)), pw = RL_P(v, Q_max(x0, x1)) - px, py = RL_P(v, y);
-
-    if (rl_bakeOnly) {
-        return;
-    }
-    RL_SetColor(c);
-    uii.Rend_DrawBox(px, py, pw, Q_max(1, RL_P(v, 1.0f)));
-}
-
-static void RL_VLine(const rlView_t& v, float x, float y0, float y1, rlColor_t c)
-{
-    const int px = RL_P(v, x), py = RL_P(v, y0), ph = RL_P(v, y1) - py;
-
-    if (ph <= 0 || rl_bakeOnly) {
-        return;
-    }
-    RL_SetColor(c);
-    uii.Rend_DrawBox(px, py, Q_max(1, RL_P(v, 1.0f)), ph);
-}
-
 // a baked shape (white, tinted) over pixels
 static void RL_Shape(int x, int y, int w, int h, const char *text, rlColor_t c, float s)
 {
@@ -546,7 +524,7 @@ least on the screen
 */
 
 // the type scale (design pixels): three header sizes, two for what's under them
-#define RL_H1 60.0f // the teams' names on the team screen, the scores
+#define RL_H1 60.0f // the scores
 #define RL_H2 36.0f // a screen's title
 #define RL_H3 28.0f // the map's name, the time left
 #define RL_S1 20.0f // an item's name: weapons, tiles, buttons, teams in the lists, players
@@ -802,13 +780,14 @@ static rlWeapon_t RL_WeaponFor(int nation, int wc, int target, int dmflags, cons
     }
 }
 
+// the nations as the weapon menus' names have them (SelectPrimaryWeapon_<nation>)
+static const char *const rl_nationNames[] = {"american", "british", "russian", "german", "italian"};
+
 // the nation the weapon menu was opened for (ui_reloaded_nation)
 static int RL_Nation(void)
 {
-    static const char *const names[] = {"american", "british", "russian", "german", "italian"};
-
-    for (int i = 0; i < (int)ARRAY_LEN(names); i++) {
-        if (!Q_stricmp(ui_reloaded_nation->string, names[i])) {
+    for (int i = 0; i < (int)ARRAY_LEN(rl_nationNames); i++) {
+        if (!Q_stricmp(ui_reloaded_nation->string, rl_nationNames[i])) {
             return i;
         }
     }
@@ -914,6 +893,28 @@ static int RL_PreviewNation(int target)
     return RL_ModelNation(t, RL_PreviewModel(t).c_str(), target);
 }
 
+// the side with fewer players (Allies on a tie)
+static int RL_SmallerSide(void)
+{
+    int n[2] = {0, 0};
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        const char *cs = CL_ConfigString(CS_PLAYERS + i);
+        int         team;
+
+        if (!cs[0]) {
+            continue;
+        }
+        team = atoi(Info_ValueForKey(cs, "team"));
+        if (team == TEAM_ALLIES) {
+            n[0]++;
+        } else if (team == TEAM_AXIS) {
+            n[1]++;
+        }
+    }
+    return n[1] < n[0];
+}
+
 // the menu opened: the models listed, the player's side and models previewed
 static void RL_WeaponPreviewReset(void)
 {
@@ -965,8 +966,12 @@ static void RL_WeaponPreviewReset(void)
             }
         }
     }
-    // the player's side (FFA's too), a spectator's the menu's nation's
-    rl_wp.tab = team == TEAM_ALLIES ? 0 : team == TEAM_AXIS ? 1 : RL_NationTeam(RL_Nation());
+    // the player's side (FFA's too); a spectator's in a team game the one with
+    // fewer players, else the menu's nation's
+    rl_wp.tab = team == TEAM_ALLIES ? 0
+              : team == TEAM_AXIS   ? 1
+              : RL_Gametype() >= GT_TEAM ? RL_SmallerSide()
+                                         : RL_NationTeam(RL_Nation());
     rl_wp.serial++;
 }
 
@@ -981,9 +986,10 @@ ALIASES
 static const struct {
     const char *stock, *ours;
 } rl_aliases[] = {
-    {"SelectTeam",                  "reloaded_team"      },
-    {"ObjSelectTeam",               "reloaded_team"      },
-    {"SelectFFAModel",              "reloaded_team"      },
+    // (the team menus too: the weapon menu picks the side)
+    {"SelectTeam",                  "reloaded_weapon"    },
+    {"ObjSelectTeam",               "reloaded_weapon"    },
+    {"SelectFFAModel",              "reloaded_weapon"    },
     {"SelectPrimaryWeapon",         "reloaded_weapon"    },
     {"SelectPrimaryWeapon_british", "reloaded_weapon"    },
     {"SelectPrimaryWeapon_russian", "reloaded_weapon"    },
@@ -1027,7 +1033,7 @@ qboolean UI_Menus_Scoreboard(const char *name)
 
 qboolean UI_Menus_Covering(void)
 {
-    static const char *const covering[] = {"reloaded_team", "reloaded_weapon", "reloaded_esc"};
+    static const char *const covering[] = {"reloaded_weapon", "reloaded_esc"};
     Menu *const              m          = menuManager.CurrentMenu();
 
     // (asked each frame: most menus' names don't start with r)
@@ -1052,24 +1058,36 @@ qboolean UI_Menus_Pushing(const char *name)
         return qtrue;
     }
     if (!strcmp(alias, "reloaded_weapon")) {
+        // (a weapon menu's name, not a team menu's: the team menus open it too)
+        const bool weapon = !Q_stricmpn(name, "SelectPrimaryWeapon", 19);
+        const int  side   = cl.snap.valid && cl.snap.ps.stats[STAT_TEAM] == TEAM_AXIS;
+
         // a side picked in the weapon menu: the server pushes the new side's
-        // weapon menu (fgame's Player::Join_DM_Team), the weapon already sent
+        // weapon menu (fgame's Player::Join_DM_Team), the weapon already sent.
+        // (Not a team menu: the server's after a refused switch, shown.)
         if (rl_wp.swallow) {
             rl_wp.swallow = false;
-            if (cls.realtime - rl_wp.swallowAt < 3000) {
+            if (weapon && cls.realtime - rl_wp.swallowAt < 3000) {
                 return qfalse;
             }
         }
-        // the nation: the name's (SH/BT servers send each nation its own), else
-        // the team's (Allied Assault's Americans and Germans)
-        const char *nation = strchr(name, '_');
+        // already up (a push again, the team menu's or the weapon menu's: not
+        // pushed twice): what it previews left as it is
+        {
+            Menu *const up = menuManager.CurrentMenu();
 
-        if (nation) {
-            Cvar_Set("ui_reloaded_nation", nation + 1);
-        } else if (com_target_game->integer < TG_MOHTA && cl.snap.valid && cl.snap.ps.stats[STAT_TEAM] == TEAM_AXIS) {
-            Cvar_Set("ui_reloaded_nation", "german");
+            if (up && !Q_stricmp(up->m_name.c_str(), "reloaded_weapon")) {
+                return qtrue;
+            }
+        }
+        // the nation: the name's (SH/BT servers send each nation its own), else
+        // what the player's side's model gives (Allied Assault's Americans and Germans)
+        if (weapon && strchr(name, '_')) {
+            Cvar_Set("ui_reloaded_nation", strchr(name, '_') + 1);
         } else {
-            Cvar_Set("ui_reloaded_nation", "american");
+            Cvar_Set("ui_reloaded_nation",
+                     rl_nationNames[RL_ModelNation(side, Cvar_VariableString(side ? "dm_playergermanmodel" : "dm_playermodel"),
+                                                   com_target_game->integer)]);
         }
         UI_GetPlayerModel_f(); // (called, not executed: the push's own arguments stay)
         RL_WeaponPreviewReset();
@@ -1077,9 +1095,6 @@ qboolean UI_Menus_Pushing(const char *name)
     }
     // another menu opened since: the push isn't the switch's
     rl_wp.swallow = false;
-    if (!strcmp(alias, "reloaded_team")) {
-        UI_GetPlayerModel_f(); // (called, not executed: the push's own arguments stay)
-    }
     return qtrue;
 }
 
@@ -1098,16 +1113,16 @@ void UI_Menus_Init(void)
 
 THE WIDGET
 
-ReloadedMenu: "screen team|weapon|esc|scoreboard", "layer back|front".
-The back layer draws what is under the 3D model views (the team screen's
-halves and bars, a dimming) and places the views (the menu's labels named
+ReloadedMenu: "screen weapon|esc|scoreboard", "layer back|front".
+The back layer draws what is under the 3D model views (a dimming) and
+places the views (the menu's labels named
 modelallies and modelaxis); the front layer draws the rest and takes the
 mouse and the keys. Both lay the screen out alike from the same data
 
 ====================================================================
 */
 
-enum { SCR_TEAM, SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD };
+enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD };
 
 // the vote tile's state, as the stock menu's widgets show it (UI_MultiplayerMainMenuWidgetsUpdate)
 enum { VOTE_CALL, VOTE_NOW, VOTE_VOTED, VOTE_OFF };
@@ -1125,7 +1140,7 @@ static int RL_VoteState(void)
 
 
 // the front layer's hot item, for the back layer (a frame later)
-static int rl_hot[4] = {-1, -1, -1, -1};
+static int rl_hot[3] = {-1, -1, -1};
 
 typedef struct {
     int   x, y, w, h; // pixels
@@ -1147,7 +1162,7 @@ public:
 
     int                  m_tick;      // the frame Tick ran
 
-    UIReloadedMenu() : m_screen(SCR_TEAM), m_back(0), m_focus(-1), m_shown(-1), m_cols(1), m_tick(-1)
+    UIReloadedMenu() : m_screen(SCR_WEAPON), m_back(0), m_focus(-1), m_shown(-1), m_cols(1), m_tick(-1)
     {
         m_mouse[0] = m_mouse[1] = -1;
         AllowActivate(true);
@@ -1157,7 +1172,7 @@ public:
     {
         const str s = ev->GetString(1);
 
-        m_screen = !str::icmp(s, "weapon") ? SCR_WEAPON : !str::icmp(s, "esc") ? SCR_ESC : !str::icmp(s, "scoreboard") ? SCR_SCOREBOARD : SCR_TEAM;
+        m_screen = !str::icmp(s, "esc") ? SCR_ESC : !str::icmp(s, "scoreboard") ? SCR_SCOREBOARD : SCR_WEAPON;
         AllowActivate(m_screen != SCR_SCOREBOARD);
     }
     void SetLayer(Event *ev) { m_back = !str::icmp(ev->GetString(1), "back"); }
@@ -1177,7 +1192,6 @@ public:
     void Choose(int id);
     void PlaceModel(const char *name, const rlView_t& v, float cx, float footY, float height, bool show);
 
-    void DrawTeam(const rlView_t& v, const rlInfo_t& in);
     void DrawWeapon(const rlView_t& v, const rlInfo_t& in);
     void DrawEsc(const rlView_t& v, const rlInfo_t& in);
     void DrawScoreboard(const rlView_t& v, const rlInfo_t& in);
@@ -1263,10 +1277,11 @@ qboolean UIReloadedMenu::KeyEvent(int key, unsigned int time)
         const int  row    = at / m_cols;
         int        to     = at;
 
-        // the next place that can be chosen that way (across: within the row)
+        // the next place that can be chosen that way (across: within the row; a
+        // wide item's other places stepped over)
         do {
             to += step;
-        } while (to >= 0 && to < n && (!across || to / m_cols == row) && m_order[to] < 0);
+        } while (to >= 0 && to < n && (!across || to / m_cols == row) && (m_order[to] < 0 || m_order[to] == m_order[at]));
         if (to < 0 || to >= n || (across && to / m_cols != row)) {
             // down past the last row: the last that can be chosen
             if (!across && step > 0) {
@@ -1341,10 +1356,6 @@ void UIReloadedMenu::Tick(void)
         RL_WantScores();
         return;
     }
-    // the teams' scores, when the server's configstring hasn't them
-    if (m_screen == SCR_TEAM && !CL_ConfigString(CS_TEAMSCORES)[0] && RL_Gametype() >= GT_TEAM) {
-        RL_WantScores();
-    }
     // the keys come here while the menu is up
     if (uWinMan.ActiveControl() != this && menuManager.CurrentMenu() && getParent()
         && menuManager.CurrentMenu()->GetContainerWidget() == getParent()) {
@@ -1380,7 +1391,7 @@ int UIReloadedMenu::DrawKey(void)
         k.self = cl.snap.ps.clientNum;
         k.team = cl.snap.ps.stats[STAT_TEAM];
     }
-    if (m_screen == SCR_TEAM || m_screen == SCR_SCOREBOARD) {
+    if (m_screen == SCR_SCOREBOARD) {
         k.scores = rl_sb.stamp;
     }
     if (m_screen == SCR_WEAPON || m_screen == SCR_ESC || m_screen == SCR_SCOREBOARD) {
@@ -1421,9 +1432,6 @@ void UIReloadedMenu::Draw(void)
     m_order.clear();
     m_cols = 1;
     switch (m_screen) {
-    case SCR_TEAM:
-        DrawTeam(v, in);
-        break;
     case SCR_WEAPON:
         DrawWeapon(v, in);
         break;
@@ -1473,202 +1481,6 @@ static void RL_HeaderPanel(const rlView_t& v, float x, float y, float w, float h
         RL_Text(v, x + w - 28, y + 32 * k, left.c_str(), RL_H3 * k, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
         RL_Text(v, x + w - 28, y + 68 * k, "TIME LEFT", RL_S2 * Q_max(k, 0.85f), RL_MUTED, false, RL_RIGHT, 2.4f, RL_MID);
     }
-}
-
-/*
-================
-Team select (and FFA's soldier select)
-
-Black bars top and bottom (the title, the map and mode; Spectate), the
-screen split blue and red, both live models at the outer edges, and
-toward the middle, on rows shared by both sides: the emblem and name, the
-players and score, then the players, one column first, names as big as
-the room allows, nobody left out. FFA: one merged list in the middle
-================
-*/
-
-enum { ID_ALLIES, ID_AXIS, ID_SPECTATE };
-
-void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
-{
-    const bool  ffa = in.gametype == GT_FFA;
-    const float bh = v.dh >= 1000 ? 100.0f : 84.0f;
-    const float bandTop = bh, bandBot = v.dh - bh, band = bandBot - bandTop;
-    const float cx = v.dw / 2;
-    const float half   = Q_min(v.dw / 2, 960.0f);
-    const bool  narrow = v.layout == 0;
-    const float fh = band * (narrow ? 0.62f : 0.86f);
-    const float fd = half * (narrow ? 0.80f : 0.70f);
-    const float areaW = fd - fh * 0.37f / 2 - 56 - 24;
-    const float nameSize = RL_H1, iconD = 54;
-    const float capH = nameSize * 0.81f;
-    const int   hover = m_focus == ID_ALLIES ? 0 : m_focus == ID_AXIS ? 1 : -1;
-    const std::vector<rlPlayer_t> *sides[2] = {&in.allies, &in.axis};
-    const int   na = (int)in.allies.size(), nx = (int)in.axis.size();
-    float       yName  = bandTop + Q_max(46.0f, band * 0.085f);
-    float       yStats = yName + capH + 34;
-    float       listTop = yStats + 30;
-    const float avail = bandBot - 26 - (listTop + 10);
-    auto        lhFor = [&](int n) { return n == 0 ? 30.0f : Q_max(19.0f, Q_min(30.0f, avail / n)); };
-    float       lh = Q_min(lhFor(na), lhFor(nx));
-    int         cap = Q_max(1, (int)((avail + 0.01f) / lh));
-    int         cols[2] = {Q_max(1, (na + cap - 1) / cap), Q_max(1, (nx + cap - 1) / cap)};
-    float       namePx = Q_max(15.0f, Q_min(RL_S1, lh * 0.72f));
-    int         rowsA = na ? Q_min(na, cap) : 1, rowsX = nx ? Q_min(nx, cap) : 1;
-    int         capm = cap, mcols = 1, nm = 0;
-
-    if (ffa) {
-        nm      = Q_max(1, na + nx);
-        lh      = Q_max(18.0f, Q_min(30.0f, avail / nm));
-        capm    = Q_max(1, (int)((avail + 0.01f) / lh));
-        mcols   = (nm + capm - 1) / capm;
-        namePx  = Q_max(15.0f, Q_min(RL_S1, lh * 0.72f));
-        rowsA = rowsX = Q_min(nm, capm);
-    }
-    // short lists: the whole block moves down toward the middle
-    {
-        const float bottom  = listTop + 10 + Q_max(rowsA, rowsX) * lh;
-        const float centred = bandTop + (band - (bottom - yName)) / 2 - band * 0.05f;
-        const float shift   = Q_max(0.0f, centred - yName);
-
-        yName += shift;
-        yStats += shift;
-        listTop += shift;
-    }
-
-    if (m_back) {
-        // the game behind, darkened, and each half's colour over it, stronger
-        // hovered (one layer: RL_HGradient's under)
-        for (int t = 0; t < 2; t++) {
-            const int       a  = t == hover ? 175 : 120;
-            const rlColor_t mid = RL_T(rl_teams[t].mid, a), deep = RL_T(rl_teams[t].deep, 0);
-
-            if (t == 0) {
-                RL_HGradient(v, 0, bandTop, cx, band, mid, deep, 115 / 255.0f);
-            } else {
-                RL_HGradient(v, cx, bandTop, v.dw - cx, band, deep, mid, 115 / 255.0f);
-            }
-        }
-        RL_Box(v, 0, 0, v.dw, bh, RL_Rgb(4, 5, 6, 236));
-        RL_Box(v, 0, v.dh - bh, v.dw, bh, RL_Rgb(4, 5, 6, 236));
-        // both models, at the outer edges, standing on the band's floor
-        PlaceModel("modelallies", v, cx - fd, bandBot - 16, fh, true);
-        PlaceModel("modelaxis", v, cx + fd, bandBot - 16, fh, true);
-        return;
-    }
-
-    // the title, the map and mode
-    {
-        const float ty  = bh / 2;
-        std::string sub = RL_Upper(RL_MapName(in.map)) + "  \xb7  " + RL_ModeName(in.gametype, true);
-
-        RL_Text(v, cx, ty - 9, ffa ? "CHOOSE YOUR SOLDIER" : "CHOOSE YOUR SIDE", RL_H2, RL_TEXT, true, RL_CENTER, 0, RL_MID);
-        RL_Text(v, cx, ty + 24, sub.c_str(), RL_S2, RL_MUTED, false, RL_CENTER, 2.4f, RL_MID);
-    }
-    if (!ffa) {
-        RL_VLine(v, cx, bandTop + 40, bandBot - 40, RL_Rgb(255, 255, 255, 34));
-    }
-    // a click on a half joins it
-    Hit(v, 0, bandTop, cx, band, ID_ALLIES);
-    Hit(v, cx, bandTop, v.dw - cx, band, ID_AXIS);
-
-    for (int t = 0; t < 2; t++) {
-        const rlTeam_t&                T     = rl_teams[t];
-        const bool                     hot   = t == hover;
-        const float                    sgn   = t ? 1.0f : -1.0f;
-        const float                    tx    = cx + sgn * 56;
-        const int                      anch  = t ? RL_LEFT : RL_RIGHT;
-        const std::vector<rlPlayer_t>& names = *sides[t];
-        const float                    nw    = RL_TextW(v, T.name, nameSize, true);
-        const int                      n     = (int)names.size();
-        char                           stats[64];
-
-        RL_TeamIcon(v, t, tx + sgn * (nw + 16 + iconD / 2), yName + capH / 2, iconD);
-        RL_Text(v, tx, yName, T.name, nameSize, RL_TEXT, true, anch);
-        if (hot) {
-            const float uw = nw + 16 + iconD;
-
-            RL_Box(v, t ? tx : tx - uw, yName + capH + 14, uw, 4, RL_BRASS);
-        }
-        Com_sprintf(stats, sizeof(stats), "%d PLAYER%s", n, n == 1 ? "" : "S");
-        if (!ffa) {
-            const int sc = in.teamScore[t];
-
-            Q_strcat(stats, sizeof(stats), sc >= 0 ? va("  \xb7  SCORE %d", sc) : "  \xb7  SCORE \x96");
-        }
-        RL_Text(v, tx, yStats, stats, RL_S2, RL_T(T.pale, 230), false, anch, 2, RL_MID);
-        if (ffa) {
-            continue;
-        }
-        // the team's players: all of them, always
-        RL_HLine(v, t ? tx : tx - areaW, t ? tx + areaW : tx, listTop, RL_Rgb(255, 255, 255, 30));
-        {
-            const float top = listTop + 10;
-            const int   c   = cols[t];
-            const float colW = (areaW - 20 * (c - 1)) / c;
-
-            if (!n) {
-                RL_Text(v, tx, top + lh / 2, "No players yet", namePx, RL_FAINT, false, anch, 0, RL_MID);
-                continue;
-            }
-            for (int j = 0; j < n; j++) {
-                const int   col = j / cap, row = j % cap;
-                const float x   = tx + sgn * col * (colW + 20);
-                const bool  me  = names[j].client == in.self;
-                std::string s   = RL_Ellipsize(v, names[j].name, namePx, me, colW);
-
-                RL_Text(v, x, top + row * lh + lh / 2, s.c_str(), namePx, me ? RL_BRASS : hot ? RL_TEXT : RL_Rgb(205, 200, 190),
-                        me, anch, 0, RL_MID);
-            }
-        }
-    }
-    if (ffa) {
-        // one list, centred on the names there, each with its side's emblem
-        std::vector<std::pair<const rlPlayer_t *, int>> merged;
-        const float mw = 2 * (56 + areaW);
-        float       widest = 0;
-
-        for (const rlPlayer_t& p : in.allies) {
-            merged.push_back({&p, 0});
-        }
-        for (const rlPlayer_t& p : in.axis) {
-            merged.push_back({&p, 1});
-        }
-        for (auto& m : merged) {
-            widest = Q_max(widest, RL_TextW(v, m.first->name, namePx, m.first->client == in.self));
-        }
-        const float colW  = Q_min(300.0f, Q_min((mw - 24 * (mcols - 1)) / mcols, widest + namePx * 1.3f + 4));
-        const float block = mcols * colW + (mcols - 1) * 24;
-        const float bx    = cx - block / 2;
-
-        RL_VLine(v, cx, bandTop + 40, listTop - 12, RL_Rgb(255, 255, 255, 34));
-        RL_HLine(v, bx, bx + block, listTop, RL_Rgb(255, 255, 255, 30));
-        if (merged.empty()) {
-            RL_Text(v, cx, listTop + 10 + lh / 2, "No players yet", namePx, RL_FAINT, false, RL_CENTER, 0, RL_MID);
-        }
-        for (int j = 0; j < (int)merged.size(); j++) {
-            const int   col = j / capm, row = j % capm;
-            const float xx  = bx + col * (colW + 24);
-            const float yy  = listTop + 10 + row * lh + lh / 2;
-            const bool  me  = merged[j].first->client == in.self;
-            std::string s   = RL_Ellipsize(v, merged[j].first->name, namePx, me, colW - namePx * 1.35f);
-
-            RL_TeamIcon(v, merged[j].second, xx + namePx * 0.45f, yy, Q_min(24.0f, namePx * 0.9f));
-            RL_Text(v, xx + namePx * 1.3f, yy, s.c_str(), namePx, me ? RL_BRASS : RL_Rgb(215, 211, 201), me, RL_LEFT, 0, RL_MID);
-        }
-    }
-    // Spectate only (no auto-assign: the user's call)
-    {
-        const float bw = 230, bhh = 50, bx = cx - bw / 2, by = v.dh - bh / 2 - bhh / 2;
-        const bool  hot = Hot(ID_SPECTATE);
-
-        RL_Round(v, bx, by, bw, bhh, 4, RL_Rgb(255, 255, 255, hot ? 26 : 14));
-        RL_RoundFrame(v, bx, by, bw, bhh, 4, hot ? 2 : 1, hot ? RL_BRASS : RL_Rgb(255, 255, 255, 46));
-        RL_Text(v, bx + bw / 2, by + bhh / 2, "SPECTATE", RL_S1, RL_TEXT, true, RL_CENTER, 1.5f, RL_MID);
-        Hit(v, bx, by, bw, bhh, ID_SPECTATE);
-    }
-    m_order = {ID_ALLIES, ID_AXIS, ID_SPECTATE};
-    m_cols  = 2;
 }
 
 /*
@@ -1845,13 +1657,25 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
 
 /*
 ================
-The Esc menu: the map, mode and players, the time left; two rows of three
-tiles (Team, Weapon, Call a vote, Options, Spectate, Disconnect), Resume
-under them and a small Main menu link
+The Esc menu: the map, mode and players, the time left; two rows of
+tiles (Team & weapon two wide, as the weapon menu picks the side too, and
+Call a vote; Options, Spectate, Disconnect), Resume under them and a small
+Main menu link
 ================
 */
 
-enum { ID_TEAM, ID_WEAPON, ID_VOTE, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_RESUME, ID_MAINMENU };
+enum { ID_WEAPON, ID_VOTE, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_RESUME, ID_MAINMENU };
+
+static const struct {
+    int         id, col, row, span; // span: the columns it takes
+    const char *label;              // (the vote's from its state)
+} rl_escTiles[] = {
+    {ID_WEAPON,     0, 0, 2, "TEAM & WEAPON"},
+    {ID_VOTE,       2, 0, 1, ""             },
+    {ID_OPTIONS,    0, 1, 1, "OPTIONS"      },
+    {ID_SPECTATOR,  1, 1, 1, "SPECTATE"     },
+    {ID_DISCONNECT, 2, 1, 1, "DISCONNECT"   },
+};
 
 void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
 {
@@ -1882,30 +1706,28 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
         }
         RL_HeaderPanel(v, x0, y0, gw, head, RL_MapName(in.map), RL_H3, -1, line, RL_TimeLeft(in.gametype));
     }
-    for (int i = 0; i < 6; i++) {
-        static const char *const labels[] = {"TEAM", "WEAPON", "", "OPTIONS", "SPECTATE", "DISCONNECT"};
-        const int   col = i % 3, row = i / 3;
-        const float x = x0 + col * (tw + gap), y = gy + row * (th + gap);
+    for (const auto& t : rl_escTiles) {
+        const int   i = t.id;
+        const float x = x0 + t.col * (tw + gap), y = gy + t.row * (th + gap), w = t.span * tw + (t.span - 1) * gap;
         const bool  inert = i == ID_VOTE && (vote == VOTE_VOTED || vote == VOTE_OFF);
         const bool  hot   = Hot(i) && !inert;
         const rlColor_t gc = inert ? RL_FAINT : hot ? RL_TEXT : RL_Rgb(200, 196, 186);
-        const float gcx = x + tw / 2, gcy = y + th * 0.44f, S = th * 0.30f;
+        const float gcx = x + w / 2, gcy = y + th * 0.44f, S = th * 0.30f;
 
-        RL_Round(v, x, y, tw, th, 4, hot ? RL_T(T.mid, 150) : RL_Rgb(14, 16, 18, 226));
+        RL_Round(v, x, y, w, th, 4, hot ? RL_T(T.mid, 150) : RL_Rgb(14, 16, 18, 226));
         if (hot) {
-            RL_RoundFrame(v, x, y, tw, th, 4, 2, RL_BRASS);
+            RL_RoundFrame(v, x, y, w, th, 4, 2, RL_BRASS);
         }
         switch (i) {
-        case ID_TEAM:
-            RL_TeamIcon(v, 0, gcx - S * 0.2f, gcy, S * 0.62f);
-            RL_TeamIcon(v, 1, gcx + S * 0.2f, gcy, S * 0.62f);
-            break;
         case ID_WEAPON:
             {
+                // both emblems, then the nation's SMG
                 const int nation = in.target < TG_MOHTA ? (team ? NAT_DE : NAT_US) : RL_Nation();
 
-                RL_Outline(v, va(RL_OUTLINES "weapons/%s.svg", RL_WeaponFor(nation, WC_SMG, in.target, in.dmflags).svg), gcx, gcy, S * 1.5f,
-                           S * 0.8f, gc);
+                RL_TeamIcon(v, 0, gcx - S * 1.12f, gcy, S * 0.62f);
+                RL_TeamIcon(v, 1, gcx - S * 0.72f, gcy, S * 0.62f);
+                RL_Outline(v, va(RL_OUTLINES "weapons/%s.svg", RL_WeaponFor(nation, WC_SMG, in.target, in.dmflags).svg), gcx + S * 0.68f, gcy,
+                           S * 1.5f, S * 0.8f, gc);
             }
             break;
         case ID_VOTE:
@@ -1921,10 +1743,10 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
             RL_Outline(v, RL_OUTLINES "glyphs/disconnect.svg", gcx, gcy, S, S, gc);
             break;
         }
-        RL_Text(v, x + tw / 2, y + th - 30, i == ID_VOTE ? voteLabels[vote] : labels[i], RL_S1, inert ? RL_FAINT : RL_TEXT, true, RL_CENTER, 1.6f,
-                RL_MID, tw - 20);
+        RL_Text(v, x + w / 2, y + th - 30, i == ID_VOTE ? voteLabels[vote] : t.label, RL_S1, inert ? RL_FAINT : RL_TEXT, true, RL_CENTER, 1.6f,
+                RL_MID, w - 20);
         if (!inert) {
-            Hit(v, x, y, tw, th, i);
+            Hit(v, x, y, w, th, i);
         }
     }
     {
@@ -1939,8 +1761,10 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
         RL_Text(v, x0 + gw / 2, ry + rb + 30, "MAIN MENU", RL_S2, mhot ? RL_BRASS : RL_MUTED, false, RL_CENTER, 2.5f, RL_MID);
         Hit(v, x0 + gw / 2 - mw / 2, ry + rb + 14, mw, 32, ID_MAINMENU);
     }
-    // the keys: the tiles three a row, then Resume, then Main menu
-    for (int i = 0; i < 6; i++) {
+    // the keys: the tiles three a row (Team & weapon two places), then Resume, then Main menu
+    m_order.push_back(ID_WEAPON);
+    m_order.push_back(ID_WEAPON);
+    for (int i = ID_VOTE; i <= ID_DISCONNECT; i++) {
         m_order.push_back(i == ID_VOTE && (vote == VOTE_VOTED || vote == VOTE_OFF) ? -1 : i);
     }
     m_order.push_back(ID_RESUME);
@@ -1963,9 +1787,6 @@ void UIReloadedMenu::Choose(int id)
     std::string sent;
 
     switch (m_screen) {
-    case SCR_TEAM:
-        cmd = id == ID_ALLIES ? "join_team allies;popmenu 0\n" : id == ID_AXIS ? "join_team axis;popmenu 0\n" : "popmenu 0;wait 250;spectator\n";
-        break;
     case SCR_WEAPON:
         if (id == ID_WTAB || id == ID_WTAB_AXIS) {
             // a side previewed
@@ -2016,9 +1837,6 @@ void UIReloadedMenu::Choose(int id)
         break;
     case SCR_ESC:
         switch (id) {
-        case ID_TEAM:
-            cmd = "popmenu 0;wait 250;pushmenu_teamselect\n";
-            break;
         case ID_WEAPON:
             cmd = com_target_game->integer >= TG_MOHTA ? "popmenu 0;wait 50;pickweapon\n" : "popmenu 0;wait 250;pushmenu_weaponselect\n";
             break;
@@ -2409,7 +2227,7 @@ shapes it draws are baked then, not when it opens
 */
 void UI_Menus_PreBake(void)
 {
-    static const char *const menus[] = {"reloaded_team", "reloaded_weapon", "reloaded_esc", "reloaded_scoreboard"};
+    static const char *const menus[] = {"reloaded_weapon", "reloaded_esc", "reloaded_scoreboard"};
 
     if (!ui_classicmenus || ui_classicmenus->integer || clc.state < CA_PRIMED || !uii.IsRendererLoaded()) {
         return;
