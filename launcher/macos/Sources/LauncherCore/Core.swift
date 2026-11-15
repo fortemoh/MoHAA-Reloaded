@@ -1,5 +1,6 @@
 // The launcher's logic, without UI, as launcher/desktop/src/core.cpp has it for Windows and Linux: the game's
-// config file, the settings the launcher edits, the game's command line and the crosshair's geometry.
+// config file, the settings the launcher edits, the game's command line, the crosshair's geometry and CS2's
+// crosshair codes.
 import Foundation
 
 public enum Game: Int, CaseIterable, Identifiable, Codable {
@@ -239,17 +240,187 @@ public struct Box: Equatable {
     public var x, y, w, h: Int
 }
 
-/// The crosshair as cg_drawtools.cpp lays it out, in HUD pixels: the four arms around a center square of the
-/// thickness, whose top left corner is (0, 0); `extent` is the width (and height) the arms span.
-public func crosshairBoxes(length: Double, gap: Double, thickness: Double) -> (arms: [Box], extent: Int) {
-    func pixels(_ value: Double, _ maximum: Double) -> Int {
-        let v = !(value >= 1) ? 1 : min(value, maximum)
-        return Int(v + 0.5)
+/// The crosshair's settings that shape it: sizes in pixels at 1080 lines, the outline 0 (none), 1 (full) or 2 (half)
+public struct Crosshair {
+    public var length, gap, thickness: Double
+    public var outline: Int
+    public var dot, t: Bool
+
+    public init(length: Double, gap: Double, thickness: Double, outline: Int = 0, dot: Bool = false, t: Bool = false) {
+        self.length = length
+        self.gap = gap
+        self.thickness = thickness
+        self.outline = outline
+        self.dot = dot
+        self.t = t
     }
-    let l = pixels(length, 128), t = pixels(thickness, 16)
-    let s = max(pixels(gap, 64) - t / 2, 1)
-    return ([Box(x: -s - l, y: 0, w: l, h: t), Box(x: t + s, y: 0, w: l, h: t),
-             Box(x: 0, y: -s - l, w: t, h: l), Box(x: 0, y: t + s, w: t, h: l)], 2 * (s + l) + t)
+}
+
+/// The crosshair as cg_drawtools.cpp's CG_UpdateCrosshair lays it out at 1080 lines (CS2's static cross), in HUD
+/// pixels from the screen's middle pixel
+public struct CrossLayout {
+    /// the arms and the dot, joined into boxes that don't overlap
+    public var boxes: [Box]
+    /// the outline, drawn first, joined the same way, less the pieces
+    public var outline: [Box]
+    /// the square around the crosshair's middle that holds it all: its width (and height), and its top left corner
+    /// (the same both ways)
+    public var extent: Int
+    public var start: Int
+}
+
+public func crosshairBoxes(_ c: Crosshair) -> CrossLayout {
+    // in whole pixels as the game computes them, at 1080 lines: half away from zero, at least 1 above 0, else 0
+    func pixels(_ value: Double) -> Int {
+        let v = Float(value)
+        guard v > 0 else { return 0 } // NaN too
+        return max(Int(min(v, 4096) * 1080 / 1080 + 0.5), 1)
+    }
+    let l = pixels(c.length), t = pixels(c.thickness), g = pixels(c.gap)
+    // a line t thick has (t + 1) / 2 pixels before the middle one; the gap counts from it, a pixel less after it
+    // when t is odd
+    let before = (t + 1) / 2, odd = t & 1
+    var pieces: [Box] = []
+    if t > 0 && l > 0 {
+        pieces += [Box(x: -g - l, y: -before, w: l, h: t), Box(x: g - odd, y: -before, w: l, h: t),
+                   Box(x: -before, y: g - odd, w: t, h: l)]
+        if !c.t {
+            pieces.append(Box(x: -before, y: -g - l, w: t, h: l))
+        }
+    }
+    if t > 0 && c.dot {
+        pieces.append(Box(x: -before, y: -before, w: t, h: t))
+    }
+    // a pixel above (over the corners) and left of every piece; full: below and right too; nowhere under a piece
+    let mode = min(max(c.outline, 0), 2)
+    var strips: [Box] = []
+    for p in pieces where mode != 0 {
+        strips += [Box(x: p.x - 1, y: p.y - 1, w: p.w + (mode == 1 ? 2 : 1), h: 1), Box(x: p.x - 1, y: p.y, w: 1, h: p.h)]
+        if mode == 1 {
+            strips += [Box(x: p.x - 1, y: p.y + p.h, w: p.w + 2, h: 1), Box(x: p.x + p.w, y: p.y, w: 1, h: p.h)]
+        }
+    }
+    // the middle is -odd / 2 both ways: the farthest edge from it, twice, is the square's width
+    let extent = (pieces + strips).flatMap { [$0.x, $0.x + $0.w, $0.y, $0.y + $0.h] }.map { abs(2 * $0 + odd) }.max() ?? 0
+    return CrossLayout(boxes: crosshairUnion(pieces, minus: []), outline: crosshairUnion(strips, minus: pieces),
+                       extent: extent, start: -((extent + odd) / 2))
+}
+
+/// The pixels of boxes less those of others, as boxes that don't overlap, as CG_CrosshairUnion joins them (at most
+/// 64): in each band between the boxes' top and bottom edges, the first boxes' spans less the others', a box going on
+/// down into the next band when it has the same span there. A see-through crosshair blends each pixel once, and the
+/// outline nowhere under a piece
+func crosshairUnion(_ boxes: [Box], minus: [Box]) -> [Box] {
+    // the boxes' spans across the band y0 to y1, sorted and joined where they touch
+    func spans(_ boxes: [Box], _ y0: Int, _ y1: Int) -> [(Int, Int)] {
+        let all = boxes.filter { $0.y <= y0 && $0.y + $0.h >= y1 && $0.w > 0 }.map { ($0.x, $0.x + $0.w) }
+        var joined: [(Int, Int)] = []
+        for (x0, x1) in all.sorted(by: { $0.0 < $1.0 }) {
+            if let last = joined.last, x0 <= last.1 {
+                joined[joined.count - 1].1 = max(last.1, x1)
+            } else {
+                joined.append((x0, x1))
+            }
+        }
+        return joined
+    }
+    let edges = (boxes + minus).flatMap { [$0.y, $0.y + $0.h] }.sorted()
+    var out: [Box] = []
+    for k in edges.indices.dropLast() where edges[k] != edges[k + 1] {
+        let y0 = edges[k], y1 = edges[k + 1], above = out.count
+        let cuts = spans(minus, y0, y1)
+        for (s0, s1) in spans(boxes, y0, y1) {
+            // the span up to each cut, then on from its end
+            var x0 = s0
+            for j in 0...cuts.count {
+                if x0 >= s1 { break }
+                let x1 = j < cuts.count ? min(max(cuts[j].0, x0), s1) : s1
+                if x1 > x0 {
+                    if let i = out[..<above].firstIndex(where: { $0.x == x0 && $0.w == x1 - x0 && $0.y + $0.h == y0 }) {
+                        out[i].h += y1 - y0
+                    } else if out.count < 64 {
+                        out.append(Box(x: x0, y: y0, w: x1 - x0, h: y1 - y0))
+                    }
+                }
+                if j < cuts.count {
+                    x0 = max(x0, cuts[j].1)
+                }
+            }
+        }
+    }
+    return out
+}
+
+/// The characters of CS2's crosshair codes, a digit of base 57 each
+private let codeDigits = Array("ABCDEFGHJKLMNOPQRSTUVWXYZabcdefhijkmnopqrstuvwxyz23456789".utf8)
+
+/// The settings a CS2 crosshair code sets, as the game's crosshair_import sets them (code/client/cl_crosshair.c,
+/// which describes the format), from the text's first word; else why it isn't a code CS2 writes now
+public func crosshairImport(_ text: String) -> Result<[(String, String)], CrosshairCodeError> {
+    // (by bytes: to Swift "\r\n" is one character)
+    let code = Array(text.utf8).split(whereSeparator: { [32, 9, 13, 10].contains($0) }).first
+        .map { String(decoding: $0, as: UTF8.self) } ?? ""
+    if code.isEmpty {
+        return .failure(.init("no code: copy the crosshair's code in CS2 first"))
+    }
+    if code.hasPrefix("CSGO") {
+        return .failure(.init("an old CSGO- code: CS2 no longer takes those either, copy the crosshair's new code from CS2"))
+    }
+    let chars = Array(code.utf8)
+    guard code.hasPrefix("CS"), chars.count == 46 else {
+        return .failure(.init("not a crosshair code (CS and 44 letters and digits)"))
+    }
+    // a number in base 57, its last character the most significant digit, into 32 bytes, byte 0 the most significant
+    var b = [UInt8](repeating: 0, count: 32)
+    for c in chars.dropFirst(2).reversed() {
+        guard let digit = codeDigits.firstIndex(of: c) else {
+            return .failure(.init("not a crosshair code (a character CS2 never writes: a typo?)"))
+        }
+        var carry = UInt32(digit)
+        for i in b.indices.reversed() {
+            carry += UInt32(b[i]) * 57
+            b[i] = UInt8(truncatingIfNeeded: carry)
+            carry >>= 8
+        }
+        if carry != 0 {
+            return .failure(.init("not a crosshair code (a typo?)"))
+        }
+    }
+    if b[0] != b[1...].reduce(0, &+) {
+        return .failure(.init("the code is garbled (its checksum doesn't match: a typo?)"))
+    }
+    if b[1] != 1 {
+        return .failure(.init("a crosshair code of a newer kind (version \(b[1])) than this game reads"))
+    }
+    let height = UInt16(b[2]) | UInt16(b[3]) << 8
+    if height == 0 {
+        return .failure(.init("the code has no screen height"))
+    }
+
+    // sizes are pixels at the code's height (240 at least): at 1080 lines, in the game's float written as printf's %g
+    let scale = Float(1080) / Float(max(height, 240))
+    func size(_ pixels: Float) -> String { String(format: "%g", Double(pixels * scale)) }
+    func hex(_ i: Int) -> String { String(format: "%02X%02X%02X", b[i], b[i + 1], b[i + 2]) }
+    let dotOnly = b[4] & 31 == 6
+    return .success([
+        ("cg_crosshair_length", dotOnly ? "0" : size(Float(b[16]))),
+        ("cg_crosshair_gap", size(Float(Int16(bitPattern: UInt16(b[14]) | UInt16(b[15]) << 8)))),
+        ("cg_crosshair_thickness", size(Float(b[13] & 63))),
+        ("cg_crosshair_color", hex(5)),
+        ("cg_crosshair_alpha", String(b[8])),
+        ("cg_crosshair_outline", String(b[13] >> 6)),
+        ("cg_crosshair_outline_color", hex(9)),
+        ("cg_crosshair_outline_alpha", String(b[12])),
+        ("cg_crosshair_dot", dotOnly || b[4] & 64 != 0 ? "1" : "0"),
+        ("cg_crosshair_t", String(b[4] >> 7)),
+        ("cg_crosshair_code", code),
+    ])
+}
+
+/// Why a text isn't a crosshair code CS2 writes now (in lower case: a sentence's middle)
+public struct CrosshairCodeError: Error, Equatable {
+    public let reason: String
+    init(_ reason: String) { self.reason = reason }
 }
 
 /// The game's window modes on the Metal port, as r_fullscreen, r_noborder and r_borderlessWindow pick them

@@ -31,6 +31,14 @@ final class LauncherModel: ObservableObject {
         ("cg_crosshair_gap", "4"),
         ("cg_crosshair_thickness", "2"),
         ("cg_crosshair_color", "FFFFFF"),
+        ("cg_crosshair_alpha", "255"),
+        ("cg_crosshair_outline", "0"),
+        ("cg_crosshair_outline_color", "000000"),
+        ("cg_crosshair_outline_alpha", "255"),
+        ("cg_crosshair_dot", "0"),
+        ("cg_crosshair_t", "0"),
+        // the last code imported, for the game's crosshair_export
+        ("cg_crosshair_code", ""),
         ("r_mode", "-2"),
         ("r_customwidth", "1600"),
         ("r_customheight", "1024"),
@@ -75,6 +83,10 @@ final class LauncherModel: ObservableObject {
     @Published var renaming: Int?
     @Published var renameText = ""
     @Published var removing: Int?
+    /// The CS2 crosshair code being pasted, and why the last one wasn't taken
+    @Published var importingCode = false
+    @Published var importText = ""
+    @Published var importProblem: String?
     /// The update's dialog and its state (Updating.swift)
     @Published var updateDialog = UpdateDialog.none
     @Published var updateText = ""
@@ -360,7 +372,35 @@ final class LauncherModel: ObservableObject {
         })
     }
 
+    /// A whole number as the game reads it (atoi): truncated
+    func whole(_ cvar: String) -> Int {
+        guard let v = Double(trimmed(edits.get(cvar))), v.isFinite else { return 0 }
+        return Int(max(min(v, Double(Int32.max)), Double(Int32.min)))
+    }
+
+    /// cg_crosshair_dot, cg_crosshair_t: on or off
+    func flag(_ cvar: String) -> Binding<Bool> {
+        Binding(get: { self.whole(cvar) != 0 }, set: { self.edits.set(cvar, $0 ? "1" : "0") })
+    }
+
+    /// cg_crosshair_outline: 0 none, 1 full, 2 half
+    var outline: Binding<Int> {
+        Binding(get: { min(max(self.whole("cg_crosshair_outline"), 0), 2) },
+                set: { self.edits.set("cg_crosshair_outline", String($0)) })
+    }
+
+    /// The crosshair's shape as the game reads its settings (the preview's)
+    var crosshair: Crosshair {
+        func size(_ cvar: String) -> Double { Double(trimmed(edits.get(cvar))) ?? 0 }
+        return Crosshair(length: size("cg_crosshair_length"), gap: size("cg_crosshair_gap"),
+                         thickness: size("cg_crosshair_thickness"), outline: outline.wrappedValue,
+                         dot: flag("cg_crosshair_dot").wrappedValue, t: flag("cg_crosshair_t").wrappedValue)
+    }
+
     var crosshairRGB: UInt32 { parseColor(edits.get("cg_crosshair_color")) ?? 0xFFFFFF }
+    var crosshairAlpha: Int { min(max(whole("cg_crosshair_alpha"), 0), 255) }
+    var outlineRGB: UInt32 { parseColor(edits.get("cg_crosshair_outline_color")) ?? 0 }
+    var outlineAlpha: Int { min(max(whole("cg_crosshair_outline_alpha"), 0), 255) }
 
     /// The color menu: a preset's color, or -1 for another
     var colorPreset: Binding<Int64> {
@@ -384,9 +424,30 @@ final class LauncherModel: ObservableObject {
         })
     }
 
+    /// CS2's default crosshair without its outline, white; the code imported forgotten
     func resetCrosshair() {
         for (name, value) in LauncherModel.cvarDefaults where name.hasPrefix("cg_crosshair_") {
             edits.set(name, value)
+        }
+    }
+
+    func beginImport() {
+        importText = ""
+        importProblem = nil
+        importingCode = true
+    }
+
+    /// The pasted code's settings, as the game's crosshair_import sets them; else the box stays, with why
+    func commitImport() {
+        switch crosshairImport(importText) {
+        case .success(let values):
+            for (name, value) in values {
+                edits.set(name, value)
+            }
+            importProblem = nil
+            importingCode = false
+        case .failure(let error):
+            importProblem = error.reason.prefix(1).uppercased() + error.reason.dropFirst() + ". Nothing changed."
         }
     }
 

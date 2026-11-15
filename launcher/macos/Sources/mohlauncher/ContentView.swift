@@ -407,43 +407,60 @@ struct RowButton: View {
     }
 }
 
-/// cg_crosshair_length, cg_crosshair_gap, cg_crosshair_thickness, cg_crosshair_color: the preview spans the two
-/// rows of fields beside it, from the first's control to the last's
+/// The crosshair's settings, as the game's (CS2's): length, gap, thickness, color, alpha, outline, the dot and the
+/// T style, and an import of a CS2 code. The preview spans the first two rows of fields beside it, from the first's
+/// control to the second's; the import sits under it, in the third row
 struct CrosshairSection: View {
     @EnvironmentObject var model: LauncherModel
 
     var body: some View {
         HStack(alignment: .top, spacing: Metrics.gap) {
-            VStack(alignment: .leading, spacing: Metrics.labelGap) {
-                HStack(spacing: 0) {
-                    FieldLabel(text: "Crosshair")
-                    Spacer(minLength: 4)
-                    LabelAction(systemImage: nil, title: "Reset") { model.resetCrosshair() }
-                        .help("CS2's default crosshair, white: length 8, gap 4, thickness 2")
+            VStack(alignment: .leading, spacing: Metrics.gap) {
+                VStack(alignment: .leading, spacing: Metrics.labelGap) {
+                    HStack(spacing: 0) {
+                        FieldLabel(text: "Crosshair")
+                        Spacer(minLength: 4)
+                        LabelAction(systemImage: nil, title: "Reset") { model.resetCrosshair() }
+                            .help("CS2's default crosshair without its outline, white: length 8, gap 4, thickness 2")
+                    }
+                    .frame(height: Metrics.labelHeight)
+                    CrosshairPreview(layout: crosshairBoxes(model.crosshair), rgb: model.crosshairRGB,
+                                     alpha: model.crosshairAlpha, outlineRGB: model.outlineRGB,
+                                     outlineAlpha: model.outlineAlpha)
+                        .frame(width: Metrics.preview, height: Metrics.preview)
                 }
-                .frame(height: Metrics.labelHeight)
-                CrosshairPreview(length: Double(model.number("cg_crosshair_length", 1...128).wrappedValue),
-                                 gap: Double(model.number("cg_crosshair_gap", 1...64).wrappedValue),
-                                 thickness: Double(model.number("cg_crosshair_thickness", 1...16).wrappedValue),
-                                 rgb: model.crosshairRGB)
-                    .frame(width: Metrics.preview, height: Metrics.preview)
+                Field("CS2 code") {
+                    Button {
+                        model.beginImport()
+                    } label: {
+                        Text("Import…").frame(maxWidth: .infinity)
+                    }
+                    .controlSize(.large)
+                    .frame(height: Metrics.control)
+                    .help("Sets the crosshair from a code copied in CS2 (Share or Import, in its crosshair settings), as the game's crosshair_import does")
+                }
             }
             .frame(width: Metrics.preview)
-            Grid(horizontalSpacing: Metrics.gap, verticalSpacing: Metrics.gap) {
+            Grid(alignment: .leading, horizontalSpacing: Metrics.gap, verticalSpacing: Metrics.gap) {
                 GridRow {
                     Field("Length") {
-                        NumberField(value: model.number("cg_crosshair_length", 1...128), range: 1...128)
+                        NumberField(value: model.number("cg_crosshair_length", 0...128), range: 0...128)
                             .frame(height: Metrics.control)
                     }
-                    .fixedSize(horizontal: true, vertical: false) // the column as wide as its fields: the rest to Color's
-                    Field("Gap") {
-                        NumberField(value: model.number("cg_crosshair_gap", 1...64), range: 1...64)
+                    .fixedSize(horizontal: true, vertical: false) // the column as wide as its fields: the rest to Gap's
+                    Field("Gap", accessory: {
+                        HStack(spacing: Metrics.gap) {
+                            toggle("Dot", "cg_crosshair_dot", help: "A dot in the center, as wide as the arms are thick (cg_crosshair_dot)")
+                            toggle("T-style", "cg_crosshair_t", help: "No top arm (cg_crosshair_t)")
+                        }
+                    }) {
+                        NumberField(value: model.number("cg_crosshair_gap", 0...64), range: 0...64)
                             .frame(height: Metrics.control)
                     }
                 }
                 GridRow {
                     Field("Thickness") {
-                        NumberField(value: model.number("cg_crosshair_thickness", 1...16), range: 1...16)
+                        NumberField(value: model.number("cg_crosshair_thickness", 0...16), range: 0...16)
                             .frame(height: Metrics.control)
                     }
                     .fixedSize(horizontal: true, vertical: false)
@@ -461,11 +478,74 @@ struct CrosshairSection: View {
                         .frame(height: Metrics.control)
                     }
                 }
+                GridRow {
+                    Field("Alpha") {
+                        NumberField(value: model.number("cg_crosshair_alpha", 0...255), range: 0...255)
+                            .frame(height: Metrics.control)
+                            .help("0 to 255: how solid the crosshair is (cg_crosshair_alpha)")
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    Field("Outline") {
+                        Picker("Outline", selection: model.outline) {
+                            Text("Off").tag(0)
+                            Text("Full").tag(1)
+                            Text("Half").tag(2)
+                        }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
+                        .frame(height: Metrics.control)
+                        .help("A pixel round every arm (Full), or CS2's half outline: above and left only (cg_crosshair_outline)")
+                    }
+                }
             }
             .labelsHidden()
             .controlSize(.large)
         }
         .fixedSize(horizontal: false, vertical: true)
+        .sheet(isPresented: $model.importingCode) {
+            ImportSheet().environmentObject(model)
+        }
+    }
+
+    private func toggle(_ title: String, _ cvar: String, help: String) -> some View {
+        let on = model.flag(cvar)
+        return LabelAction(systemImage: on.wrappedValue ? "checkmark.square.fill" : "square", title: title,
+                           active: on.wrappedValue) { on.wrappedValue.toggle() }
+            .help(help)
+    }
+}
+
+/// A CS2 crosshair code to paste; one CS2 doesn't take now keeps the box open, with why
+struct ImportSheet: View {
+    @EnvironmentObject var model: LauncherModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
+            Text("Import CS2 Code").font(.headline)
+            Text("Paste a crosshair code copied in CS2 (Share or Import, in its crosshair settings): CS and 44 letters and digits.")
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("Code", text: $model.importText, prompt: Text("CS…"))
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 13, design: .monospaced))
+                .labelsHidden()
+                .onChange(of: model.importText) { model.importProblem = nil }
+            if let problem = model.importProblem {
+                Text(problem)
+                    .foregroundStyle(Color.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel") { model.importingCode = false }
+                    .keyboardShortcut(.cancelAction)
+                Button("Import") { model.commitImport() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(trimmed(model.importText).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -484,36 +564,45 @@ struct NumberField: View {
     }
 }
 
-/// The crosshair as the game draws it, three screen points to a HUD pixel when it fits
+/// The crosshair as the game draws it, three screen points to a HUD pixel when it fits: the outline first, in its
+/// color and alpha, then the pieces in theirs
 struct CrosshairPreview: View {
-    let length: Double
-    let gap: Double
-    let thickness: Double
+    let layout: CrossLayout
     let rgb: UInt32
+    let alpha: Int
+    let outlineRGB: UInt32
+    let outlineAlpha: Int
 
     var body: some View {
         Canvas { context, size in
-            let r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF
-            let luma = (r * 3 + g * 6 + b) / 10
-            // the game's sky or a wall behind it: black, grey for a dark crosshair
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(luma < 64 ? Color(white: 0.5) : .black))
+            func dark(_ rgb: UInt32) -> Bool { (((rgb >> 16) & 0xFF) * 3 + ((rgb >> 8) & 0xFF) * 6 + (rgb & 0xFF)) / 10 < 64 }
+            func color(_ rgb: UInt32, _ alpha: Int) -> Color {
+                Color(.sRGB, red: Double((rgb >> 16) & 0xFF) / 255, green: Double((rgb >> 8) & 0xFF) / 255,
+                      blue: Double(rgb & 0xFF) / 255, opacity: Double(alpha) / 255)
+            }
+            // the game's sky or a wall behind it: black, grey for a dark crosshair or outline
+            let grey = dark(rgb) || (!layout.outline.isEmpty && dark(outlineRGB))
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(grey ? Color(white: 0.5) : .black))
 
-            let (arms, extent) = crosshairBoxes(length: length, gap: gap, thickness: thickness)
-            let room = min(size.width, size.height) - 8
+            let side = min(size.width, size.height)
             var zoom: CGFloat = 3
-            if CGFloat(extent) * zoom > room {
-                zoom = room / CGFloat(extent)
+            if CGFloat(layout.extent) * zoom > side - 8 {
+                zoom = (side - 8) / CGFloat(layout.extent)
                 if zoom >= 1 { zoom = zoom.rounded(.down) }
             }
-            let center = CGFloat(arms[2].w) * zoom // the center square is as wide as the arms are thick
-            let x0 = ((size.width - center) / 2).rounded(.down)
-            let y0 = ((size.height - center) / 2).rounded(.down)
-            let color = Color(.sRGB, red: Double(r) / 255, green: Double(g) / 255, blue: Double(b) / 255)
-            for box in arms {
-                let rect = CGRect(x: x0 + CGFloat(box.x) * zoom, y: y0 + CGFloat(box.y) * zoom,
-                                  width: max(1, CGFloat(box.w) * zoom), height: max(1, CGFloat(box.h) * zoom))
-                context.fill(Path(rect), with: .color(color))
+            // the top left corner of the square that holds the crosshair, the same both ways
+            let corner = ((side - CGFloat(layout.extent) * zoom) / 2).rounded(.down)
+            func draw(_ boxes: [Box], _ fill: Color) {
+                for b in boxes {
+                    let rect = CGRect(x: (corner + CGFloat(b.x - layout.start) * zoom).rounded(),
+                                      y: (corner + CGFloat(b.y - layout.start) * zoom).rounded(),
+                                      width: max(1, (CGFloat(b.w) * zoom).rounded()),
+                                      height: max(1, (CGFloat(b.h) * zoom).rounded()))
+                    context.fill(Path(rect), with: .color(fill))
+                }
             }
+            draw(layout.outline, color(outlineRGB, outlineAlpha))
+            draw(layout.boxes, color(rgb, alpha))
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.stroke))
