@@ -3499,16 +3499,16 @@ void R_AtlasShutdown( void ) {
 
 /*
 ===============
-RE_RegisterImage2D
+R_RegisterImage2D
 
 An image made in memory (RGBA, the texels may be changed) under a name, for
 the UI's baked text faces, shapes and pictures: in the 2D atlas, or a
-texture of its own when too big for it. Made again under the same name, its
-texels and size are replaced. No map load frees it; its 2D shader is found
-by its name as a file's would be
+texture of its own when too big for it (or own). Made again under the same
+name, its texels and size are replaced. No map load frees it; its 2D shader
+is found by its name as a file's would be
 ===============
 */
-qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height)
+static qhandle_t R_RegisterImage2D(const char *name, byte *rgba, int width, int height, qboolean own)
 {
 	char	fileName[MAX_QPATH];
 	image_t	*image;
@@ -3537,7 +3537,7 @@ qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height
 	image->r_sequence = -1;
 	// (it may leave the atlas or move in it: the shaders' 2D info made again)
 	R_2DShadersChanged();
-	if ((image->atlas && width <= image->atlasRoom[2] && height <= image->atlasRoom[3]) || R_AtlasRoom(image, width, height)) {
+	if (!own && ((image->atlas && width <= image->atlasRoom[2] && height <= image->atlasRoom[3]) || R_AtlasRoom(image, width, height))) {
 		image->atlas = atlas.page;
 		image->width = image->uploadWidth = width;
 		image->height = image->uploadHeight = height;
@@ -3561,6 +3561,25 @@ qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height
 	}
 	vk_upload_texture(image, 0, 0, 0, width, height, rgba);
 	return RE_RegisterShaderNoMip(name);
+}
+
+qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height)
+{
+	return R_RegisterImage2D(name, rgba, width, height, qfalse);
+}
+
+/*
+===============
+RE_RegisterTexture2D
+
+RE_RegisterImage2D's image as a texture of its own, never in the atlas: a
+big picture drawn whole (the zoom overlays' masks), for which the atlas's
+page would double
+===============
+*/
+qhandle_t RE_RegisterTexture2D(const char *name, byte *rgba, int width, int height)
+{
+	return R_RegisterImage2D(name, rgba, width, height, qtrue);
 }
 
 /*

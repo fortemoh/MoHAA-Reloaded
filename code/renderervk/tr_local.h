@@ -2023,6 +2023,7 @@ image_t* R_CreateImageOld(
 
 qboolean R_ImageExists(const char* name);
 qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height);
+qhandle_t RE_RegisterTexture2D(const char *name, byte *rgba, int width, int height);
 void R_AtlasShutdown( void );
 qboolean R_ShaderTextExists(const char *name);
 int R_CountTextureMemory();
