@@ -25,7 +25,7 @@ resource
 Label
 {
 name "timer"
-rect 914 2 92 38
+rect 914 0 92 35
 fgcolor 0.922 0.933 0.949 1
 bgcolor 0 0 0 0
 borderstyle NONE
@@ -39,7 +39,7 @@ resource
 Label
 {
 name "scoreleft"
-rect 914 38 46 28
+rect 914 36 46 28
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-semibold-24
@@ -53,7 +53,7 @@ resource
 Label
 {
 name "scoreright"
-rect 960 38 46 28
+rect 960 36 46 28
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-semibold-24
