@@ -116,7 +116,7 @@ typedef struct {
     const char *pic;
     float       picW, picH; // design pixels
     qboolean    suicide, headshot;
-    qboolean    mine; // the player's kill or death: red
+    qboolean    myKill, myDeath; // the player's kill (black, a red edge), the player's death (dark red)
 } compKill_t;
 
 static struct {
@@ -284,6 +284,18 @@ typedef struct {
     float       aw, ah, xw, xh;
 } compKillPic_t;
 
+// the kill feed's look (CS2's, as a 1080-line screen's design pixels): a
+// row 36 tall, its names' capitals a third of it (the URC's face), the
+// weapon a half; padding, gaps, the rows' spacing; the boxes' corners and
+// the player's kill's red edge
+#define KF_ROW    36.0f
+#define KF_ICON   18.0f
+#define KF_PAD    12.0f
+#define KF_GAP    6.0f
+#define KF_SPACE  3.0f
+#define KF_RADIUS 3.0f
+#define KF_EDGE   2.0f
+
 static const compKillPic_t comp_killPics[] = {
     {"rifle",   "m1_garand",      "kar98",            90.0f,  16.2f, 90.5f,  16.3f},
     {"pistol",  "colt45",         "p38",              33.9f,  21.9f, 33.9f,  22.2f},
@@ -403,6 +415,17 @@ static void Comp_Trim(const char *src, int len, char *out, int size)
     Q_strncpyz(out, src, Q_min(len + 1, size));
 }
 
+// a kill picture's size in the feed: its box, no taller than KF_ICON
+static void Comp_KillIconSize(const compKillPic_t *p, qboolean axis, float *w, float *h)
+{
+    *w = axis ? p->xw : p->aw;
+    *h = axis ? p->xh : p->ah;
+    if (*h > KF_ICON) {
+        *w *= KF_ICON / *h;
+        *h = KF_ICON;
+    }
+}
+
 /*
 ================
 Comp_AddKill
@@ -472,9 +495,10 @@ static void Comp_AddKill(const char *text, qboolean ourVictim)
     // the killer's weapon: of the victim's side without one
     axis    = (k->killer[0] ? k->killerTeam : k->victimTeam) == TEAM_AXIS;
     k->pic  = axis ? pic->axis : pic->allies;
-    k->picW = axis ? pic->xw : pic->aw;
-    k->picH = axis ? pic->xh : pic->ah;
-    k->mine = client == cl.snap.ps.clientNum || (k->killer[0] && Comp_FindName(k->killer) == cl.snap.ps.clientNum);
+    Comp_KillIconSize(pic, axis, &k->picW, &k->picH);
+    // (a suicide is the player's death)
+    k->myDeath = client == cl.snap.ps.clientNum;
+    k->myKill  = !k->myDeath && k->killer[0] && Comp_FindName(k->killer) == cl.snap.ps.clientNum;
     if (client >= 0) {
         comp.dead[client] = qtrue;
     }
@@ -1455,18 +1479,69 @@ static void Comp_Box(float x0, float y0, float x1, float y1, float s)
     uii.Rend_DrawBox(px, py, floorf(x1 * s + 0.5f) - px, floorf(y1 * s + 0.5f) - py);
 }
 
+// the kill feed's box: a small rounded box (or its edge, KF_EDGE wide) baked
+// at the HUD's scale, its corners as they are, its middle texel stretched
+static qhandle_t Comp_FeedBoxShader(float s, qboolean edge, int *corner, int *size)
+{
+    char        layer[64];
+    const char *layers[1] = {layer};
+    const int   c = Q_max((int)ceilf(KF_RADIUS * s), edge ? Q_max(1, (int)floorf(KF_EDGE * s + 0.5f)) : 1);
+
+    *corner = c;
+    *size   = 2 * c + 2;
+    if (edge) {
+        Com_sprintf(layer, sizeof(layer), "roundframe %g %g 1 1 1 1", KF_RADIUS, KF_EDGE);
+    } else {
+        Com_sprintf(layer, sizeof(layer), "roundbox %g 1 1 1 1", KF_RADIUS);
+    }
+    return UI_BakeShape("comp_kf", layers, 1, *size, *size, s);
+}
+
+// a box of design pixels with KF_RADIUS corners (or its edge), in nine parts
+static void Comp_FeedBox(float x0, float y0, float x1, float y1, float s, qboolean edge)
+{
+    int             c, n;
+    const qhandle_t shader = Comp_FeedBoxShader(s, edge, &c, &n);
+    const float     px[4]  = {floorf(x0 * s + 0.5f), floorf(x0 * s + 0.5f) + c, floorf(x1 * s + 0.5f) - c, floorf(x1 * s + 0.5f)};
+    const float     py[4]  = {floorf(y0 * s + 0.5f), floorf(y0 * s + 0.5f) + c, floorf(y1 * s + 0.5f) - c, floorf(y1 * s + 0.5f)};
+    // the texture's parts: a corner, the middle texel (its centre: no neighbour bleeds in), the other corner
+    const float     t[4][2] = {{0.0f, (float)c / n}, {(c + 0.5f) / n, (c + 1.5f) / n}, {(c + 2.0f) / n, 1.0f}};
+
+    if (!shader || px[2] < px[1] || py[2] < py[1]) {
+        if (!edge) {
+            Comp_Box(x0, y0, x1, y1, s);
+        }
+        return;
+    }
+    for (int row = 0; row < 3; row++) {
+        for (int col = 0; col < 3; col++) {
+            if (edge && row == 1 && col == 1) {
+                continue; // (the edge's middle is clear)
+            }
+            if (px[col + 1] > px[col] && py[row + 1] > py[row]) {
+                uii.Rend_DrawPicStretched(px[col], py[row], px[col + 1] - px[col], py[row + 1] - py[row], t[col][0], t[row][0], t[col][1], t[row][1], shader);
+            }
+        }
+    }
+}
+
+// a name's color in the feed: its team's (CS2's blue and yellow), else white
+static UColor Comp_FeedNameColor(int team, float alpha)
+{
+    return team == TEAM_ALLIES ? UColor(0.435f, 0.612f, 0.902f, alpha) : team == TEAM_AXIS ? UColor(0.918f, 0.745f, 0.329f, alpha) : UColor(1, 1, 1, alpha);
+}
+
 void UIHudFeed::DrawKills(float w, float h, float s)
 {
-    const float lineH = m_font->getHeight((const float *)NULL), gap = 6.0f, pad = 9.0f, space = 4.0f;
-    float       used = 0.0f, y = 0.0f;
-    int         first, i, count = comp.numKills, oldest = 0;
+    float used = 0.0f, y = 0.0f;
+    int   first, i, count = comp.numKills, oldest = 0;
 
-    w -= pad;
     while (oldest < count && cls.realtime - comp.kills[oldest].time >= 6000) {
         oldest++;
     }
+    // the newest that fit, the oldest on top
     for (first = count; first > oldest; first--) {
-        const float rowH = Q_max(30.0f, Q_max(lineH, comp.kills[first - 1].picH)) + (used > 0.0f ? space : 0.0f);
+        const float rowH = KF_ROW + (used > 0.0f ? KF_SPACE : 0.0f);
 
         if (used + rowH > h) {
             break;
@@ -1476,52 +1551,44 @@ void UIHudFeed::DrawKills(float w, float h, float s)
     for (i = first; i < count; i++) {
         const compKill_t *k     = &comp.kills[i];
         const float       alpha = Comp_Fade(k->time, 6000, 1500);
-        const float       rowH  = Q_max(30.0f, Q_max(lineH, k->picH)), mid = y + rowH * 0.5f;
+        const float       mid   = y + KF_ROW * 0.5f;
         const qboolean    mark  = k->suicide && strcmp(k->pic, "skull_50");
-        UColor            kc, vc, white(1, 1, 1, alpha);
-        float             x;
-
-        sscanf(Comp_TeamColor(k->killerTeam), "%f %f %f", &kc.r, &kc.g, &kc.b);
-        sscanf(Comp_TeamColor(k->victimTeam), "%f %f %f", &vc.r, &vc.g, &vc.b);
-        kc.a = vc.a = alpha;
+        const UColor      kc = Comp_FeedNameColor(k->killerTeam, alpha), vc = Comp_FeedNameColor(k->victimTeam, alpha), white(1, 1, 1, alpha);
         // a long name smaller, to fit 150 px
-        x = w - Comp_TextW(m_font, k->victim, 150.0f) - k->picW - gap - (mark ? 18.0f + gap : 0.0f) - (k->headshot ? 18.0f + gap : 0.0f)
-          - (k->killer[0] ? Comp_TextW(m_font, k->killer, 150.0f) + gap : 0.0f);
-        // the box, the red one's edge 2 px (on whole pixels, at least one)
-        if (k->mine) {
-            const float  e    = Q_max(1.0f, floorf(2.0f * s + 0.5f)) / s;
-            const vec4_t fill = {0.361f, 0.055f, 0.047f, 0.784f * alpha};
-            const vec4_t edge = {0.769f, 0.141f, 0.118f, alpha};
+        const float       kw = k->killer[0] ? Comp_TextW(m_font, k->killer, 150.0f) + KF_GAP : 0.0f;
+        const float       inner = kw + k->picW + KF_GAP + (mark ? KF_ICON + KF_GAP : 0.0f) + (k->headshot ? KF_ICON + KF_GAP : 0.0f)
+                                + Comp_TextW(m_font, k->victim, 150.0f);
+        const float       x0 = w - inner - 2 * KF_PAD;
+        float             x  = x0 + KF_PAD;
 
-            uii.Rend_SetColor(fill);
-            Comp_Box(x - pad + e, y + e, w + pad - e, y + rowH - e, s);
-            uii.Rend_SetColor(edge);
-            Comp_Box(x - pad, y, w + pad, y + e, s);
-            Comp_Box(x - pad, y + rowH - e, w + pad, y + rowH, s);
-            Comp_Box(x - pad, y + e, x - pad + e, y + rowH - e, s);
-            Comp_Box(w + pad - e, y + e, w + pad, y + rowH - e, s);
-        } else {
-            const vec4_t fill = {0.0f, 0.0f, 0.0f, 0.49f * alpha};
+        // the box: the player's death dark red, the player's kill black with a red edge, the rest dark
+        {
+            const vec4_t death = {0.384f, 0.016f, 0.016f, 0.80f * alpha}, kill = {0.0f, 0.0f, 0.0f, 0.90f * alpha};
+            const vec4_t other = {0.0f, 0.0f, 0.0f, 0.64f * alpha}, edge = {0.882f, 0.0f, 0.0f, alpha};
 
-            uii.Rend_SetColor(fill);
-            Comp_Box(x - pad, y, w + pad, y + rowH, s);
+            uii.Rend_SetColor(k->myDeath ? death : k->myKill ? kill : other);
+            Comp_FeedBox(x0, y, w, y + KF_ROW, s, qfalse);
+            if (k->myKill) {
+                uii.Rend_SetColor(edge);
+                Comp_FeedBox(x0, y, w, y + KF_ROW, s, qtrue);
+            }
         }
         if (k->killer[0]) {
-            x += Comp_Text(m_font, x, mid, k->killer, kc, getVirtualScale(), 150.0f) + gap;
+            x += Comp_Text(m_font, x, mid, k->killer, kc, getVirtualScale(), 150.0f) + KF_GAP;
         }
         // the outlines point left: the feed's at the victim
         Comp_Picture(k->pic, x, mid - k->picH * 0.5f, k->picW, k->picH, s, Comp_Outline(k->pic), white);
-        x += k->picW + gap;
+        x += k->picW + KF_GAP;
         if (mark) {
-            Comp_Picture("skull_50", x, mid - 9.0f, 18.0f, 18.0f, s, qfalse, white);
-            x += 18.0f + gap;
+            Comp_Picture("skull_50", x, mid - KF_ICON * 0.5f, KF_ICON, KF_ICON, s, qfalse, white);
+            x += KF_ICON + KF_GAP;
         }
         if (k->headshot) {
-            Comp_Picture("headshot_50", x, mid - 9.0f, 18.0f, 18.0f, s, qfalse, white);
-            x += 18.0f + gap;
+            Comp_Picture("headshot_50", x, mid - KF_ICON * 0.5f, KF_ICON, KF_ICON, s, qfalse, white);
+            x += KF_ICON + KF_GAP;
         }
         Comp_Text(m_font, x, mid, k->victim, vc, getVirtualScale(), 150.0f);
-        y += rowH + space;
+        y += KF_ROW + KF_SPACE;
     }
 }
 
@@ -2349,12 +2416,21 @@ void UI_CompHud_PreBake(qboolean ahead)
     for (i = 0; i < ARRAY_LEN(comp_killPics); i++) {
         const compKillPic_t *p = &comp_killPics[i];
         const qboolean       mirror = Comp_Outline(p->allies);
+        float                w, h;
 
-        Comp_PictureShader(p->allies, (int)(p->aw * s + 0.5f), (int)(p->ah * s + 0.5f), s, mirror);
-        Comp_PictureShader(p->axis, (int)(p->xw * s + 0.5f), (int)(p->xh * s + 0.5f), s, mirror);
+        Comp_KillIconSize(p, qfalse, &w, &h);
+        Comp_PictureShader(p->allies, (int)(w * s + 0.5f), (int)(h * s + 0.5f), s, mirror);
+        Comp_KillIconSize(p, qtrue, &w, &h);
+        Comp_PictureShader(p->axis, (int)(w * s + 0.5f), (int)(h * s + 0.5f), s, mirror);
     }
-    Comp_PictureShader("skull_50", (int)(18.0f * s + 0.5f), (int)(18.0f * s + 0.5f), s, qfalse);
-    Comp_PictureShader("headshot_50", (int)(18.0f * s + 0.5f), (int)(18.0f * s + 0.5f), s, qfalse);
+    Comp_PictureShader("skull_50", (int)(KF_ICON * s + 0.5f), (int)(KF_ICON * s + 0.5f), s, qfalse);
+    Comp_PictureShader("headshot_50", (int)(KF_ICON * s + 0.5f), (int)(KF_ICON * s + 0.5f), s, qfalse);
+    {
+        int c, n;
+
+        Comp_FeedBoxShader(s, qfalse, &c, &n);
+        Comp_FeedBoxShader(s, qtrue, &c, &n);
+    }
     for (i = 0; i < ARRAY_LEN(comp_weapons); i++) {
         const int kind = comp_weapons[i].kind;
         float     w, h;
