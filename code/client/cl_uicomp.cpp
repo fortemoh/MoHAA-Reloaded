@@ -65,10 +65,10 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_follow_on", "ui_hud_health", "ui_hud_health_col", "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col",
     "ui_hud_hurt_on", "ui_hud_killer", "ui_hud_killer_col", "ui_hud_killer_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
     "ui_hud_north", "ui_hud_obj0", "ui_hud_obj0_on", "ui_hud_obj1", "ui_hud_obj1_on", "ui_hud_obj2", "ui_hud_obj2_on",
-    "ui_hud_p3", "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
+    "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
     "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_target", "ui_hud_target_col",
     "ui_hud_target_hp", "ui_hud_target_hpcol", "ui_hud_target_on", "ui_hud_timer", "ui_hud_vote_on",
-    "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_vs", "ui_hud_vs_on",
+    "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_vs_on",
     "ui_hud_weapons_on", "ui_hud_cards_allies", "ui_hud_cards_axis",
 };
 
@@ -104,7 +104,7 @@ static struct {
     int      scoreTime;         // the last silent score request
     qboolean wantScores, wasPlaying;
     int      lastTeam;
-    char     cards[2][MAX_CLIENTS + 1]; // a card each: m me, a alive, d dead
+    char     cards[2][MAX_CLIENTS + 1]; // a card each: b alive with a bar, a alive, d dead
 
     // the weapons carried (names as the server's configstrings have them)
     char     primary[64], sidearm[64], pending[64];
@@ -286,6 +286,7 @@ static struct {
     int      team[MAX_CLIENTS];
     int      objFlags[MAX_OBJECTIVES], objCurrent;
     vec3_t   objLoc[MAX_OBJECTIVES];
+    int      teamScores[2]; // the server's (CS_TEAMSCORES), -1 not sent
 } cs = {1};
 
 void UI_CompHud_ConfigString(void)
@@ -317,6 +318,9 @@ static void Comp_ConfigStrings(void)
         }
     }
     cs.objCurrent = atoi(CL_ConfigString(CS_CURRENT_OBJECTIVE));
+    if (sscanf(CL_ConfigString(CS_TEAMSCORES), "%d %d", &cs.teamScores[0], &cs.teamScores[1]) != 2) {
+        cs.teamScores[0] = cs.teamScores[1] = -1;
+    }
 }
 
 static int Comp_Gametype(void)
@@ -599,11 +603,12 @@ static void Comp_Roster(int gametype)
             comp.wantScores = qtrue;
         }
     }
-    // the players the snapshot shows, and the player watched
+    // the players the snapshot shows (not our own entity: a dead player's
+    // spectator is sent, not dead), and the player watched
     for (i = 0; i < cl.snap.numEntities; i++) {
         const entityState_t *es = &cl.parseEntities[(cl.snap.parseEntitiesNum + i) & (MAX_PARSE_ENTITIES - 1)];
 
-        if (es->eType == ET_PLAYER && es->number >= 0 && es->number < MAX_CLIENTS) {
+        if (es->eType == ET_PLAYER && es->number >= 0 && es->number < MAX_CLIENTS && es->number != ps->clientNum) {
             comp.dead[es->number] = (es->eFlags & EF_DEAD) != 0;
         }
     }
@@ -620,15 +625,18 @@ static void Comp_Roster(int gametype)
         comp.scoreTime  = cls.realtime;
         CL_AddReliableCommand("score", qfalse);
     }
+    // in the clients' order, a dead player's card in its place; the bars
+    // under the player's own team (both while spectating)
     for (t = 0; t < 2; t++) {
-        char *c = comp.cards[t];
-        int   n = 0, pass;
+        const int side = t ? TEAM_AXIS : TEAM_ALLIES;
+        const int own  = ps->stats[STAT_TEAM];
+        const int bars = own == side || (own != TEAM_ALLIES && own != TEAM_AXIS);
+        char     *c    = comp.cards[t];
+        int       n    = 0;
 
-        for (pass = 0; pass < 2; pass++) {
-            for (i = 0; i < MAX_CLIENTS; i++) {
-                if (comp.team[i] == (t ? TEAM_AXIS : TEAM_ALLIES) && comp.dead[i] == (pass == 1)) {
-                    c[n++] = pass ? 'd' : i == ps->clientNum ? 'm' : 'a';
-                }
+        for (i = 0; i < MAX_CLIENTS; i++) {
+            if (comp.team[i] == side) {
+                c[n++] = comp.dead[i] ? 'd' : bars ? 'b' : 'a';
             }
         }
         c[n] = 0;
@@ -876,12 +884,20 @@ void UI_CompHud_Frame(void)
     Comp_SetI("ui_hud_clip", ps->stats[STAT_CLIPAMMO]);
     Comp_SetI("ui_hud_ammo", ps->stats[STAT_AMMO]);
 
-    // the score panel: Allies | timer | Axis, or self | timer | the leader
+    // the score box: Allies | Axis under the timer, or self | the leader
+    // ("-" while a score isn't known). The teams' scores: the server's
+    // (CS_TEAMSCORES, a server of this code); else our team's and the
+    // highest (the server's stats, every frame), the scoreboard's (asked for
+    // at times) for the other team's below ours, and 0 for it in round modes
+    // while both are 0 (a team's score there is its rounds won)
     {
         const int matchEnd = atoi(CL_ConfigString(CS_MATCHEND));
         int       score[2] = {ps->stats[STAT_KILLS], ps->stats[STAT_HIGHEST_SCORE]};
 
-        if (teams) {
+        if (teams && cs.teamScores[0] >= 0) {
+            score[0] = cs.teamScores[0];
+            score[1] = cs.teamScores[1];
+        } else if (teams) {
             const int mine = team == TEAM_AXIS;
 
             score[0] = comp.sbScore[0];
@@ -890,23 +906,17 @@ void UI_CompHud_Frame(void)
                 score[mine] = ps->stats[STAT_KILLS];
                 if (ps->stats[STAT_HIGHEST_SCORE] > ps->stats[STAT_KILLS]) {
                     score[!mine] = ps->stats[STAT_HIGHEST_SCORE];
+                } else if (gametype >= GT_TEAM_ROUNDS && !ps->stats[STAT_HIGHEST_SCORE]) {
+                    score[!mine] = 0;
                 }
             }
         }
-        Comp_Set("ui_hud_score_l", score[0] >= 0 ? va("%d", score[0]) : "");
-        Comp_Set("ui_hud_score_r", score[1] >= 0 ? va("%d", score[1]) : "");
-        Comp_Set("ui_hud_score_lc", teams ? "0.804 0.937 0.98 1" : "0.988 0.988 0.988 1");
-        Comp_Set("ui_hud_score_rc", teams ? "0.961 0.812 0.784 1" : "0.988 0.988 0.988 1");
+        Comp_Set("ui_hud_score_l", score[0] >= 0 ? va("%d", score[0]) : "-");
+        Comp_Set("ui_hud_score_r", score[1] >= 0 ? va("%d", score[1]) : "-");
+        Comp_Set("ui_hud_score_lc", teams ? "0.588 0.729 0.871 1" : "0.922 0.933 0.949 1");
+        Comp_Set("ui_hud_score_rc", teams ? "0.902 0.478 0.408 1" : "0.922 0.933 0.949 1");
         if (!(atoi(CL_ConfigString(CS_WARMUP)) != -1 && matchEnd && gametype != GT_LIBERATION && matchEnd > cl.serverTime)) {
             banner1 = Comp_Int("cg_hud_timer") ? Sys_LV_CL_ConvertString(Comp_Cvar("ui_timemessage")->string) : "";
-        }
-        if (rounds) {
-            const int alive[2] = {(int)strlen(comp.cards[0]) - (int)(strchr(comp.cards[0], 'd') ? strlen(strchr(comp.cards[0], 'd')) : 0),
-                                  (int)strlen(comp.cards[1]) - (int)(strchr(comp.cards[1], 'd') ? strlen(strchr(comp.cards[1], 'd')) : 0)};
-
-            Comp_Set("ui_hud_vs", va("%d vs %d", alive[0], alive[1]));
-        } else {
-            Comp_Set("ui_hud_vs", "");
         }
         Comp_Set("ui_hud_cards_allies", rounds ? comp.cards[0] : "");
         Comp_Set("ui_hud_cards_axis", rounds ? comp.cards[1] : "");
@@ -1045,9 +1055,8 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_msgs_r", msgs && radar);
         flag("ui_hud_msgs_c", msgs && !radar);
         flag("ui_hud_score_on", Comp_Int("cg_hud_score") && gametype != GT_SINGLE_PLAYER);
+        // the cards
         flag("ui_hud_vs_on", rounds && Comp_Int("cg_hud_alive"));
-        // the panel with the other team's score, or without it (not known yet): narrower
-        flag("ui_hud_p3", Comp_Cvar("ui_hud_score_r")->string[0] != 0);
         flag("ui_hud_health_on", strip && Comp_Int("cg_hud_health"));
         flag("ui_hud_badge_on", strip && Comp_Int("cg_hud_badge"));
         flag("ui_hud_ammo_on", strip && weapon[0] && Comp_Int("cg_hud_ammo"));
@@ -1406,31 +1415,57 @@ void UIHudFeed::Draw(void)
     }
 }
 
-// a team's cards (alive, you, dead) size design pixels wide: the box, its
-// frame, the team's icon (icon: the widget whose shapes it is) or a skull,
-// the bar under it
+// a shape's layer with its color grey: the color's luminance times k (the
+// color after the kind, or after the kind's one number, as uibake reads it)
+static str Comp_Grey(const char *layer, float k)
+{
+    char        kind[32];
+    const char *p = layer;
+    float       c[4], v;
+    int         n;
+    str         out;
+
+    if (sscanf(p, "%31s%n", kind, &n) != 1) {
+        return layer;
+    }
+    p += n;
+    out = kind;
+    if (!strcmp(kind, "ring") || !strcmp(kind, "frame") || !strcmp(kind, "roundbox")) {
+        if (sscanf(p, "%f%n", &v, &n) != 1) {
+            return layer;
+        }
+        out += va(" %g", v);
+        p += n;
+    }
+    if (sscanf(p, "%f %f %f %f%n", &c[0], &c[1], &c[2], &c[3], &n) != 4) {
+        return layer;
+    }
+    v = (0.299f * c[0] + 0.587f * c[1] + 0.114f * c[2]) * k;
+    out += va(" %g %g %g %g", v, v, v, c[3]);
+    out += p + n;
+    return out;
+}
+
+// a team's cards (alive, alive with the bar under it, dead: greyed and
+// darker) size design pixels wide: the box, its frame, the team's icon
+// (icon: the widget whose shapes it is)
 static void Comp_CardShaders(int team, UIWidget *icon, int size, float s, qhandle_t out[3])
 {
     const float f  = size / (size + 8.0f), bar = (size + 4.0f) / (size + 8.0f);
-    const float px = 5.0f / size, py = 5.0f / (size + 8.0f), dx = 6.0f / size, dy = 6.0f / (size + 8.0f);
+    const float px = 5.0f / size, py = 5.0f / (size + 8.0f);
 
     for (int k = 0; k < 3; k++) {
+        auto             grey = [k](const char *layer) { return k == 2 ? Comp_Grey(layer, 0.42f) : str(layer); };
         std::vector<str> lines;
         const char      *layers[40];
         int              numLayers = 0;
 
-        if (k == 2) {
-            lines.push_back(va("in 0 0 1 %g fill 0.11 0.125 0.141 0.702", f));
-            lines.push_back(va("in 0 0 1 %g frame 1 1 1 1 0.2", f));
-            if (size >= 16) {
-                lines.push_back(va("in %g %g %g %g picture 1 1 1 0.5 " COMP_PICTURES "skull_50.png center", dx, dy, 1.0f - dx, f - dy));
-            }
-        } else {
-            lines.push_back(va("in 0 0 1 %g fill %s", f, team == TEAM_AXIS ? "0.549 0.333 0.294 0.851" : "0.294 0.435 0.549 0.851"));
-            for (int l = 1; size >= 16 && icon && l <= icon->getShapes().NumObjects() && l < 30; l++) {
-                lines.push_back(va("in %g %g %g %g %s", px, py, 1.0f - px, f - py, icon->getShapes().ObjectAt(l).c_str()));
-            }
-            lines.push_back(va("in 0 0 1 %g frame %d %s", f, k ? 2 : 1, k ? "0.812 0.875 0.49 1" : "1 1 1 0.2"));
+        lines.push_back(va("in 0 0 1 %g %s", f, grey(team == TEAM_AXIS ? "fill 0.549 0.333 0.294 0.851" : "fill 0.294 0.435 0.549 0.851").c_str()));
+        for (int l = 1; size >= 16 && icon && l <= icon->getShapes().NumObjects() && l < 30; l++) {
+            lines.push_back(va("in %g %g %g %g %s", px, py, 1.0f - px, f - py, grey(icon->getShapes().ObjectAt(l).c_str()).c_str()));
+        }
+        lines.push_back(va("in 0 0 1 %g %s", f, grey("frame 1 1 1 1 0.2").c_str()));
+        if (k == 1) {
             lines.push_back(va("in 0 %g 1 1 fill 0.988 0.988 0.988 1", bar));
         }
         for (str& l : lines) {
@@ -1445,11 +1480,11 @@ static void Comp_CardShaders(int team, UIWidget *icon, int size, float s, qhandl
 UIHudCards
 
 A card for each player of a team (team allies or axis: ui_hud_cards_<team>,
-alive first, then dead), laid out from the widget's right edge leftward
-(side left) or its left edge rightward: the team's icon (icons: the widgets
-whose shapes are the Allies' and the Axis' icons), framed yellow-green for
-you, a white bar under it while alive; a skull once dead. They shrink so
-the bigger team fits in about 400 px and in the widget, the rest a count
+in the clients' order), laid out from the widget's right edge leftward
+(allies) or its left edge rightward (axis): the team's icon (icons: the
+widgets whose shapes are the Allies' and the Axis' icons), a white bar under
+it while alive on the player's own team, greyed out once dead. They shrink
+so the bigger team fits in about 400 px and in the widget, the rest a count
 ================
 */
 class UIHudCards : public UIWidget
@@ -1460,7 +1495,7 @@ public:
     int       m_team;
     str       m_icons[2];
     int       m_size, m_stamp;
-    qhandle_t m_cards[3]; // alive, you, dead
+    qhandle_t m_cards[3]; // alive, alive with a bar, dead
 
     UIHudCards() : m_team(TEAM_ALLIES), m_size(0), m_stamp(-1) {}
     void SetTeam(Event *ev) { m_team = !str::icmp(ev->GetString(1), "axis") ? TEAM_AXIS : TEAM_ALLIES; }
@@ -1519,7 +1554,7 @@ void UIHudCards::Draw(void)
         const float x = m_team == TEAM_AXIS ? 2.0f + i * (size + 4) : w - 2.0f - size - i * (size + 4);
 
         uii.Rend_DrawPicStretched(floorf(x * s + 0.5f), 0, (int)(size * s + 0.5f), (int)((size + 8) * s + 0.5f), 0, 0, 1, 1,
-                                  m_cards[cards[i] == 'd' ? 2 : cards[i] == 'm' ? 1 : 0]);
+                                  m_cards[cards[i] == 'd' ? 2 : cards[i] == 'b' ? 1 : 0]);
     }
     if (fit < n) {
         const char *more = va("+%d", n - fit);

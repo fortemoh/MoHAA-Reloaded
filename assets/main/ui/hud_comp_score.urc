@@ -1,8 +1,6 @@
-// The Competitive HUD (cg_hudstyle 1): top center, Allies | timer | Axis
-// (self | timer | the leader in free-for-all) on a blue panel fading down,
-// "N vs M" alive under it in round modes, the players' cards either side.
-// Two layouts: with the other team's score (ui_hud_p3), and narrower
-// without it, before a scoreboard tells it
+// The Competitive HUD (cg_hudstyle 1): top center, one dark box with the
+// timer over the scores, Allies | Axis (self | the leader in free-for-all),
+// a thin line between them; the players' cards either side in round modes
 menu "hud_comp_score" 1920 80 NONE 0
 virtualres 1 1920 1080
 drawcache 1
@@ -13,212 +11,82 @@ borderstyle NONE
 resource
 Label
 {
-name "panel3"
-rect 885 0 150 77
+name "box"
+rect 914 0 92 64
 bgcolor 0 0 0 0
 borderstyle NONE
-enabledcvar ui_hud_score_on&ui_hud_vs_on&ui_hud_p3
-shape vgradient 0 0.62 0.212 0.376 0.494 0.902 0.259 0.424 0.565 0.702
-shape vgradient 0.62 1 0.259 0.424 0.565 0.702 0.282 0.471 0.612 0
-fitto timer3 56
+enabledcvar ui_hud_score_on
+shape fill 0.055 0.063 0.078 0.804
+shape in 6px 35px -6px 36px fill 1 1 1 0.19
+shape in 46px 40px 47px 59px fill 1 1 1 0.16
 }
 
 resource
 Label
 {
-name "panelshort3"
-rect 885 0 150 44
+name "timer"
+rect 914 2 92 38
 bgcolor 0 0 0 0
 borderstyle NONE
-enabledcvar ui_hud_score_on&!ui_hud_vs_on&ui_hud_p3
-shape vgradient 0 0.62 0.212 0.376 0.494 0.902 0.259 0.424 0.565 0.702
-shape vgradient 0.62 1 0.259 0.424 0.565 0.702 0.282 0.471 0.612 0
-fitto timer3 56
+fgcolor 0.922 0.933 0.949 1
+font oswald-semibold-28
+textalign centerx
+linkcvar ui_hud_timer
+enabledcvar cg_hud_timer
 }
 
 resource
 Label
 {
-name "scoreleft3"
-rect 885 0 48 44
+name "scoreleft"
+rect 914 38 46 28
 bgcolor 0 0 0 0
 borderstyle NONE
-font oswald-medium-22s
+font oswald-semibold-24
 textalign centerx
 linkcvar ui_hud_score_l
 colorcvar ui_hud_score_lc
-enabledcvar ui_hud_score_on&ui_hud_p3
-flowbefore timer3 8
-}
-
-resource
-Label
-{
-name "timer3"
-rect 933 0 54 44
-bgcolor 0 0 0 0
-borderstyle NONE
-fgcolor 0.988 0.988 0.988 1
-font oswald-medium-22s
-textalign centerx
-linkcvar ui_hud_timer
-enabledcvar cg_hud_timer&ui_hud_p3
-fittext 8
-}
-
-resource
-Label
-{
-name "alive3"
-rect 885 44 150 23
-bgcolor 0 0 0 0
-borderstyle NONE
-fgcolor 0.988 0.988 0.988 1
-font oswald-medium-15si
-textalign centerx
-linkcvar ui_hud_vs
-enabledcvar ui_hud_vs_on&ui_hud_p3
-}
-
-resource
-HudCards
-{
-name "cardsallies3"
-rect 453 0 426 60
-bgcolor 0 0 0 0
-borderstyle NONE
-font oswald-medium-15s
-team allies
-icons iconallies iconaxis
-enabledcvar ui_hud_vs_on&ui_hud_p3
-flowbefore panel3 6
-}
-
-resource
-HudCards
-{
-name "cardsaxis3"
-rect 1041 0 426 60
-bgcolor 0 0 0 0
-borderstyle NONE
-font oswald-medium-15s
-team axis
-icons iconallies iconaxis
-enabledcvar ui_hud_vs_on&ui_hud_p3
-flowafter panel3 6
-}
-
-resource
-Label
-{
-name "panel2"
-rect 909 0 102 77
-bgcolor 0 0 0 0
-borderstyle NONE
-enabledcvar ui_hud_score_on&ui_hud_vs_on&!ui_hud_p3
-shape vgradient 0 0.62 0.212 0.376 0.494 0.902 0.259 0.424 0.565 0.702
-shape vgradient 0.62 1 0.259 0.424 0.565 0.702 0.282 0.471 0.612 0
-fitto timer2 32
-}
-
-resource
-Label
-{
-name "panelshort2"
-rect 909 0 102 44
-bgcolor 0 0 0 0
-borderstyle NONE
-enabledcvar ui_hud_score_on&!ui_hud_vs_on&!ui_hud_p3
-shape vgradient 0 0.62 0.212 0.376 0.494 0.902 0.259 0.424 0.565 0.702
-shape vgradient 0.62 1 0.259 0.424 0.565 0.702 0.282 0.471 0.612 0
-fitto timer2 32
-}
-
-resource
-Label
-{
-name "scoreleft2"
-rect 909 0 48 44
-bgcolor 0 0 0 0
-borderstyle NONE
-font oswald-medium-22s
-textalign centerx
-linkcvar ui_hud_score_l
-colorcvar ui_hud_score_lc
-enabledcvar ui_hud_score_on&!ui_hud_p3
-flowbefore timer2 8
-}
-
-resource
-Label
-{
-name "timer2"
-rect 957 0 54 44
-bgcolor 0 0 0 0
-borderstyle NONE
-fgcolor 0.988 0.988 0.988 1
-font oswald-medium-22s
-textalign centerx
-linkcvar ui_hud_timer
-enabledcvar cg_hud_timer&!ui_hud_p3
-fittext 8
-}
-
-resource
-Label
-{
-name "alive2"
-rect 909 44 102 23
-bgcolor 0 0 0 0
-borderstyle NONE
-fgcolor 0.988 0.988 0.988 1
-font oswald-medium-15si
-textalign centerx
-linkcvar ui_hud_vs
-enabledcvar ui_hud_vs_on&!ui_hud_p3
-}
-
-resource
-HudCards
-{
-name "cardsallies2"
-rect 477 0 426 60
-bgcolor 0 0 0 0
-borderstyle NONE
-font oswald-medium-15s
-team allies
-icons iconallies iconaxis
-enabledcvar ui_hud_vs_on&!ui_hud_p3
-flowbefore panel2 6
-}
-
-resource
-HudCards
-{
-name "cardsaxis2"
-rect 1017 0 426 60
-bgcolor 0 0 0 0
-borderstyle NONE
-font oswald-medium-15s
-team axis
-icons iconallies iconaxis
-enabledcvar ui_hud_vs_on&!ui_hud_p3
-flowafter panel2 6
+enabledcvar ui_hud_score_on
 }
 
 resource
 Label
 {
 name "scoreright"
-rect 987 0 48 44
+rect 960 38 46 28
 bgcolor 0 0 0 0
 borderstyle NONE
-font oswald-medium-22s
+font oswald-semibold-24
 textalign centerx
 linkcvar ui_hud_score_r
 colorcvar ui_hud_score_rc
-enabledcvar ui_hud_score_on&ui_hud_p3
-flowafter timer3 8
+enabledcvar ui_hud_score_on
+}
+
+resource
+HudCards
+{
+name "cardsallies"
+rect 484 5 426 60
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-15s
+team allies
+icons iconallies iconaxis
+enabledcvar ui_hud_vs_on
+}
+
+resource
+HudCards
+{
+name "cardsaxis"
+rect 1010 5 426 60
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-15s
+team axis
+icons iconallies iconaxis
+enabledcvar ui_hud_vs_on
 }
 
 // the teams' icons (moh-icons team/allies.svg and team/axis.svg) the cards
