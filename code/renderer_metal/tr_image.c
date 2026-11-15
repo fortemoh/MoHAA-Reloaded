@@ -3338,10 +3338,13 @@ qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height
 		}
 	}
 	if (!image) {
-		// (made 1 x 1, then at its size below: not resampled to powers of two)
-		static byte clear[4];
+		// (made 1 x 1, then at its size below: not resampled to powers of two;
+		// clamped as its 2D shader looks it up, R_FindShader, else that lookup
+		// prints "mixed glWrapClampMode" for every one)
+		static byte	clear[4];
+		const int	clamp = haveClampToEdge ? MB_CLAMP_TO_EDGE : MB_CLAMP;
 
-		image = R_CreateImageOld(fileName, clear, 1, 1, 0, 0, qfalse, qtrue, qtrue, 0, MB_CLAMP, MB_CLAMP);
+		image = R_CreateImageOld(fileName, clear, 1, 1, 0, 0, qfalse, qtrue, qtrue, 0, clamp, clamp);
 	}
 
 	if (mbMultitexture) {
