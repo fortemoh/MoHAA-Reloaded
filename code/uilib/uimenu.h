@@ -81,6 +81,9 @@ public:
 public:
     MenuManager();
 
+    // Added: the menu of this name, not another shown in its place (ui_menuAlias)
+    Menu *FindMenuNamed(str name);
+
     void  RealignMenus(void);
     void  AddMenu(Menu *m);
     void  DeleteMenu(Menu *m);

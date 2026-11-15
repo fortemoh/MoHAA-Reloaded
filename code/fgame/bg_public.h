@@ -93,6 +93,7 @@ static const unsigned int DEAD_VIEWHEIGHT       = 8;
 //
 
 #define CS_MATCHEND        26 // cgs.matchEndTime
+#define CS_TEAMSCORES      27 // Added: "<allies> <axis>" in team games, "" otherwise (the Competitive HUD)
 
 #define CS_MODELS          32
 #define CS_OBJECTIVES      (CS_MODELS + MAX_MODELS)         // 1056

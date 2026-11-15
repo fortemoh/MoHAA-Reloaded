@@ -22,6 +22,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // cl_cgame.c  -- client system interaction with client game
 
 #include "client.h"
+#include "cl_uicomp.h"
+#include "cl_uimenus.h"
+#include "cl_uiextras.h"
 #include "cl_ui.h"
 #include "cl_uiradar.h"
 #include "../corepp/tiki.h"
@@ -327,6 +330,8 @@ void CL_ConfigstringModified(int index, char* s) {
 	if ( !strcmp( old, s ) ) {
 		return;		// unchanged
 	}
+	UI_CompHud_ConfigString();
+	UI_Menus_ConfigString();
 
 	// build the new gameState_t
 	oldGs = cl.gameState;
@@ -474,6 +479,9 @@ qboolean CL_GetServerCommand( int serverCommandNumber, qboolean differentServer 
 		Cmd_TokenizeString(s);
 		cmd = Cmd_Argv(0);
 	}
+
+	// Added: the Reloaded scoreboard reads the scores the cgame is given
+	UI_Menus_ServerCommand();
 
 	return CL_ProcessServerCommand(s, cmd, differentServer);
 }
@@ -850,6 +858,7 @@ void CL_InitCGameDLL( clientGameImport_t *cgi, clientGameExport_t **cge ) {
 	cgi->GetLiveUserCmd				= CL_GetLiveUserCmd;
 	cgi->GetRenderTimeFraction		= CL_RenderTimeFraction;
 	cgi->R_DrawBoxes				= re.DrawBoxes;
+	cgi->UI_DrawZoomOverlay			= UI_DrawZoomOverlay;
 	// FIXME
 	//cgi->pUnknownVar				= NULL;
 
@@ -942,6 +951,11 @@ void CL_InitCGame( void ) {
 
 	t1 = Sys_Milliseconds();
 
+	// Added: the Competitive HUD's pictures begun now, baked at the load's end (UI_CompHud_MapLoaded)
+	UI_CompHud_PreBake(qtrue);
+	// Added: the zoom overlays' masks too (registered at the load's end)
+	UI_Extras_PreBake(qtrue);
+
 	// find the current mapname
 	info = cl.gameState.stringData + cl.gameState.stringOffsets[ CS_SERVERINFO ];
 	mapname = Info_ValueForKey( info, "mapname" );
@@ -988,6 +1002,13 @@ void CL_InitCGame( void ) {
 	// we will send a usercmd this frame, which
 	// will cause the server to send us the first snapshot
 	clc.state = CA_PRIMED;
+
+	// Added: the Competitive HUD's radar walks the map now, while it loads
+	UI_CompHud_MapLoaded();
+	// Added: the Reloaded menus' faces and shapes baked with the load
+	UI_Menus_PreBake();
+	// Added: the HUD's extras' too (the zoom overlays' masks made while it loaded)
+	UI_Extras_PreBake(qfalse);
 
 	CL_EndRegistration();
 

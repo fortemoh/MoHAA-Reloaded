@@ -29,6 +29,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../qcommon/q_version.h"
 
 #include "cl_ui.h"
+#include "../uilib/uibake.h"
+#include "cl_uicomp.h"
+#include "cl_uimenus.h"
+#include "cl_uiextras.h"
 #include "cl_uigamespy.h"
 
 #include <chrono>
@@ -125,6 +129,8 @@ static intro_stage_t intro_stage;
 static char          server_mapname[64];
 static UIListCtrl   *scoreboardlist;
 static Menu         *scoreboard_menu;
+// Added: the scoreboard is up (the Reloaded scoreboard: the stock list isn't shown)
+static qboolean      scoreboard_up;
 static float         scoreboard_x;
 static float         scoreboard_y;
 static float         scoreboard_w;
@@ -1182,6 +1188,10 @@ UIFloatingDMConsole *getNewDMConsole()
     console->setConsoleHandler(DMConsoleCommandHandler);
     console->setConsoleBackground(UBlack, 0.8f);
     console->setShow(false);
+    // Added: faded by ui_hud_dmconsole (0 with cg_hudstyle 1: not drawn, the chat's typing line instead)
+    event = new Event(EV_Layout_AlphaCvar);
+    event->AddString("ui_hud_dmconsole");
+    console->ProcessEvent(event);
     console->Connect(&s_dmconsolehider, UIFloatingWindow::W_ClosePressed, UIFloatingWindow::W_ClosePressed);
     console->Connect(&s_dmconsolehider, W_Destroyed, W_Destroyed);
 
@@ -1274,6 +1284,44 @@ void UI_GetHighResolutionScale(vec2_t scale)
 
 /*
 ====================
+UI_CompHuds
+
+Added: the Competitive HUD's menus (cg_hudstyle 1, ui/hud_comp_*.urc),
+shown in place of the stock HUD's
+====================
+*/
+static void UI_CompHuds(bool show, bool messages = false)
+{
+    static Menu     *menus[UI_COMPHUD_MENUS];
+    static UIWidget *containers[UI_COMPHUD_MENUS]; // (asked if shown every frame: the widget, not through the menu)
+    static int       generation = -1;
+
+    // found again when the menus change
+    if (generation != menuManager.Generation()) {
+        generation = menuManager.Generation();
+        for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
+            menus[i]      = menuManager.FindMenu(ui_compHudMenus[i]);
+            containers[i] = menus[i] ? menus[i]->GetContainerWidget() : NULL;
+        }
+    }
+    for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
+        Menu      *hud = menus[i];
+        // (messages only: the menus with the game messages, the chat, the kills and the vote;
+        // the bottom's health and ammo: cg_hud_layout's)
+        const bool on  = (show && ui_compHudInLayout[i]) || (messages && (i == 1 || i == 3 || i == 4 || i == 11));
+
+        if (hud && containers[i] && on != containers[i]->IsVisible()) {
+            if (on) {
+                hud->ForceShow();
+            } else {
+                hud->ForceHide();
+            }
+        }
+    }
+}
+
+/*
+====================
 UI_ShowHudList
 ====================
 */
@@ -1325,6 +1373,11 @@ void UI_PrintConsole(const char *msg)
     qboolean      bPrintedDMBox = qfalse;
 
     pszString = msg;
+
+    // Added: the Competitive HUD's chat, game messages and kills
+    if (*msg > 0 && (unsigned char)*msg < MESSAGE_MAX) {
+        UI_CompHud_Print(msg);
+    }
 
     if (*pszString > 0 && (unsigned char)*pszString < MESSAGE_MAX) {
         qboolean bNormalMessage = qfalse;
@@ -1621,6 +1674,8 @@ void UI_OpenDMConsole(int iMode)
         return;
     }
 
+    // Added: with cg_hudstyle 1 its window isn't drawn (the chat's typing line instead)
+    Cvar_Set("ui_hud_dmconsole", UI_CompHud_Active() ? "0" : "1");
     UI_SetDMConsoleMode(iMode);
     dm_console->setShow(true);
     uWinMan.ActivateControl(dm_console);
@@ -1638,6 +1693,29 @@ void UI_CloseDMConsole(void)
         dm_console->setShow(false);
     }
     UI_FocusMenuIfExists();
+}
+
+/*
+====================
+UI_DMConsoleState
+====================
+*/
+qboolean UI_DMConsoleState(int *mode, const char **line, int *caret)
+{
+    UIDMConsole *console;
+
+    if (!dm_console || !dm_console->getShow() || !(console = dm_console->getConsole())) {
+        return qfalse;
+    }
+    // (UIDMConsole::Draw's check: its window isn't drawn)
+    if (!console->IsThisOrChildActive()) {
+        UI_CloseDMConsole();
+        return qfalse;
+    }
+    *mode  = console->GetMessageMode();
+    *line  = console->getCurrentLine().c_str();
+    *caret = (int)console->getCaret();
+    return qtrue;
 }
 
 /*
@@ -1840,11 +1918,13 @@ Updates the UI.
 */
 void UI_Update(void)
 {
-    static Menu *mainMenu, *dmMainMenu;
+    static Menu *mainMenu;
     static int   mainMenusGeneration = -1;
     Menu        *currentMenu;
     UIRect2D     frame;
 
+    // Added: the faces asked for at the UI's start registered (their texels made meanwhile), before anything is drawn
+    UI_BakeBatch(false);
     re.SetRenderTime(cls.realtime);
     CL_FillUIDef();
     uWinMan.ServiceEvents();
@@ -1894,26 +1974,38 @@ void UI_Update(void)
         }
     }
 
+    // Added: no HUD under the Reloaded weapon and Esc menus (cl_uimenus.cpp), the
+    // cgame's own told through ui_menucover (the stock HUD's spectator keys and vote, the crosshair)
+    const qboolean covered = UI_Menus_Covering();
+    {
+        static cvar_t *ui_menucover = Cvar_Get("ui_menucover", "0", CVAR_ROM);
+
+        if (ui_menucover->integer != (int)covered) {
+            Cvar_Set("ui_menucover", covered ? "1" : "0");
+        }
+    }
+
+    // Changed: the Competitive HUD shows the game messages, the chat and the kills itself
     if (gmbox) {
-        gmbox->setRealShow(true);
+        gmbox->setRealShow(!UI_CompHud_Active() && !covered);
     }
 
     if (dmbox) {
-        dmbox->setRealShow(true);
+        dmbox->setRealShow(!UI_CompHud_Active() && !covered);
     }
 
     currentMenu = menuManager.CurrentMenu();
 
-    // the main menus, searched for only when the menus change
+    // the main menu, searched for only when the menus change
     if (mainMenusGeneration != menuManager.Generation()) {
         mainMenusGeneration = menuManager.Generation();
         mainMenu            = menuManager.FindMenu("main");
-        dmMainMenu          = menuManager.FindMenu("dm_main");
     }
 
     if (currentMenu == mainMenu) {
         UI_MainMenuWidgetsUpdate();
-    } else if (currentMenu == dmMainMenu) {
+    } else if (currentMenu && !str::icmp(currentMenu->m_name, "dm_main")) {
+        // (the stock Esc menu's widgets: not the Reloaded one shown for its name)
         UI_MultiplayerMainMenuWidgetsUpdate();
     }
 
@@ -1998,7 +2090,7 @@ void UI_Update(void)
     }
 
     // Hide the HUD when necessary
-    if (!ui_hud || clc.state != CA_ACTIVE || view3d->LetterboxActive() || (currentMenu && currentMenu->isFullscreen())
+    if (!ui_hud || covered || clc.state != CA_ACTIVE || view3d->LetterboxActive() || (currentMenu && currentMenu->isFullscreen())
         || server_loading || ((cl.snap.ps.pm_flags & PMF_NO_HUD) || (cl.snap.ps.pm_flags & PMF_INTERMISSION))) {
         if (crosshairhud) {
             crosshairhud->ForceHide();
@@ -2025,7 +2117,34 @@ void UI_Update(void)
         }
 
         UI_HideHudList();
+        // Added: through the intermission, the Competitive HUD's messages, chat, kills and vote stay
+        if (UI_CompHud_Active() && ui_hud && !covered && clc.state == CA_ACTIVE && !server_loading && !view3d->LetterboxActive()
+            && !(currentMenu && currentMenu->isFullscreen())) {
+            UI_CompHud_Frame();
+            UI_CompHuds(false, true);
+        } else {
+            UI_CompHuds(false);
+        }
+    } else if (UI_CompHud_Active()) {
+        // Added: the Competitive HUD's menus instead of the stock HUD's (the
+        // boss's health stays), those hidden when shown, not each frame
+        Menu *const stock[] = {crosshairhud, hud_weapons, hud_items, hud_health, hud_ammo, hud_compass};
+
+        for (Menu *m : stock) {
+            if (m && m->isVisible()) {
+                m->ForceHide();
+            }
+        }
+        ui_weapHudTime = ui_itemHudTime = 0;
+        for (int i = 1; i <= hudList.NumObjects(); i++) {
+            if (hudList.ObjectAt(i)->isVisible()) {
+                hudList.ObjectAt(i)->ForceHide();
+            }
+        }
+        UI_CompHud_Frame();
+        UI_CompHuds(true);
     } else {
+        UI_CompHuds(false);
         if (crosshairhud) {
             if (ui_crosshair->integer && cl.snap.ps.stats[STAT_CROSSHAIR]) {
                 crosshairhud->ForceShow();
@@ -2415,7 +2534,7 @@ void UI_Update(void)
     // show the scoreboard
     //
     if (scoreboard_menu) {
-        if (scoreboardlist && scoreboardlist->IsVisible()) {
+        if (UI_Menus_Scoreboard(scoreboard_menuname.c_str()) ? scoreboard_up : scoreboardlist && scoreboardlist->IsVisible()) {
             scoreboard_menu->ForceShow();
         } else {
             scoreboard_menu->ForceHide();
@@ -2506,7 +2625,14 @@ UI_MultiplayerMainMenuWidgetsUpdate
 void UI_MultiplayerMainMenuWidgetsUpdate(void)
 {
     static const cvar_t *cg_allowvote = Cvar_Get("cg_allowvote", "1", 0);
+    Menu                *menu         = menuManager.CurrentMenu();
 
+    // Added: the vote widgets are the stock Esc menu's; the Reloaded one shown
+    // for its name has none (an event no widget takes isn't freed)
+    if (!menu || str::icmp(menu->m_name, "dm_main")) {
+        UI_UpdateContinueGame();
+        return;
+    }
     if (cg_allowvote->integer) {
         menuManager.PassEventToWidget("cantvote", new Event(EV_Widget_Disable));
 
@@ -2551,7 +2677,8 @@ void UI_ToggleMenu(str name)
     if (menu) {
         UI_ForceMenuOff(false);
 
-        if (menu->m_name != name) {
+        // (the menu shown for the name: another's, cl_uimenus.cpp)
+        if (menu != menuManager.FindMenu(name)) {
             UI_PushMenu(name);
         }
     } else {
@@ -2634,6 +2761,12 @@ void UI_PushMenu(const char *name)
 {
     Menu    *menu  = menuManager.CurrentMenu();
     qboolean bDiff = qfalse;
+
+    // Added: the Reloaded menus told what they are opened as (and the weapon
+    // menu the server pushes after a side picked in it not shown again)
+    if (!UI_Menus_Pushing(name)) {
+        return;
+    }
 
     if (menu) {
         bDiff = strcmp(menu->m_name, name) != 0;
@@ -3826,6 +3959,11 @@ void CL_FillUIImports(void)
     uii.IsRendererLoaded  = CL_IsRendererLoaded;
     uii.Rend_LoadRawImage = re.LoadRawImage;
     uii.Rend_FreeRawImage = re.FreeRawImage;
+    uii.Rend_RegisterImage2D = re.RegisterImage2D;
+    uii.Rend_Begin2DList     = re.Begin2DList;
+    uii.Rend_End2DList       = re.End2DList;
+    uii.Rend_Draw2DList      = re.Draw2DList;
+    uii.Rend_Free2DList      = re.Free2DList;
 
     uii.Rend_Set2DStartTime = re.Set2DInitialShaderTime;
 }
@@ -3840,6 +3978,8 @@ void CL_BeginRegistration(void)
     // init console stuff
     re.BeginRegistration(&cls.glconfig);
     uWinMan.CleanupShadersFromList();
+    // Added: the baked pictures' shaders are looked up again
+    UI_BakeForget();
 }
 
 /*
@@ -3982,6 +4122,13 @@ void UI_ResolutionChange(void)
         frame = getDefaultDMBoxRectangle();
         dmbox->setFrame(frame);
     }
+
+    // Added: the Competitive HUD baked at the new size
+    UI_CompHud_PreBake(qfalse);
+    // Added: the Reloaded menus too
+    UI_Menus_PreBake();
+    // Added: the HUD's extras too (the zoom overlays' masks)
+    UI_Extras_PreBake(qfalse);
 }
 
 /*
@@ -4201,6 +4348,7 @@ void UI_ClearState(void)
 {
     S_FadeSound(0.0);
     UI_ClearCenterPrint();
+    UI_CompHud_Clear();
 
     if (gmbox) {
         gmbox->Clear();
@@ -4427,6 +4575,7 @@ void UI_ShowScoreboard_f(const char *pszMenuName)
         if (scoreboardlist && scoreboardlist->IsVisible()) {
             scoreboardlist->setShow(false);
         }
+        scoreboard_up = qfalse;
     } else {
         if (scoreboard_menuname.length()) {
             scoreboard_menu = menuManager.FindMenu(scoreboard_menuname);
@@ -4440,10 +4589,29 @@ void UI_ShowScoreboard_f(const char *pszMenuName)
             }
         }
 
-        if (scoreboardlist && !scoreboardlist->IsVisible()) {
+        scoreboard_up = qtrue;
+        if (UI_Menus_Scoreboard(scoreboard_menuname.c_str())) {
+            // (the Reloaded scoreboard: the stock list stays hidden)
+            if (scoreboardlist && scoreboardlist->IsVisible()) {
+                scoreboardlist->setShow(false);
+            }
+        } else if (scoreboardlist && !scoreboardlist->IsVisible()) {
             scoreboardlist->setShow(true);
         }
     }
+}
+
+/*
+====================
+UI_ScoreboardShown
+====================
+*/
+qboolean UI_ScoreboardShown(void)
+{
+    if (UI_Menus_Scoreboard(scoreboard_menuname.c_str())) {
+        return scoreboard_up && scoreboard_menu ? qtrue : qfalse;
+    }
+    return scoreboardlist && scoreboardlist->IsVisible() ? qtrue : qfalse;
 }
 
 /*
@@ -4453,6 +4621,7 @@ UI_HideScoreboard_f
 */
 void UI_HideScoreboard_f(void)
 {
+    scoreboard_up = qfalse;
     if (scoreboardlist) {
         scoreboardlist->setShow(false);
     }
@@ -5143,6 +5312,7 @@ CL_ShutdownUI
 */
 void CL_ShutdownUI(void)
 {
+    UI_CompHud_Shutdown();
     if (!cls.uiStarted) {
         return;
     }
@@ -5328,6 +5498,9 @@ void CL_InitializeUI(void)
     ui_NumHits             = Cvar_Get("ui_NumHits", "0", 0);
     ui_NumShotsFired       = Cvar_Get("ui_NumShotsFired", "0", 0);
     ui_gmboxspam           = Cvar_Get("ui_gmboxspam", "1", 0);
+    UI_CompHud_Init();
+    UI_Menus_Init();
+    UI_Extras_Init();
     ui_gotmedal            = Cvar_Get("ui_gotmedal", "0", 0);
     ui_success             = Cvar_Get("ui_success", "0", 0);
     ui_failed              = Cvar_Get("ui_failed", "0", 0);
@@ -5353,6 +5526,8 @@ void CL_InitializeUI(void)
     CL_FillUIDef();
     CL_FillUIImports();
     UI_InitExports();
+    // Added: the head icons' pictures (the outlines baked)
+    UI_CompHud_HeadIcons();
     uie.Init();
 
     UI_LoadInventory_f();
@@ -5477,6 +5652,8 @@ void CL_InitializeUI(void)
     }
 
     // Load all urc files
+    // Added: their faces baked meanwhile on worker threads (registered at the first frame, in the order asked for)
+    UI_BakeBatch(true);
     filenames = FS_ListFiles("ui/", "urc", qfalse, &nfiles);
 
     for (i = 0; i < nfiles; i++) {
@@ -5535,6 +5712,9 @@ void CL_InitializeUI(void)
     if (dmbox) {
         dmbox->setFrame(getDefaultDMBoxRectangle());
     }
+
+    // Added: the Competitive HUD's pictures begun ahead of the first map's load
+    UI_CompHud_PreBake(qtrue);
 
     // clear input
     CL_ClearButtons();

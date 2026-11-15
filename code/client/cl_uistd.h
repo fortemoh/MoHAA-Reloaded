@@ -62,6 +62,7 @@ protected:
     vec3_t                    m_angles;
     float                     m_scale;
     str                       m_anim;
+    bool                      m_modelaspect; // Added: the model's view as wide as the label (modelaspect)
     UIReggedMaterial         *m_statbar_material;
     UIReggedMaterial         *m_statbar_material_flash;
     UIReggedMaterial         *m_statbar_material_marker;
@@ -94,6 +95,7 @@ public:
     void LayoutRenderModelAngles(Event *ev);
     void LayoutRenderModelScale(Event *ev);
     void LayoutRenderModelAnim(Event *ev);
+    void LayoutRenderModelAspect(Event *ev); // Added
 
     void DrawStatbar(float frac);
     void DrawStatCircle(float frac);
@@ -104,4 +106,10 @@ public:
     void StatCircleTexCoord(float fAng, vec3_t vTexCoord);
 
     void Draw(void) override;
+    // Added: kept by the draw cache when drawn as a UILabel (no stat, item or model)
+    bool CacheDraw(void) override
+    {
+        return m_stat_alpha == -1 && m_stat == -1 && m_itemindex == -1 && m_inventoryrendermodelindex == -1
+            && m_stat_configstring == -1 && !m_rendermodel && m_statbar_or == L_STATBAR_NONE && !m_sDrawModelName.length();
+    }
 };

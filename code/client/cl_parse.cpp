@@ -22,6 +22,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // cl_parse.c  -- parse a message received from the server
 
 #include "client.h"
+#include "cl_uicomp.h"
+#include "cl_uimenus.h"
 #include "cl_ui.h"
 #include "../qcommon/bg_compat.h"
 
@@ -576,6 +578,8 @@ void CL_ParseGamestate( msg_t *msg ) {
 		}
 	}
 
+	UI_CompHud_ConfigString();
+	UI_Menus_ConfigString();
 	clc.clientNum = MSG_ReadLong(msg);
 	// read the checksum feed
 	clc.checksumFeed = MSG_ReadLong( msg );

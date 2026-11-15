@@ -22,6 +22,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #pragma once
 
+#include <vector>
+
 #include "usignal.h"
 #include "../qcommon/q_shared.h"
 #include "../corepp/str.h"
@@ -99,6 +101,13 @@ typedef enum {
     SEQUENCE_FADEOUT
 } fadesequence_t;
 
+// Added: the draw cache (drawcache): a cvar a widget drew from, something
+// drawn that changes by itself (not to be kept)
+void UI_DrawDep(cvar_t *cvar);
+void UI_DrawLive(void);
+// ... a hash of what a widget draws from (DrawKey), h the hash so far
+int UI_DrawHash(int h, const void *data, size_t size);
+
 class UIWidget : public USignal
 {
     friend class Menu;
@@ -120,6 +129,9 @@ protected:
     borderstyle_t         m_borderStyle;
     bool                  m_visible;
     bool                  m_enabled;
+    // Added: drawcache (the draw cache, below): beside what every frame's
+    // Display reads of every widget, shown or not
+    bool                  m_drawCache;
     UIFont               *m_font;
     class UIWidget       *m_parent;
     Container<UIWidget *> m_children;
@@ -164,6 +176,10 @@ protected:
     fontvertjustify_t     m_iFontAlignmentVertical;
     qboolean              m_bVirtual;
     str                   m_enabledCvar;
+    // Added: enabledcvar's terms (a&b&!c), their cvars found once
+    str                   m_enabledNames[8];
+    cvar_t               *m_enabledVars[8];
+    int                   m_numEnabled; // -1: not split yet
     //
     // Added in 2.0
     //
@@ -173,6 +189,52 @@ protected:
     // Added in OPM
     //
     float lastShowTime;
+
+    //
+    // Added: a design-size menu's widgets (virtualres 1 W H) and baked shapes
+    //
+    vec2_t         m_designSize; // 0 0: none
+    UIRect2D       m_designRect; // the rect as the URC gave it
+    bool           m_designSet;
+    Container<str> m_shapes;     // the "shape" lines, a $cvar in one its value
+    str            m_rotateCvar; // the shapes turned by its degrees, clockwise
+    str            m_alphaCvar;  // the widget faded by its value
+    str            m_colorCvar;  // the text's and shape's color: the cvar's "r g b a"
+    cvar_t        *m_cvars[4];   // colorcvar's, alphacvar's, rotatecvar's, widthcvar's, found once
+    int            m_colorCount; // colorcvar's modificationCount read
+    float          m_color[4];
+    str            m_widthCvar;  // the shape drawn this fraction wide
+    bool           m_widthLeft;  // ... from its left, else about its middle
+    vec2_t         m_anchor;     // a menu's middle at these fractions of the screen (-1: its align)
+    // the layout rules (flowafter flowbefore flowbelow fitbelow fitto
+    // fittext moveif): applied in order to the URC's rect each frame, from
+    // the siblings' boxes as they are then (Flow)
+    struct uiRule_t {
+        int       kind;
+        str       name;
+        UIWidget *sibling;
+        float     a, b, c;
+    };
+    std::vector<uiRule_t> m_rules;
+    UIRect2D       m_designBase; // the URC's rect
+    bool           m_baseSet;
+    bool           m_flowing;    // in its Flow (its own text measured: as it is)
+    float          m_fitWidth;   // a longer text drawn smaller to fit (fitwidth), 0 none
+    bool           m_shapeDynamic; // a $cvar in its lines
+    str            m_shapeText;  // the lines as last baked
+    int            m_shapeStamp;
+    int            m_shapeW, m_shapeH;
+    qhandle_t      m_shapeHandle;
+    // the draw cache (drawcache): what it and its children drew, a 2D list,
+    // drawn again while what it was drawn from stays: the cvars read
+    // (UI_DrawDep), its frames, the alpha given, DrawKey
+    int                                  m_drawList;
+    bool                                 m_drawValid, m_drawLive;
+    int                                  m_drawStamp, m_drawKey;
+    float                                m_drawAlpha;
+    UIRect2D                             m_drawRects[3];
+    std::vector<std::pair<cvar_t *, int>> m_drawDeps;
+    std::vector<std::pair<UIWidget *, int>> m_drawKeys; // its children drawing from more (DrawKey), their states
 
 public:
     CLASS_PROTOTYPE(UIWidget);
@@ -251,6 +313,30 @@ public:
     void LayoutAliasCache(Event *ev);
     void SetEnabledCvar(Event *ev);
     void SetScaleCvar(Event *ev);
+    // Added
+    void LayoutShape(Event *ev);
+    void LayoutRotateCvar(Event *ev);
+    void LayoutAlphaCvar(Event *ev);
+    void LayoutColorCvar(Event *ev);
+    void LayoutWidthCvar(Event *ev);
+    void LayoutFlowAfter(Event *ev);
+    void LayoutAnchor(Event *ev);
+    void Flow(void);
+    virtual UIRect2D ContentBox(void); // its text's box (a label's), else its rect: design units
+    bool             Shown(void);      // enabled and visible
+    void             AddRule(int kind, Event *ev, int floats);
+    void             LayoutFlowBefore(Event *ev);
+    void             LayoutFlowBelow(Event *ev);
+    void             LayoutFitBelow(Event *ev);
+    void             LayoutFitTo(Event *ev);
+    void             LayoutFitText(Event *ev);
+    void             LayoutMoveIf(Event *ev);
+    void             LayoutFitWidth(Event *ev);
+    cvar_t *CvarOf(int i, const str& name);
+    bool DesignFrame(void);
+    void DrawShapes(void);
+    void BakeShapes(void); // its shape baked at its size now (a load), not at its first draw
+    Container<str>& getShapes(void) { return m_shapes; }
 
     // Added in 2.0
     //====
@@ -274,6 +360,7 @@ public:
     void               Enable(void);
     void               Disable(void);
     bool               isEnabled(void);
+    bool               EnabledByCvars(void); // Added: isEnabled's enabledcvar terms
     bool               IsDying(void);
     class UIWidget    *FindResponder(const UIPoint2D& pos);
     void               setFont(const char *name);
@@ -315,6 +402,15 @@ public:
     virtual void       setBackgroundAlpha(float f);
     float              getBackgroundAlpha(void);
     void               Display(const UIRect2D& drawframe, float parent_alpha);
+    void               DisplayNow(const UIRect2D& drawframe, float parent_alpha);
+    // Added: the draw cache: whether it draws only from its rect, colors,
+    // shapes and the cvars it reads (UI_DrawDep), and what else it draws from
+    virtual bool       CacheDraw(void);
+    virtual int        DrawKey(void) { return 0; }
+    virtual bool       DrawKeyed(void) { return false; } // DrawKey or CacheDraw change with more than cvars
+    int                DrawState(void);
+    void               AddDrawDep(cvar_t *cvar);
+    void               LayoutDrawCache(Event *ev);
     virtual qboolean   KeyEvent(int key, unsigned int time);
     virtual void       CharEvent(int ch);
     virtual void       UpdateData(void);
@@ -417,6 +513,7 @@ extern Event EV_Layout_BGColor;
 extern Event EV_Layout_FGColor;
 extern Event EV_Layout_Borderstyle;
 extern Event EV_Layout_BorderColor;
+extern Event EV_Layout_AlphaCvar; // Added
 extern Event EV_Layout_Shader;
 extern Event EV_Layout_TileShader;
 extern Event EV_Layout_HoverShader;

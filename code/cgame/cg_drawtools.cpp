@@ -542,6 +542,11 @@ void CG_DrawZoomOverlay()
         }
     }
 
+    // Added: the Competitive HUD's (cg_hudstyle 1), drawn by the client
+    if (cgi.UI_DrawZoomOverlay && cgi.UI_DrawZoomOverlay(zoomType, fAlpha)) {
+        return;
+    }
+
     switch (zoomType) {
     case 1:
         CG_DrawOverlayTopBottom(cgs.media.kar98TopOverlayShader, cgs.media.kar98BottomOverlayShader, fAlpha);
@@ -1469,17 +1474,30 @@ CG_Draw2D
 */
 void CG_Draw2D(void)
 {
+    // Added: no HUD under the Reloaded weapon and Esc menus (the client's
+    // ui_menucover); a scope's mask stays, being the view
+    static cvar_t *ui_menucover = cgi.Cvar_Get("ui_menucover", "0", 0);
+
     CG_UpdateCountdown();
     CG_DrawZoomOverlay();
+    if (ui_menucover->integer) {
+        return;
+    }
     CG_DrawLagometer();
     CG_HudDrawElements();
     CG_DrawObjectives();
     CG_DrawIcons();
-    CG_DrawStopwatch();
-    CG_DrawSpectatorView();
-    CG_DrawPlayerEntInfo();
-    CG_UpdateAttackerDisplay();
-    CG_DrawVote();
+    // Added: the Competitive HUD's URC menus (cg_hudstyle 1, the client's
+    // cl_uicomp.cpp) show the stopwatch, the spectator's keys, the player
+    // aimed at, the attacker and the vote their own way
+    static cvar_t *cg_hudstyle = cgi.Cvar_Get("cg_hudstyle", "0", CVAR_ARCHIVE);
+    if (cg_hudstyle->integer != 1) {
+        CG_DrawStopwatch();
+        CG_DrawSpectatorView();
+        CG_DrawPlayerEntInfo();
+        CG_UpdateAttackerDisplay();
+        CG_DrawVote();
+    }
     CG_DrawInstantMessageMenu();
     CG_DrawCrosshair();
 }

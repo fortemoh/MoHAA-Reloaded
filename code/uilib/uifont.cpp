@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include "ui_local.h"
+#include "uibake.h"
 
 qboolean UI_FontDBCSIsLeadByte(fontheader_t *font, unsigned short uch);
 int      UI_FontCodeSearch(const fontheader_t *font, unsigned short uch);
@@ -273,22 +274,30 @@ UIFont::UIFont()
     color = UBlack;
     setColor(color);
 
-    refHandle  = uii.GetRefSequence();
+    refHandle  = UI_FontStamp();
     name       = "verdana-14";
     widthRatio = 1.0f;
+    m_fit      = 1.0f;
 }
 
 UIFont::UIFont(const char *fn)
 {
     setFont(fn);
     widthRatio = 1.0f;
+    m_fit      = 1.0f;
 }
 
 void UIFont::setVirtualScale(const float *virtualScale)
 {
+    const float page = UI_BakedFontScale(m_font);
+
     // the renderer scales glyphs across no more than down: on a wide screen,
     // text is narrower than its 640x480 layout width
     widthRatio = virtualScale[0] > virtualScale[1] ? virtualScale[1] / virtualScale[0] : 1.0f;
+    // Added: a baked face is drawn across at its page's scale (Print)
+    if (page > 0.0f) {
+        widthRatio = page / virtualScale[0];
+    }
 }
 
 void UIFont::setColor(UColor col)
@@ -303,12 +312,16 @@ void UIFont::setAlpha(float alpha)
 
 void UIFont::setFont(const char *fontname)
 {
-    m_font = uii.Rend_LoadFont(fontname);
+    // Added: a TrueType face baked at the size drawn (uibake.cpp), else a RitualFont
+    m_font = UI_BakeFont(fontname);
+    if (!m_font) {
+        m_font = uii.Rend_LoadFont(fontname);
+    }
     if (!m_font) {
         uii.Sys_Error(ERR_DROP, "Couldn't load font %s\n", fontname);
     }
 
-    refHandle = uii.GetRefSequence();
+    refHandle = UI_FontStamp();
     name      = fontname;
 }
 
@@ -321,6 +334,21 @@ void UIFont::Print(float x, float y, const char *text, size_t maxlen, const floa
     }
 
     uii.Rend_SetColor(color);
+    // Added: a baked face across at its page's scale, a texel a pixel (its
+    // start where the virtual screen puts it; the renderer rounds it)
+    if (virtualScreen && UI_BakedFontScale(m_font) > 0.0f) {
+        const float page  = UI_BakedFontScale(m_font) * m_fit;
+        const float vs[2] = {page, virtualScreen[1] * m_fit};
+
+        uii.Rend_DrawString(m_font, text, x * virtualScreen[0] / page, y / m_fit, maxlen, vs);
+        return;
+    }
+    if (virtualScreen && m_fit != 1.0f) {
+        const float vs[2] = {virtualScreen[0] * m_fit, virtualScreen[1] * m_fit};
+
+        uii.Rend_DrawString(m_font, text, x / m_fit, y / m_fit, maxlen, vs);
+        return;
+    }
     // Round to integer to avoid blurry text
     uii.Rend_DrawString(m_font, text, (int)x, (int)y, maxlen, virtualScreen);
 }
@@ -545,6 +573,18 @@ int UIFont::getMaxWidthIndex(const char *text, int maxlen)
     return UI_FontStringMaxWidth(m_font, text, maxlen);
 }
 
+float UIFont::FitScale(const char *text, float width)
+{
+    float w;
+
+    m_fit = 1.0f;
+    if (width <= 0.0f || !*text) {
+        return 1.0f;
+    }
+    w = getWidth(text, -1);
+    return w > width ? Q_max(0.5f, width / w) : 1.0f;
+}
+
 float UIFont::getWidth(const char *text, int maxlen)
 {
     CheckRefreshFont();
@@ -553,7 +593,7 @@ float UIFont::getWidth(const char *text, int maxlen)
         return 0;
     }
 
-    return UI_FontStringWidth(m_font, text, maxlen) * widthRatio;
+    return UI_FontStringWidth(m_font, text, maxlen) * widthRatio * m_fit;
 }
 
 float UIFont::getCharWidth(unsigned short ch)
@@ -590,7 +630,7 @@ float UIFont::getCharWidth(unsigned short ch)
         index = 0;
     }
 
-    return m_font->sgl[index]->locations[indirected].size[0] * 256.0 * widthMul * widthRatio;
+    return m_font->sgl[index]->locations[indirected].size[0] * 256.0 * widthMul * widthRatio * m_fit;
 }
 
 int UIFont::getHeight(const char *text, int maxlen, const float *virtualScale)
@@ -625,15 +665,15 @@ int UIFont::getHeight(const float *virtualScale)
 
     if (virtualScale) {
         if (m_font) {
-            return (m_font->sgl[0]->height * virtualScale[0]);
+            return (m_font->sgl[0]->height * virtualScale[0] * m_fit);
         } else {
-            return (16.0 * virtualScale[1]);
+            return (16.0 * virtualScale[1] * m_fit);
         }
     } else {
         if (m_font) {
-            return m_font->sgl[0]->height;
+            return m_font->sgl[0]->height * m_fit;
         } else {
-            return 16;
+            return 16 * m_fit;
         }
     }
 }
@@ -799,7 +839,7 @@ int UI_FontStringWidth(fontheader_t *pFont, const char *pszString, int iMaxLen)
 
 void UIFont::CheckRefreshFont()
 {
-    if (refHandle != uii.GetRefSequence()) {
+    if (refHandle != UI_FontStamp()) {
         setFont(name);
     } else if (!uii.IsRendererLoaded()) {
         m_font = NULL;

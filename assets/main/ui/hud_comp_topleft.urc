@@ -1,0 +1,49 @@
+// The Competitive HUD (cg_hudstyle 1): top left, the radar. A menu of its
+// own: it draws every frame (it turns with the view), so the menu with the
+// compass and the game messages (hud_comp_topleft_compass) is kept whole
+menu "hud_comp_topleft" 420 420 NONE 0
+virtualres 1 1920 1080
+drawcache 1
+align left top
+bgcolor 0 0 0 0
+borderstyle NONE
+
+// the radar: its disc, the map and what is on it, the damage wedge, its ring
+resource
+HudRadar
+{
+name "radar"
+rect 25 25 248 248
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-semibold-13.5s
+enabledcvar ui_hud_radar_on
+shape circle 0.047 0.055 0.071 0.78
+shape ring 1.127 1 1 1 0.102
+}
+
+resource
+Label
+{
+name "radarwedge"
+rect 25 25 248 248
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_radar_on
+shape poly 0.753 0.188 0.129 1 0.5 0.38 0.64 0.02 0.36 0.02
+rotatecvar ui_hud_dmg_angle
+alphacvar ui_hud_dmg_alpha
+}
+
+resource
+Label
+{
+name "radarring"
+rect 25 25 248 248
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_radar_on
+shape ring 2 $ui_hud_acc_radar 0.902
+}
+
+end.

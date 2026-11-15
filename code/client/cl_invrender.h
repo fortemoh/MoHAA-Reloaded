@@ -114,7 +114,8 @@ void CL_Draw3DModel(
     vec3_t    offset,
     vec3_t    angle,
     vec3_t    color,
-    str       anim
+    str       anim,
+    bool      keepAspect = false // Added: the field of view as wide as the frame (30 degrees down)
 );
 
 void     UI_DoInventory(qboolean activate_mouse);

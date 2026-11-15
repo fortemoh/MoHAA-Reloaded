@@ -51,6 +51,9 @@ set(CLIENT_SOURCES
     ${SOURCE_DIR}/client/cl_uimpmappicker.cpp
     ${SOURCE_DIR}/client/cl_uiplayermodelpicker.cpp
     ${SOURCE_DIR}/client/cl_uiradar.cpp
+    ${SOURCE_DIR}/client/cl_uicomp.cpp
+    ${SOURCE_DIR}/client/cl_uimenus.cpp
+    ${SOURCE_DIR}/client/cl_uiextras.cpp
     ${SOURCE_DIR}/client/cl_uiserverlist.cpp
     ${SOURCE_DIR}/client/cl_uisoundpicker.cpp
     ${SOURCE_DIR}/client/cl_uistd.cpp
@@ -101,6 +104,26 @@ if(USE_DISCORD)
     list(APPEND CLIENT_DEFINITIONS USE_DISCORD)
     list(APPEND CLIENT_LIBRARY_SOURCES ${SOURCE_DIR}/client/cl_discord.c)
 endif()
+
+# the Competitive HUD's menus, faces, pictures, outlines and shader script
+# (cg_hudstyle 1) compiled in: the files the filesystem reads when no file on
+# disk or in a pak has the name (cl_uicomp.cpp, FS_SetBuiltinFiles); any .svg
+# under ui/
+file(GLOB BUILTIN_FILES CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/assets/main/ui/*.urc
+    ${CMAKE_SOURCE_DIR}/assets/main/ui/competitive/*.png
+    ${CMAKE_SOURCE_DIR}/assets/main/fonts/*
+    ${CMAKE_SOURCE_DIR}/assets/main/scripts/*.shader)
+file(GLOB_RECURSE BUILTIN_SVG CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/assets/main/ui/*.svg)
+list(APPEND BUILTIN_FILES ${BUILTIN_SVG})
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/builtin_files.c
+    COMMAND ${CMAKE_COMMAND} -DROOT=${CMAKE_SOURCE_DIR}/assets/main -DOUT=${CMAKE_BINARY_DIR}/builtin_files.c
+        "-DFILES=${BUILTIN_FILES}" -P ${CMAKE_SOURCE_DIR}/cmake/utils/embed_files.cmake
+    DEPENDS ${BUILTIN_FILES} ${CMAKE_SOURCE_DIR}/cmake/utils/embed_files.cmake
+    COMMENT "Compiling in the Competitive HUD's files"
+    VERBATIM)
+list(APPEND CLIENT_SOURCES ${CMAKE_BINARY_DIR}/builtin_files.c)
 
 list(APPEND CLIENT_BINARY_SOURCES
     ${SERVER_SOURCES}

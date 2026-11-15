@@ -28,7 +28,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 extern "C" {
 #endif
 
-#define	REF_API_VERSION		14
+#define	REF_API_VERSION		19	// 15: RegisterImage2D, 16: 2D lists, 17: DrawPolygon2D, 18: RegisterTexture2D, 19: refdef_t viewmodel_fov_x/_y (vulkan's 17-21)
 
 typedef struct dtiki_s dtiki_t;
 typedef struct skelAnimFrame_s skelAnimFrame_t;
@@ -195,6 +195,27 @@ typedef struct {
     void        (*WakeGPU)(void);
     // Added for the Metal port: DrawBox for count boxes (x, y, width, height) in one draw (the crosshair).
     void        (*DrawBoxes)(const float (*boxes)[4], int count, const float *color);
+
+    // an RGBA image made in memory under a name (made again: its texels replaced),
+    // kept until the renderer restarts; returns its 2D shader
+    qhandle_t (*RegisterImage2D)(const char *name, byte *rgba, int width, int height);
+
+    // 2D lists: what the 2D calls between Begin2DList (0: a new handle, returned)
+    // and End2DList draw, kept; drawn at End2DList and by Draw2DList again as one
+    // command. Free2DList frees one; the renderer's restart frees all. A renderer
+    // may leave them NULL (or Begin2DList return 0): the UI then draws as it comes
+    int (*Begin2DList)(int handle);
+    void (*End2DList)(void);
+    void (*Draw2DList)(int handle);
+    void (*Free2DList)(int handle);
+
+    // a convex polygon of count points (x, y, s, t each), a fan, in one draw
+    void (*DrawPolygon2D)(const float (*points)[4], int count, qhandle_t shader);
+
+    // RegisterImage2D's image as a texture of its own, never in the 2D atlas:
+    // a big picture drawn whole (the zoom overlays' masks), which would make
+    // the atlas's page grow
+    qhandle_t (*RegisterTexture2D)(const char *name, byte *rgba, int width, int height);
 } refexport_t;
 
 //

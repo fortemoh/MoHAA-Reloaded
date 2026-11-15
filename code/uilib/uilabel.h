@@ -56,6 +56,17 @@ class UILabel : public UIWidget
     int                     m_iSoundState;
     int                     m_iLastEnterTime;
     int                     m_iLastDrawTime;
+    const char *LinkedText(void);
+
+public:
+    const char *CurrentText(void);
+    UIRect2D    ContentBox(void) override;
+
+protected:
+    // Added: the linked cvar found once, its text localized once a change
+    cvar_t                 *m_linkVar;
+    int                     m_linkCount;
+    str                     m_linkText;
 
 protected:
     qboolean m_bOutlinedText;

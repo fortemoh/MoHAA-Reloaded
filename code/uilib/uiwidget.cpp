@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "ui_local.h"
 #include "../qcommon/localization.h"
+#include "uibake.h"
 
 Event W_Destroyed
 (
@@ -288,9 +289,10 @@ Event EV_Layout_VirtualRes
 (
     "virtualres",
     EV_DEFAULT,
-    "i",
-    "usevirtualres",
+    "iFF",
+    "usevirtualres design_width design_height",
     "Set the widget to be modified horizontally or vertically across the screen to account for resolutions != 640x480"
+    " (Added: with a design's size, scaled alike both ways to fit the screen, on whole pixels)"
 );
 
 Event EV_Layout_InitData
@@ -428,6 +430,142 @@ Event EV_Layout_DontLocalize
     "Disables localization for this widget"
 );
 
+// Added
+Event EV_Layout_Shape
+(
+    "shape",
+    EV_DEFAULT,
+    "sSSSSSSSSSSSSSSS",
+    "kind color ...",
+    "Adds a layer to the shape baked at the widget's size (uibake.cpp, Bake_Layer); $name: cvar name's value"
+);
+
+Event EV_Layout_RotateCvar
+(
+    "rotatecvar",
+    EV_DEFAULT,
+    "s",
+    "cvar_name",
+    "Turns the widget's shape by the cvar's degrees, clockwise"
+);
+
+Event EV_Layout_AlphaCvar
+(
+    "alphacvar",
+    EV_DEFAULT,
+    "s",
+    "cvar_name",
+    "Fades the widget by the cvar's value (0 to 1)"
+);
+
+Event EV_Layout_ColorCvar
+(
+    "colorcvar",
+    EV_DEFAULT,
+    "s",
+    "cvar_name",
+    "The widget's text and shape colored by the cvar's \"r g b a\""
+);
+
+Event EV_Layout_WidthCvar
+(
+    "widthcvar",
+    EV_DEFAULT,
+    "sS",
+    "cvar_name align",
+    "The widget's shape drawn the cvar's fraction of its width, about its middle (or from its left: left)"
+);
+
+Event EV_Layout_FlowAfter
+(
+    "flowafter",
+    EV_DEFAULT,
+    "sf",
+    "widget_name gap",
+    "Placed gap design units after where a sibling's text ends (or its right edge)"
+);
+
+Event EV_Layout_FlowBefore
+(
+    "flowbefore",
+    EV_DEFAULT,
+    "sf",
+    "widget_name gap",
+    "Its right edge gap design units before where a sibling's text starts (or its left edge)"
+);
+
+Event EV_Layout_FlowBelow
+(
+    "flowbelow",
+    EV_DEFAULT,
+    "sf",
+    "widget_name gap",
+    "Its top gap design units under a sibling's text (or its bottom edge)"
+);
+
+Event EV_Layout_FitBelow
+(
+    "fitbelow",
+    EV_DEFAULT,
+    "sf",
+    "widget_name pad",
+    "Its bottom pad design units under a sibling's text (or its bottom edge)"
+);
+
+Event EV_Layout_FitTo
+(
+    "fitto",
+    EV_DEFAULT,
+    "sfF",
+    "widget_name pad min",
+    "As wide as a sibling's text and pad on each side (no narrower than min), about its middle"
+);
+
+Event EV_Layout_FitText
+(
+    "fittext",
+    EV_DEFAULT,
+    "fFF",
+    "pad min max",
+    "As wide as its text and pad on each side, between min and max, about where its text is aligned"
+);
+
+Event EV_Layout_MoveIf
+(
+    "moveif",
+    EV_DEFAULT,
+    "sff",
+    "widget_name dx dy",
+    "Moved dx dy design units while a sibling is shown"
+);
+
+Event EV_Layout_FitWidth
+(
+    "fitwidth",
+    EV_DEFAULT,
+    "f",
+    "width",
+    "Its text drawn smaller when wider than this (to half its size)"
+);
+
+Event EV_Layout_DrawCache
+(
+    "drawcache",
+    EV_DEFAULT,
+    "i",
+    "on",
+    "What it and its children draw kept and drawn again while the cvars they read, their frames and alpha stay"
+);
+
+Event EV_Layout_Anchor
+(
+    "anchor",
+    EV_DEFAULT,
+    "ff",
+    "x y",
+    "A menu's middle at these fractions of the screen's width and height"
+);
+
 // Added in 2.0
 Event EV_Layout_FadeSequence
 (
@@ -509,6 +647,23 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
 
     {&EV_Layout_DontLocalize,       &UIWidget::SetDontLocalize         },
     {&EV_Layout_FadeSequence,       &UIWidget::EventFadeSequence       },
+
+    // Added
+    {&EV_Layout_Shape,              &UIWidget::LayoutShape             },
+    {&EV_Layout_RotateCvar,         &UIWidget::LayoutRotateCvar        },
+    {&EV_Layout_AlphaCvar,          &UIWidget::LayoutAlphaCvar         },
+    {&EV_Layout_ColorCvar,          &UIWidget::LayoutColorCvar         },
+    {&EV_Layout_WidthCvar,          &UIWidget::LayoutWidthCvar         },
+    {&EV_Layout_FlowAfter,          &UIWidget::LayoutFlowAfter         },
+    {&EV_Layout_FlowBefore,         &UIWidget::LayoutFlowBefore        },
+    {&EV_Layout_FlowBelow,          &UIWidget::LayoutFlowBelow         },
+    {&EV_Layout_FitBelow,           &UIWidget::LayoutFitBelow          },
+    {&EV_Layout_FitTo,              &UIWidget::LayoutFitTo             },
+    {&EV_Layout_FitText,            &UIWidget::LayoutFitText           },
+    {&EV_Layout_MoveIf,             &UIWidget::LayoutMoveIf            },
+    {&EV_Layout_FitWidth,           &UIWidget::LayoutFitWidth          },
+    {&EV_Layout_Anchor,             &UIWidget::LayoutAnchor            },
+    {&EV_Layout_DrawCache,          &UIWidget::LayoutDrawCache         },
 
     {NULL,                          NULL                               }
 };
@@ -661,6 +816,20 @@ str UIReggedMaterial::GetName(void)
 UIWidget::UIWidget()
 {
     VectorSet2D(m_vVirtualScale, 1, 1);
+    VectorSet2D(m_designSize, 0, 0);
+    m_designSet   = false;
+    m_shapeStamp  = -1;
+    m_shapeW      = 0;
+    m_shapeH      = 0;
+    m_shapeHandle = 0;
+    m_shapeDynamic = false;
+    m_widthLeft   = false;
+    memset(m_cvars, 0, sizeof(m_cvars));
+    m_colorCount = -1;
+    VectorSet2D(m_anchor, -1, -1);
+    m_baseSet     = false;
+    m_flowing     = false;
+    m_fitWidth    = 0;
     m_parent = NULL;
     m_background_color.set(0.075f, 0.097f, 0.139f, 1.0f);
     m_foreground_color         = UColor(UHudColor);
@@ -695,6 +864,14 @@ UIWidget::UIWidget()
     m_bVirtual                 = false;
     m_scaleCvar                = NULL;
     m_enabledCvar              = "";
+    m_numEnabled               = -1;
+    m_drawCache                = false;
+    m_drawList                 = 0;
+    m_drawValid                = false;
+    m_drawLive                 = false;
+    m_drawStamp                = 0;
+    m_drawKey                  = 0;
+    m_drawAlpha                = 0;
 
     m_fadeSequenceDelay    = 0;
     m_fadeSequenceFadeIn   = 0;
@@ -714,6 +891,10 @@ UIWidget::~UIWidget()
     //int i;
 
     m_dying = true;
+
+    if (m_drawList && uii.Rend_Free2DList && uii.IsRendererLoaded()) {
+        uii.Rend_Free2DList(m_drawList);
+    }
 
     if (IsActive()) {
         uWinMan.DeactivateCurrentSmart();
@@ -1056,7 +1237,9 @@ void UIWidget::Motion(void)
 
 void UIWidget::AlignPosition(void)
 {
-    if (m_bVirtual) {
+    if (DesignFrame()) {
+        // Added: a design-size menu's
+    } else if (m_bVirtual) {
         vec2_t vNewVirtualScale;
 
         SetVirtualScale(vNewVirtualScale);
@@ -1359,6 +1542,330 @@ void UIWidget::LayoutVirtualRes(Event *ev)
 {
     if (ev->GetInteger(1)) {
         m_bVirtual = true;
+        // Added: a design's size
+        if (ev->NumArgs() >= 3) {
+            m_designSize[0] = ev->GetFloat(2);
+            m_designSize[1] = ev->GetFloat(3);
+        }
+    }
+}
+
+/*
+================
+DesignFrame
+
+Added: a widget of a design-size menu (virtualres 1 W H): its frame the
+URC's rect times the scale the design fits the screen with, on whole pixels
+================
+*/
+bool UIWidget::DesignFrame(void)
+{
+    float s;
+
+    if (m_designSize[0] <= 0 || m_designSize[1] <= 0) {
+        return false;
+    }
+    if (!m_designSet) {
+        m_designRect = UIRect2D(
+            m_frame.pos.x / m_vVirtualScale[0],
+            m_frame.pos.y / m_vVirtualScale[1],
+            m_frame.size.width / m_vVirtualScale[0],
+            m_frame.size.height / m_vVirtualScale[1]
+        );
+        m_designSet = true;
+    }
+    s = UI_DesignScale(m_designSize[0], m_designSize[1]);
+    VectorSet2D(m_vVirtualScale, s, s);
+    m_frame.pos.x       = floorf(m_designRect.pos.x * s + 0.5f);
+    m_frame.pos.y       = floorf(m_designRect.pos.y * s + 0.5f);
+    m_frame.size.width  = floorf((m_designRect.pos.x + m_designRect.size.width) * s + 0.5f) - m_frame.pos.x;
+    m_frame.size.height = floorf((m_designRect.pos.y + m_designRect.size.height) * s + 0.5f) - m_frame.pos.y;
+    return true;
+}
+
+void UIWidget::LayoutShape(Event *ev)
+{
+    str line;
+
+    for (int i = 1; i <= ev->NumArgs(); i++) {
+        str token = ev->GetString(i);
+
+        if (i > 1) {
+            line += " ";
+        }
+        // (a string with spaces keeps its quotes)
+        if (strchr(token.c_str(), ' ')) {
+            line += "\"" + token + "\"";
+        } else {
+            line += token;
+        }
+    }
+    m_shapes.AddObject(line);
+    m_shapeStamp   = -1;
+    m_shapeDynamic = m_shapeDynamic || strchr(line.c_str(), '$');
+}
+
+void UIWidget::LayoutRotateCvar(Event *ev)
+{
+    m_rotateCvar = ev->GetString(1);
+}
+
+void UIWidget::LayoutAlphaCvar(Event *ev)
+{
+    m_alphaCvar = ev->GetString(1);
+}
+
+void UIWidget::LayoutColorCvar(Event *ev)
+{
+    m_colorCvar = ev->GetString(1);
+}
+
+void UIWidget::LayoutWidthCvar(Event *ev)
+{
+    m_widthCvar = ev->GetString(1);
+    m_widthLeft = ev->NumArgs() > 1 && !str::icmp(ev->GetString(2), "left");
+}
+
+/*
+================
+CvarOf
+
+Added: the cvar named by colorcvar (0), alphacvar (1), rotatecvar (2) or
+widthcvar (3), found once (a cvar lives as long as the engine)
+================
+*/
+cvar_t *UIWidget::CvarOf(int i, const str& name)
+{
+    if (!m_cvars[i]) {
+        m_cvars[i] = uii.Cvar_Find(name.c_str());
+    }
+    if (m_cvars[i]) {
+        UI_DrawDep(m_cvars[i]);
+    } else {
+        UI_DrawLive();
+    }
+    return m_cvars[i];
+}
+
+void UIWidget::LayoutAnchor(Event *ev)
+{
+    m_anchor[0] = ev->GetFloat(1);
+    m_anchor[1] = ev->GetFloat(2);
+}
+
+enum { RULE_FLOWAFTER, RULE_FLOWBEFORE, RULE_FLOWBELOW, RULE_FITBELOW, RULE_FITTO, RULE_FITTEXT, RULE_MOVEIF };
+
+void UIWidget::AddRule(int kind, Event *ev, int floats)
+{
+    const int first = kind == RULE_FITTEXT ? 1 : 2;
+    uiRule_t  r     = {kind, kind == RULE_FITTEXT ? str() : ev->GetString(1), NULL, 0, 0, 0};
+    float    *v[3]  = {&r.a, &r.b, &r.c};
+
+    for (int i = 0; i < floats && first + i <= ev->NumArgs(); i++) {
+        *v[i] = ev->GetFloat(first + i);
+    }
+    m_rules.push_back(r);
+}
+
+void UIWidget::LayoutFlowAfter(Event *ev) { AddRule(RULE_FLOWAFTER, ev, 1); }
+void UIWidget::LayoutFlowBefore(Event *ev) { AddRule(RULE_FLOWBEFORE, ev, 1); }
+void UIWidget::LayoutFlowBelow(Event *ev) { AddRule(RULE_FLOWBELOW, ev, 1); }
+void UIWidget::LayoutFitBelow(Event *ev) { AddRule(RULE_FITBELOW, ev, 1); }
+void UIWidget::LayoutFitTo(Event *ev) { AddRule(RULE_FITTO, ev, 2); }
+void UIWidget::LayoutFitText(Event *ev) { AddRule(RULE_FITTEXT, ev, 3); }
+void UIWidget::LayoutMoveIf(Event *ev) { AddRule(RULE_MOVEIF, ev, 2); }
+void UIWidget::LayoutFitWidth(Event *ev) { m_fitWidth = ev->GetFloat(1); }
+
+bool UIWidget::Shown(void)
+{
+    return isEnabled() && (m_enabledCvar.length() || IsVisible());
+}
+
+UIRect2D UIWidget::ContentBox(void)
+{
+    Flow();
+    return m_designRect;
+}
+
+void UIWidget::Flow(void)
+{
+    static int depth; // (rules naming each other: no deeper)
+    UIRect2D   r, frame;
+
+    if (!m_designSet || m_rules.empty() || depth > 8 || m_flowing) {
+        return;
+    }
+    depth++;
+    m_flowing = true;
+    if (!m_baseSet) {
+        m_designBase = m_designRect;
+        m_baseSet    = true;
+    }
+    r = m_designBase;
+    for (uiRule_t& rule : m_rules) {
+        UIRect2D b;
+
+        if (rule.kind != RULE_FITTEXT && !rule.sibling) {
+            rule.sibling = m_parent ? m_parent->FindWidget(rule.name) : NULL;
+            if (!rule.sibling || rule.sibling == this) {
+                rule.sibling = NULL;
+                continue;
+            }
+        }
+        if (rule.kind == RULE_MOVEIF) {
+            if (rule.sibling->Shown()) {
+                r.pos.x += rule.a;
+                r.pos.y += rule.b;
+            }
+            continue;
+        }
+        if (rule.kind == RULE_FITTEXT) {
+            // its own text's width, about where it is aligned
+            float w;
+
+            m_designRect = r;
+            b            = ContentBox();
+            w            = b.size.width + rule.a * 2.0f;
+            w            = Q_max(w, rule.b);
+            w            = rule.c > 0.0f ? Q_min(w, rule.c) : w;
+            if (m_iFontAlignmentHorizontal == FONT_JUSTHORZ_CENTER) {
+                r.pos.x += (r.size.width - w) * 0.5f;
+            } else if (m_iFontAlignmentHorizontal == FONT_JUSTHORZ_RIGHT) {
+                r.pos.x += r.size.width - w;
+            }
+            r.size.width = w;
+            continue;
+        }
+        // (a gap after a sibling only when it has something)
+        b = rule.sibling->ContentBox();
+        switch (rule.kind) {
+        case RULE_FLOWAFTER:
+            r.pos.x = b.pos.x + b.size.width + (b.size.width > 0.0f ? rule.a : 0.0f);
+            break;
+        case RULE_FLOWBEFORE:
+            r.pos.x = b.pos.x - (b.size.width > 0.0f ? rule.a : 0.0f) - r.size.width;
+            break;
+        case RULE_FLOWBELOW:
+            r.pos.y = b.pos.y + b.size.height + (b.size.height > 0.0f ? rule.a : 0.0f);
+            break;
+        case RULE_FITBELOW:
+            r.size.height = Q_max(0.0f, b.pos.y + b.size.height + rule.a - r.pos.y);
+            break;
+        case RULE_FITTO: {
+            const float w = Q_max(b.size.width + rule.a * 2.0f, rule.b);
+
+            r.pos.x += (r.size.width - w) * 0.5f;
+            r.size.width = w;
+            break;
+        }
+        }
+    }
+    depth--;
+    m_flowing    = false;
+    m_designRect = r;
+    // the frame as the design's (DesignFrame)
+    frame             = m_frame;
+    frame.pos.x       = floorf(r.pos.x * m_vVirtualScale[0] + 0.5f);
+    frame.pos.y       = floorf(r.pos.y * m_vVirtualScale[1] + 0.5f);
+    frame.size.width  = floorf((r.pos.x + r.size.width) * m_vVirtualScale[0] + 0.5f) - frame.pos.x;
+    frame.size.height = floorf((r.pos.y + r.size.height) * m_vVirtualScale[1] + 0.5f) - frame.pos.y;
+    if (frame.pos.x != m_frame.pos.x || frame.pos.y != m_frame.pos.y || frame.size.width != m_frame.size.width
+        || frame.size.height != m_frame.size.height) {
+        setFrame(frame);
+    }
+}
+
+/*
+================
+DrawShapes
+
+Added: the shape's layers baked at the widget's size (made again when a
+$cvar in them changes, as a new picture), drawn, turned by rotatecvar
+================
+*/
+void UIWidget::DrawShapes(void)
+{
+    const int w = (int)(m_frame.size.width + 0.5f), h = (int)(m_frame.size.height + 0.5f);
+
+    BakeShapes();
+    if (!m_shapeHandle) {
+        return;
+    }
+    {
+        vec4_t color = {1.0f, 1.0f, 1.0f, 1.0f};
+
+        // tinted by colorcvar
+        if (m_colorCvar.length() && m_colorCount != -1) {
+            Vector4Copy(m_color, color);
+        }
+        color[3] *= m_local_alpha;
+        uii.Rend_SetColor(color);
+    }
+    if (m_widthCvar.length()) {
+        // a fraction of its width, about its middle or from its left
+        const float fw = CvarOf(3, m_widthCvar) ? floorf(w * Q_clamp_float(m_cvars[3]->value, 0.0f, 1.0f) + 0.5f) : 0.0f;
+
+        if (fw >= 1.0f) {
+            uii.Rend_DrawPicStretched(m_widthLeft ? 0 : floorf((w - fw) * 0.5f), 0, fw, h, 0, 0, 1, 1, m_shapeHandle);
+        }
+    } else if (m_rotateCvar.length()) {
+        const float a = CvarOf(2, m_rotateCvar) ? DEG2RAD(m_cvars[2]->value) : 0.0f;
+
+        uii.Rend_DrawPicStretched2(0, 0, w, h, 0, 0, 1, 1, cosf(a), sinf(a), m_shapeHandle);
+    } else {
+        uii.Rend_DrawPicStretched(0, 0, w, h, 0, 0, 1, 1, m_shapeHandle);
+    }
+}
+
+void UIWidget::BakeShapes(void)
+{
+    const int   w = (int)(m_frame.size.width + 0.5f), h = (int)(m_frame.size.height + 0.5f);
+    const char *layers[32];
+    str         text, resolved[32];
+    int         i, n = Q_min(m_shapes.NumObjects(), 32);
+
+    // (the same lines, size and pictures: what was baked)
+    if (!m_shapeDynamic && m_shapeStamp == UI_BakeStamp() && w == m_shapeW && h == m_shapeH) {
+        n = 0;
+    }
+    for (i = 0; i < n; i++) {
+        const char *p = m_shapes.ObjectAt(i + 1).c_str();
+
+        // $name: the cvar's value
+        while (*p) {
+            if (*p == '$') {
+                char name[MAX_QPATH];
+                int  k = 0;
+
+                for (p++; (isalnum((byte)*p) || *p == '_') && k < MAX_QPATH - 1; p++) {
+                    name[k++] = *p;
+                }
+                name[k] = 0;
+                cvar_t *v = uii.Cvar_Find(name);
+
+                if (v) {
+                    UI_DrawDep(v);
+                    resolved[i] += v->latchedString && *v->latchedString ? v->latchedString : v->string;
+                } else {
+                    UI_DrawLive();
+                }
+            } else {
+                resolved[i] += *p++;
+            }
+        }
+        layers[i] = resolved[i].c_str();
+        text += resolved[i];
+        text += "\n";
+    }
+    if (n && UI_BakeAhead()) {
+        // (made ahead: baked, and kept, when asked for again)
+        UI_BakeShape("w", layers, n, w, h, m_vVirtualScale[0]);
+    } else if (n && (m_shapeStamp != UI_BakeStamp() || w != m_shapeW || h != m_shapeH || text != m_shapeText)) {
+        m_shapeHandle = UI_BakeShape("w", layers, n, w, h, m_vVirtualScale[0]);
+        m_shapeStamp  = UI_BakeStamp();
+        m_shapeW      = w;
+        m_shapeH      = h;
+        m_shapeText   = text;
     }
 }
 
@@ -1631,24 +2138,49 @@ void UIWidget::Disable(void)
 
 bool UIWidget::isEnabled(void)
 {
-    if (!strcmp(m_enabledCvar.c_str(), "")) {
+    // (small, to be inlined: every frame's Display asks every widget)
+    if (!m_enabledCvar.length() || !m_enabled) {
         return m_enabled;
     }
+    return EnabledByCvars();
+}
 
-    if (m_enabledCvar[0] == '!') {
-        //
-        // Added in 2.30
-        //  True if the cvar is 0
-        if (m_enabled) {
-            return !UI_GetCvarInt(m_enabledCvar.c_str() + 1, 0);
-        }
-    } else {
-        if (m_enabled) {
-            return UI_GetCvarInt(m_enabledCvar.c_str(), 0) != 0;
+bool UIWidget::EnabledByCvars(void)
+{
+    // Added: the terms split once (a&b&!c, each must hold; !a, added in
+    // 2.30: true if the cvar is 0), each cvar found once
+    if (m_numEnabled < 0) {
+        const char *p = m_enabledCvar.c_str();
+
+        for (m_numEnabled = 0; *p && m_numEnabled < 8; m_numEnabled++) {
+            const char *end = strchr(p, '&');
+            const int   len = end ? (int)(end - p) : (int)strlen(p);
+
+            m_enabledNames[m_numEnabled]  = str(p, 0, len);
+            m_enabledVars[m_numEnabled]   = NULL;
+            p += len + (end ? 1 : 0);
         }
     }
+    for (int i = 0; i < m_numEnabled; i++) {
+        const char *name = m_enabledNames[i].c_str();
+        const bool  neg  = name[0] == '!';
+        cvar_t     *cvar = m_enabledVars[i];
+        int         value;
 
-    return false;
+        if (!cvar) {
+            cvar = m_enabledVars[i] = uii.Cvar_Find(name + neg);
+        }
+        if (cvar) {
+            UI_DrawDep(cvar);
+        } else {
+            UI_DrawLive();
+        }
+        value = !cvar ? 0 : cvar->latchedString ? atoi(cvar->latchedString) : cvar->integer;
+        if ((value != 0) == neg) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool UIWidget::IsDying(void)
@@ -1911,7 +2443,198 @@ float UIWidget::getBackgroundAlpha(void)
     return m_alpha;
 }
 
+/*
+====================================================================
+
+THE DRAW CACHE
+
+A widget with drawcache, and its children, keep what they drew as a 2D list
+(the renderer's): drawn again as one command while what it was drawn from
+stays, instead of being drawn widget by widget. That is the cvars read
+(UI_DrawDep: the enabled terms, a label's linked cvar, colorcvar, alphacvar,
+rotatecvar, widthcvar, a shape's $cvar), its frames, the alpha its parent
+gives, DrawKey, the baked images and the screen. A class drawing from
+anything else isn't kept (CacheDraw), nor what moves or fades by itself;
+their parents draw as before, their other children each from its list. One
+list is made at once: the children of one being made are drawn into it (or
+their own lists copied in)
+
+====================================================================
+*/
+
+static bool UI_SameRect(const UIRect2D& a, const UIRect2D& b)
+{
+    return a.pos.x == b.pos.x && a.pos.y == b.pos.y && a.size.width == b.size.width && a.size.height == b.size.height;
+}
+
+static std::vector<UIWidget *> ui_drawMaking; // the widget whose list is being made
+static int                     ui_drawScope;  // within a drawcache widget
+static int                     ui_drawLive;   // live draws so far
+
+void UI_DrawDep(cvar_t *cvar)
+{
+    for (UIWidget *w : ui_drawMaking) {
+        w->AddDrawDep(cvar);
+    }
+}
+
+void UI_DrawLive(void)
+{
+    ui_drawLive++;
+}
+
+int UI_DrawHash(int h, const void *data, size_t size)
+{
+    const byte *p = (const byte *)data;
+    size_t      i = 0;
+
+    // (a word at a time: every kept widget's state, every frame)
+    for (; i + 4 <= size; i += 4) {
+        int w;
+
+        memcpy(&w, p + i, 4);
+        h = (h ^ w) * 16777619;
+    }
+    for (; i < size; i++) {
+        h = (h ^ p[i]) * 16777619;
+    }
+    return h;
+}
+
+void UIWidget::AddDrawDep(cvar_t *cvar)
+{
+    for (auto& d : m_drawDeps) {
+        if (d.first == cvar) {
+            return;
+        }
+    }
+    m_drawDeps.push_back({cvar, cvar->modificationCount});
+}
+
+void UIWidget::LayoutDrawCache(Event *ev)
+{
+    m_drawCache = ev->GetInteger(1) != 0;
+}
+
+// what of its own state it draws from (shown, alpha, colors, material), and DrawKey
+int UIWidget::DrawState(void)
+{
+    struct {
+        bool        visible, enabled;
+        float       alpha, colors[8];
+        const void *material;
+        int         key;
+    } st;
+
+    memset(&st, 0, sizeof(st));
+    st.visible = m_visible;
+    st.enabled = m_enabled;
+    st.alpha   = m_alpha;
+    for (int i = 0; i < 2; i++) {
+        const UColor& c = i ? m_background_color : m_foreground_color;
+
+        st.colors[i * 4 + 0] = c.r;
+        st.colors[i * 4 + 1] = c.g;
+        st.colors[i * 4 + 2] = c.b;
+        st.colors[i * 4 + 3] = c.a;
+    }
+    st.material = m_material;
+    st.key      = DrawKey();
+    return UI_DrawHash(0, &st, sizeof(st));
+}
+
+bool UIWidget::CacheDraw(void)
+{
+    return classinfo() == &UIWidget::ClassInfo || classinfo() == &UILabel::ClassInfo || classinfo() == &UIWidgetContainer::ClassInfo;
+}
+
 void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
+{
+    int  stamp, live, state;
+    bool make;
+
+    // (every widget's every frame, most of them hidden menus: what isn't
+    // shown is left as DisplayNow leaves it, before anything of the cache is
+    // read, so it costs what it did before the cache)
+    if (!ui_drawScope) {
+        if (!isEnabled()) {
+            lastShowTime = -1;
+            return;
+        }
+        if (!m_enabledCvar.length() && !IsVisible()) {
+            return;
+        }
+    }
+    if ((!ui_drawScope && !m_drawCache) || !uii.Rend_Begin2DList) {
+        DisplayNow(drawframe, parent_alpha);
+        return;
+    }
+    stamp = UI_BakeStamp() ^ (uid.vidWidth << 3) ^ (uid.vidHeight << 17);
+    live  = ui_drawLive;
+    ui_drawScope++;
+    if (!m_rules.empty()) {
+        Flow();
+    }
+    state = DrawState();
+    // a class drawing from more than cvars: its state to the list being made
+    if (!ui_drawMaking.empty() && DrawKeyed()) {
+        ui_drawMaking[0]->m_drawKeys.push_back({this, state});
+    }
+    if (m_drawValid && m_drawStamp == stamp && m_drawAlpha == parent_alpha && UI_SameRect(m_drawRects[0], drawframe)
+        && UI_SameRect(m_drawRects[1], m_screenframe) && UI_SameRect(m_drawRects[2], m_clippedframe) && m_drawKey == state
+        && CacheDraw()) {
+        size_t i, k;
+
+        for (i = 0; i < m_drawDeps.size() && m_drawDeps[i].first->modificationCount == m_drawDeps[i].second; i++) {
+        }
+        for (k = 0; k < m_drawKeys.size() && m_drawKeys[k].first->CacheDraw() && m_drawKeys[k].first->DrawState() == m_drawKeys[k].second; k++) {
+        }
+        if (i == m_drawDeps.size() && k == m_drawKeys.size()) {
+            // the list again; what it was drawn from to the lists being made
+            for (auto& d : m_drawDeps) {
+                UI_DrawDep(d.first);
+            }
+            if (!ui_drawMaking.empty()) {
+                ui_drawMaking[0]->m_drawKeys.insert(ui_drawMaking[0]->m_drawKeys.end(), m_drawKeys.begin(), m_drawKeys.end());
+            }
+            uii.Rend_Draw2DList(m_drawList);
+            ui_drawScope--;
+            return;
+        }
+    }
+
+    // a list made unless one is being made or it drew live last time
+    make = ui_drawMaking.empty() && !m_drawLive;
+    if (make) {
+        m_drawList = uii.Rend_Begin2DList(m_drawList);
+        make       = m_drawList != 0;
+    }
+    if (make) {
+        m_drawDeps.clear();
+        m_drawKeys.clear();
+        ui_drawMaking.push_back(this);
+    }
+    // (a class drawing from more than its cvars: live while shown)
+    if (!CacheDraw() && isEnabled() && (m_enabledCvar.length() || IsVisible())) {
+        UI_DrawLive();
+    }
+    DisplayNow(drawframe, parent_alpha);
+    if (make) {
+        ui_drawMaking.pop_back();
+        uii.Rend_End2DList();
+    }
+    m_drawLive  = ui_drawLive != live;
+    m_drawValid = make && !m_drawLive;
+    m_drawStamp = stamp;
+    m_drawAlpha = parent_alpha;
+    m_drawRects[0] = drawframe;
+    m_drawRects[1] = m_screenframe;
+    m_drawRects[2] = m_clippedframe;
+    m_drawKey      = state;
+    ui_drawScope--;
+}
+
+void UIWidget::DisplayNow(const UIRect2D& drawframe, float parent_alpha)
 {
     int    i;
     int    n;
@@ -1927,10 +2650,28 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
     }
 
     if (m_direction || m_fadetime || m_fadeSequenceState != fadesequence_t::SEQUENCE_NONE) {
+        UI_DrawLive();
         Motion();
     }
 
+    // Added: laid out by its rules, colored by a cvar
+    if (!m_rules.empty()) {
+        Flow();
+    }
+    if (m_colorCvar.length() && CvarOf(0, m_colorCvar) && m_cvars[0]->modificationCount != m_colorCount) {
+        m_color[0] = m_color[1] = m_color[2] = m_color[3] = 1.0f;
+        sscanf(m_cvars[0]->string, "%f %f %f %f", &m_color[0], &m_color[1], &m_color[2], &m_color[3]);
+        m_colorCount       = m_cvars[0]->modificationCount;
+        m_foreground_color = UColor(m_color[0], m_color[1], m_color[2], m_color[3]);
+    }
     m_local_alpha = m_alpha * parent_alpha;
+    // Added: faded by a cvar, not drawn when clear
+    if (m_alphaCvar.length()) {
+        m_local_alpha *= CvarOf(1, m_alphaCvar) ? Q_clamp_float(m_cvars[1]->value, 0.0f, 1.0f) : 0.0f;
+        if (m_local_alpha <= 0.0f) {
+            return;
+        }
+    }
     set2D();
 
     if (m_font) {
@@ -1996,6 +2737,11 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
         uii.Rend_DrawPicStretched(
             0, 0, m_frame.size.width, m_frame.size.height, 0, 0, 1, 1, m_hovermaterial->GetMaterial()
         );
+    }
+
+    // Added: its shape
+    if (m_shapes.NumObjects()) {
+        DrawShapes();
     }
 
     Draw();
@@ -2148,7 +2894,10 @@ void UIWidget::Realign(void)
 {
     bool bScaled = false;
 
-    if (m_bVirtual) {
+    if (DesignFrame()) {
+        // Added: a design-size menu's
+        bScaled = true;
+    } else if (m_bVirtual) {
         vec2_t vNewVirtualScale;
 
         SetVirtualScale(vNewVirtualScale);
@@ -2426,6 +3175,7 @@ const vec2_t& UIWidget::getHighResScale() const
 void UIWidget::SetEnabledCvar(Event *ev)
 {
     m_enabledCvar = ev->GetString(1);
+    m_numEnabled  = -1;
 }
 
 void UIWidget::SetScaleCvar(Event *ev)
@@ -2435,7 +3185,10 @@ void UIWidget::SetScaleCvar(Event *ev)
 
 void UIWidget::SetVirtualScale(vec2_t out)
 {
-    if (m_scaleCvar) {
+    if (m_designSize[0] > 0 && m_designSize[1] > 0) {
+        // Added: a design's size, alike both ways
+        out[0] = out[1] = UI_DesignScale(m_designSize[0], m_designSize[1]);
+    } else if (m_scaleCvar) {
         const float vidRatio  = (float)uid.vidWidth / (float)uid.vidHeight;
         const float minHeight = 480;
         const float minWidth  = minHeight * vidRatio;
@@ -2488,7 +3241,9 @@ UIWidgetContainer::UIWidgetContainer()
 
 void UIWidgetContainer::AlignPosition(void)
 {
-    if (m_bVirtual) {
+    if (DesignFrame()) {
+        // Added: a design-size menu
+    } else if (m_bVirtual) {
         vec2_t vNewVirtualScale;
 
         SetVirtualScale(vNewVirtualScale);
@@ -2506,8 +3261,8 @@ void UIWidgetContainer::AlignPosition(void)
     } else if (m_align & WA_RIGHT) {
         m_frame.pos.x = uid.vidWidth - m_frame.size.width;
     } else {
-        // default to center
-        m_frame.pos.x = (uid.vidWidth - m_frame.size.width) * 0.5;
+        // default to center (Added: on a whole pixel)
+        m_frame.pos.x = floorf((uid.vidWidth - m_frame.size.width) * 0.5f);
     }
 
     if (m_align & WA_BOTTOM) {
@@ -2515,8 +3270,14 @@ void UIWidgetContainer::AlignPosition(void)
     } else if (m_align & WA_TOP) {
         m_frame.pos.y = 0;
     } else {
-        // default to center
-        m_frame.pos.y = (uid.vidHeight - m_frame.size.height) * 0.5;
+        // default to center (Added: on a whole pixel)
+        m_frame.pos.y = floorf((uid.vidHeight - m_frame.size.height) * 0.5f);
+    }
+
+    // Added: its middle at fractions of the screen
+    if (m_anchor[0] >= 0) {
+        m_frame.pos.x = floorf(uid.vidWidth * m_anchor[0] - m_frame.size.width * 0.5f + 0.5f);
+        m_frame.pos.y = floorf(uid.vidHeight * m_anchor[1] - m_frame.size.height * 0.5f + 0.5f);
     }
 
     setFrame(m_frame);

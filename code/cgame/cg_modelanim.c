@@ -53,7 +53,10 @@ typedef enum {
     HEADICON_INMENU,
     HEADICON_ARTILLERY,
     HEADICON_ALLIES,
-    HEADICON_AXIS
+    HEADICON_AXIS,
+    // Added: the Competitive HUD's (CG_TeamHeadIcon)
+    HEADICON_RELOADED_ALLIES,
+    HEADICON_RELOADED_AXIS
 } headIcon_t;
 
 /*
@@ -72,6 +75,8 @@ static qhandle_t CG_HeadIconModel(headIcon_t icon)
         "textures/hud/inmenu_artilleryicon.spr",
         "textures/hud/allies_headicon.spr",
         "textures/hud/axis_headicon.spr",
+        "textures/hud/reloaded_allies_headicon.spr",
+        "textures/hud/reloaded_axis_headicon.spr",
     };
 
     if (!cgs.media.headIconModels[icon]) {
@@ -79,6 +84,28 @@ static qhandle_t CG_HeadIconModel(headIcon_t icon)
     }
 
     return cgs.media.headIconModels[icon];
+}
+
+/*
+===============
+CG_TeamHeadIcon
+
+Added: a team's icon above a team mate's head: with the Competitive HUD
+(cg_hudstyle 1) its team icons' (scripts/reloaded_hud.shader, the client's
+outlines baked), else the game's
+===============
+*/
+static qhandle_t CG_TeamHeadIcon(qboolean allies)
+{
+    static cvar_t *hudstyle;
+
+    if (!hudstyle) {
+        hudstyle = cgi.Cvar_Get("cg_hudstyle", "0", CVAR_ARCHIVE);
+    }
+    if (hudstyle->integer == 1) {
+        return CG_HeadIconModel(allies ? HEADICON_RELOADED_ALLIES : HEADICON_RELOADED_AXIS);
+    }
+    return CG_HeadIconModel(allies ? HEADICON_ALLIES : HEADICON_AXIS);
 }
 
 /*
@@ -146,10 +173,8 @@ void CG_PlayerTeamIcon(refEntity_t *pModel, entityState_t *pPlayerState)
             if (bInArtillery) {
                 iconEnt.hModel = CG_HeadIconModel(HEADICON_ARTILLERY);
                 bSpecialIcon   = qtrue;
-            } else if ((pPlayerState->eFlags & 0x80) != 0) {
-                iconEnt.hModel = CG_HeadIconModel(HEADICON_ALLIES);
             } else {
-                iconEnt.hModel = CG_HeadIconModel(HEADICON_AXIS);
+                iconEnt.hModel = CG_TeamHeadIcon((pPlayerState->eFlags & 0x80) != 0);
             }
         }
 
@@ -226,11 +251,7 @@ void CG_PlayerTeamIcon(refEntity_t *pModel, entityState_t *pPlayerState)
             cgi.R_AddRefSpriteToScene(&iconEnt);
 
             if (bSpecialIcon && bInTeam && fAlpha > 0.0f) {
-                if (pPlayerState->eFlags & EF_ALLIES) {
-                    iconEnt.hModel = CG_HeadIconModel(HEADICON_ALLIES);
-                } else {
-                    iconEnt.hModel = CG_HeadIconModel(HEADICON_AXIS);
-                }
+                iconEnt.hModel = CG_TeamHeadIcon((pPlayerState->eFlags & EF_ALLIES) != 0);
                 VectorMA(iconEnt.origin, 4.0f, cg.refdef.viewaxis[0], iconEnt.origin);
                 iconEnt.scale         = iconEnt.scale - 0.1;
                 iconEnt.shaderRGBA[3] = (int)(fAlpha * 255.0f);
@@ -1548,6 +1569,11 @@ void CG_ModelAnim(centity_t *cent, qboolean bDoShaderTime)
                 }
 
                 AnglesToAxis(cg.refdefViewAngles, cg.refdef.viewaxis);
+
+                if (!cg_righthand->integer && cg.snap->ps.stats[STAT_HEALTH] > 0 && !cg_animationviewmodel->integer) {
+                    // left-handed
+                    CG_MirrorViewModel(&model);
+                }
             }
 
             model.renderfx &= ~(RF_FIRST_PERSON | RF_THIRD_PERSON);

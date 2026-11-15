@@ -380,7 +380,7 @@ extern "C" {
         qhandle_t     uncheckedBoxShader;
         // looked up by name at their first use in the level
         qhandle_t     teamHudShaders[2]; // allies, axis
-        qhandle_t     headIconModels[5]; // CG_PlayerTeamIcon's
+        qhandle_t     headIconModels[7]; // CG_PlayerTeamIcon's
     } media_t;
 
     // The client game static (cgs) structure hold everything
@@ -516,6 +516,13 @@ extern "C" {
     extern cvar_t *vm_offset_vel_up;
     extern cvar_t *vm_offset_upvel;
     extern cvar_t *vm_lean_lower;
+    extern cvar_t *cg_viewmodel_offset_x;
+    extern cvar_t *cg_viewmodel_offset_y;
+    extern cvar_t *cg_viewmodel_offset_z;
+    extern cvar_t *cg_viewmodel_presetpos;
+    extern cvar_t *cg_viewmodel_yaw;
+    extern cvar_t *cg_viewmodel_movedrop;
+    extern cvar_t *cg_righthand;
     extern cvar_t *voiceChat;
     extern cvar_t *cg_shadowscount;
     extern cvar_t *cg_shadowdebug;
@@ -635,6 +642,9 @@ extern "C" {
     int  CG_GetVMAnimPrefixIndex();
     void CG_ViewModelAnimation(refEntity_t *pModel);
     void CG_CalcViewModelMovement(float fViewBobPhase, float fViewBobAmp, vec_t *vVelocity, vec_t *vMovement);
+    void CG_ViewModelSettings(void);
+    float CG_ViewModelMoveDrop(void);
+    void CG_MirrorViewModel(refEntity_t *pREnt);
 
     //
     // cg_drawtools.c

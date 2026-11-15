@@ -497,7 +497,8 @@ void MenuManager::DeleteAllMenus(void)
 }
 
 /*
-Changes whenever FindMenu's answers can: a menu added, deleted or renamed
+Changes whenever FindMenu's answers can: a menu added, deleted or renamed (not
+when an alias changes with ui_classicmenus: nothing cached by it is aliased)
 */
 int MenuManager::Generation(void)
 {
@@ -509,7 +510,26 @@ void MenuManager::MenusChanged(void)
     m_generation++;
 }
 
+// Added: the name of a menu shown for another's (the client's Reloaded
+// menus for the stock ones: cl_uimenus.cpp), NULL none
+const char *(*ui_menuAlias)(const char *name);
+
 Menu *MenuManager::FindMenu(str name)
+{
+    const char *alias = ui_menuAlias ? ui_menuAlias(name.c_str()) : NULL;
+
+    if (alias) {
+        // (the stock menu when the other isn't loaded)
+        Menu *m = FindMenuNamed(alias);
+
+        if (m) {
+            return m;
+        }
+    }
+    return FindMenuNamed(name);
+}
+
+Menu *MenuManager::FindMenuNamed(str name)
 {
     int i;
     int count;

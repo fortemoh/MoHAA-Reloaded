@@ -154,6 +154,13 @@ typedef struct glconfig_t;*/
         void (*Rend_FreeRawImage)(byte *pic);
 
         void (*Rend_Set2DStartTime)(float startTime);
+        // Added: an image made in memory (uibake.cpp)
+        qhandle_t (*Rend_RegisterImage2D)(const char *name, byte *rgba, int width, int height);
+        // Added: 2D lists, what widgets drew kept (the draw cache, uiwidget.cpp)
+        int (*Rend_Begin2DList)(int handle);
+        void (*Rend_End2DList)(void);
+        void (*Rend_Draw2DList)(int handle);
+        void (*Rend_Free2DList)(int handle);
     } uiimport_t;
 
 #if 1

@@ -111,6 +111,8 @@ UILabel::UILabel()
     m_iNextStateTime    = 0;
     m_iLastDrawTime     = 0;
     m_bOutlinedText     = false;
+    m_linkVar           = NULL;
+    m_linkCount         = -1;
 }
 
 void UILabel::MouseEntered(Event *ev)
@@ -233,17 +235,23 @@ void UILabel::EventSetOutlinedText(Event *ev)
     }
 }
 
-void UILabel::Draw(void)
+// Added: the linked cvar's text: the cvar found once, its text made again
+// only when it changed (localized, a link string)
+const char *UILabel::LinkedText(void)
 {
     const char *string;
-    str         val;
 
-    ProcessSounds();
-
-    m_iLastDrawTime = uii.Sys_Milliseconds();
-
-    if (m_cvarname.length()) {
-        string = uii.Cvar_GetString(m_cvarname, "");
+    if (!m_linkVar || Q_stricmp(m_linkVar->name, m_cvarname)) {
+        m_linkVar   = UI_FindCvar(m_cvarname);
+        m_linkCount = -1;
+    }
+    if (!m_linkVar) {
+        UI_DrawLive();
+        return "";
+    }
+    UI_DrawDep(m_linkVar);
+    if (m_linkVar->modificationCount != m_linkCount) {
+        string = m_linkVar->latchedString && *m_linkVar->latchedString ? m_linkVar->latchedString : m_linkVar->string;
 
         //
         // localize the cvar value when possible
@@ -253,63 +261,107 @@ void UILabel::Draw(void)
                 string = Sys_LV_CL_ConvertString(localizableVars[i]);
             }
         }
+        m_linkText  = string;
+        m_linkCount = m_linkVar->modificationCount;
+    }
+    if (m_linkstrings.NumObjects()) {
+        const int ret = FindLinkString(m_linkVar->latchedString ? m_linkVar->latchedString : m_linkVar->string);
 
-        if (m_linkstrings.NumObjects()) {
-            cvar_t *cvar = UI_FindCvar(m_cvarname);
-            if (cvar) {
-                int ret;
-
-                if (cvar->latchedString) {
-                    val = cvar->latchedString;
-                } else {
-                    val = cvar->string;
-                }
-
-                ret = FindLinkString(val);
-                if (ret) {
-                    string = m_linkstrings.ObjectAt(ret)->string;
-                }
-            }
-        }
-
-        if (m_bLinkCvarToShader) {
-            if (str::icmp(m_sCurrentShaderName, string)) {
-                m_sCurrentShaderName = string;
-
-                setMaterial(uWinMan.RegisterShader(m_sCurrentShaderName));
-
-                if (!m_material->GetMaterial()) {
-                    setMaterial(NULL);
-                }
-            }
-
-            if (label.length()) {
-                string = label;
-            } else if (m_title.length()) {
-                string = m_title;
-            } else {
-                string = "";
-            }
-        }
-    } else {
-        if (label.length()) {
-            string = label;
-        } else if (m_title.length()) {
-            string = m_title;
-        } else {
-            string = "";
+        if (ret) {
+            return m_linkstrings.ObjectAt(ret)->string;
         }
     }
+    return m_linkText.c_str();
+}
+
+// Added: the text it draws
+const char *UILabel::CurrentText(void)
+{
+    if (m_cvarname.length() && !m_bLinkCvarToShader) {
+        return LinkedText();
+    }
+    return label.length() ? label.c_str() : m_title.length() ? m_title.c_str() : "";
+}
+
+// Added: its text's box (empty: none at its top left; no text at all: its
+// rect), design units
+UIRect2D UILabel::ContentBox(void)
+{
+    const char *text;
+    float       w = 0.0f, h, fit;
+    int         lines = 1;
+    UIRect2D    r;
+
+    if (!m_cvarname.length() && !label.length() && !m_title.length()) {
+        return UIWidget::ContentBox();
+    }
+    Flow();
+    r    = m_designRect;
+    text = CurrentText();
+    if (!*text || !m_font) {
+        return UIRect2D(r.pos.x, r.pos.y, 0.0f, 0.0f);
+    }
+    fit = m_font->FitScale(text, m_fitWidth);
+    for (const char *p = text, *e; *p; p = *e ? e + 1 : e) {
+        char line[1024];
+
+        e = strchr(p, '\n');
+        e = e ? e : p + strlen(p);
+        Q_strncpyz(line, p, Q_min((int)sizeof(line), (int)(e - p) + 1));
+        w = Q_max(w, m_font->getWidth(line, -1));
+        lines += *e == '\n';
+    }
+    w *= fit;
+    h = lines * m_font->getHeight((const float *)NULL) * fit;
+    if (m_iFontAlignmentHorizontal == FONT_JUSTHORZ_CENTER) {
+        r.pos.x += (r.size.width - w) * 0.5f;
+    } else if (m_iFontAlignmentHorizontal == FONT_JUSTHORZ_RIGHT) {
+        r.pos.x += r.size.width - w;
+    }
+    if (m_iFontAlignmentVertical == FONT_JUSTVERT_CENTER) {
+        r.pos.y += (r.size.height - h) * 0.5f;
+    } else if (m_iFontAlignmentVertical == FONT_JUSTVERT_BOTTOM) {
+        r.pos.y += r.size.height - h;
+    }
+    return UIRect2D(r.pos.x, r.pos.y, w, h);
+}
+
+void UILabel::Draw(void)
+{
+    const char *string;
+
+    ProcessSounds();
+    // (sounds: not kept by the draw cache)
+    if (m_sOneShotSoundName.length() || m_sLoopingSoundName.length()) {
+        UI_DrawLive();
+    }
+
+    m_iLastDrawTime = uii.Sys_Milliseconds();
+
+    if (m_cvarname.length() && m_bLinkCvarToShader) {
+        string = LinkedText();
+        if (str::icmp(m_sCurrentShaderName, string)) {
+            m_sCurrentShaderName = string;
+
+            setMaterial(uWinMan.RegisterShader(m_sCurrentShaderName));
+
+            if (!m_material->GetMaterial()) {
+                setMaterial(NULL);
+            }
+        }
+    }
+    string = CurrentText();
 
     if (*string) {
         float nr, ng, nb;
-        float alpha;
 
         nr = m_foreground_color.r;
         ng = m_foreground_color.g;
         nb = m_foreground_color.b;
 
         m_font->setColor(UColor(nr, ng, nb, m_foreground_color.a * m_local_alpha));
+        // Added: a long text smaller to fit (fitwidth)
+        m_font->setFit(m_font->FitScale(string, m_fitWidth));
 
         if (m_bOutlinedText) {
             // print the text
@@ -327,6 +379,7 @@ void UILabel::Draw(void)
                 getClientFrame(), m_iFontAlignmentHorizontal, m_iFontAlignmentVertical, string, getVirtualScale()
             );
         }
+        m_font->setFit(1.0f);
     }
 }
 

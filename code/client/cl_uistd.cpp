@@ -201,6 +201,15 @@ Event EV_Layout_RenderModelAnim
     "anim",
     "Render model anim"
 );
+// Added
+Event EV_Layout_RenderModelAspect
+(
+    "modelaspect",
+    EV_DEFAULT,
+    "b",
+    "bool",
+    "Render the model in a view as wide as the label (else the view's field is square: a frame that isn't stretches it)"
+);
 Event EV_ClearInvItemReference
 (
     "clearinvitemref",
@@ -233,6 +242,7 @@ CLASS_DECLARATION(UILabel, UIFakkLabel, NULL) {
     {&EV_Layout_RenderModelAngles,         &UIFakkLabel::LayoutRenderModelAngles      },
     {&EV_Layout_RenderModelScale,          &UIFakkLabel::LayoutRenderModelScale       },
     {&EV_Layout_RenderModelAnim,           &UIFakkLabel::LayoutRenderModelAnim        },
+    {&EV_Layout_RenderModelAspect,         &UIFakkLabel::LayoutRenderModelAspect      },
     {&EV_ClearInvItemReference,            &UIFakkLabel::ClearInvItemReference        },
     {NULL,                                 NULL                                       }
 };
@@ -247,6 +257,7 @@ UIFakkLabel::UIFakkLabel()
     m_itemindex                   = -1;
     m_inventoryrendermodelindex   = -1;
     m_rendermodel                 = false;
+    m_modelaspect                 = false;
     m_statbar_or                  = L_STATBAR_NONE;
     m_statbar_material            = NULL;
     m_statbar_material_flash      = NULL;
@@ -435,6 +446,11 @@ void UIFakkLabel::LayoutRenderModelScale(Event *ev)
 void UIFakkLabel::LayoutRenderModelAnim(Event *ev)
 {
     m_anim = ev->GetString(1);
+}
+
+void UIFakkLabel::LayoutRenderModelAspect(Event *ev)
+{
+    m_modelaspect = ev->GetBoolean(1);
 }
 
 void UIFakkLabel::DrawStatbar(float frac)
@@ -1677,7 +1693,8 @@ void UIFakkLabel::Draw(void)
         offset,
         angles,
         color,
-        sAnimName
+        sAnimName,
+        m_rendermodel && m_modelaspect
     );
 
     set2D();

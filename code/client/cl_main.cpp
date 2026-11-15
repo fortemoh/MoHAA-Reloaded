@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "client.h"
 #include "../server/server.h"
 #include "cl_ui.h"
+#include "cl_uicomp.h"
 #include "../corepp/tiki.h"
 #include "../qcommon/cm_terrain.h"
 #include "../qcommon/localization.h"
@@ -3398,6 +3399,9 @@ void CL_Init( void ) {
 	Com_Printf( "----- Client Initialization -----\n" );
 
 	start = Sys_Milliseconds();
+
+	// Added: the files compiled in, before the renderer lists its shader scripts
+	UI_CompHud_Files();
 
 	CL_ClearState ();
 	S_StopAllSounds2( qtrue );
