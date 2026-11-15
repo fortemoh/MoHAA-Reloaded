@@ -34,6 +34,7 @@ modelrotateoffset "0 0 0"
 modelangles "4 160 0"
 modelscale 0.82
 modelaspect 1
+modelstudio 1
 modelanim reloadedidle
 }
 

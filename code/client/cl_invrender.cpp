@@ -69,7 +69,8 @@ void CL_Draw3DModel(
     vec3_t    angle,
     vec3_t    color,
     str       anim,
-    bool      keepAspect
+    bool      keepAspect,
+    bool      studioLight
 )
 {
     refdef_t    inv_refdef {};
@@ -87,6 +88,11 @@ void CL_Draw3DModel(
     inv_refdef.y       = y;
     inv_refdef.width   = w;
     inv_refdef.rdflags = RDF_HUD | RDF_NOWORLDMODEL;
+    if (studioLight) {
+        // Added: the model is placed at the player's eyes, which would light
+        // it with the map there; a studio's light instead (the renderer's)
+        inv_refdef.rdflags |= RDF_STUDIOLIGHT;
+    }
     inv_refdef.height  = h;
     inv_refdef.time    = cl.serverTime;
     re.ClearScene();

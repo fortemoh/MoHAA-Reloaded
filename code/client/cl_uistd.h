@@ -63,6 +63,7 @@ protected:
     float                     m_scale;
     str                       m_anim;
     bool                      m_modelaspect; // Added: the model's view as wide as the label (modelaspect)
+    bool                      m_modelstudio; // Added: lit by a studio's light, not the map's (modelstudio)
     UIReggedMaterial         *m_statbar_material;
     UIReggedMaterial         *m_statbar_material_flash;
     UIReggedMaterial         *m_statbar_material_marker;
@@ -96,6 +97,7 @@ public:
     void LayoutRenderModelScale(Event *ev);
     void LayoutRenderModelAnim(Event *ev);
     void LayoutRenderModelAspect(Event *ev); // Added
+    void LayoutRenderModelStudio(Event *ev); // Added
 
     void DrawStatbar(float frac);
     void DrawStatCircle(float frac);

@@ -210,6 +210,15 @@ Event EV_Layout_RenderModelAspect
     "bool",
     "Render the model in a view as wide as the label (else the view's field is square: a frame that isn't stretches it)"
 );
+// Added
+Event EV_Layout_RenderModelStudio
+(
+    "modelstudio",
+    EV_DEFAULT,
+    "b",
+    "bool",
+    "Light the model with a studio's light of its own (else with the map's where the player is)"
+);
 Event EV_ClearInvItemReference
 (
     "clearinvitemref",
@@ -243,6 +252,7 @@ CLASS_DECLARATION(UILabel, UIFakkLabel, NULL) {
     {&EV_Layout_RenderModelScale,          &UIFakkLabel::LayoutRenderModelScale       },
     {&EV_Layout_RenderModelAnim,           &UIFakkLabel::LayoutRenderModelAnim        },
     {&EV_Layout_RenderModelAspect,         &UIFakkLabel::LayoutRenderModelAspect      },
+    {&EV_Layout_RenderModelStudio,         &UIFakkLabel::LayoutRenderModelStudio      },
     {&EV_ClearInvItemReference,            &UIFakkLabel::ClearInvItemReference        },
     {NULL,                                 NULL                                       }
 };
@@ -258,6 +268,7 @@ UIFakkLabel::UIFakkLabel()
     m_inventoryrendermodelindex   = -1;
     m_rendermodel                 = false;
     m_modelaspect                 = false;
+    m_modelstudio                 = false;
     m_statbar_or                  = L_STATBAR_NONE;
     m_statbar_material            = NULL;
     m_statbar_material_flash      = NULL;
@@ -451,6 +462,11 @@ void UIFakkLabel::LayoutRenderModelAnim(Event *ev)
 void UIFakkLabel::LayoutRenderModelAspect(Event *ev)
 {
     m_modelaspect = ev->GetBoolean(1);
+}
+
+void UIFakkLabel::LayoutRenderModelStudio(Event *ev)
+{
+    m_modelstudio = ev->GetBoolean(1);
 }
 
 void UIFakkLabel::DrawStatbar(float frac)
@@ -1694,7 +1710,8 @@ void UIFakkLabel::Draw(void)
         angles,
         color,
         sAnimName,
-        m_rendermodel && m_modelaspect
+        m_rendermodel && m_modelaspect,
+        m_rendermodel && m_modelstudio
     );
 
     set2D();
