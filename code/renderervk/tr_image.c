@@ -3258,11 +3258,11 @@ The UI's images made in memory (RegisterImage2D: its baked faces, shapes and
 pictures) and a white texel (the boxes) in one texture, the page, so that
 their draws are one 2D batch (tr_draw.c). Each has a room on a skyline: its
 texels and a texel of copies of its edges around them, so the sampler reads
-its own texels at its edges as it would clamped. The page doubles when full
-(up to 4096 texels a side), filled again from the texels kept here; an
-image too big for it is a texture of its own. An image made again at a
-bigger size gets a new room (the old one is left until the renderer
-restarts)
+its own texels at its edges as it would clamped (what is outside the rooms
+is never read). The page doubles when full (up to 4096 texels a side), its
+texels copied on the GPU; an image too big for it is a texture of its own.
+An image made again at a bigger size gets a new room (the old one is left
+until the renderer restarts)
 
 ====================================================================
 */
@@ -3270,11 +3270,11 @@ restarts)
 #define ATLAS_FIRST		256
 #define ATLAS_MAX		4096
 #define ATLAS_NODES		1024
-#define ATLAS_PITCH		( ATLAS_MAX * 4 )	// the texels kept: a row's bytes at any side
 
 static struct {
 	image_t		*page;
-	byte		*texels;	// side x side RGBA, kept (untouched until written: its rows stay as it grows)
+	byte		*room;		// R_AtlasFill's texels, kept (roomSize bytes)
+	int			roomSize;
 	int			side;
 	int			numNodes;
 	int			nodes[ATLAS_NODES][3];	// the skyline: x, y, width
@@ -3344,22 +3344,20 @@ int R_AtlasGeneration( void ) {
 	return atlasGeneration;
 }
 
-// the page made, or at twice its side: its texels again (cleared on the GPU,
-// the old page's uploaded into it), its images' places
+// the page made, or at twice its side (its texels copied), its images' places
 static void R_AtlasResize( int side ) {
-	const int	oldSide = atlas.side;
 	int			i;
 
 	atlasGeneration++;
 	R_2DShadersChanged();
-	if ( atlas.texels ) {
+	if ( atlas.page ) {
 		atlas.nodes[atlas.numNodes][0] = atlas.side;
 		atlas.nodes[atlas.numNodes][1] = 0;
 		atlas.nodes[atlas.numNodes++][2] = side - atlas.side;
+		vk_resize_texture( atlas.page, side, side );
 	} else {
 		static byte clear[4];
 
-		atlas.texels = calloc( ATLAS_MAX, ATLAS_PITCH );
 		atlas.page = R_CreateImageOld( "*atlas2D", clear, 1, 1, 0, 0, qfalse, qtrue, qtrue, 0, WRAP_CLAMP, WRAP_CLAMP );
 		atlas.page->r_sequence = -1;
 		// (its clear and uniform areas compressed: most of what the 2D draws read)
@@ -3367,6 +3365,7 @@ static void R_AtlasResize( int side ) {
 		atlas.nodes[0][0] = atlas.nodes[0][1] = 0;
 		atlas.nodes[0][2] = side;
 		atlas.numNodes = 1;
+		vk_create_texture( atlas.page, side, side, 1, TEXFMT_RGBA8 );
 	}
 	atlas.side = side;
 
@@ -3374,11 +3373,6 @@ static void R_AtlasResize( int side ) {
 	atlas.page->height = atlas.page->uploadHeight = side;
 	atlas.page->numMipmaps = 0;
 	atlas.page->internalFormat = TEXFMT_RGBA8;
-	vk_create_texture( atlas.page, side, side, 1, TEXFMT_RGBA8 );
-	vk_clear_texture( atlas.page );
-	if ( oldSide ) {
-		vk_upload_texture_pitch( atlas.page, 0, 0, oldSide, oldSide, atlas.texels, ATLAS_PITCH );
-	}
 	for ( i = 0; i < tr.numImages; i++ ) {
 		image_t *image = &tr.images[i];
 
@@ -3395,18 +3389,21 @@ static void R_AtlasResize( int side ) {
 static void R_AtlasFill( image_t *image, const byte *rgba ) {
 	const int	w = image->width, h = image->height;
 	const int	x0 = image->atlasRoom[0], y0 = image->atlasRoom[1];
-	byte		*room = atlas.texels + y0 * ATLAS_PITCH + x0 * 4;
 	int			x, y;
 
+	if ( atlas.roomSize < ( w + 2 ) * ( h + 2 ) * 4 ) {
+		free( atlas.room );
+		atlas.room = malloc( atlas.roomSize = ( w + 2 ) * ( h + 2 ) * 4 );
+	}
 	for ( y = 0; y < h + 2; y++ ) {
 		const byte	*row = rgba + Q_min( h - 1, Q_max( 0, y - 1 ) ) * w * 4;
-		byte		*out = room + y * ATLAS_PITCH;
+		byte		*out = atlas.room + y * ( w + 2 ) * 4;
 
 		Com_Memcpy( out, row, 4 );
 		Com_Memcpy( out + 4, row, w * 4 );
 		Com_Memcpy( out + ( w + 1 ) * 4, row + ( w - 1 ) * 4, 4 );
 	}
-	vk_upload_texture_pitch( atlas.page, x0, y0, w + 2, h + 2, room, ATLAS_PITCH );
+	vk_upload_texture( atlas.page, 0, x0, y0, w + 2, h + 2, atlas.room );
 
 	// what covers its texels not clear (tr_draw.c, R_2DTiles): the runs of its
 	// 16 x 16 tiles holding any in each row of them, a run as wide as the one
@@ -3500,7 +3497,7 @@ void R_AtlasShutdown( void ) {
 			tr.images[i].numAtlasRects = 0;
 		}
 	}
-	free( atlas.texels );
+	free( atlas.room );
 	Com_Memset( &atlas, 0, sizeof( atlas ) );
 }
 

@@ -577,8 +577,8 @@ static vkTexture_t *VK_CreateTextureStorage( int width, int height, int mipLevel
 	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 	imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	if ( colorTarget && !texture->compressed ) {
-		// IMGFLAG_COLORTARGET: never drawn to, but kept compressed
-		imageInfo.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+		// IMGFLAG_COLORTARGET: never drawn to, but kept compressed (and copied from: vk_resize_texture)
+		imageInfo.usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	}
 	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -1066,8 +1066,7 @@ void vk_create_texture( image_t *image, int width, int height, int mipLevels, te
 	VK_TextureArrayMark( slot );
 }
 
-// (rows pitch bytes apart)
-static void VK_UploadTexture( image_t *image, int mipLevel, int x, int y, int width, int height, const byte *rgba, int pitch ) {
+void vk_upload_texture( image_t *image, int mipLevel, int x, int y, int width, int height, const byte *rgba ) {
 	R_FrontEndSync();
 	vkTexture_t *texture;
 	VkBuffer buffer;
@@ -1102,45 +1101,45 @@ static void VK_UploadTexture( image_t *image, int mipLevel, int x, int y, int wi
 
 	size = (VkDeviceSize)width * height * 4;
 	data = VK_StagingAlloc( size, 16, &buffer, &offset );
-	for ( int row = 0; row < height; row++ ) {
-		Com_Memcpy( (byte *)data + (size_t)row * width * 4, rgba + (size_t)row * pitch, width * 4 );
-	}
+	Com_Memcpy( data, rgba, size );
 
 	VK_RecordUpload( texture, mipLevel, x, y, width, height, buffer, offset );
 }
 
-void vk_upload_texture( image_t *image, int mipLevel, int x, int y, int width, int height, const byte *rgba ) {
-	VK_UploadTexture( image, mipLevel, x, y, width, height, rgba, width * 4 );
-}
-
-void vk_upload_texture_pitch( image_t *image, int x, int y, int width, int height, const byte *rgba, int pitch ) {
-	VK_UploadTexture( image, 0, x, y, width, height, rgba, pitch );
-}
-
 /*
 ===============
-vk_clear_texture
+vk_resize_texture
 
-A texture just made (vk_create_texture) cleared to 0, on the GPU: its
-uploads after are ordered after it
+A texture (one RGBA level) made again at another size, its old texels
+copied in at 0,0 on the GPU once the GPU is done with the frames so far
+(none left to read the old storage): its uploads after are ordered after it
 ===============
 */
-void vk_clear_texture( image_t *image ) {
+void vk_resize_texture( image_t *image, int width, int height ) {
 	R_FrontEndSync();
-	vkTexture_t *texture = vk.device ? VK_GetTexture( image->texnum ) : NULL;
-	VkClearColorValue zero;
-	VkImageSubresourceRange range;
+	vkTexture_t *old = vk.device ? VK_GetTexture( image->texnum ) : NULL;
+	VkImageBlit blit;
 
-	if ( !texture || texture->compressed || !texture->uploadPending ) {
+	if ( !old ) {
 		return;
 	}
-	Com_Memset( &zero, 0, sizeof( zero ) );
-	Com_Memset( &range, 0, sizeof( range ) );
-	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	range.levelCount = VK_REMAINING_MIP_LEVELS;
-	range.layerCount = 1;
-	qvkCmdClearColorImage( VK_GetUploadCommandBuffer(), texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range );
-	texture->uploadMips = ~0u;
+	// (after it in SHADER_READ_ONLY_OPTIMAL, nothing pending)
+	VK_FlushAndWait();
+	vk_slots[old->slot].texture = NULL;
+	vk_create_texture( image, width, height, 1, TEXFMT_RGBA8 );
+	VK_ImageBarrier( VK_GetUploadCommandBuffer(), old->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT );
+	// (a blit at the same size, nearest: a copy)
+	Com_Memset( &blit, 0, sizeof( blit ) );
+	blit.srcSubresource.aspectMask = blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	blit.srcSubresource.layerCount = blit.dstSubresource.layerCount = 1;
+	blit.srcOffsets[1].x = blit.dstOffsets[1].x = Q_min( old->width, width );
+	blit.srcOffsets[1].y = blit.dstOffsets[1].y = Q_min( old->height, height );
+	blit.srcOffsets[1].z = blit.dstOffsets[1].z = 1;
+	qvkCmdBlitImage( VK_GetUploadCommandBuffer(), old->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		VK_GetTexture( image->texnum )->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST );
+	VK_GetTexture( image->texnum )->uploadMips = ~0u;
+	VK_DestroyTextureStorage( old );
 }
 
 void vk_upload_compressed_texture( image_t *image, int mipLevel, int width, int height, const byte *data, int size ) {
