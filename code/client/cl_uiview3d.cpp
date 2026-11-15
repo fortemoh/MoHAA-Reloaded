@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include "cl_ui.h"
+#include "cl_uimenus.h"
 #include "../qcommon/localization.h"
 
 #include "../server/server.h"
@@ -587,7 +588,10 @@ void View3D::Draw2D(void)
             cge->CG_Draw2D();
         }
 
-        if (m_locationprint) {
+        // Changed: no prints under the Reloaded team, weapon and Esc menus (no HUD there)
+        if (UI_Menus_Covering()) {
+            // (nothing)
+        } else if (m_locationprint) {
             LocationPrint();
         } else {
             CenterPrint();

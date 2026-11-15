@@ -2101,13 +2101,24 @@ void UI_Update(void)
         }
     }
 
+    // Added: no HUD under the Reloaded team, weapon and Esc menus (cl_uimenus.cpp), the
+    // cgame's own told through ui_menucover (the stock HUD's spectator keys and vote, the crosshair)
+    const qboolean covered = UI_Menus_Covering();
+    {
+        static cvar_t *ui_menucover = Cvar_Get("ui_menucover", "0", CVAR_ROM);
+
+        if (ui_menucover->integer != (int)covered) {
+            Cvar_Set("ui_menucover", covered ? "1" : "0");
+        }
+    }
+
     // Changed: the Competitive HUD shows the game messages, the chat and the kills itself
     if (gmbox) {
-        gmbox->setRealShow(!UI_CompHud_Active());
+        gmbox->setRealShow(!UI_CompHud_Active() && !covered);
     }
 
     if (dmbox) {
-        dmbox->setRealShow(!UI_CompHud_Active());
+        dmbox->setRealShow(!UI_CompHud_Active() && !covered);
     }
 
     currentMenu = menuManager.CurrentMenu();
@@ -2200,7 +2211,7 @@ void UI_Update(void)
     }
 
     // Hide the HUD when necessary
-    if (!ui_hud || clc.state != CA_ACTIVE || view3d->LetterboxActive() || (currentMenu && currentMenu->isFullscreen())
+    if (!ui_hud || covered || clc.state != CA_ACTIVE || view3d->LetterboxActive() || (currentMenu && currentMenu->isFullscreen())
         || server_loading || ((cl.snap.ps.pm_flags & PMF_NO_HUD) || (cl.snap.ps.pm_flags & PMF_INTERMISSION))) {
         if (crosshairhud) {
             crosshairhud->ForceHide();
@@ -2228,7 +2239,7 @@ void UI_Update(void)
 
         UI_HideHudList();
         // Added: through the intermission, the Competitive HUD's messages, chat, kills and vote stay
-        if (UI_CompHud_Active() && ui_hud && clc.state == CA_ACTIVE && !server_loading && !view3d->LetterboxActive()
+        if (UI_CompHud_Active() && ui_hud && !covered && clc.state == CA_ACTIVE && !server_loading && !view3d->LetterboxActive()
             && !(currentMenu && currentMenu->isFullscreen())) {
             UI_CompHud_Frame();
             UI_CompHuds(false, true);

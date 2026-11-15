@@ -873,6 +873,23 @@ qboolean UI_Menus_Scoreboard(const char *name)
     return name && UI_Menus_Alias(name) && menuManager.FindMenuNamed("reloaded_scoreboard") ? qtrue : qfalse;
 }
 
+qboolean UI_Menus_Covering(void)
+{
+    static const char *const covering[] = {"reloaded_team", "reloaded_weapon", "reloaded_esc"};
+    Menu *const              m          = menuManager.CurrentMenu();
+
+    // (asked each frame: most menus' names don't start with r)
+    if (!m || tolower((unsigned char)m->m_name.c_str()[0]) != 'r') {
+        return qfalse;
+    }
+    for (size_t i = 0; i < ARRAY_LEN(covering); i++) {
+        if (!Q_stricmp(m->m_name.c_str(), covering[i])) {
+            return qtrue;
+        }
+    }
+    return qfalse;
+}
+
 void UI_GetPlayerModel_f(void);
 
 void UI_Menus_Pushing(const char *name)
