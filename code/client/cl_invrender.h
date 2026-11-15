@@ -115,7 +115,8 @@ void CL_Draw3DModel(
     vec3_t    angle,
     vec3_t    color,
     str       anim,
-    bool      keepAspect = false // Added: the field of view as wide as the frame (30 degrees down)
+    bool      keepAspect = false, // Added: the field of view as wide as the frame (30 degrees down)
+    bool      studioLight = false // Added: lit by a light of its own, not the map's where the player is (RDF_STUDIOLIGHT)
 );
 
 void     UI_DoInventory(qboolean activate_mouse);
