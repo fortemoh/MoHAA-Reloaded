@@ -2714,11 +2714,7 @@ void CL_Frame ( int msec ) {
 	CL_Discord_Frame();
 #endif
 
-	// the frames that draw: a usercmd's frame in between isn't one, so what the UI
-	// drew the frame before (the URC menus' hot item, cl_uimenus.cpp) holds (Metal port)
-	if ( com_renderFrame ) {
-		cls.framecount++;
-	}
+	cls.framecount++;
 }
 
 

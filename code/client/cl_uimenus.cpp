@@ -1200,14 +1200,14 @@ public:
     int                  m_screen, m_back;
     int                  m_focus;     // the item hot (hovered or moved to), -1 none
     int                  m_mouse[2];  // where the mouse was
-    int                  m_shown;     // the frame last drawn
+    float                m_shownAt;   // lastShowTime when Tick last ran (another: shown again)
     std::vector<rlHit_t> m_hits;
     std::vector<int>     m_order;     // the items in order (the arrow keys)
     int                  m_cols;      // the items a row (left and right)
 
     int                  m_tick;      // the frame Tick ran
 
-    UIReloadedMenu() : m_screen(SCR_WEAPON), m_back(0), m_focus(-1), m_shown(-1), m_cols(1), m_tick(-1)
+    UIReloadedMenu() : m_screen(SCR_WEAPON), m_back(0), m_focus(-1), m_shownAt(-1), m_cols(1), m_tick(-1)
     {
         m_mouse[0] = m_mouse[1] = -1;
         AllowActivate(true);
@@ -1371,8 +1371,17 @@ void UIReloadedMenu::Tick(void)
     if (m_tick == cls.framecount) {
         return;
     }
-    // shown again: nothing hot until the mouse moves or a key is pressed
-    if (m_tick != cls.framecount - 1) {
+    // shown again: nothing hot until the mouse moves or a key is pressed. A
+    // widget hidden (setShow, Disable) has lastShowTime -1 until it is drawn
+    // again, which sets it; drawn from its list it isn't, so it is set here as
+    // that would. (Not "not drawn the frame before": the Metal port's
+    // cl_movefps frames don't draw, and online cleared the hot item nearly
+    // every frame; this costs nothing while no menu shows)
+    if (lastShowTime == -1 || lastShowTime != m_shownAt) {
+        if (lastShowTime == -1) {
+            lastShowTime = uii.Sys_Milliseconds() / 1000.0;
+        }
+        m_shownAt  = lastShowTime;
         m_focus    = -1;
         m_mouse[0] = uid.mouseX;
         m_mouse[1] = uid.mouseY;
