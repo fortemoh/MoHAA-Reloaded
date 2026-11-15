@@ -73,6 +73,7 @@ typedef struct {
     bool              making;
     int               refSeq;         // the renderer it was registered with
     int               stamp;          // UI_BakeStamp then: its shader looked up again after a map's load
+    int               madeMs;         // how long it took to make (developer)
     qhandle_t         shader;
 } zoomMask_t;
 
@@ -230,11 +231,14 @@ static void ZM_Binoculars(zoomMask_t *m, int w, int h)
 
 static void ZM_Make(zoomMask_t *m, int kind, int w, int h)
 {
+    const int start = Sys_Milliseconds();
+
     if (kind == ZM_SCOPE) {
         ZM_Scope(m, w, h);
     } else {
         ZM_Binoculars(m, w, h);
     }
+    m->madeMs = Sys_Milliseconds() - start;
 }
 
 // a mask for the screen begun on the bake threads, unless made or begun
@@ -275,6 +279,7 @@ static void ZM_Finish(int kind)
         m->refSeq = uii.GetRefSequence();
         m->stamp  = UI_BakeStamp();
         std::vector<byte>().swap(m->texels);
+        Com_DPrintf("HUD extras: %s %dx%d made in %d ms\n", zm_names[kind], m->qw, m->qh, m->madeMs);
     } else if (m->shader && m->stamp != UI_BakeStamp() && m->refSeq == uii.GetRefSequence()) {
         m->shader = re.RegisterShaderNoMip(zm_names[kind]);
         m->stamp  = UI_BakeStamp();
@@ -777,6 +782,7 @@ void UI_Extras_Draw2D(void)
 
 void UI_Extras_PreBake(qboolean ahead)
 {
+    const int  start = Sys_Milliseconds();
     const bool hud = UI_CompHud_Active();
     // (the banner shows on the Reloaded scoreboard whatever the HUD)
     const bool board = !Cvar_VariableIntegerValue("ui_classicmenus");
@@ -819,6 +825,7 @@ void UI_Extras_PreBake(qboolean ahead)
         RL_TeamIcon(v, 1, 0, 0, 38);
         rl_bakeOnly = false;
     }
+    Com_DPrintf("HUD extras: baked in %d ms\n", Sys_Milliseconds() - start);
 }
 
 void UI_Extras_Init(void)
