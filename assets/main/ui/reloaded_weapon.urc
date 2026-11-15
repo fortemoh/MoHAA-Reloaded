@@ -32,7 +32,7 @@ rendermodel 1
 modeloffset "0 0 0"
 modelrotateoffset "0 0 0"
 modelangles "10 180 0"
-modelscale 1.0
+modelscale 1.12
 modelanim americanselectionidle
 }
 
@@ -49,7 +49,7 @@ rendermodel 1
 modeloffset "0 0 0"
 modelrotateoffset "0 0 0"
 modelangles "10 180 0"
-modelscale 1.0
+modelscale 1.12
 modelanim germanselectionidle
 }
 

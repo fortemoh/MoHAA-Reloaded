@@ -45,6 +45,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <vector>
 
 #define RL_OUTLINES "ui/outlines/"
+// the model views' modelscale (ui/reloaded_team.urc, reloaded_weapon.urc)
+#define RL_MODELSCALE 1.12f
 
 static cvar_t *ui_classicmenus;
 static cvar_t *ui_dm_primary;
@@ -1071,12 +1073,13 @@ void UIReloadedMenu::PlaceModel(const char *name, const rlView_t& v, float cx, f
         }
         return;
     }
-    // a square view (the model view's field of view is alike both ways),
-    // the figure filling most of its height
-    const float side = height / 0.94f;
+    // a square view (the model view's field of view is alike both ways): the
+    // model's bounds fill 1 / RL_MODELSCALE of it, in its middle, with room
+    // above for what a pose raises past them (a cap, a hand)
+    const float side = height * RL_MODELSCALE;
     const int   px   = RL_P(v, side);
     const int   x    = RL_P(v, cx) - px / 2;
-    const int   y    = RL_P(v, footY + side * 0.03f) - px;
+    const int   y    = RL_P(v, footY + side * (1.0f - 1.0f / RL_MODELSCALE) * 0.5f) - px;
 
     w->setFrame(UIRect2D(x, y, px, px));
     if (!w->IsVisible()) {
