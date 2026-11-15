@@ -160,31 +160,92 @@ static qboolean R_2DShaderBatchable( const shader_t *shader ) {
 
 /*
 ================
+R_2DJoinClass
+
+What a shader's 2D draws join (R_2DJoins): one plain stage from an atlas
+page drawn a way, as a number (-1: none), the same for shaders drawn the
+same way from the same page. Made once a shader and atlas generation: a
+batch's draws (the 2D lists' kept ones each) are asked about, and the
+stages and images it reads are rarely in the cache then
+================
+*/
+static int r2dShadersGen;	// RegisterImage2D's calls and the atlas's resizes: what a shader's 2D info was made at
+
+void R_2DShadersChanged( void ) {
+	r2dShadersGen++;
+}
+
+static int R_2DJoinClass( shader_t *shader ) {
+	static struct {
+		const image_t	*atlas;
+		unsigned		stateBits;
+		int				rgbGen, alphaGen, tcGen, cullType, polygonOffset, once;
+		void			( *iterator )( void );
+	} classes[64];
+	static int numClasses, classesGen = -1;
+	const int gen = r2dShadersGen;
+	const shaderStage_t *st = shader->unfoggedStages[0];
+	image_t *image;
+	int i;
+
+	if ( shader->join2DGen == gen + 1 ) {
+		return shader->join2D;
+	}
+	if ( classesGen != gen ) {
+		classesGen = gen;
+		numClasses = 0;
+	}
+	shader->join2DGen = gen + 1;
+	shader->join2D = -1;
+	image = st ? st->bundle[0].image[0] : NULL;
+	shader->atlas2D = image && image->atlas ? image : NULL;
+	if ( shader->numUnfoggedPasses != 1 || !st || !st->active || !image || !image->atlas || st->bundle[0].numTexMods
+		|| st->bundle[0].numImageAnimations > 1 || st->bundle[1].image[0] || shader->numDeforms ) {
+		return -1;
+	}
+	for ( i = 0; i < numClasses; i++ ) {
+		if ( classes[i].atlas == image->atlas && classes[i].stateBits == st->stateBits && classes[i].rgbGen == st->rgbGen
+			&& classes[i].alphaGen == st->alphaGen && classes[i].tcGen == st->bundle[0].tcGen
+			&& classes[i].cullType == shader->cullType && classes[i].polygonOffset == shader->polygonOffset
+			&& classes[i].once == ( shader->flags & BUNDLE_ANIMATE_ONCE ) && classes[i].iterator == shader->optimalStageIteratorFunc ) {
+			break;
+		}
+	}
+	if ( i == numClasses ) {
+		if ( numClasses == ARRAY_LEN( classes ) ) {
+			return -1;
+		}
+		classes[i].atlas = image->atlas;
+		classes[i].stateBits = st->stateBits;
+		classes[i].rgbGen = st->rgbGen;
+		classes[i].alphaGen = st->alphaGen;
+		classes[i].tcGen = st->bundle[0].tcGen;
+		classes[i].cullType = shader->cullType;
+		classes[i].polygonOffset = shader->polygonOffset;
+		classes[i].once = shader->flags & BUNDLE_ANIMATE_ONCE;
+		classes[i].iterator = shader->optimalStageIteratorFunc;
+		numClasses++;
+	}
+	shader->join2D = i + 1;
+	return shader->join2D;
+}
+
+/*
+================
 R_2DJoins
 
 Whether a draw of shader b may join a batch of shader a: the same shader,
 or both one plain stage from the same atlas page drawn the same way
 ================
 */
-static qboolean R_2DJoins( const shader_t *a, const shader_t *b ) {
-	const shaderStage_t *sa, *sb;
+static qboolean R_2DJoins( shader_t *a, shader_t *b ) {
+	int ca;
 
 	if ( a == b ) {
 		return qtrue;
 	}
-	sa = a->unfoggedStages[0];
-	sb = b->unfoggedStages[0];
-	if ( a->numUnfoggedPasses != 1 || b->numUnfoggedPasses != 1 || !sa || !sb || !sb->active
-		|| !sa->bundle[0].image[0] || !sb->bundle[0].image[0] || !sb->bundle[0].image[0]->atlas
-		|| sa->bundle[0].image[0]->atlas != sb->bundle[0].image[0]->atlas ) {
-		return qfalse;
-	}
-	return sa->stateBits == sb->stateBits && sa->rgbGen == sb->rgbGen && sa->alphaGen == sb->alphaGen
-		&& sa->bundle[0].tcGen == sb->bundle[0].tcGen && !sa->bundle[0].numTexMods && !sb->bundle[0].numTexMods
-		&& sa->bundle[0].numImageAnimations <= 1 && sb->bundle[0].numImageAnimations <= 1 && !sb->bundle[1].image[0]
-		&& !b->numDeforms && a->cullType == b->cullType && a->polygonOffset == b->polygonOffset
-		&& ( a->flags & BUNDLE_ANIMATE_ONCE ) == ( b->flags & BUNDLE_ANIMATE_ONCE )
-		&& b->optimalStageIteratorFunc == a->optimalStageIteratorFunc;
+	ca = R_2DJoinClass( a );
+	return ca > 0 && ca == R_2DJoinClass( b );
 }
 
 /*
@@ -276,12 +337,11 @@ void R_IssuePending2DCommands( void ) {
 R_2DStartDraw
 ================
 */
-static void R_2DStartDraw( const shader_t *shader ) {
-	const image_t *image = shader->unfoggedStages[0] ? shader->unfoggedStages[0]->bundle[0].image[0] : NULL;
-
+static void R_2DStartDraw( shader_t *shader ) {
+	R_2DJoinClass( shader );	// (and its atlas2D)
 	r2d.firstVertex = tess.numVertexes;
 	r2d.firstIndex = tess.numIndexes;
-	r2d.atlas = image && image->atlas ? image : NULL;
+	r2d.atlas = shader->atlas2D;
 	r2d.drawShader = (shader_t *)shader;
 	r2d.fan = qfalse;
 	if ( r2d.capture && ( shader->flags & BUNDLE_ANIMATE_ONCE ) ) {
@@ -332,7 +392,7 @@ static int R_2DClipEdge( const float (*in)[R2D_ATTRS], int n, float (*out)[R2D_A
 	int i, k, m = 0;
 
 	for ( i = 0; i < n; i++ ) {
-		const float *a = in[i], *b = in[( i + 1 ) % n];
+		const float *a = in[i], *b = in[i + 1 < n ? i + 1 : 0];
 		const float da = side * ( a[attr] - edge ), db = side * ( b[attr] - edge );
 
 		if ( da >= 0 ) {
@@ -386,7 +446,15 @@ static void R_2DClip( qboolean image ) {
 		Com_Memcpy( pa, verts, numVertexes * sizeof( verts[0] ) );
 		n = numVertexes;
 		for ( j = 0; j < ( image ? 8 : 4 ) && n >= 3; j++ ) {
-			n = R_2DClipEdge( (const float (*)[R2D_ATTRS])in, n, out, (int)planes[j][0], planes[j][1], planes[j][2] );
+			const int attr = (int)planes[j][0];
+
+			// (a plane all of it is inside leaves it as it is)
+			for ( i = 0; i < n && planes[j][2] * ( in[i][attr] - planes[j][1] ) >= 0; i++ ) {
+			}
+			if ( i == n ) {
+				continue;
+			}
+			n = R_2DClipEdge( (const float (*)[R2D_ATTRS])in, n, out, attr, planes[j][1], planes[j][2] );
 			sw = in, in = out, out = sw;
 		}
 		if ( tess.numVertexes + n >= SHADER_MAX_VERTEXES || tess.numIndexes + 3 * n >= SHADER_MAX_INDEXES ) {
@@ -1297,7 +1365,14 @@ typedef struct {
 	int			numVertexes, numIndexes;	// vec3 xyz, vec2 st, rgba vertexes, then int indexes follow
 } r2dGeoDraw_t;
 
-#define R2D_GEO_VERTEX	( sizeof( vec3_t ) + sizeof( vec2_t ) + 4 )
+// a kept vertex: on the screen, its texture coordinates, its color
+typedef struct {
+	vec3_t	xyz;
+	vec2_t	st;
+	byte	color[4];
+} r2dGeoVertex_t;
+
+#define R2D_GEO_VERTEX	sizeof( r2dGeoVertex_t )
 
 static struct {
 	r2dList_t	*lists[MAX_2D_LISTS];
@@ -1367,10 +1442,15 @@ static void R_2DCapture( void ) {
 	p = (byte *)( d + 1 );
 	for ( i = 0; i < nv; i++, p += R2D_GEO_VERTEX ) {
 		const int v = r2d.firstVertex + i;
+		r2dGeoVertex_t *gv = (r2dGeoVertex_t *)p;
 
-		Com_Memcpy( p, tess.xyz[v], sizeof( vec3_t ) );
-		Com_Memcpy( p + sizeof( vec3_t ), tess.texCoords[v][0], sizeof( vec2_t ) );
-		Com_Memcpy( p + sizeof( vec3_t ) + sizeof( vec2_t ), tess.vertexColors[v], 4 );
+		VectorCopy( tess.xyz[v], gv->xyz );
+		gv->st[0] = tess.texCoords[v][0][0];
+		gv->st[1] = tess.texCoords[v][0][1];
+		gv->color[0] = tess.vertexColors[v][0];
+		gv->color[1] = tess.vertexColors[v][1];
+		gv->color[2] = tess.vertexColors[v][2];
+		gv->color[3] = tess.vertexColors[v][3];
 	}
 	for ( i = 0; i < ni; i++, p += sizeof( int ) ) {
 		const int index = tess.indexes[r2d.firstIndex + i] - r2d.firstVertex;
@@ -1403,10 +1483,18 @@ static void RB_Draw2DGeometry( const r2dList_t *l ) {
 
 		R_Begin2D( d->shader, d->numVertexes, d->numIndexes );
 		first = tess.numVertexes;
+		// (assigned: memcpy into tess at an index is a call each, fortified)
 		for ( i = 0; i < d->numVertexes; i++, v += R2D_GEO_VERTEX ) {
-			Com_Memcpy( tess.xyz[first + i], v, sizeof( vec3_t ) );
-			Com_Memcpy( tess.texCoords[first + i][0], v + sizeof( vec3_t ), sizeof( vec2_t ) );
-			Com_Memcpy( tess.vertexColors[first + i], v + sizeof( vec3_t ) + sizeof( vec2_t ), 4 );
+			const r2dGeoVertex_t *gv = (const r2dGeoVertex_t *)v;
+			const int n = first + i;
+
+			VectorCopy( gv->xyz, tess.xyz[n] );
+			tess.texCoords[n][0][0] = gv->st[0];
+			tess.texCoords[n][0][1] = gv->st[1];
+			tess.vertexColors[n][0] = gv->color[0];
+			tess.vertexColors[n][1] = gv->color[1];
+			tess.vertexColors[n][2] = gv->color[2];
+			tess.vertexColors[n][3] = gv->color[3];
 		}
 		for ( i = 0; i < d->numIndexes; i++, idx += sizeof( int ) ) {
 			int index;

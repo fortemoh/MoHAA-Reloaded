@@ -556,6 +556,8 @@ typedef struct shader_s {
 	int			lightmapIndex;			// for a shader to match, both name and lightmapIndex must match
 
 	int			index;					// this shader == tr.shaders[index]
+	int			join2D, join2DGen;		// the 2D draws it joins (R_2DJoinClass), made at R_2DShadersChanged's join2DGen - 1
+	struct image_s	*atlas2D;			// ... and its first stage's image when in the 2D atlas
 	int			sortedIndex;			// this shader == tr.sortedShaders[sortedIndex]
 	unsigned	pipelineClass;			// what of the shader decides its draws' pipelines; opaque shaders are sorted by it (r_sortPipelines)
 
@@ -1977,6 +1979,7 @@ void R_2DTransform( float *x, float *y );
 void R_2DScissor( qboolean clip );
 shader_t *R_White2D( void );	// the atlas's white texel (tr_image.c)
 int R_AtlasGeneration( void );
+void R_2DShadersChanged( void );	// an image made again or the atlas resized: the shaders' 2D info made again (tr_draw.c)
 void R_End2D( void );
 void R_End2DBatch( void );
 void R_Forget2DBatch( void );

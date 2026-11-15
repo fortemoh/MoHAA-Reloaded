@@ -3346,6 +3346,7 @@ int R_AtlasGeneration( void ) {
 // the page made, or at twice its side: its texels again, its images' places
 static void R_AtlasResize( int side ) {
 	atlasGeneration++;
+	R_2DShadersChanged();
 	byte	*texels = ri.Malloc( side * side * 4 );
 	int		i;
 
@@ -3544,6 +3545,8 @@ qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height
 		image = R_CreateImageOld(fileName, clear, 1, 1, 0, 0, qfalse, qtrue, qtrue, 0, WRAP_CLAMP, WRAP_CLAMP);
 	}
 	image->r_sequence = -1;
+	// (it may leave the atlas or move in it: the shaders' 2D info made again)
+	R_2DShadersChanged();
 	if ((image->atlas && width <= image->atlasRoom[2] && height <= image->atlasRoom[3]) || R_AtlasRoom(image, width, height)) {
 		image->atlas = atlas.page;
 		image->width = image->uploadWidth = width;
