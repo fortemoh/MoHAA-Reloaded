@@ -89,6 +89,12 @@ cvar_t *cg_crosshair_length;
 cvar_t *cg_crosshair_gap;
 cvar_t *cg_crosshair_thickness;
 cvar_t *cg_crosshair_color;
+cvar_t *cg_crosshair_alpha;
+cvar_t *cg_crosshair_outline;
+cvar_t *cg_crosshair_outline_color;
+cvar_t *cg_crosshair_outline_alpha;
+cvar_t *cg_crosshair_dot;
+cvar_t *cg_crosshair_t;
 cvar_t *vm_offset_max;
 cvar_t *vm_offset_speed;
 cvar_t *vm_sway_front;
@@ -195,6 +201,14 @@ void CG_RegisterCvars(void)
     cg_crosshair_gap              = cgi.Cvar_Get("cg_crosshair_gap", "4", CVAR_ARCHIVE);
     cg_crosshair_thickness        = cgi.Cvar_Get("cg_crosshair_thickness", "2", CVAR_ARCHIVE);
     cg_crosshair_color            = cgi.Cvar_Get("cg_crosshair_color", "FFFFFF", CVAR_ARCHIVE);
+    cg_crosshair_alpha            = cgi.Cvar_Get("cg_crosshair_alpha", "255", CVAR_ARCHIVE);
+    // 0 none, 1 around every box, 2 above and left of them only (CS2's half outline)
+    cg_crosshair_outline          = cgi.Cvar_Get("cg_crosshair_outline", "0", CVAR_ARCHIVE);
+    cg_crosshair_outline_color    = cgi.Cvar_Get("cg_crosshair_outline_color", "000000", CVAR_ARCHIVE);
+    cg_crosshair_outline_alpha    = cgi.Cvar_Get("cg_crosshair_outline_alpha", "255", CVAR_ARCHIVE);
+    // the center square, and the T style (no top arm); crosshair_import/export (client) read CS2's share codes
+    cg_crosshair_dot              = cgi.Cvar_Get("cg_crosshair_dot", "0", CVAR_ARCHIVE);
+    cg_crosshair_t                = cgi.Cvar_Get("cg_crosshair_t", "0", CVAR_ARCHIVE);
     vm_offset_max                 = cgi.Cvar_Get("vm_offset_max", "8.0", 0);
     vm_offset_speed               = cgi.Cvar_Get("vm_offset_speed", "8.0", 0);
     vm_sway_front                 = cgi.Cvar_Get("vm_sway_front", "0.1", 0);

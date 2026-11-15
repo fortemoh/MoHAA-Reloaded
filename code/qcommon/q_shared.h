@@ -1172,6 +1172,7 @@ void Parse2DMatrix (char **buf_p, int y, int x, float *m);
 void Parse3DMatrix (char **buf_p, int z, int y, int x, float *m);
 
 int Com_HexStrToInt( const char *str );
+unsigned int Com_HexColor( const char *str, unsigned int fallback );
 
 size_t QDECL Com_sprintf (char *dest, size_t size, const char *fmt, ...) Q_PRINTF_FUNC(3, 4);
 

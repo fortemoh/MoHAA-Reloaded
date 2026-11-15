@@ -762,6 +762,12 @@ qboolean CL_VideoRecording( void );
 //
 void CL_InitConsoleCommands( void );
 
+//
+// cl_crosshair.c
+//
+void CL_CrosshairImport_f( void );
+void CL_CrosshairExport_f( void );
+
 #ifdef USE_DISCORD
 //
 // cl_discord.c

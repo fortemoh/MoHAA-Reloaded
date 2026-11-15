@@ -8564,11 +8564,18 @@ selects the sample count (see Implementation notes).
   to whole pixels, at least 1), and `cg_crosshair_color` is `RRGGBB` (a
   leading `#` too;
   anything else is white). The layout is worked out when cgame takes the
-  renderer's configuration (a map load, `vid_restart`), so a change of
-  the cvars shows after one of those, and a frame only draws. The arms sit
-  around a center square as wide as they are thick, the same whole number
-  of pixels from it on every side (the gap less half the thickness, at
-  least 1), so the crosshair is symmetric at any size. It shows where the
+  renderer's configuration (a map load, `vid_restart`) and, since
+  2026-11-15, when a crosshair cvar changes (`CG_DrawCrosshair` compares
+  the sum of their modification counts once a frame); a frame otherwise
+  only draws. The arms sit around a center square as wide as they are
+  thick, the same whole number of pixels from it on every side (the gap
+  less half the thickness, at least 0), so the crosshair is symmetric at
+  any size. Since 2026-11-15 also CS2's other settings (`cg_crosshair_alpha`,
+  `_outline` 0/1/2, `_outline_color`, `_outline_alpha`, `_dot`, `_t`, length
+  and gap down to 0, out-of-range values clamped where read): the outline
+  strips, a pixel at 1080 lines, are a second `DrawBoxes` call before the
+  crosshair's, only when on; the client's `crosshair_import`/`_export`
+  (`cl_crosshair.c`) read and write CS2's share codes. It shows where the
   stock one did (`STAT_CROSSHAIR`, not with `PMF_NO_HUD` or at the
   intermission; the stock code's zoom test drew nothing without
   `STAT_CROSSHAIR`) and leaves the 2D color white, as the stock image's
