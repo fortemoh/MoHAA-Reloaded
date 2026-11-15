@@ -358,6 +358,18 @@ static const rlTeam_t rl_teams[2] = {
     {{44, 18, 16}, {70, 32, 28}, {134, 62, 50}, {234, 162, 142}, {248, 218, 208}, "AXIS", RL_OUTLINES "team/axis.svg"  },
 };
 
+// top drawn over bottom, as one color (two flat layers blended make one)
+static rlColor_t RL_Over(rlColor_t top, rlColor_t bottom)
+{
+    rlColor_t c;
+
+    c.a = 1.0f - (1.0f - top.a) * (1.0f - bottom.a);
+    c.r = c.a > 0.0f ? (top.r * top.a + bottom.r * bottom.a * (1.0f - top.a)) / c.a : 0.0f;
+    c.g = c.a > 0.0f ? (top.g * top.a + bottom.g * bottom.a * (1.0f - top.a)) / c.a : 0.0f;
+    c.b = c.a > 0.0f ? (top.b * top.a + bottom.b * bottom.a * (1.0f - top.a)) / c.a : 0.0f;
+    return c;
+}
+
 static rlColor_t RL_T(const int *c, int a = 255)
 {
     return RL_Rgb(c[0], c[1], c[2], a);
@@ -400,6 +412,16 @@ static void RL_Box(const rlView_t& v, float x, float y, float w, float h, rlColo
 {
     const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
 
+    if (x1 <= x0 || y1 <= y0 || c.a <= 0.0f || rl_bakeOnly) {
+        return;
+    }
+    RL_SetColor(c);
+    uii.Rend_DrawBox(x0, y0, x1 - x0, y1 - y0);
+}
+
+// a box in pixels (x1, y1 past its edge)
+static void RL_BoxPx(int x0, int y0, int x1, int y1, rlColor_t c)
+{
     if (x1 <= x0 || y1 <= y0 || c.a <= 0.0f || rl_bakeOnly) {
         return;
     }
@@ -467,8 +489,10 @@ static void RL_RoundFrame(const rlView_t& v, float x, float y, float w, float h,
     RL_Shape(x0, y0, x1 - x0, y1 - y0, va("roundframe %g %g 1 1 1 1", r, width), c, v.s);
 }
 
-// a horizontal gradient as strips (a and b at the left and right edges)
-static void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b)
+// a horizontal gradient as strips (a and b at the left and right edges);
+// under: the alpha of a black layer under it, drawn with it as one layer (two
+// flat layers blended make one: the screen filled once, not twice)
+static void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b, float under = 0.0f)
 {
     const int x0 = RL_P(v, x), x1 = RL_P(v, x + w), y0 = RL_P(v, y), y1 = RL_P(v, y + h);
     const int n  = Q_max(1, Q_min(64, (x1 - x0) / 8));
@@ -483,6 +507,15 @@ static void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, 
         c.r = c.a > 0 ? (a.r * a.a + (b.r * b.a - a.r * a.a) * f) / c.a : 0;
         c.g = c.a > 0 ? (a.g * a.a + (b.g * b.a - a.g * a.a) * f) / c.a : 0;
         c.b = c.a > 0 ? (a.b * a.a + (b.b * b.a - a.b * a.a) * f) / c.a : 0;
+        if (under > 0.0f) {
+            // (black under, the strip over it: one color, premultiplied the same)
+            const float A = 1.0f - (1.0f - under) * (1.0f - c.a);
+
+            c.r = A > 0.0f ? c.r * c.a / A : 0.0f;
+            c.g = A > 0.0f ? c.g * c.a / A : 0.0f;
+            c.b = A > 0.0f ? c.b * c.a / A : 0.0f;
+            c.a = A;
+        }
         if (c.a <= 0.002f || rl_bakeOnly) {
             continue;
         }
@@ -1273,16 +1306,16 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
     }
 
     if (m_back) {
-        // the game behind, darkened; each half's colour, stronger hovered
-        RL_Box(v, 0, bandTop, v.dw, band, RL_Rgb(0, 0, 0, 115));
+        // the game behind, darkened, and each half's colour over it, stronger
+        // hovered (one layer: RL_HGradient's under)
         for (int t = 0; t < 2; t++) {
             const int       a  = t == hover ? 175 : 120;
             const rlColor_t mid = RL_T(rl_teams[t].mid, a), deep = RL_T(rl_teams[t].deep, 0);
 
             if (t == 0) {
-                RL_HGradient(v, 0, bandTop, cx, band, mid, deep);
+                RL_HGradient(v, 0, bandTop, cx, band, mid, deep, 115 / 255.0f);
             } else {
-                RL_HGradient(v, cx, bandTop, v.dw - cx, band, deep, mid);
+                RL_HGradient(v, cx, bandTop, v.dw - cx, band, deep, mid, 115 / 255.0f);
             }
         }
         RL_Box(v, 0, 0, v.dw, bh, RL_Rgb(4, 5, 6, 236));
@@ -1436,8 +1469,18 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
     for (int i = 0; i < WC_NUM; i++) {
         UI_DrawDep(Cvar_Get(rl_classCvar[i], "1", 0));
     }
+    // the panel's inside in pixels: no darkening under it, the panel drawn
+    // there with it as one layer (the screen filled once less), its rim a
+    // frame over the darkening (roundframe: as wide as the corners' radius)
+    const rlColor_t dim = RL_Rgb(0, 0, 0, 120), panel = RL_Rgb(14, 16, 18, 214);
+    const int       rim = Q_max(1, (int)floorf(6 * v.s + 0.5f));
+    const int       ix0 = RL_P(v, x0) + rim, iy0 = RL_P(v, py) + rim, ix1 = RL_P(v, x0 + panelW) - rim, iy1 = RL_P(v, py + panelH) - rim;
+
     if (m_back) {
-        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
+        RL_BoxPx(0, 0, uid.vidWidth, iy0, dim);
+        RL_BoxPx(0, iy1, uid.vidWidth, uid.vidHeight, dim);
+        RL_BoxPx(0, iy0, ix0, iy1, dim);
+        RL_BoxPx(ix1, iy0, uid.vidWidth, iy1, dim);
         // the model beside, of the menu's side
         PlaceModel("modelallies", v, x0 + panelW + 40 + modelW / 2, py + panelH - 4, panelH + 40, team == 0);
         PlaceModel("modelaxis", v, x0 + panelW + 40 + modelW / 2, py + panelH - 4, panelH + 40, team == 1);
@@ -1445,7 +1488,8 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
     }
     RL_TeamIcon(v, team, x0 + 22, y0 + 26, 44);
     RL_Text(v, x0 + 56, y0 + 26, "SELECT YOUR WEAPON", 36, RL_TEXT, true, RL_LEFT, 0, RL_MID);
-    RL_Round(v, x0, py, panelW, panelH, 6, RL_Rgb(14, 16, 18, 214));
+    RL_BoxPx(ix0, iy0, ix1, iy1, RL_Over(panel, dim));
+    RL_RoundFrame(v, x0, py, panelW, panelH, 6, 6, panel);
     for (int i = 0; i < n; i++) {
         const rlWeapon_t w     = RL_WeaponFor(nation, i, in.target, in.dmflags);
         // (the cgame's cg_weapon_<class>: 0 banned)
@@ -1766,15 +1810,13 @@ static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, con
     const float     cy   = y + rh / 2 - 1;
     float           nx   = x + 14;
 
-    // (square: a rounded row would be baked again at each row height)
-    if (rank > 0) {
-        // FFA: no team colour, the side by its emblem
-        RL_Box(v, x, y, w, rh - 2, me ? RL_Rgb(44, 47, 50, 240) : RL_Rgb(22, 24, 26, 232));
-    } else {
-        RL_Box(v, x, y, w, rh - 2, me ? RL_T(T.base, 235) : RL_T(T.deep, 232));
-    }
-    if (i % 2 == 0) {
-        RL_Box(v, x, y, w, rh - 2, RL_Rgb(255, 255, 255, 9));
+    // (square: a rounded row would be baked again at each row height; FFA's
+    // without the team's colour, the side by its emblem; every other row a
+    // little lighter, in the same box)
+    {
+        const rlColor_t row = rank > 0 ? (me ? RL_Rgb(44, 47, 50, 240) : RL_Rgb(22, 24, 26, 232)) : me ? RL_T(T.base, 235) : RL_T(T.deep, 232);
+
+        RL_Box(v, x, y, w, rh - 2, i % 2 == 0 ? RL_Over(RL_Rgb(255, 255, 255, 9), row) : row);
     }
     if (me) {
         RL_Box(v, x, y, 4, rh - 2, RL_BRASS);
