@@ -14,8 +14,8 @@ export struct ServerItem {
     builtin: bool,
 }
 
-/// One arm of the crosshair preview, in the preview's own coordinates
-export struct ArmBox {
+/// One box of the crosshair preview, in the preview's own coordinates
+export struct PreviewBox {
     x: length,
     y: length,
     width: length,
@@ -311,25 +311,35 @@ component ServerRow inherits Rectangle {
 }
 
 component CrosshairPreview inherits Rectangle {
-    in property <[ArmBox]> arms;
-    in property <color> arm-color;
+    in property <[PreviewBox]> boxes;
+    in property <[PreviewBox]> outline;
+    in property <color> box-color;
+    in property <color> outline-color;
     in property <bool> dark-color;
 
     width: Theme.preview;
     height: Theme.preview;
     border-radius: 6px;
     clip: true;
-    // the game's sky or a wall behind it: black, grey for a dark crosshair
+    // the game's sky or a wall behind it: black, grey for a dark crosshair or outline
     background: root.dark-color ? #808080 : #000000;
     border-width: 1px;
     border-color: Theme.stroke;
 
-    for arm in root.arms: Rectangle {
-        x: arm.x;
-        y: arm.y;
-        width: arm.width;
-        height: arm.height;
-        background: root.arm-color;
+    // the outline first, as the game draws it
+    for strip in root.outline: Rectangle {
+        x: strip.x;
+        y: strip.y;
+        width: strip.width;
+        height: strip.height;
+        background: root.outline-color;
+    }
+    for box in root.boxes: Rectangle {
+        x: box.x;
+        y: box.y;
+        width: box.width;
+        height: box.height;
+        background: root.box-color;
     }
 }
 
@@ -368,9 +378,15 @@ export component LauncherWindow inherits Window {
     in-out property <int> thickness: 1;
     in property <[string]> color-names;
     in-out property <int> color-index;
+    in-out property <int> alpha: 255;
+    in-out property <int> outline-index;
+    in property <bool> dot;
+    in property <bool> t-style;
     in property <color> crosshair-color: white;
+    in property <color> outline-color: black;
     in property <bool> crosshair-dark;
-    in property <[ArmBox]> arms;
+    in property <[PreviewBox]> boxes;
+    in property <[PreviewBox]> outline-boxes;
 
     // the display
     in property <[string]> resolutions;
@@ -403,6 +419,11 @@ export component LauncherWindow inherits Window {
     callback gap-edited(int);
     callback thickness-edited(int);
     callback color-selected(int);
+    callback alpha-edited(int);
+    callback outline-selected(int);
+    callback dot-toggled();
+    callback t-style-toggled();
+    callback import-code();
     callback reset-crosshair();
     callback resolution-selected(int);
     callback mode-selected(int);
@@ -572,43 +593,82 @@ export component LauncherWindow inherits Window {
                             }
                             LabelAction {
                                 text: "Reset";
-                                tip: @markdown("CS2's default crosshair, white: length 8, gap 4, thickness 2");
+                                tip: @markdown("CS2's default crosshair without its outline, white: length 8, gap 4, thickness 2");
                                 clicked => { root.reset-crosshair(); }
                             }
                         }
                         CrosshairPreview {
-                            arms: root.arms;
-                            arm-color: root.crosshair-color;
+                            boxes: root.boxes;
+                            outline: root.outline-boxes;
+                            box-color: root.crosshair-color;
+                            outline-color: root.outline-color;
                             dark-color: root.crosshair-dark;
                         }
                     }
                     GridLayout {
                         spacing: Theme.gap;
                         Row {
-                            Field {
-                                label: "Length";
+                            VerticalLayout {
+                                spacing: Theme.label-gap;
+                                HorizontalLayout {
+                                    FieldLabel {
+                                        text: "Length";
+                                        horizontal-stretch: 1;
+                                    }
+                                    LabelAction {
+                                        icon: root.t-style ? @image-url("icons/checkbox-checked.svg")
+                                            : @image-url("icons/checkbox.svg");
+                                        text: "T-style";
+                                        active: root.t-style;
+                                        tip: @markdown("No top arm (cg_crosshair_t)");
+                                        clicked => { root.t-style-toggled(); }
+                                    }
+                                }
                                 SpinBox {
                                     height: Theme.field;
-                                    minimum: 1;
+                                    minimum: 0;
                                     maximum: 128;
                                     value <=> root.length;
                                     edited(value) => { root.length-edited(value); }
                                 }
                             }
-                            Field {
-                                label: "Gap";
+                            VerticalLayout {
+                                spacing: Theme.label-gap;
+                                HorizontalLayout {
+                                    FieldLabel {
+                                        text: "Gap";
+                                        horizontal-stretch: 1;
+                                    }
+                                    LabelAction {
+                                        icon: root.dot ? @image-url("icons/checkbox-checked.svg")
+                                            : @image-url("icons/checkbox.svg");
+                                        text: "Dot";
+                                        active: root.dot;
+                                        tip: @markdown("A dot in the center, as wide as the arms are thick (cg_crosshair_dot)");
+                                        clicked => { root.dot-toggled(); }
+                                    }
+                                }
                                 SpinBox {
                                     height: Theme.field;
-                                    minimum: 1;
+                                    minimum: 0;
                                     maximum: 64;
                                     value <=> root.gap;
                                     edited(value) => { root.gap-edited(value); }
                                 }
                             }
-                        }
-                        Row {
-                            Field {
-                                label: "Thickness";
+                            VerticalLayout {
+                                spacing: Theme.label-gap;
+                                HorizontalLayout {
+                                    FieldLabel {
+                                        text: "Thickness";
+                                        horizontal-stretch: 1;
+                                    }
+                                    LabelAction {
+                                        text: "Import CS2 code";
+                                        tip: @markdown("Sets the crosshair from a code copied in CS2, as the game's crosshair_import does");
+                                        clicked => { root.import-code(); }
+                                    }
+                                }
                                 SpinBox {
                                     height: Theme.field;
                                     minimum: 1;
@@ -617,6 +677,8 @@ export component LauncherWindow inherits Window {
                                     edited(value) => { root.thickness-edited(value); }
                                 }
                             }
+                        }
+                        Row {
                             Field {
                                 label: "Color";
                                 ComboBox {
@@ -624,6 +686,25 @@ export component LauncherWindow inherits Window {
                                     model: root.color-names;
                                     current-index <=> root.color-index;
                                     selected(value) => { root.color-selected(self.current-index); }
+                                }
+                            }
+                            Field {
+                                label: "Alpha";
+                                SpinBox {
+                                    height: Theme.field;
+                                    minimum: 0;
+                                    maximum: 255;
+                                    value <=> root.alpha;
+                                    edited(value) => { root.alpha-edited(value); }
+                                }
+                            }
+                            Field {
+                                label: "Outline";
+                                ComboBox {
+                                    height: Theme.field;
+                                    model: ["Off", "Full", "Half"];
+                                    current-index <=> root.outline-index;
+                                    selected(value) => { root.outline-selected(self.current-index); }
                                 }
                             }
                         }
