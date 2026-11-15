@@ -40,8 +40,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../uilib/uibake.h"
 #include "../gamespy/goaceng.h"
 #include "../gamespy/sv_gamespy.h"
+#include "../cgame/cg_viewmodel.h"
 
 #include <algorithm>
+#include <functional>
 #include <map>
 #include <set>
 #include <string>
@@ -70,7 +72,9 @@ static const rlColor_t RL_SEL   = {222 / 255.0f, 178 / 255.0f, 80 / 255.0f, 44 /
 
 enum { PAGE_PLAY, PAGE_HOST, PAGE_OPTIONS };
 enum { HF_TIME, HF_FRAG, HF_PLAYERS, HF_BOTS, HF_NAME, HF_NUM }; // Host's fields
-enum { F_NONE, F_SEARCH, F_NAME, F_HOST };                       // the field typed in (F_HOST + Host's)
+// the field typed in: the browser's search, the name, Options' search, a crosshair code, a slider's value, Host's (F_HOST + its)
+enum { F_NONE, F_SEARCH, F_NAME, F_OSEARCH, F_CODE, F_VALUE, F_HOST };
+enum { OT_INPUT, OT_VIDEO, OT_AUDIO, OT_GAMEPLAY, OT_HUD, OT_NUM }; // Options' tabs
 
 // the browser's gametype tabs (Omaha's) and sortable columns
 enum { TAB_ALL, TAB_FFA, TAB_TDM, TAB_OBJ, TAB_ROUNDS, TAB_OTHER, TAB_NUM };
@@ -100,10 +104,15 @@ enum {
     ID_LOCAL = ID_FIELD + HF_NUM,
     ID_ONLINE,
     ID_START,
+    ID_OTAB, // + Options' tab
+    ID_OSEARCH = ID_OTAB + OT_NUM,
+    ID_DEFAULTS,
+    ID_OAPPLY,
     ID_ROW  = RL_QUIET, // + the row shown
     ID_FAV  = ID_ROW + 1000,
     ID_PICK = ID_FAV + 1000, // + the model
     ID_MAP  = ID_PICK + 1000, // + Host's map shown
+    ID_OPT  = ID_MAP + 1000,  // + Options' setting * 16 + its control's part
 };
 
 /*
@@ -744,17 +753,41 @@ static void RL_Photo(const rlView_t& v, qhandle_t shot, float x, float y, float 
     }
 }
 
-// Omaha's segmented choice: a box a label, the one chosen brass, 40 high
-static void RL_Segments(UIReloadedMenu *m, const rlView_t& v, float x, float y, const char *const *labels, int n, int on, int id)
+// Omaha's segmented choice: a box a label, the one chosen brass, h high (right: x its right edge)
+static void RL_Segments(UIReloadedMenu *m, const rlView_t& v, float x, float y, float h, const char *const *labels, int n, int on, int id,
+                        bool right = false)
 {
+    for (int i = 0; right && i < n; i++) {
+        x -= RL_TextW(v, labels[i], 15, true, 1.6f) + 36 + (i ? 4 : 0);
+    }
     for (int i = 0; i < n; i++) {
         const float w = RL_TextW(v, labels[i], 15, true, 1.6f) + 36;
         const bool  hot = m->Hot(id + i);
 
-        RL_Box(v, x, y, w, 40, i == on ? RL_BRASS : RL_Rgb(255, 255, 255, hot ? 36 : 18));
-        RL_Text(v, x + w / 2, y + 20, labels[i], 15, i == on ? RL_INK : hot ? RL_TEXT : RL_SOFT, true, RL_CENTER, 1.6f, RL_MID);
-        m->Hit(v, x, y, w, 40, id + i);
+        RL_Box(v, x, y, w, h, i == on ? RL_BRASS : RL_Rgb(255, 255, 255, hot ? 36 : 18));
+        RL_Text(v, x + w / 2, y + h / 2, labels[i], 15, i == on ? RL_INK : hot ? RL_TEXT : RL_SOFT, true, RL_CENTER, 1.6f, RL_MID);
+        m->Hit(v, x, y, w, h, id + i);
         x += w + 4;
+    }
+}
+
+// Omaha's tabs along a panel's head (48 high from y), slanted dividers between them, the one on (-1 none) brass
+static void RL_Tabs(UIReloadedMenu *m, const rlView_t& v, float x, float y, const char *const *labels, int n, int on, int id, float size,
+                    float pad)
+{
+    for (int i = 0; i < n; i++) {
+        const float tw = RL_TextW(v, labels[i], size, true, 2) + 2 * pad;
+        const bool  hot = m->Hot(id + i);
+
+        if (i == on || hot) {
+            RL_Skew(v, x, y, tw, 48, 12, 12, i == on ? RL_BRASS : RL_Rgb(255, 255, 255, 16));
+        }
+        RL_Text(v, x + tw / 2, y + 24, labels[i], size, i == on ? RL_INK : hot ? RL_TEXT : RL_MUTED, true, RL_CENTER, 2, RL_MID);
+        m->Hit(v, x, y, tw, 48, id + i);
+        x += tw;
+        if (i < n - 1) {
+            RL_Divider(v, x - 6, y, 48);
+        }
     }
 }
 
@@ -843,13 +876,13 @@ static int RL_BgFade(void)
     return Q_max(0, Q_min(64, (cls.realtime - rl_bg.since - RL_HOLD) * 64 / RL_FADE));
 }
 
-static void RL_Background(const rlView_t& v)
+// the photos over x y w h as the screen shows them there (all of it, or
+// the crosshair's preview: what is under Options' panel)
+static void RL_BgDraw(const rlView_t& v, float x, float y, float w, float h)
 {
-    const float t = RL_BgFade() / 64.0f;
+    const int   x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
+    const float t = RL_BgFade() / 64.0f, sw = (float)uid.vidWidth, sh = (float)uid.vidHeight;
 
-    if (!rl_bg.shader[rl_bg.cur]) {
-        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(8, 9, 10));
-    }
     if (rl_bakeOnly) {
         return;
     }
@@ -860,9 +893,17 @@ static void RL_Background(const rlView_t& v)
 
         if (shader && a > 0.0f) {
             RL_SetColor(RL_Rgb(255, 255, 255, (int)(a * 255)));
-            uii.Rend_DrawPicStretched(0, 0, uid.vidWidth, uid.vidHeight, 0, 0, 1, 1, shader);
+            uii.Rend_DrawPicStretched(x0, y0, x1 - x0, y1 - y0, x0 / sw, y0 / sh, x1 / sw, y1 / sh, shader);
         }
     }
+}
+
+static void RL_Background(const rlView_t& v)
+{
+    if (!rl_bg.shader[rl_bg.cur]) {
+        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(8, 9, 10));
+    }
+    RL_BgDraw(v, 0, 0, v.dw, v.dh);
 }
 
 /*
@@ -937,26 +978,7 @@ static void RL_Browser(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
 
     RL_Panel(v, x, y, w, h, RL_PANEL);
     RL_Head(v, x, y, w, 48);
-    {
-        // the tabs
-        const float size = narrow ? 15.0f : 17.0f, pad = narrow ? 12.0f : 20.0f;
-        float       tx   = x + 4;
-
-        for (int i = 0; i < TAB_NUM; i++) {
-            const float tw = RL_TextW(v, rl_tabs[i], size, true, 2) + 2 * pad;
-            const bool  on = rl_mm.tab == i, hot = m->Hot(ID_TAB + i);
-
-            if (on || hot) {
-                RL_Skew(v, tx, y, tw, 48, 12, 12, on ? RL_BRASS : RL_Rgb(255, 255, 255, 16));
-            }
-            RL_Text(v, tx + tw / 2, y + 24, rl_tabs[i], size, on ? RL_INK : hot ? RL_TEXT : RL_MUTED, true, RL_CENTER, 2, RL_MID);
-            m->Hit(v, tx, y, tw, 48, ID_TAB + i);
-            tx += tw;
-            if (i < TAB_NUM - 1) {
-                RL_Divider(v, tx - 6, y, 48);
-            }
-        }
-    }
+    RL_Tabs(m, v, x + 4, y, rl_tabs, TAB_NUM, rl_mm.tab, ID_TAB, narrow ? 15.0f : 17.0f, narrow ? 12.0f : 20.0f);
     // the columns' heads
     cx[0] = x + RL_PAD;
     for (int c = 1; c <= COL_NUM; c++) {
@@ -1218,7 +1240,7 @@ static void RL_Host(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
     }
     // the settings
     RL_Label(v, rx, fy, "GAMETYPE");
-    RL_Segments(m, v, rx, fy + 16, rl_modeLabels, 4, rl_host.mode, ID_MODE);
+    RL_Segments(m, v, rx, fy + 16, 40, rl_modeLabels, 4, rl_host.mode, ID_MODE);
     fy += 74;
     for (int f = HF_TIME; f < HF_NUM; f++) {
         static const char *const labels[HF_NUM] = {"TIME LIMIT", "FRAG LIMIT", "PLAYERS", "BOTS", "SERVER NAME"};
@@ -1231,7 +1253,7 @@ static void RL_Host(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
         fy += f % 2 || f == HF_NAME ? 74 : 0;
     }
     RL_Label(v, rx, fy, "WHO CAN JOIN");
-    RL_Segments(m, v, rx, fy + 16, rl_joinLabels, 2, rl_host.online, ID_LOCAL);
+    RL_Segments(m, v, rx, fy + 16, 40, rl_joinLabels, 2, rl_host.online, ID_LOCAL);
     // the foot row
     RL_Box(v, x + 1, foot, w - 2, RL_FOOT - 1, RL_HEAD);
     RL_Box(v, x, foot, w, 1, RL_LINE);
@@ -1240,9 +1262,931 @@ static void RL_Host(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
 }
 
 /*
+====================================================================
+
+OPTIONS
+
+Omaha's settings: tabs, a search (the settings of every tab whose label,
+description or section has it), sections titled in brass, a row a
+setting: its label and a line describing it on the left, its control on
+the right (a choice of segments, a slider with its value, a switch, colour
+swatches, a text field). Two columns (the right one the crosshair's), one
+under 1100 units across, scrolled when it doesn't fit. A setting is set as
+it changes; those the renderer or the sound take at a restart wait for
+APPLY; DEFAULTS resets the settings shown
+
+====================================================================
+*/
+
+static const char *const rl_optTabs[OT_NUM] = {"INPUT", "VIDEO", "AUDIO", "GAMEPLAY", "HUD"};
+
+enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW, OC_CODE };
+
+#define OF_RIGHT   1   // a section in the right column
+#define OF_PCT     2   // a slider's value shown as a percentage
+#define OF_GUN     4   // the gun's position: the preset sets the offsets, an offset not the preset's makes it custom
+#define OF_NOT     8   // a switch on at 0
+#define OF_NEG     16  // a switch on below 0, the value's sign (the mouse inverted: m_pitch)
+#define OF_ABS     32  // a slider of the value without its sign, which stays
+#define OF_DISPLAY 64  // r_fullscreen and r_noborder: fullscreen, windowed, borderless
+#define OF_ANISO   128 // r_ext_texture_filter_anisotropic and r_ext_max_anisotropy: off, or how much
+#define OF_RES     256 // r_mode: the desktop's, or a size of the display's (r_customwidth, r_customheight)
+
+typedef struct {
+    int                kind, tab, flags; // the tab: a section's
+    const char        *label, *desc;     // a section's title
+    const char        *cvar, *def;
+    const char *const *choices; // segments, a cycle: their labels; swatches: their colours (RRGGBB); NULL-ended
+    const char *const *values;  // segments, a cycle: their values (NULL: their places)
+    float              lo, hi, step; // a slider's
+} rlOpt_t;
+
+#define O_SECTION(tab, title, flags)                             {OC_SECTION, tab, flags, title, "", NULL, NULL, NULL, NULL, 0, 0, 0}
+#define O_SEG(label, desc, cvar, def, choices, values, flags)    {OC_SEG, 0, flags, label, desc, cvar, def, choices, values, 0, 0, 0}
+#define O_CYCLE(label, desc, cvar, def, choices, values, flags)  {OC_CYCLE, 0, flags, label, desc, cvar, def, choices, values, 0, 0, 0}
+#define O_SLIDER(label, desc, cvar, def, lo, hi, step, flags)    {OC_SLIDER, 0, flags, label, desc, cvar, def, NULL, NULL, lo, hi, step}
+#define O_TOGGLE(label, desc, cvar, def, flags)                  {OC_TOGGLE, 0, flags, label, desc, cvar, def, NULL, NULL, 0, 0, 0}
+#define O_SWATCH(label, desc, cvar, def, colours)                {OC_SWATCH, 0, 0, label, desc, cvar, def, colours, NULL, 0, 0, 0}
+
+static const char *const rl_oAccelStyles[] = {"LINEAR", "POWER", NULL};
+static const char *const rl_oDisplay[]     = {"FULLSCREEN", "WINDOWED", "BORDERLESS", NULL};
+static const char *const rl_oTextures[]    = {"HIGH", "MEDIUM", "LOW", NULL};
+static const char *const rl_oFilters[]     = {"BILINEAR", "TRILINEAR", NULL};
+static const char *const rl_oFilterModes[] = {"GL_LINEAR_MIPMAP_NEAREST", "GL_LINEAR_MIPMAP_LINEAR", NULL};
+static const char *const rl_oAniso[]       = {"OFF", "2X", "4X", "8X", "16X", NULL};
+static const char *const rl_oAnisoValues[] = {"0", "2", "4", "8", "16", NULL};
+static const char *const rl_oMsaa[]        = {"OFF", "2X", "4X", "8X", NULL};
+static const char *const rl_oMsaaValues[]  = {"0", "2", "4", "8", NULL};
+static const char *const rl_oShadows[]     = {"OFF", "BLOB", "FULL", NULL};
+static const char *const rl_oDlights[]     = {"4", "8", "16", "32", "64", NULL};
+static const char *const rl_oDetail[]      = {"LOW", "MEDIUM", "HIGH", NULL};
+static const char *const rl_oDetailValues[] = {"0.2", "0.6", "1", NULL};
+static const char *const rl_oSpeakers[]    = {"TWO SPEAKERS", "HEADPHONES", "SURROUND 5.1", "QUAD", NULL};
+static const char *const rl_oKhz[]         = {"22 KHZ", "44 KHZ", "48 KHZ", NULL};
+static const char *const rl_oKhzValues[]   = {"22", "44", "48", NULL};
+static const char *const rl_oWeapon[]      = {"OFF", "WEAPON", "WEAPON & HANDS", NULL};
+static const char *const rl_oMoveRates[]   = {"STOCK", "100", "125", NULL};
+static const char *const rl_oMoveValues[]  = {"0", "100", "125", NULL};
+static const char *const rl_oHudStyles[]   = {"STOCK", "CS:GO", "CS2", NULL};
+static const char *const rl_oAccents[]     = {"f6f67a", "deb250", "78c8f0", "96dc8c", "f0f0f0", NULL};
+static const char *const rl_oPresets[]     = {"CUSTOM", "DESKTOP", "COUCH", "CLASSIC", NULL};
+// (the launcher's)
+static const char *const rl_oColours[]     = {"FFFFFF", "00FF00", "FFFF00", "00FFFF", "FF0000", "FF00FF", "000000", NULL};
+static const char *const rl_oOutlines[]    = {"OFF", "FULL", "HALF", NULL};
+
+// (the defaults the cvars' own, set here for those the game makes later, at a map's load)
+static const rlOpt_t rl_opts[] = {
+    O_SECTION(OT_INPUT, "MOUSE", 0),
+    O_SLIDER("Sensitivity", "How far the view turns as the mouse moves.", "sensitivity", "5", 0.1f, 20, 0.05f, 0),
+    O_TOGGLE("Invert Mouse", "Moving the mouse up looks down.", "m_pitch", "0.022", OF_NEG),
+    O_SLIDER("Horizontal Speed", "Turning, per count of the mouse (0.022: CS2's).", "m_yaw", "0.022", 0.005f, 0.05f, 0.001f, 0),
+    O_SLIDER("Vertical Speed", "Looking up and down, per count of the mouse.", "m_pitch", "0.022", 0.005f, 0.05f, 0.001f, OF_ABS),
+    O_SECTION(OT_INPUT, "ACCELERATION", OF_RIGHT),
+    O_SLIDER("Acceleration", "Faster moves turn further. 0: off.", "cl_mouseAccel", "0", 0, 5, 0.05f, 0),
+    O_SEG("Style", "How it grows with the speed.", "cl_mouseAccelStyle", "0", rl_oAccelStyles, NULL, 0),
+    O_SLIDER("Offset", "Power: the speed that doubles the turn.", "cl_mouseAccelOffset", "5", 1, 50, 1, 0),
+    O_SECTION(OT_VIDEO, "DISPLAY", 0),
+    O_SEG("Display Mode", "Borderless: a window without its frame.", "r_fullscreen", "1", rl_oDisplay, NULL, OF_DISPLAY),
+    O_CYCLE("Resolution", "Desktop: the display's own.", "r_mode", "-2", NULL, NULL, OF_RES),
+    O_TOGGLE("Vertical Sync", "No tearing, by waiting for the display.", "r_swapInterval", "0", 0),
+    O_TOGGLE("No Tearing", "The newest frame each refresh, less waiting.", "r_fastSync", "0", 0),
+    O_TOGGLE("Submit Thread", "Frames sent by a thread of their own.", "r_vkSubmitThread", "0", 0),
+    O_SLIDER("Max FPS", "Frames a second at most. 0: no limit.", "com_maxfps", "125", 0, 1000, 1, 0),
+    O_SLIDER("Max FPS in Background", "With another window in front. 0: as above.", "com_maxfpsUnfocused", "0", 0, 1000, 1, 0),
+    O_TOGGLE("Show FPS", "The frame rate in a corner.", "fps", "0", 0),
+    O_SECTION(OT_VIDEO, "LIGHTING", 0),
+    O_SEG("Shadows", "", "cg_shadows", "0", rl_oShadows, NULL, 0),
+    O_SEG("Dynamic Lights", "The most at once.", "r_maxDlights", "4", rl_oDlights, rl_oDlights, 0),
+    O_TOGGLE("Fast Dynamic Lights", "Cheaper, a little coarser.", "r_fastdlights", "0", 0),
+    O_SECTION(OT_VIDEO, "PICTURE", OF_RIGHT),
+    O_SLIDER("Brightness", "", "r_gamma", "1", 0.5f, 3, 0.05f, 0),
+    O_SEG("Texture Quality", "", "r_picmip", "0", rl_oTextures, NULL, 0),
+    O_SEG("Filtering", "", "r_textureMode", "GL_LINEAR_MIPMAP_LINEAR", rl_oFilters, rl_oFilterModes, 0),
+    O_SEG("Anisotropic", "", "r_ext_texture_filter_anisotropic", "0", rl_oAniso, rl_oAnisoValues, OF_ANISO),
+    O_SEG("Multisampling", "Smoother edges.", "r_ext_multisample", "0", rl_oMsaa, rl_oMsaaValues, 0),
+    O_SECTION(OT_VIDEO, "EFFECTS", OF_RIGHT),
+    O_SEG("Effect Detail", "Smoke, sparks, debris.", "cg_effectdetail", "1.0", rl_oDetail, rl_oDetailValues, 0),
+    O_TOGGLE("Volumetric Smoke", "Smoke grenades' clouds.", "vss_draw", "1", 0),
+    O_TOGGLE("Weather", "Rain and snow.", "cg_rain", "1", 0),
+    O_TOGGLE("Bullet Holes", "The marks shots leave.", "cg_marks_add", "1", 0),
+    O_TOGGLE("Blood", "On servers you host.", "com_blood", "1", 0),
+    O_SECTION(OT_AUDIO, "VOLUME", 0),
+    O_SLIDER("Master", "Every sound.", "s_volume", "0.9", 0, 1, 0.01f, OF_PCT),
+    O_SLIDER("Music", "The music the maps' scripts play.", "s_musicvolume", "0.9", 0, 1, 0.01f, OF_PCT),
+    O_SLIDER("Soundtrack", "The songs. 0: none loaded.", "s_ambientvolume", "1", 0, 1, 0.01f, OF_PCT),
+    O_SECTION(OT_AUDIO, "SPEAKERS", OF_RIGHT),
+    O_CYCLE("Speaker Setup", "Headphones: sounds behind, above, below.", "s_speaker_type", "0", rl_oSpeakers, NULL, 0),
+    O_SEG("Sound Quality", "Headphones: always 48.", "s_khz", "44", rl_oKhz, rl_oKhzValues, 0),
+    O_SECTION(OT_AUDIO, "SOUNDS", OF_RIGHT),
+    O_TOGGLE("Taunts From Other Players", "Their voices; the chat line stays.", "cg_tauntsounds", "1", 0),
+    O_SECTION(OT_GAMEPLAY, "GENERAL", 0),
+    O_SLIDER("Field of View", "How wide you see, in degrees.", "cg_fov", "80", 65, 120, 1, 0),
+    O_SEG("Show Weapon", "", "cg_drawviewmodel", "2", rl_oWeapon, NULL, 0),
+    O_TOGGLE("Left-Handed", "The weapon in the left hand.", "cg_righthand", "1", OF_NOT),
+    O_TOGGLE("Always Run", "Walk while the walk key is held.", "cl_run", "1", 0),
+    O_TOGGLE("Server Lag Icon", "Shown while the server stops answering.", "cg_drawsvlag", "1", 0),
+    O_SECTION(OT_GAMEPLAY, "MOVEMENT", OF_RIGHT),
+    O_SEG("Movement Rate", "Moves a second, apart from the frame rate.", "cl_movefps", "100", rl_oMoveRates, rl_oMoveValues, 0),
+    O_TOGGLE("Shots and Jumps Sooner", "Sent half a move sooner.", "cl_movesubgrid", "1", 0),
+    O_SECTION(OT_GAMEPLAY, "DEMOS", OF_RIGHT),
+    O_TOGGLE("Record Every Match", "A demo of each match you play.", "cl_autoRecordDemo", "0", 0),
+    O_SLIDER("Video Export FPS", "A demo's video, frames a second.", "cl_aviFrameRate", "25", 10, 120, 1, 0),
+    O_SECTION(OT_HUD, "HUD", 0),
+    O_SEG("HUD Style", "Stock, or the CS:GO or CS2 look.", "cg_hudstyle", "1", rl_oHudStyles, NULL, 0),
+    O_SLIDER("HUD Scale", "Bigger or smaller, the whole HUD.", "cg_hud_scale", "1", 0.25f, 2, 0.05f, 0),
+    O_SWATCH("Accent Colour", "The HUD's highlight.", "cg_hud_accent", "f6f67a", rl_oAccents),
+    O_SLIDER("Low Health", "Health turns red below this.", "cg_hud_lowhealth", "0.4", 0, 1, 0.05f, OF_PCT),
+    O_TOGGLE("Players Alive", "A count of each side by the score, not a card each.", "cg_hud_alivecount", "0", 0),
+    O_SECTION(OT_HUD, "GUN POSITION", 0),
+    O_SEG("Preset", "As CS2's, or set your own below.", "cg_viewmodel_presetpos", "3", rl_oPresets, NULL, OF_GUN),
+    O_SLIDER("Left / Right", "", "cg_viewmodel_offset_x", "0", vmLimits[0][0], vmLimits[0][1], 0.1f, OF_GUN),
+    O_SLIDER("Back / Forward", "", "cg_viewmodel_offset_y", "0", vmLimits[1][0], vmLimits[1][1], 0.1f, OF_GUN),
+    O_SLIDER("Down / Up", "", "cg_viewmodel_offset_z", "0", vmLimits[2][0], vmLimits[2][1], 0.1f, OF_GUN),
+    O_SLIDER("Turn", "The muzzle out, or in to the middle.", "cg_viewmodel_yaw", "0", vmLimits[VM_YAW][0], vmLimits[VM_YAW][1], 1, 0),
+    O_SLIDER("Drop While Moving", "None (CS2's) to the game's own.", "cg_viewmodel_movedrop", "1", 0, 1, 0.05f, OF_PCT),
+    O_SECTION(OT_HUD, "CROSSHAIR", OF_RIGHT),
+    {OC_PREVIEW, 0, 0, "", "", NULL, NULL, NULL, NULL, 0, 0, 0},
+    O_SLIDER("Length", "", "cg_crosshair_length", "8", 0, 20, 0.5f, 0),
+    O_SLIDER("Gap", "", "cg_crosshair_gap", "4", -5, 10, 0.5f, 0),
+    O_SLIDER("Thickness", "", "cg_crosshair_thickness", "2", 0, 6, 0.5f, 0),
+    O_SWATCH("Colour", "", "cg_crosshair_color", "FFFFFF", rl_oColours),
+    O_SEG("Outline", "", "cg_crosshair_outline", "0", rl_oOutlines, NULL, 0),
+    O_TOGGLE("Centre Dot", "", "cg_crosshair_dot", "0", 0),
+    O_TOGGLE("T-Style", "No top arm.", "cg_crosshair_t", "0", 0),
+    {OC_CODE, 0, 0, "Share Code", "", NULL, NULL, NULL, NULL, 0, 0, 0},
+};
+
+#define RL_OPTS ((int)ARRAY_LEN(rl_opts))
+
+// what the renderer (and, the last, the sound) takes at a restart, APPLY's: the latched settings, and the
+// brightness but on Windows (elsewhere it brightens the textures)
+static const char *const rl_optRestart[] = {
+    "r_mode", "r_customwidth", "r_customheight", "r_fullscreen", "r_noborder", "r_swapInterval", "r_fastSync", "r_vkSubmitThread",
+#ifndef _WIN32
+    "r_gamma",
+#endif
+    "r_picmip", "r_ext_texture_filter_anisotropic", "r_ext_max_anisotropy", "r_ext_multisample", "r_maxDlights", "r_fastdlights",
+    "s_khz",
+};
+
+#define RL_RESTARTS ((int)ARRAY_LEN(rl_optRestart))
+
+static struct {
+    bool        ready; // the cvars read
+    int         tab;
+    std::string search, code, value; // typed: the search, a crosshair code, a slider's value
+    int         row;                 // the slider whose value is typed
+    float       scroll, most;        // units down (a setting's top), the most (the first whose top shows the end)
+    int         drag;                // the slider dragged (its id), -1 none
+    bool        down;                // the mouse's button, last frame
+    std::string note;                // a word on the foot row
+    int         sec[RL_OPTS];        // a setting's section
+    cvar_t     *cv[RL_OPTS];
+    std::string applied[RL_RESTARTS]; // the restart's settings as the renderer and the sound took them
+    int         refSeq;               // the renderer's start then
+    std::vector<std::string> sizes;   // the resolutions offered: "DESKTOP", then the display's ("1920 x 1080")
+} rl_opt = {false, OT_INPUT, "", "", "", 0, 0, 0, -1, false, "", {}, {}, {}, -1, {}};
+
+// a place in the layout: the setting, its box (the content's top y 0)
+typedef struct {
+    int   opt;
+    float x, y, w, h;
+} rlOptPlace_t;
+
+static std::vector<rlOptPlace_t> rl_optPlaces; // as last drawn
+
+// a cvar's value: the one waiting for a restart, else its own
+static const char *RL_Latched(const cvar_t *cv)
+{
+    return cv->latchedString ? cv->latchedString : cv->string;
+}
+
+// another cvar a setting draws from
+static cvar_t *RL_OptOther(const char *name)
+{
+    cvar_t *cv = Cvar_Get(name, "0", 0);
+
+    UI_DrawDep(cv);
+    return cv;
+}
+
+/*
+----------------
+RL_OptRead
+
+The first time Options shows (and after a renderer's start): the cvars
+(the game's own made before it does), the resolutions offered (the
+display's, r_availableModes, and the one set if not one of them), the
+restart's settings as taken
+----------------
+*/
+static void RL_OptRead(void)
+{
+    const char *modes = Cvar_VariableString("r_availableModes");
+
+    rl_opt.ready = true;
+    for (int i = 0, sec = 0; i < RL_OPTS; i++) {
+        sec           = rl_opts[i].kind == OC_SECTION ? i : sec;
+        rl_opt.sec[i] = sec;
+        if (rl_opts[i].cvar) {
+            rl_opt.cv[i] = Cvar_Get(rl_opts[i].cvar, rl_opts[i].def, CVAR_ARCHIVE);
+        }
+    }
+    rl_opt.refSeq = uii.GetRefSequence();
+    for (int k = 0; k < RL_RESTARTS; k++) {
+        rl_opt.applied[k] = Cvar_VariableString(rl_optRestart[k]);
+    }
+    {
+        // (the largest first, as the launcher lists them)
+        std::vector<std::pair<int, int>> sizes;
+        int                              w, h, n;
+
+        while (sscanf(modes, "%dx%d%n", &w, &h, &n) == 2) {
+            sizes.push_back({w, h});
+            modes += n + strspn(modes + n, " ");
+        }
+        w = Cvar_VariableIntegerValue("r_customwidth");
+        h = Cvar_VariableIntegerValue("r_customheight");
+        if (Cvar_VariableIntegerValue("r_mode") == -1 && std::find(sizes.begin(), sizes.end(), std::make_pair(w, h)) == sizes.end()) {
+            sizes.push_back({w, h});
+        }
+        std::sort(sizes.begin(), sizes.end(), std::greater<std::pair<int, int>>());
+        rl_opt.sizes.assign(1, "DESKTOP");
+        for (const auto& size : sizes) {
+            rl_opt.sizes.push_back(va("%d x %d", size.first, size.second));
+        }
+    }
+}
+
+static bool RL_OptHas(const char *text)
+{
+    return !rl_opt.search.empty() && Q_stristr(text, rl_opt.search.c_str());
+}
+
+// a setting shown: its tab's, or what the search finds (its section's preview with what it finds there)
+static bool RL_OptShown(int i)
+{
+    const rlOpt_t& o = rl_opts[i];
+    const int      s = rl_opt.sec[i];
+
+    if (rl_opt.search.empty()) {
+        return rl_opts[s].tab == rl_opt.tab;
+    }
+    if (RL_OptHas(rl_opts[s].label)) {
+        return true;
+    }
+    if (o.kind == OC_PREVIEW) {
+        for (int k = s + 1; k < RL_OPTS && rl_opts[k].kind != OC_SECTION; k++) {
+            if (k != i && RL_OptShown(k)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    return o.kind != OC_SECTION && (RL_OptHas(o.label) || RL_OptHas(o.desc));
+}
+
+/*
+----------------
+RL_OptLayout
+
+The settings shown placed: the sections in their column (the right one
+under the left in one column), a section's title 40 high, 14 over it past
+the first, a row 66, the preview 0.32 of its column (220 at most) and 12
+under it. The content's height
+----------------
+*/
+static float RL_OptLayout(float x, float w, std::vector<rlOptPlace_t>& out)
+{
+    const bool  one = w < 1100;
+    const float lw  = floorf(w * 0.55f + 0.5f);
+    const float cx[2] = {x + RL_PAD, one ? x + RL_PAD : x + lw + RL_PAD}, cw[2] = {one ? w - 2 * RL_PAD : lw - 2 * RL_PAD, w - lw - 2 * RL_PAD};
+    float       cy[2] = {0, 0};
+
+    out.clear();
+    for (int right = 0; right < 2; right++) {
+        for (int s = 0; s < RL_OPTS; s++) {
+            const int c = one ? 0 : right;
+            bool      any = false;
+
+            if (rl_opts[s].kind != OC_SECTION || (rl_opts[s].flags & OF_RIGHT) != right * OF_RIGHT) {
+                continue;
+            }
+            for (int i = s + 1; i < RL_OPTS && rl_opts[i].kind != OC_SECTION && !any; i++) {
+                any = RL_OptShown(i);
+            }
+            if (!any) {
+                continue;
+            }
+            cy[c] += cy[c] > 0 ? 14 : 0;
+            out.push_back({s, cx[one ? 0 : right], cy[c], cw[one ? 0 : right], 40});
+            cy[c] += 40;
+            for (int i = s + 1; i < RL_OPTS && rl_opts[i].kind != OC_SECTION; i++) {
+                const float h = rl_opts[i].kind == OC_PREVIEW ? floorf(Q_min(cw[one ? 0 : right] * 0.32f, 220.0f)) + 12 : 66;
+
+                if (RL_OptShown(i)) {
+                    out.push_back({i, cx[one ? 0 : right], cy[c], cw[one ? 0 : right], h});
+                    cy[c] += h;
+                }
+            }
+        }
+    }
+    return Q_max(cy[0], cy[1]);
+}
+
+static const char *RL_OptValue(int i)
+{
+    return RL_Latched(rl_opt.cv[i]);
+}
+
+// a slider's number (without its sign: OF_ABS)
+static float RL_OptNumber(int i)
+{
+    const float value = (float)atof(RL_OptValue(i));
+
+    return rl_opts[i].flags & OF_ABS ? fabsf(value) : value;
+}
+
+// a value is a choice's: as numbers when both are ("1", "1.0"), else as words
+static bool RL_OptIs(const char *value, const char *choice)
+{
+    char *e1, *e2;
+    const double a = strtod(value, &e1), b = strtod(choice, &e2);
+
+    return *value && *choice && !*e1 && !*e2 ? a == b : !Q_stricmp(value, choice);
+}
+
+// a switch on
+static bool RL_OptOn(int i)
+{
+    const int flags = rl_opts[i].flags;
+
+    return flags & OF_NEG ? atof(RL_OptValue(i)) < 0 : (atoi(RL_OptValue(i)) != 0) != ((flags & OF_NOT) != 0);
+}
+
+// the choice a setting has (segments, a cycle), -1 none of them
+static int RL_OptChoice(int i)
+{
+    const rlOpt_t&    o = rl_opts[i];
+    const char *const value = RL_OptValue(i);
+
+    if (o.flags & OF_DISPLAY) {
+        return atoi(value) ? 0 : atoi(RL_Latched(RL_OptOther("r_noborder"))) ? 2 : 1;
+    }
+    if (o.flags & OF_RES) {
+        const std::string own = va("%d x %d", atoi(RL_Latched(RL_OptOther("r_customwidth"))), atoi(RL_Latched(RL_OptOther("r_customheight"))));
+
+        const auto it = std::find(rl_opt.sizes.begin() + 1, rl_opt.sizes.end(), own);
+
+        // (a numbered mode: none of them)
+        return atoi(value) == -2 ? 0 : atoi(value) == -1 && it != rl_opt.sizes.end() ? (int)(it - rl_opt.sizes.begin()) : -1;
+    }
+    if (o.flags & OF_ANISO && !atoi(value)) {
+        return 0;
+    }
+    for (int k = 0; o.choices[k]; k++) {
+        const char *const is = o.flags & OF_ANISO ? RL_Latched(RL_OptOther("r_ext_max_anisotropy")) : value;
+
+        if ((o.flags & OF_ANISO) ? k && RL_OptIs(is, o.values[k]) : o.values ? RL_OptIs(is, o.values[k]) : RL_OptIs(is, va("%d", k))) {
+            return k;
+        }
+    }
+    return -1;
+}
+
+// the choices a setting has
+static int RL_OptChoices(int i)
+{
+    int n = 0;
+
+    if (rl_opts[i].flags & OF_RES) {
+        return (int)rl_opt.sizes.size();
+    }
+    while (rl_opts[i].choices[n]) {
+        n++;
+    }
+    return n;
+}
+
+// a choice's label
+static const char *RL_OptLabel(int i, int k)
+{
+    if (rl_opts[i].flags & OF_RES) {
+        return k >= 0 ? rl_opt.sizes[k].c_str() : va("MODE %d", atoi(RL_OptValue(i)));
+    }
+    return k >= 0 ? rl_opts[i].choices[k] : "";
+}
+
+static void RL_OptSet(int i, const char *value)
+{
+    const rlOpt_t& o = rl_opts[i];
+
+    if (!strcmp(RL_OptValue(i), value)) {
+        return;
+    }
+    Cvar_Set(o.cvar, value);
+    if (o.flags & OF_GUN) {
+        // (CG_ViewModelSettings's rules, for the menu before any map)
+        const int   preset = Cvar_VariableIntegerValue("cg_viewmodel_presetpos");
+        const bool  known  = preset > 0 && preset < (int)ARRAY_LEN(vmPresets);
+        const char *xyz[3] = {"cg_viewmodel_offset_x", "cg_viewmodel_offset_y", "cg_viewmodel_offset_z"};
+
+        if (!strcmp(o.cvar, "cg_viewmodel_presetpos")) {
+            for (int k = 0; known && k < 3; k++) {
+                Cvar_Set(xyz[k], va("%g", (&vmPresets[preset].x)[k]));
+            }
+        } else if (preset) {
+            for (int k = 0; k < 3; k++) {
+                if (!known || Cvar_VariableValue(xyz[k]) != (&vmPresets[preset].x)[k]) {
+                    Cvar_Set("cg_viewmodel_presetpos", "0");
+                    break;
+                }
+            }
+        }
+    }
+}
+
+// a slider set to a value (snapped to its steps, within its ends)
+static void RL_OptSlide(int i, float value)
+{
+    const rlOpt_t& o   = rl_opts[i];
+    const float    sign = (o.flags & OF_ABS) && atof(RL_OptValue(i)) < 0 ? -1.0f : 1.0f;
+
+    value = Q_max(o.lo, Q_min(o.hi, value));
+    RL_OptSet(i, va("%g", sign * (o.lo + floorf((value - o.lo) / o.step + 0.5f) * o.step)));
+}
+
+// a choice picked (segments, a cycle): its value, or the cvars it stands for
+static void RL_OptPick(int i, int k)
+{
+    const rlOpt_t& o = rl_opts[i];
+
+    if (o.flags & OF_DISPLAY) {
+        Cvar_Set("r_fullscreen", k ? "0" : "1");
+        Cvar_Set("r_noborder", k == 2 ? "1" : "0");
+    } else if (o.flags & OF_ANISO) {
+        Cvar_Set("r_ext_texture_filter_anisotropic", k ? "1" : "0");
+        if (k) {
+            Cvar_Set("r_ext_max_anisotropy", o.values[k]);
+        }
+    } else if (o.flags & OF_RES) {
+        int w, h;
+
+        Cvar_Set("r_mode", k ? "-1" : "-2");
+        if (k && sscanf(rl_opt.sizes[k].c_str(), "%d x %d", &w, &h) == 2) {
+            Cvar_Set("r_customwidth", va("%d", w));
+            Cvar_Set("r_customheight", va("%d", h));
+        }
+    } else {
+        RL_OptSet(i, o.values ? o.values[k] : va("%d", k));
+    }
+}
+
+// a switch turned over (inverted: the sign)
+static void RL_OptFlip(int i)
+{
+    if (rl_opts[i].flags & OF_NEG) {
+        RL_OptSet(i, va("%g", -atof(RL_OptValue(i))));
+    } else {
+        RL_OptSet(i, atoi(RL_OptValue(i)) ? "0" : "1");
+    }
+}
+
+// a slider's value typed in, set
+static void RL_OptTyped(void)
+{
+    if (rl_mm.edit == F_VALUE && !rl_opt.value.empty()) {
+        const float typed = (float)atof(rl_opt.value.c_str());
+
+        RL_OptSlide(rl_opt.row, rl_opts[rl_opt.row].flags & OF_PCT ? typed / 100 : typed);
+    }
+    rl_mm.edit = F_NONE;
+}
+
+// a slider's value as shown: a percentage, or the decimals its steps have
+static const char *RL_OptShow(int i)
+{
+    const rlOpt_t& o = rl_opts[i];
+    const float    value = RL_OptNumber(i);
+
+    if (o.flags & OF_PCT) {
+        return va("%d%%", (int)floorf(value * 100 + 0.5f));
+    }
+    return va("%.*f", o.step < 0.01f ? 3 : o.step < 0.1f ? 2 : o.step < 1 ? 1 : 0, value);
+}
+
+// the crosshair code typed (none: the clipboard's) imported by crosshair_import, which keeps it in cg_crosshair_code
+static void RL_OptImport(void)
+{
+    cvar_t   *kept = Cvar_Get("cg_crosshair_code", "", CVAR_ARCHIVE);
+    const int was  = kept->modificationCount;
+
+    Cmd_ExecuteString(va("crosshair_import %s", rl_opt.code.c_str()));
+    rl_opt.note = kept->modificationCount != was || (!rl_opt.code.empty() && !strcmp(kept->string, rl_opt.code.c_str())) ? "CROSSHAIR IMPORTED"
+                                                                                                                       : "NOT A CS2 CROSSHAIR CODE";
+    uii.Snd_PlaySound("sound/menu/apply.wav");
+    rl_mm.edit = F_NONE;
+}
+
+// DEFAULTS: the settings shown back to their defaults (and the cvars a choice stands for with them)
+static void RL_OptDefaults(void)
+{
+    for (int i = 0; i < RL_OPTS; i++) {
+        const int flags = rl_opts[i].flags;
+
+        if (!rl_opts[i].cvar || !RL_OptShown(i)) {
+            continue;
+        }
+        Cvar_Reset(rl_opts[i].cvar);
+        if (flags & (OF_DISPLAY | OF_ANISO)) {
+            Cvar_Reset(flags & OF_DISPLAY ? "r_noborder" : "r_ext_max_anisotropy");
+        }
+    }
+    rl_opt.note = "DEFAULTS SET";
+}
+
+/*
+----------------
+The controls (a row 66 high, its control's middle 32 down): Omaha's
+slider (a track 190 across, the part to the value brass, a knob, the value
+in a box 56 wide that takes a typed value), its switch (56 by 28), the
+swatches (28 across, 6 apart, the one set framed)
+----------------
+*/
+static void RL_Slider(UIReloadedMenu *m, const rlView_t& v, int i, float x, float y, int id)
+{
+    const rlOpt_t& o    = rl_opts[i];
+    const float    frac = Q_max(0.0f, Q_min(1.0f, (RL_OptNumber(i) - o.lo) / (o.hi - o.lo))), tw = 190, bx = x + 204;
+    const bool     hot = m->Hot(id) || rl_opt.drag == id, typing = rl_mm.edit == F_VALUE && rl_opt.row == i;
+
+    RL_Box(v, x, y + 12, tw, 4, RL_Rgb(255, 255, 255, 40));
+    RL_Box(v, x, y + 12, tw * frac, 4, RL_BRASS);
+    RL_Round(v, x + tw * frac - 8, y + 6, 16, 16, 8, hot ? RL_BRASS : RL_TEXT);
+    m->Hit(v, x, y, tw, 28, id);
+    // the value
+    RL_Panel(v, bx, y, 56, 28, RL_Rgb(0, 0, 0, typing ? 160 : 120));
+    if (typing) {
+        const float tw2 = RL_Text(v, bx + 6, y + 14, rl_opt.value.c_str(), 16, RL_TEXT, false, RL_LEFT, 0, RL_MID);
+
+        if ((cls.realtime / 530) % 2 == 0) {
+            RL_Box(v, bx + 6 + tw2 + 1, y + 4, 2, 20, RL_BRASS);
+        }
+    } else {
+        RL_Text(v, bx + 28, y + 14, RL_OptShow(i), 16, m->Hot(id + 1) ? RL_BRASS : RL_TEXT, false, RL_CENTER, 0, RL_MID);
+    }
+    m->Hit(v, bx, y, 56, 28, id + 1);
+}
+
+// Omaha's cycle: the choice between two arrows (the left one back, the rest on), 260 by 32
+static void RL_Cycle(UIReloadedMenu *m, const rlView_t& v, float x, float y, const char *label, int id)
+{
+    RL_Panel(v, x, y, 260, 32, RL_Rgb(0, 0, 0, 120));
+    for (int k = 0; k < 2; k++) {
+        const float ax = k ? x + 260 - 32 : x;
+        const int   x0 = RL_P(v, ax + 12), y0 = RL_P(v, y + 10);
+
+        if (m->Hot(id + k)) {
+            RL_Box(v, ax + 1, y + 1, 30, 30, RL_Rgb(255, 255, 255, 18));
+        }
+        RL_Shape(x0, y0, RL_P(v, ax + 20) - x0, RL_P(v, y + 22) - y0, k ? "poly 1 1 1 1 0 0 1 0.5 0 1" : "poly 1 1 1 1 1 0 1 1 0 0.5",
+                 m->Hot(id + k) ? RL_BRASS : RL_MUTED, v.s);
+    }
+    RL_Text(v, x + 130, y + 16, label, 16, RL_TEXT, false, RL_CENTER, 0, RL_MID, 260 - 72);
+    m->Hit(v, x, y, 32, 32, id);
+    m->Hit(v, x + 32, y, 228, 32, id + 1);
+}
+
+static void RL_Toggle(const rlView_t& v, float x, float y, bool on, bool hot)
+{
+    RL_Round(v, x, y, 56, 28, 14, on ? (hot ? RL_Rgb(236, 196, 106) : RL_BRASS) : RL_Rgb(255, 255, 255, hot ? 64 : 40));
+    RL_Round(v, x + (on ? 31 : 3), y + 3, 22, 22, 11, on ? RL_INK : RL_Rgb(220, 216, 206));
+}
+
+static void RL_Swatches(UIReloadedMenu *m, const rlView_t& v, int i, float right, float y, int id)
+{
+    const char *const *c = rl_opts[i].choices;
+    const char        *set = RL_OptValue(i);
+    int                n = 0;
+
+    while (c[n]) {
+        n++;
+    }
+    set += *set == '#';
+    for (int k = 0; k < n; k++) {
+        const float        x   = right - (n - k) * 34 + 6;
+        const unsigned int rgb = Com_HexColor(c[k], 0);
+
+        // (a faint edge: black shows on the panel)
+        RL_Round(v, x, y, 28, 28, 3, RL_Rgb(rgb >> 16, (rgb >> 8) & 0xFF, rgb & 0xFF));
+        RL_RoundFrame(v, x, y, 28, 28, 3, 1, RL_Rgb(255, 255, 255, 40));
+        if (!Q_stricmp(set, c[k]) || m->Hot(id + k)) {
+            RL_RoundFrame(v, x - 3, y - 3, 34, 34, 5, 2, Q_stricmp(set, c[k]) ? RL_Rgb(255, 255, 255, 110) : RL_TEXT);
+        }
+        m->Hit(v, x, y, 28, 28, id + k);
+    }
+}
+
+// the crosshair as CG_UpdateCrosshair lays it out at this screen's height, a pixel of it 2 here, centred in x y w h
+static void RL_Crosshair(const rlView_t& v, float x, float y, float w, float h)
+{
+    static cvar_t *outline[2];
+    const int      cx = RL_P(v, x + w / 2), cy = RL_P(v, y + h / 2);
+    int            px[3], piece[5][4], n = 0;
+
+    if (!outline[0]) {
+        outline[0] = Cvar_Get("cg_crosshair_outline_color", "000000", CVAR_ARCHIVE);
+        outline[1] = Cvar_Get("cg_crosshair_outline_alpha", "255", CVAR_ARCHIVE);
+    }
+    UI_DrawDep(outline[0]);
+    UI_DrawDep(outline[1]);
+    UI_DrawDep(Cvar_Get("cg_crosshair_alpha", "255", CVAR_ARCHIVE));
+    // the length, the thickness, the gap in pixels (CG_CrosshairPixels)
+    for (int k = 0; k < 3; k++) {
+        const float value = Cvar_VariableValue(k == 0 ? "cg_crosshair_length" : k == 1 ? "cg_crosshair_thickness" : "cg_crosshair_gap");
+
+        px[k] = value > 0.0f ? Q_max((int)(Q_min(value, 4096.0f) * uid.vidHeight / 1080.0f + 0.5f), 1) : 0;
+    }
+    {
+        const int len = px[0], t = px[1], gap = px[2], before = (t + 1) / 2, odd = t & 1;
+        const int pieces[5][4] = {
+            {-gap - len, -before, len, t}, {gap - odd, -before, len, t}, {-before, gap - odd, t, len}, {-before, -gap - len, t, len},
+            {-before, -before, t, t}
+        };
+
+        for (int k = 0; k < 5; k++) {
+            const bool on = k < 4 ? t && len && (k < 3 || !Cvar_VariableIntegerValue("cg_crosshair_t")) : t && Cvar_VariableIntegerValue("cg_crosshair_dot");
+
+            if (on) {
+                memcpy(piece[n++], pieces[k], sizeof(pieces[k]));
+            }
+        }
+    }
+    {
+        const int          mode = Q_max(0, Q_min(2, Cvar_VariableIntegerValue("cg_crosshair_outline")));
+        const unsigned int rgb = Com_HexColor(Cvar_VariableString("cg_crosshair_color"), 0xFFFFFF);
+        const unsigned int ol  = Com_HexColor(outline[0]->string, 0);
+        const rlColor_t    c   = RL_Rgb(rgb >> 16, (rgb >> 8) & 0xFF, rgb & 0xFF, Q_max(0, Q_min(255, Cvar_VariableIntegerValue("cg_crosshair_alpha"))));
+        const rlColor_t    oc  = RL_Rgb(ol >> 16, (ol >> 8) & 0xFF, ol & 0xFF, Q_max(0, Q_min(255, outline[1]->integer)));
+
+        // the outline a pixel round each piece (half: above and left), then the pieces
+        for (int k = 0; mode && k < n; k++) {
+            const int *p = piece[k];
+
+            RL_BoxPx(cx + 2 * (p[0] - 1), cy + 2 * (p[1] - 1), cx + 2 * (p[0] + p[2] + (mode == 1)), cy + 2 * p[1], oc);
+            RL_BoxPx(cx + 2 * (p[0] - 1), cy + 2 * p[1], cx + 2 * p[0], cy + 2 * (p[1] + p[3]), oc);
+            if (mode == 1) {
+                RL_BoxPx(cx + 2 * (p[0] - 1), cy + 2 * (p[1] + p[3]), cx + 2 * (p[0] + p[2] + 1), cy + 2 * (p[1] + p[3] + 1), oc);
+                RL_BoxPx(cx + 2 * (p[0] + p[2]), cy + 2 * p[1], cx + 2 * (p[0] + p[2] + 1), cy + 2 * (p[1] + p[3]), oc);
+            }
+        }
+        for (int k = 0; k < n; k++) {
+            const int *p = piece[k];
+
+            RL_BoxPx(cx + 2 * p[0], cy + 2 * p[1], cx + 2 * (p[0] + p[2]), cy + 2 * (p[1] + p[3]), c);
+        }
+    }
+}
+
+// a setting's row: its label (and its description), its control at the right edge, a line under it
+static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, float y, float w, float h)
+{
+    const rlOpt_t& o   = rl_opts[i];
+    const int      id  = ID_OPT + i * 16;
+    const float    mid = y + 32, right = x + w;
+
+    if (o.kind == OC_SECTION) {
+        const char *tab = rl_optTabs[o.tab];
+
+        // (found by the search: the tab's name too)
+        RL_Text(v, x, y + 18, rl_opt.search.empty() || !Q_stricmp(tab, o.label) ? o.label : va("%s  \xb7  %s", tab, o.label), 15, RL_BRASS,
+                true, RL_LEFT, 2.6f, RL_MID);
+        return;
+    }
+    if (o.kind == OC_PREVIEW) {
+        RL_Panel(v, x, y, w, h - 12, RL_Rgb(0, 0, 0, 0));
+        RL_Crosshair(v, x, y, w, h - 12);
+        RL_Text(v, x + 12, y + h - 12 - 18, "PREVIEW, 2X", 12, RL_Rgb(255, 255, 255, 150), true, RL_LEFT, 1.6f, RL_MID);
+        return;
+    }
+    float cw = o.kind == OC_TOGGLE ? 56 : o.kind == OC_CODE ? 364 : 260; // the control's width
+
+    if (o.cvar) {
+        UI_DrawDep(rl_opt.cv[i]);
+    }
+    if (o.kind == OC_SEG || o.kind == OC_SWATCH) {
+        cw = -4;
+        for (int k = 0; o.choices[k]; k++) {
+            cw += o.kind == OC_SWATCH ? 34 : RL_TextW(v, o.choices[k], 15, true, 1.6f) + 40;
+        }
+    }
+    RL_Text(v, x, o.desc[0] ? y + 21 : mid, o.label, 19, RL_TEXT, false, RL_LEFT, 0, RL_MID, w - cw - 24);
+    if (o.desc[0]) {
+        RL_Text(v, x, y + 45, o.desc, 14, RL_MUTED, false, RL_LEFT, 0, RL_MID, w - cw - 24);
+    }
+    switch (o.kind) {
+    case OC_SEG:
+        RL_Segments(m, v, right, mid - 16, 32, o.choices, RL_OptChoices(i), RL_OptChoice(i), id, true);
+        break;
+    case OC_CYCLE:
+        RL_Cycle(m, v, right - 260, mid - 16, RL_OptLabel(i, RL_OptChoice(i)), id);
+        break;
+    case OC_SLIDER:
+        RL_Slider(m, v, i, right - 260, mid - 14, id);
+        break;
+    case OC_TOGGLE:
+        RL_Toggle(v, right - 56, mid - 14, RL_OptOn(i), m->Hot(id));
+        m->Hit(v, right - 56, mid - 14, 56, 28, id);
+        break;
+    case OC_SWATCH:
+        RL_Swatches(m, v, i, right, mid - 14, id);
+        break;
+    case OC_CODE:
+        RL_Field(v, right - 364, mid - 18, 260, 36, 0, 0, rl_opt.code, "CS\x85, or the clipboard's", rl_mm.edit == F_CODE, m->Hot(id));
+        RL_Button(v, right - 100, mid - 18, 100, 36, "IMPORT", false, 0, 0, m->Hot(id + 1));
+        m->Hit(v, right - 364, mid - 18, 260, 36, id);
+        m->Hit(v, right - 100, mid - 18, 100, 36, id + 1);
+        break;
+    }
+    RL_Box(v, x, y + h - 2, w, 1, RL_LINE);
+}
+
+// the restarts APPLY waits to make: 1 the renderer's (a setting it took otherwise), 2 the sound's (s_khz, the last)
+static int RL_OptPending(void)
+{
+    int pending = 0;
+
+    for (int k = 0; k < RL_RESTARTS; k++) {
+        const cvar_t *cv = RL_OptOther(rl_optRestart[k]);
+
+        if (cv->latchedString || rl_opt.applied[k] != cv->string) {
+            pending |= k < RL_RESTARTS - 1 ? 1 : 2;
+        }
+    }
+    return pending;
+}
+
+// APPLY: the restarts made, the settings as they will be taken
+static void RL_OptApply(void)
+{
+    const int pending = RL_OptPending();
+
+    if (!pending) {
+        return;
+    }
+    uii.Snd_PlaySound("sound/menu/apply.wav");
+    for (int k = 0; k < RL_RESTARTS; k++) {
+        rl_opt.applied[k] = RL_Latched(RL_OptOther(rl_optRestart[k]));
+    }
+    Cbuf_AddText(pending & 1 ? "vid_restart\n" : "");
+    Cbuf_AddText(pending & 2 ? "snd_restart\n" : "");
+}
+
+/*
+================
+OPTIONS: the back layer the panel and, under the crosshair's preview, the
+photos as they are under the panel; the front the rest. The rows wholly
+in the content (between the head and the foot row) drawn
+================
+*/
+static void RL_Options(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h)
+{
+    std::vector<rlOptPlace_t>& places = rl_optPlaces;
+    const float                top = y + 48 + RL_PAD, foot = y + h - RL_FOOT, band = foot - RL_PAD - top;
+
+    // (again after a renderer's start: the sizes offered, the settings it took)
+    if (!rl_opt.ready || rl_opt.refSeq != uii.GetRefSequence()) {
+        RL_OptRead();
+    }
+    const float height = RL_OptLayout(x, w, places);
+
+    rl_opt.most = 0;
+    for (const rlOptPlace_t& p : places) {
+        if (height > band && p.y >= height - band && (!rl_opt.most || p.y < rl_opt.most)) {
+            rl_opt.most = p.y;
+        }
+    }
+    // (the scroll as far as the layout goes, here: both layers alike)
+    const float scroll = Q_max(0.0f, Q_min(rl_opt.scroll, rl_opt.most));
+    if (m->m_back) {
+        RL_Panel(v, x, y, w, h, RL_PANEL);
+        for (const rlOptPlace_t& p : places) {
+            if (rl_opts[p.opt].kind == OC_PREVIEW && p.y >= scroll && p.y + p.h <= scroll + band) {
+                RL_BgDraw(v, p.x, top + p.y - scroll, p.w, p.h - 12);
+            }
+        }
+        return;
+    }
+    RL_Head(v, x, y, w, 48);
+    RL_Tabs(m, v, x + 4, y, rl_optTabs, OT_NUM, rl_opt.search.empty() ? rl_opt.tab : -1, ID_OTAB, 17, 22);
+    {
+        const float sw = Q_min(300.0f, w * 0.3f);
+
+        RL_Field(v, x + w - RL_PAD - sw, y + 7, sw, 34, 12, 12, rl_opt.search, "Search settings\x85", rl_mm.edit == F_OSEARCH, m->Hot(ID_OSEARCH));
+        m->Hit(v, x + w - RL_PAD - sw, y + 7, sw, 34, ID_OSEARCH);
+    }
+    if (w >= 1100) {
+        // (the columns' line)
+        const float lw = floorf(w * 0.55f + 0.5f);
+
+        RL_Box(v, x + lw, y + 49, 1, foot - (y + 49), RL_LINE);
+    }
+    for (size_t k = 0; k < places.size(); k++) {
+        const rlOptPlace_t& p = places[k];
+
+        // (a section's title with its first row, never alone at the foot)
+        if (p.y >= scroll && p.y + p.h <= scroll + band
+            && (rl_opts[p.opt].kind != OC_SECTION || places[k + 1].y + places[k + 1].h <= scroll + band)) {
+            RL_OptRow(m, v, p.opt, p.x, top + p.y - scroll, p.w, p.h);
+        }
+    }
+    if (places.empty()) {
+        RL_Text(v, x + RL_PAD, top + 20, "No setting matches.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+    } else if (height > band) {
+        const float th = band - 8;
+
+        RL_Box(v, x + w - 8, top + 4 + th * scroll / height, 3, Q_max(24.0f, th * band / height), RL_Rgb(255, 255, 255, 60));
+    }
+    // the foot row
+    {
+        const float by = foot + (RL_FOOT - RL_CTRL) / 2;
+        const int   pending = RL_OptPending();
+        const char *restart[4] = {rl_opt.note.c_str(), "APPLY RESTARTS THE VIDEO", "APPLY RESTARTS THE SOUND", "APPLY RESTARTS THE VIDEO AND THE SOUND"};
+
+        RL_Box(v, x + 1, foot, w - 2, RL_FOOT - 1, RL_HEAD);
+        RL_Box(v, x, foot, w, 1, RL_LINE);
+        RL_Button(v, x + RL_PAD, by, 150, RL_CTRL, "DEFAULTS", false, 0, 12, m->Hot(ID_DEFAULTS));
+        RL_Text(v, x + w / 2, foot + RL_FOOT / 2, restart[pending], 15, RL_BRASS, true, RL_CENTER, 2, RL_MID);
+        RL_Button(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "APPLY", true, 12, 0, m->Hot(ID_OAPPLY) && pending, !pending);
+        m->Hit(v, x + RL_PAD, by, 150, RL_CTRL, ID_DEFAULTS);
+        m->Hit(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, ID_OAPPLY);
+    }
+}
+
+// the wheel: the next setting's top (a row's or a section's) at the content's, or the one before
+static void RL_OptScroll(bool down)
+{
+    float to = down ? rl_opt.most : 0;
+
+    for (const rlOptPlace_t& p : rl_optPlaces) {
+        if (down ? p.y > rl_opt.scroll && p.y < to : p.y < rl_opt.scroll && p.y > to) {
+            to = p.y;
+        }
+    }
+    rl_opt.scroll = to;
+}
+
+// a click on a setting's control (a slider's track is dragged: MainTick)
+static void RL_OptChoose(int id)
+{
+    const int      i = (id - ID_OPT) / 16, part = (id - ID_OPT) % 16;
+    const rlOpt_t& o = rl_opts[i];
+
+    switch (o.kind) {
+    case OC_SEG:
+        RL_OptPick(i, part);
+        break;
+    case OC_CYCLE:
+        {
+            const int n = RL_OptChoices(i), k = RL_OptChoice(i);
+
+            RL_OptPick(i, part ? (k + 1) % n : k <= 0 ? n - 1 : k - 1);
+        }
+        break;
+    case OC_SWATCH:
+        RL_OptSet(i, o.choices[part]);
+        break;
+    case OC_TOGGLE:
+        RL_OptFlip(i);
+        break;
+    case OC_SLIDER:
+        if (part == 1) {
+            rl_mm.edit   = F_VALUE;
+            rl_opt.row   = i;
+            rl_opt.value.clear();
+        }
+        return;
+    case OC_CODE:
+        if (part) {
+            RL_OptImport();
+        } else {
+            rl_mm.edit = F_CODE;
+        }
+        return;
+    }
+    uii.Snd_PlaySound("sound/menu/apply.wav");
+}
+
+void RL_MainOptions(void)
+{
+    rl_mm.page = PAGE_OPTIONS;
+    RL_Changed();
+}
+
+/*
 ================
 DrawMain: the back layer the photo and what is under the model views (the
-profile's panel), the front the rest
+profile's panel) or the crosshair's preview (Options' panel), the front
+the rest
 ================
 */
 void UIReloadedMenu::DrawMain(const rlView_t& v)
@@ -1261,6 +2205,9 @@ void UIReloadedMenu::DrawMain(const rlView_t& v)
             PlaceView(v, "allies", 0, 0, 0, 0);
             PlaceView(v, "axis", 0, 0, 0, 0);
         }
+        if (rl_mm.page == PAGE_OPTIONS) {
+            RL_Options(this, v, ax, ay, aw, ah);
+        }
         return;
     }
     RL_Rail(this, v);
@@ -1269,6 +2216,8 @@ void UIReloadedMenu::DrawMain(const rlView_t& v)
         RL_Profile(this, v, ax + aw - pw, ay, pw, ah);
     } else if (rl_mm.page == PAGE_HOST) {
         RL_Host(this, v, ax, ay, aw, ah);
+    } else {
+        RL_Options(this, v, ax, ay, aw, ah);
     }
 }
 
@@ -1308,7 +2257,21 @@ INPUT
 // the text of the field typed in, NULL none
 static std::string *RL_Edited(void)
 {
-    return rl_mm.edit == F_SEARCH ? &rl_mm.search : rl_mm.edit == F_NAME ? &rl_mm.name : rl_mm.edit >= F_HOST ? &rl_host.field[rl_mm.edit - F_HOST] : NULL;
+    switch (rl_mm.edit) {
+    case F_NONE:
+        return NULL;
+    case F_SEARCH:
+        return &rl_mm.search;
+    case F_NAME:
+        return &rl_mm.name;
+    case F_OSEARCH:
+        return &rl_opt.search;
+    case F_CODE:
+        return &rl_opt.code;
+    case F_VALUE:
+        return &rl_opt.value;
+    }
+    return &rl_host.field[rl_mm.edit - F_HOST];
 }
 
 static void RL_ApplyName(void)
@@ -1358,8 +2321,17 @@ void UIReloadedMenu::ChooseMain(int id)
             return;
         }
     }
-    if (id != ID_SEARCH && id != ID_NAME && id != ID_APPLY && (id < ID_FIELD || id >= ID_FIELD + HF_NUM)) {
+    // (a value typed in a slider's box set as the typing ends)
+    if (rl_mm.edit == F_VALUE && id != ID_OPT + rl_opt.row * 16 + 1) {
+        RL_OptTyped();
+    }
+    if (id != ID_SEARCH && id != ID_NAME && id != ID_APPLY && id != ID_OSEARCH && (id < ID_FIELD || id >= ID_FIELD + HF_NUM) && id < ID_OPT) {
         rl_mm.edit = F_NONE;
+    }
+    rl_opt.note.clear();
+    if (id >= ID_OPT) {
+        RL_OptChoose(id);
+        return;
     }
     if (id >= ID_MAP) {
         if (rl_host.top + id - ID_MAP < (int)rl_host.maps.size()) {
@@ -1418,6 +2390,14 @@ void UIReloadedMenu::ChooseMain(int id)
         rl_mm.edit = F_HOST + id - ID_FIELD;
         return;
     }
+    if (id >= ID_OTAB && id < ID_OTAB + OT_NUM) {
+        // (the search cleared: the tab's settings)
+        rl_opt.tab = id - ID_OTAB;
+        rl_opt.search.clear();
+        rl_opt.scroll = 0;
+        uii.Snd_PlaySound("sound/menu/apply.wav");
+        return;
+    }
     switch (id) {
     case ID_LOCAL:
     case ID_ONLINE:
@@ -1426,6 +2406,16 @@ void UIReloadedMenu::ChooseMain(int id)
         break;
     case ID_START:
         RL_HostStart();
+        break;
+    case ID_OSEARCH:
+        rl_mm.edit = F_OSEARCH;
+        break;
+    case ID_DEFAULTS:
+        uii.Snd_PlaySound("sound/menu/apply.wav");
+        RL_OptDefaults();
+        break;
+    case ID_OAPPLY:
+        RL_OptApply();
         break;
     case ID_PLAY:
     case ID_HOST:
@@ -1493,6 +2483,8 @@ qboolean UIReloadedMenu::MainKey(int key)
             rl_mm.pickTop += step;
         } else if (rl_mm.page == PAGE_HOST) {
             rl_host.top += step;
+        } else if (rl_mm.page == PAGE_OPTIONS) {
+            RL_OptScroll(step > 0);
         } else {
             rl_mm.top += step;
         }
@@ -1508,6 +2500,9 @@ qboolean UIReloadedMenu::MainKey(int key)
                 if (rl_mm.edit == F_SEARCH) {
                     rl_vis.dirty = true;
                 }
+                if (rl_mm.edit == F_OSEARCH) {
+                    rl_opt.scroll = 0;
+                }
             }
             RL_Changed();
             return qtrue;
@@ -1515,6 +2510,10 @@ qboolean UIReloadedMenu::MainKey(int key)
         if (key == K_ENTER || key == K_KP_ENTER) {
             if (rl_mm.edit == F_NAME) {
                 RL_ApplyName();
+            } else if (rl_mm.edit == F_VALUE) {
+                RL_OptTyped();
+            } else if (rl_mm.edit == F_CODE) {
+                RL_OptImport();
             } else {
                 rl_mm.edit = F_NONE;
             }
@@ -1551,18 +2550,28 @@ void UIReloadedMenu::MainChar(int ch)
 {
     std::string *text = RL_Edited();
     // (the printable ones; the player's name as long as the game keeps it, a
-    // server's as the stock host menu's, Host's numbers three digits)
+    // server's as the stock host menu's, Host's numbers three digits, a
+    // slider's value a number, a crosshair code CS2's letters and digits)
     const bool number = rl_mm.edit >= F_HOST && rl_mm.edit != F_HOST + HF_NAME;
-    const int  most   = rl_mm.edit == F_NAME ? MAX_NAME_LENGTH - 1 : rl_mm.edit == F_HOST + HF_NAME ? 31 : number ? 3 : 40;
+    const int  most   = rl_mm.edit == F_NAME             ? MAX_NAME_LENGTH - 1
+                      : rl_mm.edit == F_HOST + HF_NAME   ? 31
+                      : number                           ? 3
+                      : rl_mm.edit == F_VALUE            ? 6
+                      : rl_mm.edit == F_CODE             ? 46
+                                                         : 40;
 
     if (!text || ch < ' ' || ch > '~' || (int)text->size() >= most || (number && !isdigit(ch))
-        || (rl_mm.edit == F_HOST + HF_NAME && !RL_NameChar(ch))) {
+        || (rl_mm.edit == F_HOST + HF_NAME && !RL_NameChar(ch)) || (rl_mm.edit == F_VALUE && !isdigit(ch) && ch != '.' && ch != '-')
+        || (rl_mm.edit == F_CODE && !isalnum(ch))) {
         return;
     }
     *text += (char)ch;
     if (rl_mm.edit == F_SEARCH) {
         rl_mm.top    = 0;
         rl_vis.dirty = true;
+    }
+    if (rl_mm.edit == F_OSEARCH) {
+        rl_opt.scroll = 0;
     }
     RL_Changed();
 }
@@ -1616,6 +2625,25 @@ void UIReloadedMenu::MainTick(bool opened)
             ServerListThink(l);
         }
     }
+    if (rl_mm.page == PAGE_OPTIONS) {
+        // the slider pressed dragged to the mouse while its button is down
+        const bool down = (uid.mouseFlags & 1) != 0;
+
+        if (down && !rl_opt.down && m_focus >= ID_OPT && rl_opts[(m_focus - ID_OPT) / 16].kind == OC_SLIDER && (m_focus - ID_OPT) % 16 == 0) {
+            rl_opt.drag = m_focus;
+        }
+        rl_opt.down = down;
+        if (!down) {
+            rl_opt.drag = -1;
+        }
+        for (const rlHit_t& h : m_hits) {
+            if (h.id == rl_opt.drag) {
+                const int i = (h.id - ID_OPT) / 16;
+
+                RL_OptSlide(i, rl_opts[i].lo + (rl_opts[i].hi - rl_opts[i].lo) * (uid.mouseX - (int)m_screenframe.pos.x - h.x) / (float)h.w);
+            }
+        }
+    }
     if (rl_mm.page == PAGE_HOST) {
         // Host's settings read the first time, the maps' photos made one a frame (the one picked first)
         if (!rl_host.ready) {
@@ -1640,8 +2668,9 @@ void UIReloadedMenu::MainTick(bool opened)
 int UIReloadedMenu::MainDrawKey(void)
 {
     if (m_back) {
-        // the photos (made, faded), the profile's page
-        return (RL_BgFade() * 2 + rl_bg.cur) * 4099 + rl_bg.shader[0] * 31 + rl_bg.shader[1] * 7 + rl_mm.page;
+        // the photos (made, faded), the profile's page, Options' layout (the crosshair's preview)
+        return (RL_BgFade() * 2 + rl_bg.cur) * 4099 + rl_bg.shader[0] * 31 + rl_bg.shader[1] * 7 + rl_mm.page
+             + (rl_mm.page == PAGE_OPTIONS ? rl_mm.serial * 131 : 0);
     }
     // (the caret's blink while typed in; in a game, DISCONNECT)
     return rl_mm.serial * 31 + rl_sv.serial * 7 + (rl_mm.edit != F_NONE ? (cls.realtime / 530) % 2 : 0) * 3 + (clc.state > CA_PRIMED);

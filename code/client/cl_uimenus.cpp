@@ -2223,7 +2223,8 @@ void UIReloadedMenu::Choose(int id)
             cmd = "quit\n";
             break;
         case ID_OPTIONS:
-            cmd = "popmenu 0;wait 250;ui_getplayermodel;pushmenu mpoptions\n";
+            RL_MainOptions();
+            cmd = "popmenu 0;wait 250;pushmenu main\n";
             break;
         case ID_SPECTATOR:
             cmd = "popmenu 0;wait 250;spectator\n";

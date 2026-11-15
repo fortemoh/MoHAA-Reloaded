@@ -106,6 +106,9 @@ public:
     int      MainDrawKey(void);
 };
 
+// the main menu shown next on its Options page (the Esc menu's OPTIONS; cl_uimain.cpp)
+void RL_MainOptions(void);
+
 // the player models a side can pick, the stock picker's, in its order
 typedef struct {
     std::string file;  // models/player/<file>.tik
