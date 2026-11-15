@@ -1525,10 +1525,11 @@ static void Comp_FeedBox(float x0, float y0, float x1, float y1, float s, qboole
     }
 }
 
-// a name's color in the feed: its team's (CS2's blue and yellow), else white
+// a name's color in the feed: the Allies' CS2's blue, the Axis' the HUD's
+// red (Comp_TeamColor's, as the top bar's), else white
 static UColor Comp_FeedNameColor(int team, float alpha)
 {
-    return team == TEAM_ALLIES ? UColor(0.435f, 0.612f, 0.902f, alpha) : team == TEAM_AXIS ? UColor(0.918f, 0.745f, 0.329f, alpha) : UColor(1, 1, 1, alpha);
+    return team == TEAM_ALLIES ? UColor(0.435f, 0.612f, 0.902f, alpha) : team == TEAM_AXIS ? UColor(0.8f, 0.533f, 0.533f, alpha) : UColor(1, 1, 1, alpha);
 }
 
 void UIHudFeed::DrawKills(float w, float h, float s)
