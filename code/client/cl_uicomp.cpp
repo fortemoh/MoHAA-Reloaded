@@ -287,7 +287,8 @@ static struct {
     int      team[MAX_CLIENTS];
     int      objFlags[MAX_OBJECTIVES], objCurrent;
     vec3_t   objLoc[MAX_OBJECTIVES];
-    int      teamScores[2]; // the server's (CS_TEAMSCORES), -1 not sent
+    qboolean teamScoresSent;
+    int      teamScores[2]; // the server's (CS_TEAMSCORES)
 } cs = {1};
 
 void UI_CompHud_ConfigString(void)
@@ -319,9 +320,7 @@ static void Comp_ConfigStrings(void)
         }
     }
     cs.objCurrent = atoi(CL_ConfigString(CS_CURRENT_OBJECTIVE));
-    if (sscanf(CL_ConfigString(CS_TEAMSCORES), "%d %d", &cs.teamScores[0], &cs.teamScores[1]) != 2) {
-        cs.teamScores[0] = cs.teamScores[1] = -1;
-    }
+    cs.teamScoresSent = sscanf(CL_ConfigString(CS_TEAMSCORES), "%d %d", &cs.teamScores[0], &cs.teamScores[1]) == 2;
 }
 
 static int Comp_Gametype(void)
@@ -887,16 +886,18 @@ void UI_CompHud_Frame(void)
     Comp_SetI("ui_hud_ammo", ps->stats[STAT_AMMO]);
 
     // the score box: Allies | Axis under the timer, or self | the leader
-    // ("-" while a score isn't known). The teams' scores: the server's
-    // (CS_TEAMSCORES, a server of this code); else our team's and the
-    // highest (the server's stats, every frame), the scoreboard's (asked for
-    // at times) for the other team's below ours, and 0 for it in round modes
-    // while both are 0 (a team's score there is its rounds won)
+    // ("-" while a score isn't known; a score can be below 0). The teams'
+    // scores: the server's (CS_TEAMSCORES, a server of this code); else our
+    // team's and the highest (the server's stats, every frame), the
+    // scoreboard's (asked for at times, -1 not read yet) for the other team's
+    // below ours, and 0 for it in round modes while both are 0 (a team's
+    // score there is its rounds won)
     {
         const int matchEnd = atoi(CL_ConfigString(CS_MATCHEND));
         int       score[2] = {ps->stats[STAT_KILLS], ps->stats[STAT_HIGHEST_SCORE]};
+        qboolean  known[2] = {qtrue, qtrue};
 
-        if (teams && cs.teamScores[0] >= 0) {
+        if (teams && cs.teamScoresSent) {
             score[0] = cs.teamScores[0];
             score[1] = cs.teamScores[1];
         } else if (teams) {
@@ -904,17 +905,22 @@ void UI_CompHud_Frame(void)
 
             score[0] = comp.sbScore[0];
             score[1] = comp.sbScore[1];
+            known[0] = score[0] >= 0;
+            known[1] = score[1] >= 0;
             if (team == TEAM_ALLIES || team == TEAM_AXIS) {
                 score[mine] = ps->stats[STAT_KILLS];
+                known[mine] = qtrue;
                 if (ps->stats[STAT_HIGHEST_SCORE] > ps->stats[STAT_KILLS]) {
                     score[!mine] = ps->stats[STAT_HIGHEST_SCORE];
+                    known[!mine] = qtrue;
                 } else if (gametype >= GT_TEAM_ROUNDS && !ps->stats[STAT_HIGHEST_SCORE]) {
                     score[!mine] = 0;
+                    known[!mine] = qtrue;
                 }
             }
         }
-        Comp_Set("ui_hud_score_l", score[0] >= 0 ? va("%d", score[0]) : "-");
-        Comp_Set("ui_hud_score_r", score[1] >= 0 ? va("%d", score[1]) : "-");
+        Comp_Set("ui_hud_score_l", known[0] ? va("%d", score[0]) : "-");
+        Comp_Set("ui_hud_score_r", known[1] ? va("%d", score[1]) : "-");
         Comp_Set("ui_hud_score_lc", teams ? "0.588 0.729 0.871 1" : "0.922 0.933 0.949 1");
         Comp_Set("ui_hud_score_rc", teams ? "0.902 0.478 0.408 1" : "0.922 0.933 0.949 1");
         if (!(atoi(CL_ConfigString(CS_WARMUP)) != -1 && matchEnd && gametype != GT_LIBERATION && matchEnd > cl.serverTime)) {
