@@ -3340,6 +3340,14 @@ static qboolean R_AtlasPack( int w, int h, int *outX, int *outY ) {
 
 static int atlasGeneration;	// changes with the page's size (the 2D lists' kept geometry)
 
+// an image's place in the page: its texels' texture coordinates
+static void R_AtlasPlace( image_t *image ) {
+	image->atlasRect[0] = ( image->atlasRoom[0] + 1 ) / (float)atlas.side;
+	image->atlasRect[1] = ( image->atlasRoom[1] + 1 ) / (float)atlas.side;
+	image->atlasRect[2] = image->width / (float)atlas.side;
+	image->atlasRect[3] = image->height / (float)atlas.side;
+}
+
 int R_AtlasGeneration( void ) {
 	return atlasGeneration;
 }
@@ -3374,13 +3382,8 @@ static void R_AtlasResize( int side ) {
 	atlas.page->numMipmaps = 0;
 	atlas.page->internalFormat = TEXFMT_RGBA8;
 	for ( i = 0; i < tr.numImages; i++ ) {
-		image_t *image = &tr.images[i];
-
-		if ( image->atlas ) {
-			image->atlasRect[0] = ( image->atlasRoom[0] + 1 ) / (float)side;
-			image->atlasRect[1] = ( image->atlasRoom[1] + 1 ) / (float)side;
-			image->atlasRect[2] = image->width / (float)side;
-			image->atlasRect[3] = image->height / (float)side;
+		if ( tr.images[i].atlas ) {
+			R_AtlasPlace( &tr.images[i] );
 		}
 	}
 }
@@ -3545,10 +3548,7 @@ qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height
 		image->atlas = atlas.page;
 		image->width = image->uploadWidth = width;
 		image->height = image->uploadHeight = height;
-		image->atlasRect[0] = (image->atlasRoom[0] + 1) / (float)atlas.side;
-		image->atlasRect[1] = (image->atlasRoom[1] + 1) / (float)atlas.side;
-		image->atlasRect[2] = width / (float)atlas.side;
-		image->atlasRect[3] = height / (float)atlas.side;
+		R_AtlasPlace(image);
 		R_AtlasFill(image, rgba);
 		return RE_RegisterShaderNoMip(name);
 	}

@@ -382,8 +382,9 @@ R_2DClip
 
 Clips the draw's triangles to r2d.clip, as the scissor would, and, in an
 atlas page, to its image (its texels beyond its edges taken as clear): a
-polygon a triangle, its vertexes' attributes interpolated as the rasterizer
-would across the screen (an orthographic window)
+polygon a triangle (a convex polygon's draw: one), its vertexes' attributes
+interpolated as the rasterizer would across the screen (an orthographic
+window)
 ================
 */
 #define R2D_ATTRS 9	// x y z s t r g b a
@@ -413,14 +414,16 @@ static int R_2DClipEdge( const float (*in)[R2D_ATTRS], int n, float (*out)[R2D_A
 static void R_2DClip( qboolean image ) {
 	static float		verts[SHADER_MAX_VERTEXES][R2D_ATTRS];
 	static glIndex_t	indexes[SHADER_MAX_INDEXES];
+	static float		poly[2][1024 + 8][R2D_ATTRS];
 	const int			numVertexes = tess.numVertexes - r2d.firstVertex;
 	const int			numIndexes = tess.numIndexes - r2d.firstIndex;
+	// a convex polygon (DrawPolygon2D) is clipped whole, its vertexes in order
+	const qboolean		whole = r2d.fan && numVertexes <= 1024;
 	const float			planes[8][3] = {
 		{ 0, r2d.clip[0], 1 }, { 0, r2d.clip[2], -1 }, { 1, r2d.clip[1], 1 }, { 1, r2d.clip[3], -1 },
 		{ 3, 0, 1 }, { 3, 1, -1 }, { 4, 0, 1 }, { 4, 1, -1 }
 	};
-	float				poly[2][12][R2D_ATTRS];
-	int					i, j, k, n;
+	int					i, j, k, n, p;
 
 	for ( i = 0; i < numVertexes; i++ ) {
 		const int v = r2d.firstVertex + i;
@@ -438,60 +441,26 @@ static void R_2DClip( qboolean image ) {
 	tess.numVertexes = r2d.firstVertex;
 	tess.numIndexes = r2d.firstIndex;
 
-	if ( r2d.fan && numVertexes <= 1024 ) {
-		// a convex polygon: clipped whole, its vertexes in order
-		static float pa[1024 + 8][R2D_ATTRS], pb[1024 + 8][R2D_ATTRS];
-		float (*in)[R2D_ATTRS] = pa, (*out)[R2D_ATTRS] = pb, (*sw)[R2D_ATTRS];
-
-		Com_Memcpy( pa, verts, numVertexes * sizeof( verts[0] ) );
-		n = numVertexes;
-		for ( j = 0; j < ( image ? 8 : 4 ) && n >= 3; j++ ) {
+	for ( i = 0; whole ? i == 0 : i + 2 < numIndexes; i += 3 ) {
+		if ( whole ) {
+			Com_Memcpy( poly[0], verts, numVertexes * sizeof( verts[0] ) );
+			n = numVertexes;
+		} else {
+			for ( j = 0; j < 3; j++ ) {
+				Com_Memcpy( poly[0][j], verts[indexes[i + j]], sizeof( verts[0] ) );
+			}
+			n = 3;
+		}
+		for ( j = 0, p = 0; j < ( image ? 8 : 4 ) && n >= 3; j++ ) {
 			const int attr = (int)planes[j][0];
 
 			// (a plane all of it is inside leaves it as it is)
-			for ( i = 0; i < n && planes[j][2] * ( in[i][attr] - planes[j][1] ) >= 0; i++ ) {
+			for ( k = 0; k < n && planes[j][2] * ( poly[p][k][attr] - planes[j][1] ) >= 0; k++ ) {
 			}
-			if ( i == n ) {
-				continue;
+			if ( k < n ) {
+				n = R_2DClipEdge( (const float (*)[R2D_ATTRS])poly[p], n, poly[!p], attr, planes[j][1], planes[j][2] );
+				p = !p;
 			}
-			n = R_2DClipEdge( (const float (*)[R2D_ATTRS])in, n, out, attr, planes[j][1], planes[j][2] );
-			sw = in, in = out, out = sw;
-		}
-		if ( tess.numVertexes + n >= SHADER_MAX_VERTEXES || tess.numIndexes + 3 * n >= SHADER_MAX_INDEXES ) {
-			shader_t *shader = tess.shader;
-
-			R_2DCaptureLost();
-			RB_EndSurface();
-			RB_BeginSurface( shader );
-			tess.colors2D = qtrue;
-			tess.vertexColorValid = qtrue;
-		}
-		for ( j = 0; j < n; j++ ) {
-			const int v = tess.numVertexes + j;
-
-			VectorCopy( in[j], tess.xyz[v] );
-			tess.texCoords[v][0][0] = r2d.atlas ? r2d.atlas->atlasRect[0] + in[j][3] * r2d.atlas->atlasRect[2] : in[j][3];
-			tess.texCoords[v][0][1] = r2d.atlas ? r2d.atlas->atlasRect[1] + in[j][4] * r2d.atlas->atlasRect[3] : in[j][4];
-			for ( k = 0; k < 4; k++ ) {
-				tess.vertexColors[v][k] = (byte)( Com_Clamp( 0, 255, in[j][5 + k] ) + 0.5f );
-			}
-			if ( j >= 2 ) {
-				tess.indexes[tess.numIndexes++] = tess.numVertexes;
-				tess.indexes[tess.numIndexes++] = v - 1;
-				tess.indexes[tess.numIndexes++] = v;
-			}
-		}
-		tess.numVertexes += n >= 3 ? n : 0;
-		return;
-	}
-
-	for ( i = 0; i + 2 < numIndexes; i += 3 ) {
-		for ( j = 0; j < 3; j++ ) {
-			Com_Memcpy( poly[0][j], verts[indexes[i + j]], sizeof( poly[0][0] ) );
-		}
-		n = 3;
-		for ( j = 0; j < ( image ? 8 : 4 ) && n >= 3; j++ ) {
-			n = R_2DClipEdge( poly[j & 1], n, poly[!( j & 1 )], (int)planes[j][0], planes[j][1], planes[j][2] );
 		}
 		if ( n < 3 ) {
 			continue;
@@ -507,16 +476,12 @@ static void R_2DClip( qboolean image ) {
 			tess.vertexColorValid = qtrue;
 		}
 		for ( j = 0; j < n; j++ ) {
-			const float *in = poly[0][j];	// an even number of planes: the result in poly[0]
+			const float *in = poly[p][j];
 			const int v = tess.numVertexes + j;
 
 			VectorCopy( in, tess.xyz[v] );
-			tess.texCoords[v][0][0] = in[3];
-			tess.texCoords[v][0][1] = in[4];
-			if ( r2d.atlas ) {
-				tess.texCoords[v][0][0] = r2d.atlas->atlasRect[0] + in[3] * r2d.atlas->atlasRect[2];
-				tess.texCoords[v][0][1] = r2d.atlas->atlasRect[1] + in[4] * r2d.atlas->atlasRect[3];
-			}
+			tess.texCoords[v][0][0] = r2d.atlas ? r2d.atlas->atlasRect[0] + in[3] * r2d.atlas->atlasRect[2] : in[3];
+			tess.texCoords[v][0][1] = r2d.atlas ? r2d.atlas->atlasRect[1] + in[4] * r2d.atlas->atlasRect[3] : in[4];
 			for ( k = 0; k < 4; k++ ) {
 				tess.vertexColors[v][k] = (byte)( Com_Clamp( 0, 255, in[5 + k] ) + 0.5f );
 			}
