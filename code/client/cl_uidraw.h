@@ -21,8 +21,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 // cl_uidraw.h: the Reloaded UI's drawing (Added), defined in cl_uimenus.cpp
-// and shared with cl_uiextras.cpp: colors, design units, boxes, baked
-// shapes, the moh-icons outlines and Oswald text baked at the pixel size drawn
+// and shared with cl_uiextras.cpp and cl_uimain.cpp: colors, design units,
+// boxes, baked shapes, the moh-icons outlines and Oswald text baked at the
+// pixel size drawn
 
 #pragma once
 
@@ -78,6 +79,13 @@ void RL_SetColor(rlColor_t c);
 void RL_Box(const rlView_t& v, float x, float y, float w, float h, rlColor_t c);
 void RL_BoxPx(int x0, int y0, int x1, int y1, rlColor_t c);
 void RL_Shape(int x, int y, int w, int h, const char *text, rlColor_t c, float s);
+// a box rounded r; its frame, width thick inside its edge
+void RL_Round(const rlView_t& v, float x, float y, float w, float h, float r, rlColor_t c);
+void RL_RoundFrame(const rlView_t& v, float x, float y, float w, float h, float r, float width, rlColor_t c);
+// a box slanted as Omaha's tabs: its left edge kl, its right edge kr leaning right at the top
+void RL_Skew(const rlView_t& v, float x, float y, float w, float h, float kl, float kr, rlColor_t c);
+// a horizontal gradient from a to b (under: a black layer under it, as one)
+void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b, float under = 0.0f);
 bool RL_Outline(const rlView_t& v, const char *name, float cx, float cy, float bw, float bh, rlColor_t c, bool mirror = false);
 void RL_TeamIcon(const rlView_t& v, int t, float cx, float cy, float d, float alpha = 1.0f);
 rlFace_t RL_Face(const rlView_t& v, float size, bool bold);
@@ -97,4 +105,6 @@ float RL_Text(
     int             valign = RL_TOP,
     float           maxw   = 0.0f
 );
+// a name cut with "…" to fit maxw
+std::string RL_Ellipsize(const rlView_t& v, const char *text, float size, bool bold, float maxw);
 std::string RL_Upper(const char *s);

@@ -55,7 +55,6 @@ static FakkMiniconsole     *mini_console;
 static UIGMBox             *gmbox;
 static UIDMBox             *dmbox;
 static View3D              *view3d;
-static Menu                *mainmenu;
 static Menu                *hud_weapons;
 static Menu                *hud_items;
 static Menu                *hud_health;
@@ -2757,6 +2756,13 @@ UI_MainMenuWidgetsUpdate
 */
 void UI_MainMenuWidgetsUpdate(void)
 {
+    Menu *menu = menuManager.CurrentMenu();
+
+    // Added: the widgets are the stock main menu's; the Reloaded one shown for
+    // its name has none (an event no widget takes isn't freed)
+    if (!menu || str::icmp(menu->m_name, "main")) {
+        return;
+    }
     if (clc.state > CA_PRIMED) {
         Event *event = new Event(EV_Widget_Enable);
         menuManager.PassEventToWidget("backtogame", event);
@@ -3304,7 +3310,8 @@ void UI_MenuEscape(const char *name)
         return;
     }
 
-    if (menuManager.CurrentMenu() == mainmenu && clc.state == CA_DISCONNECTED) {
+    // Changed: the main menu looked up now (the Reloaded one or the stock one: ui_classicmenus)
+    if (menuManager.CurrentMenu() == menuManager.FindMenu("main") && clc.state == CA_DISCONNECTED) {
         if (developer->integer) {
             if (UI_ConsoleIsVisible()) {
                 UI_CloseConsole();
@@ -5833,9 +5840,6 @@ void CL_InitializeUI(void)
     if (hud_compass) {
         hud_compass->ShowMenu(NULL);
     }
-
-    // find the main menu
-    mainmenu = menuManager.FindMenu("main");
 
     IN_MouseOn();
 
