@@ -1603,10 +1603,9 @@ void UIHudCards::Draw(void)
 ================
 UIHudWeapons
 
-The weapons carried, up from the widget's bottom right: the sidearm (1),
-the primary (its slot), the grenades (5, frags then smokes, each with how
-many), each with its key at the right; the one in hand bright and named
-under it. countfont: the grenades' counts'
+The weapons carried, up from the widget's bottom right: the sidearm, the
+primary, the grenades (frags then smokes, each with how many); the one in
+hand bright and named under it. countfont: the grenades' counts'
 ================
 */
 class UIHudWeapons : public UIWidget
@@ -1618,7 +1617,7 @@ public:
 
     UIHudWeapons() : m_countFont(NULL) {}
     void SetCountFont(Event *ev) { m_countFont = new UIFont(ev->GetString(1)); }
-    void Item(float right, float *bottom, const char **pics, const int *counts, int n, int hand, const char *key, float boxW, float boxH);
+    void Item(float right, float *bottom, const char **pics, const int *counts, int n, int hand, float boxW, float boxH);
     void Draw(void) override;
     bool CacheDraw(void) override { return true; }
     bool DrawKeyed(void) override { return true; }
@@ -1643,7 +1642,7 @@ CLASS_DECLARATION(UIWidget, UIHudWeapons, NULL) {
     {NULL,                     NULL                       }
 };
 
-void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int *counts, int n, int hand, const char *key, float boxW, float boxH)
+void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int *counts, int n, int hand, float boxW, float boxH)
 {
     const float  s      = m_vVirtualScale[0];
     const float  lineH  = m_font->getHeight((const float *)NULL);
@@ -1658,7 +1657,6 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
         w += pw[i] + (counts ? 4.0f + m_countFont->getWidth(va("%d", counts[i]), -1) : 0.0f) + (i + 1 < n ? (counts ? 8.0f : 0.0f) + 4.0f : 0.0f);
     }
     top = *bottom - ph - (hand >= 0 ? 8.0f + lineH : 0.0f);
-    Comp_Text(m_font, m_frame.size.width / s - m_font->getWidth(key, -1), top - 8.0f + lineH * 0.5f, key, white, getVirtualScale());
     x = right - w;
     for (i = 0; i < n; i++) {
         const float alpha = hand == i ? 1.0f : 0.55f;
@@ -1688,7 +1686,7 @@ void UIHudWeapons::Draw(void)
     const playerState_t *ps       = &cl.snap.ps;
     const int            owned    = ps->stats[STAT_WEAPONS] & 0x3F, equipped = ps->stats[STAT_EQUIPPED_WEAPON] & 0x3F;
     const float          s        = m_vVirtualScale[0];
-    const float          right    = m_frame.size.width / s - 12.0f - 6.0f;
+    const float          right    = m_frame.size.width / s - 18.0f;
     const compWeapon_t  *inHand   = Comp_Weapon(CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON]));
     float                bottom   = m_frame.size.height / s;
     int                  handSlot = 0, primarySlot = 0, i;
@@ -1708,12 +1706,12 @@ void UIHudWeapons::Draw(void)
     if (comp.sidearm[0] && Comp_Weapon(comp.sidearm)) {
         const char *pic = Comp_Weapon(comp.sidearm)->pic;
 
-        Item(right, &bottom, &pic, NULL, 1, handSlot == 1 ? 0 : -1, "1", 110.0f, 30.0f);
+        Item(right, &bottom, &pic, NULL, 1, handSlot == 1 ? 0 : -1, 110.0f, 30.0f);
     }
     if (primarySlot && Comp_Weapon(comp.primary)) {
         const char *pic = Comp_Weapon(comp.primary)->pic;
 
-        Item(right, &bottom, &pic, NULL, 1, handSlot == primarySlot ? 0 : -1, va("%d", primarySlot), 160.0f, 34.0f);
+        Item(right, &bottom, &pic, NULL, 1, handSlot == primarySlot ? 0 : -1, 160.0f, 34.0f);
     }
     if (Comp_Int("cg_hud_grenades") && (comp.frags > 0 || comp.smokes > 0)) {
         const char *pics[2];
@@ -1728,7 +1726,7 @@ void UIHudWeapons::Draw(void)
                 counts[n++] = i ? comp.smokes : comp.frags;
             }
         }
-        Item(right, &bottom, pics, counts, n, hand, "5", 200.0f, 38.0f);
+        Item(right, &bottom, pics, counts, n, hand, 200.0f, 38.0f);
     }
 }
 
