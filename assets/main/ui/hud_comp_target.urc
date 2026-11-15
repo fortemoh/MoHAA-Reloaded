@@ -40,9 +40,9 @@ name "targethealth"
 rect 140 29 120 6
 bgcolor 0 0 0 0
 borderstyle NONE
+colorcvar ui_hud_target_hpcol
 enabledcvar ui_hud_target_on
 widthcvar ui_hud_target_hp left
-colorcvar ui_hud_target_hpcol
 shape fill 1 1 1 1
 }
 

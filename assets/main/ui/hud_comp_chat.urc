@@ -15,8 +15,8 @@ rect 25 0 360 160
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-16s
-feed chat
 enabledcvar cg_hud_chat
+feed chat
 }
 
 resource
@@ -31,8 +31,8 @@ textalign left
 linkcvar ui_hud_follow
 colorcvar ui_hud_follow_col
 enabledcvar ui_hud_follow_on
-moveif hurt 0 -31
 fitwidth 360
+moveif hurt 0 -31
 }
 
 resource

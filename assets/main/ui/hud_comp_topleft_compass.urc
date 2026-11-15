@@ -117,8 +117,8 @@ bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-16s
 boldfont oswald-semibold-16s
-feed messages
 enabledcvar ui_hud_msgs_r
+feed messages
 }
 
 resource
@@ -130,8 +130,8 @@ bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-16s
 boldfont oswald-semibold-16s
-feed messages
 enabledcvar ui_hud_msgs_c
+feed messages
 }
 
 end.

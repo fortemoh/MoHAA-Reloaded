@@ -14,8 +14,8 @@ rect 0 22 429 143
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-16s
-feed kills
 enabledcvar cg_hud_killfeed
+feed kills
 }
 
 end.

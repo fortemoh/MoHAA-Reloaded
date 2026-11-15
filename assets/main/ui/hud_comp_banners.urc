@@ -23,8 +23,8 @@ enabledcvar ui_hud_banner1_on
 shape fill 0.196 0.204 0.18 0.6
 shape in 0 0 2px 1 fill $ui_hud_acc_banner 1
 shape in -2px 0 1 1 fill $ui_hud_acc_banner 1
-fittext 24 300 1536
 fitwidth 1488
+fittext 24 300 1536
 }
 
 resource
@@ -42,8 +42,8 @@ enabledcvar ui_hud_banner2_on
 shape fill 0.196 0.204 0.18 0.6
 shape in 0 0 2px 1 fill $ui_hud_acc_banner 1
 shape in -2px 0 1 1 fill $ui_hud_acc_banner 1
-fittext 24 300 1536
 fitwidth 1488
+fittext 24 300 1536
 }
 
 end.

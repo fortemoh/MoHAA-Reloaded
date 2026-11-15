@@ -26,9 +26,9 @@ Label
 {
 name "timer"
 rect 914 2 92 38
+fgcolor 0.922 0.933 0.949 1
 bgcolor 0 0 0 0
 borderstyle NONE
-fgcolor 0.922 0.933 0.949 1
 font oswald-semibold-28
 textalign centerx
 linkcvar ui_hud_timer
@@ -71,9 +71,9 @@ rect 484 5 426 60
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-15s
+enabledcvar ui_hud_vs_on
 team allies
 icons iconallies iconaxis
-enabledcvar ui_hud_vs_on
 }
 
 resource
@@ -84,9 +84,9 @@ rect 1010 5 426 60
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-15s
+enabledcvar ui_hud_vs_on
 team axis
 icons iconallies iconaxis
-enabledcvar ui_hud_vs_on
 }
 
 // the teams' icons (moh-icons team/allies.svg and team/axis.svg) the cards

@@ -110,12 +110,12 @@ Label
 {
 name "clip"
 rect 655 24 80 56
-colorcvar ui_hud_acc
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-36
 textalign left
 linkcvar ui_hud_clip
+colorcvar ui_hud_acc
 enabledcvar ui_hud_ammo_on
 }
 
@@ -126,9 +126,9 @@ name "ammosep"
 rect 700 42.5 2 19
 bgcolor 0 0 0 0
 borderstyle NONE
-flowafter clip 24
 enabledcvar ui_hud_ammo_on
 shape fill $ui_hud_acc_line 0.6
+flowafter clip 24
 }
 
 resource
@@ -136,14 +136,14 @@ Label
 {
 name "reserve"
 rect 714 24 80 56
-colorcvar ui_hud_acc
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-21
 textalign left
-flowafter ammosep 10
 linkcvar ui_hud_ammo
+colorcvar ui_hud_acc
 enabledcvar ui_hud_ammo_on
+flowafter ammosep 10
 }
 
 resource
@@ -153,9 +153,9 @@ name "bullet"
 rect 760 44 16 16
 bgcolor 0 0 0 0
 borderstyle NONE
-flowafter reserve 19.5
 enabledcvar ui_hud_ammo_on
 shape roundbox 2 $ui_hud_acc 1 5 17 -45
+flowafter reserve 19.5
 }
 
 end.

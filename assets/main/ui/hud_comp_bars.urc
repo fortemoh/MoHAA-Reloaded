@@ -56,9 +56,9 @@ name "stopwatch"
 rect 0 20 300 24
 bgcolor 0 0 0 0
 borderstyle NONE
+enabledcvar ui_hud_stopwatch_on
 widthcvar ui_hud_stopwatch
 shape fill 0.102 0.435 0.831 0.667
-enabledcvar ui_hud_stopwatch_on
 moveif chargeback 0 16
 }
 
