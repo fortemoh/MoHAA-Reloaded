@@ -38,6 +38,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "ui_local.h"
 #include "uibake.h"
 
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <functional>
@@ -152,27 +153,30 @@ the main thread read for it before (the faces, the pictures' files)
 
 static const std::thread::id bake_main = std::this_thread::get_id();
 
-// the jobs, run in order by up to 4 threads made at the first (two cores
-// left to the game and the renderer; never freed: they wait on it until the
-// process ends)
+// the jobs, run in order by up to 4 threads (two cores left to the game and
+// the renderer), made as jobs come; a thread leaves once no job has come for
+// a moment, so none stays idle (the jobs come in bursts: the UI's start, a
+// map's load). Never freed: a thread may still hold it as the process ends
 static struct uiJobs_s {
     std::mutex                        lock;
     std::condition_variable           wake;
     std::deque<std::function<void()>> queue;
+    int                               threads;
 } *bake_jobs;
 
 static void Bake_Work(void)
 {
-    for (;;) {
-        std::unique_lock<std::mutex> l(bake_jobs->lock);
+    std::unique_lock<std::mutex> l(bake_jobs->lock);
 
-        bake_jobs->wake.wait(l, [] { return !bake_jobs->queue.empty(); });
+    while (bake_jobs->wake.wait_for(l, std::chrono::milliseconds(250), [] { return !bake_jobs->queue.empty(); })) {
         std::function<void()> job = std::move(bake_jobs->queue.front());
 
         bake_jobs->queue.pop_front();
         l.unlock();
         job();
+        l.lock();
     }
+    bake_jobs->threads--;
 }
 
 // f() on one of the threads (on the main thread only)
@@ -182,13 +186,14 @@ template <typename F> static std::future<decltype(std::declval<F>()())> Bake_Run
 
     if (!bake_jobs) {
         bake_jobs = new uiJobs_s();
-        for (int i = 0; i < Q_max(1, Q_min(4, (int)std::thread::hardware_concurrency() - 2)); i++) {
-            std::thread(Bake_Work).detach();
-        }
     }
     std::lock_guard<std::mutex> l(bake_jobs->lock);
 
     bake_jobs->queue.push_back([task] { (*task)(); });
+    if (bake_jobs->threads < Q_max(1, Q_min(4, (int)std::thread::hardware_concurrency() - 2))) {
+        bake_jobs->threads++;
+        std::thread(Bake_Work).detach();
+    }
     bake_jobs->wake.notify_one();
     return task->get_future();
 }
@@ -1093,7 +1098,7 @@ static void Bake_Layer(uiCanvas_t *cv, const char *text)
         return;
     } else {
         if (std::this_thread::get_id() == bake_main) {
-            Com_DPrintf("UI: unknown shape '%s'\n", t[0].c_str()); // (made ahead: not told)
+            Com_DPrintf("UI: unknown shape '%s'\n", t[0].c_str()); // (made ahead: told by Bake_Prepare)
         }
         return;
     }
@@ -1143,13 +1148,28 @@ static void Bake_ShapeTexels(const std::vector<std::string>& layers, int w, int 
 }
 
 // what a layer reads, read now (on the main thread): the faces and the
-// pictures it names (its tokens "<file>-<px>..." and "....png")
+// pictures it names (its tokens "<file>-<px>..." and "....png"); an unknown
+// kind told here, as Bake_Layer tells it on the main thread
 static void Bake_Prepare(const char *text)
 {
+    static const char *const kinds[] = {
+        "fill", "vgradient", "hgradient", "circle", "ring", "frame", "roundbox", "poly", "crescent", "text", "picture"
+    };
     std::vector<std::string> t;
     uiFontSpec_t             spec;
+    size_t                   kind = 0, k = 0;
 
     Bake_Tokens(text, t);
+    // (past "in X0 Y0 X1 Y1")
+    while (kind < t.size() && t[kind] == "in") {
+        kind += 5;
+    }
+    while (kind < t.size() && k < ARRAY_LEN(kinds) && t[kind] != kinds[k]) {
+        k++;
+    }
+    if (kind < t.size() && k == ARRAY_LEN(kinds)) {
+        Com_DPrintf("UI: unknown shape '%s'\n", t[kind].c_str());
+    }
     for (const std::string& s : t) {
         if (s.size() > 4 && !Q_stricmp(s.c_str() + s.size() - 4, ".png")) {
             Bake_PictureEntry(s.c_str());
