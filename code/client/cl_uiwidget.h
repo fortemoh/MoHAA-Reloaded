@@ -89,7 +89,7 @@ public:
     bool Hot(int id) const { return m_focus == id; }
     void Choose(int id);
     void PlaceFigure(const rlView_t& v, float cx, float headY, float width);
-    // a view (a label of the menu's) placed over x y w h, in units
+    // a view (a label of the menu's) placed over x y w h, in units (none across: hidden)
     void PlaceView(const rlView_t& v, const char *name, float x, float y, float w, float h);
 
     void DrawWeapon(const rlView_t& v, const rlInfo_t& in);
@@ -126,6 +126,9 @@ std::string RL_ModelName(const char *file);
 std::string RL_Figure(const std::string& file);
 // a map's display name ("dm/mohdm6": "Stalingrad"); its own buffer
 const char *RL_MapName(const char *map);
+// a stock load screen's photo (the menu named after a dm or obj map), RGBA,
+// opaque, NULL none; freed with uii.Rend_FreeRawImage
+byte       *RL_MenuPhoto(class Menu *stock, int *width, int *height);
 // a photo (RGBA) as a screen-shaped texture rows texels high, blurred, its
 // light times dim, darker to the corners, registered as name
 qhandle_t   RL_Blur(const char *name, const byte *pic, int pw, int ph, int rows, float dim);

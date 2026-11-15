@@ -1333,19 +1333,16 @@ qhandle_t RL_Blur(const char *name, const byte *pic, int pw, int ph, int rows, f
     return re.RegisterTexture2D(name, out.data(), bw, bh);
 }
 
-// the stock screen's photo: of its pictures covering a third to nine tenths
-// of the screen (the dm maps': the photo, its white mount, its sepia tint),
-// the one with the most texels where the stock maps keep their photos;
-// registered opaque (in colour), with its blurred copy
-static void RL_LoadPictures(void)
+// a stock load screen's photo: of its pictures covering a third to nine
+// tenths of the screen (the dm maps': the photo, its white mount, its sepia
+// tint), the one with the most texels where the stock maps keep their
+// photos, opaque (in colour)
+byte *RL_MenuPhoto(Menu *stock, int *width, int *height)
 {
-    UIWidget *c   = rl_ld.stock ? rl_ld.stock->GetContainerWidget() : NULL;
+    UIWidget *c   = stock ? stock->GetContainerWidget() : NULL;
     byte     *pic = NULL;
     int       w = 0, h = 0;
 
-    rl_ld.shot = rl_ld.blur = 0;
-    rl_ld.stamp             = UI_BakeStamp();
-    rl_ld.refSeq            = uii.GetRefSequence();
     for (UIWidget *l = c ? c->getFirstChild() : NULL; l; l = c->getNextChild(l)) {
         const UIRect2D f = l->getFrame(), cf = c->getFrame();
         const float    k = f.size.width * f.size.height / (cf.size.width * cf.size.height);
@@ -1370,11 +1367,25 @@ static void RL_LoadPictures(void)
             }
         }
     }
+    for (int i = 0; pic && i < w * h; i++) {
+        pic[i * 4 + 3] = 255;
+    }
+    *width  = w;
+    *height = h;
+    return pic;
+}
+
+// the load screen's photo, registered, with its blurred copy
+static void RL_LoadPictures(void)
+{
+    int   w, h;
+    byte *pic = RL_MenuPhoto(rl_ld.stock, &w, &h);
+
+    rl_ld.shot = rl_ld.blur = 0;
+    rl_ld.stamp             = UI_BakeStamp();
+    rl_ld.refSeq            = uii.GetRefSequence();
     if (!pic) {
         return;
-    }
-    for (int i = 0; i < w * h; i++) {
-        pic[i * 4 + 3] = 255;
     }
     rl_ld.shot = re.RegisterTexture2D(RL_LOADSHOT, pic, w, h);
     // (36 texels high, dimmed to 0.42)
@@ -1665,6 +1676,7 @@ void UIReloadedMenu::PlaceView(const rlView_t& v, const char *name, float x, flo
 
     if (view) {
         view->setFrame(UIRect2D(px, py, RL_P(v, x + w) - px, RL_P(v, y + h) - py));
+        view->setShow(w > 0 && h > 0);
     }
 }
 

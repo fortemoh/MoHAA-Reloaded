@@ -69,7 +69,8 @@ static const rlColor_t RL_SEL   = {222 / 255.0f, 178 / 255.0f, 80 / 255.0f, 44 /
 #define RL_LABELX 72.0f
 
 enum { PAGE_PLAY, PAGE_HOST, PAGE_OPTIONS };
-enum { F_NONE, F_SEARCH, F_NAME }; // the field typed in
+enum { HF_TIME, HF_FRAG, HF_PLAYERS, HF_BOTS, HF_NAME, HF_NUM }; // Host's fields
+enum { F_NONE, F_SEARCH, F_NAME, F_HOST };                       // the field typed in (F_HOST + Host's)
 
 // the browser's gametype tabs (Omaha's) and sortable columns
 enum { TAB_ALL, TAB_FFA, TAB_TDM, TAB_OBJ, TAB_ROUNDS, TAB_OTHER, TAB_NUM };
@@ -94,9 +95,15 @@ enum {
     ID_SELECT, // + the side
     ID_CANCEL = ID_SELECT + 2,
     ID_CONFIRM,
+    ID_MODE,               // + Host's game type
+    ID_FIELD = ID_MODE + 4, // + Host's field
+    ID_LOCAL = ID_FIELD + HF_NUM,
+    ID_ONLINE,
+    ID_START,
     ID_ROW  = RL_QUIET, // + the row shown
     ID_FAV  = ID_ROW + 1000,
     ID_PICK = ID_FAV + 1000, // + the model
+    ID_MAP  = ID_PICK + 1000, // + Host's map shown
 };
 
 /*
@@ -439,6 +446,195 @@ static void RL_SvJoin(void)
 /*
 ====================================================================
 
+HOST
+
+Omaha's host panel: a map for the game type, as the stock host menu offers
+them (cl_uimpmappicker.cpp: Allied Assault's dm maps for the deathmatch
+types and its obj maps for objective; Spearhead's and Breakthrough's dm,
+obj and lib maps but obj_team2 and obj_team4 for the deathmatch types,
+the obj and lib maps named with an obj or ship part for objective), the
+limits, the players and bots, the server's name, who can join. START sets
+the stock host menu's cvars (as it left them, read the first time) and
+runs its ui_startdmmap, the map the rotation's only one; the bots as
+sv_maxbots and sv_numbots
+
+====================================================================
+*/
+
+static const char *const rl_modeLabels[] = {"FFA", "TDM", "ROUNDS", "OBJECTIVE"};
+// (g_gametype, g_gametypestring as the stock host menu names them)
+static const int         rl_modeTypes[]  = {GT_FFA, GT_TEAM, GT_TEAM_ROUNDS, GT_OBJECTIVE};
+static const char *const rl_modeNames[]  = {"Free-For-All", "Team-Match", "Round-Based-Match", "Objective-Based-Match"};
+static const char *const rl_joinLabels[] = {"LOCAL", "ONLINE"};
+
+static struct {
+    bool                     ready;  // read from the cvars
+    int                      mode;   // rl_mode*'s
+    std::vector<std::string> maps;   // the mode's ("dm/mohdm6"), by the names shown
+    std::string              map;    // picked
+    int                      top;    // the first shown
+    std::string              field[HF_NUM];
+    bool                     online;
+} rl_host;
+
+// a map fits the mode (dir: its folder in maps/, name: its file's)
+static bool RL_HostFits(const char *dir, const char *name, bool objective)
+{
+    if (com_target_game->integer < TG_MOHTA) {
+        return !strcmp(dir, objective ? "obj" : "dm");
+    }
+    if (!objective) {
+        return !strcmp(dir, "dm") || (Q_stricmp(name, "obj_team2") && Q_stricmp(name, "obj_team4"));
+    }
+    if (!strcmp(dir, "dm")) {
+        return false;
+    }
+    // (a part between underscores obj or ship)
+    for (const char *p = name; p; p = strchr(p, '_')) {
+        p += *p == '_';
+        if ((!Q_stricmpn(p, "obj", 3) && (!p[3] || p[3] == '_')) || (!Q_stricmpn(p, "ship", 4) && (!p[4] || p[4] == '_'))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// the mode's maps listed (those with a screen of their own, the stock ones,
+// first, by the names shown); the one picked kept if it fits, else the first
+static void RL_HostList(void)
+{
+    const bool objective = rl_modeTypes[rl_host.mode] == GT_OBJECTIVE;
+
+    rl_host.maps.clear();
+    for (const char *dir : {"dm", "obj", "lib"}) {
+        int    n;
+        char **files = FS_ListFiles(va("maps/%s", dir), ".bsp", qfalse, &n);
+
+        for (int i = 0; i < n; i++) {
+            std::string name = files[i];
+
+            name.erase(name.size() - 4);
+            if (RL_HostFits(dir, name.c_str(), objective)) {
+                rl_host.maps.push_back(std::string(dir) + "/" + name);
+            }
+        }
+        FS_FreeFileList(files);
+    }
+    std::sort(rl_host.maps.begin(), rl_host.maps.end(), [](const std::string& a, const std::string& b) {
+        const std::string na = RL_MapName(a.c_str()), nb = RL_MapName(b.c_str());
+        // (a map without a screen shows its file's name)
+        const bool        sa = na != a.substr(a.find('/') + 1), sb = nb != b.substr(b.find('/') + 1);
+
+        return sa != sb ? sa : Q_stricmp(na.c_str(), nb.c_str()) < 0;
+    });
+    if (std::find(rl_host.maps.begin(), rl_host.maps.end(), rl_host.map) == rl_host.maps.end()) {
+        rl_host.map = rl_host.maps.empty() ? "" : rl_host.maps[0];
+    }
+    rl_host.top = 0;
+}
+
+// a character a server's name may have: printable, not one that ends its
+// quoted string or the command, or expands in it
+static bool RL_NameChar(int ch)
+{
+    return ch >= ' ' && ch <= '~' && !strchr("\";\\$%", ch);
+}
+
+// the first time Host shows: the settings the stock host menu left
+static void RL_HostRead(void)
+{
+    std::string& name = rl_host.field[HF_NAME];
+
+    const int gametype = atoi(CvarGetForUI("g_gametype", "2"));
+
+    rl_host.ready  = true;
+    rl_host.mode   = 1;
+    for (int i = 0; i < (int)ARRAY_LEN(rl_modeTypes); i++) {
+        if (rl_modeTypes[i] == gametype) {
+            rl_host.mode = i;
+        }
+    }
+    rl_host.map                 = CvarGetForUI("ui_dmmap", "");
+    rl_host.field[HF_TIME]      = CvarGetForUI("ui_timelimit", "20");
+    rl_host.field[HF_FRAG]      = CvarGetForUI("ui_fraglimit", "0");
+    rl_host.field[HF_PLAYERS]   = CvarGetForUI("ui_maxclients", "16");
+    rl_host.field[HF_BOTS]      = CvarGetForUI("sv_numbots", "0");
+    name                        = CvarGetForUI("ui_hostname", "Reloaded Server");
+    name.erase(std::remove_if(name.begin(), name.end(), [](char c) { return !RL_NameChar((unsigned char)c); }), name.end());
+    name.resize(Q_min(name.size(), (size_t)31));
+    rl_host.online              = atoi(CvarGetForUI("ui_gamespy", "1")) != 0;
+    RL_HostList();
+}
+
+static void RL_HostStart(void)
+{
+    const int players = Q_max(1, Q_min(MAX_CLIENTS, atoi(rl_host.field[HF_PLAYERS].c_str())));
+    const int bots    = Q_max(0, Q_min(MAX_CLIENTS, atoi(rl_host.field[HF_BOTS].c_str())));
+
+    if (rl_host.map.empty()) {
+        return;
+    }
+    uii.Snd_PlaySound("sound/menu/apply.wav");
+    // (the name typed without what ends a quoted string or a command)
+    Cbuf_AddText(va("set ui_dmmap \"%s\";set ui_dedicated 0;set ui_maxclients %d;set ui_gamespy %d;set ui_timelimit %d;"
+                    "set ui_fraglimit %d;set ui_hostname \"%s\";set sv_maxbots %d;set sv_numbots %d;ui_startdmmap %d %s ui_dmmap\n",
+                    rl_host.map.c_str(), players, rl_host.online, Q_max(0, atoi(rl_host.field[HF_TIME].c_str())),
+                    Q_max(0, atoi(rl_host.field[HF_FRAG].c_str())), rl_host.field[HF_NAME].c_str(), bots, bots,
+                    rl_modeTypes[rl_host.mode], rl_modeNames[rl_host.mode]));
+}
+
+/*
+----------------
+The maps' photos (their stock load screens'), registered whole, one a
+frame while Host shows; made again after a renderer's restart, looked up
+again after a map's load
+----------------
+*/
+static struct {
+    std::map<std::string, qhandle_t> shot; // by map, 0 none
+    int                              stamp, refSeq;
+} rl_shots;
+
+static std::string RL_ShotName(const std::string& map)
+{
+    std::string name = "*rl_shot_" + map;
+
+    std::replace(name.begin(), name.end(), '/', '_');
+    return name;
+}
+
+// a map's photo, 0 none, -1 not made yet
+static qhandle_t RL_Shot(const std::string& map)
+{
+    if (rl_shots.refSeq != uii.GetRefSequence()) {
+        rl_shots.shot.clear();
+        rl_shots.refSeq = uii.GetRefSequence();
+        rl_shots.stamp  = UI_BakeStamp();
+    } else if (rl_shots.stamp != UI_BakeStamp()) {
+        for (auto& s : rl_shots.shot) {
+            s.second = s.second ? re.RegisterShaderNoMip(RL_ShotName(s.first).c_str()) : 0;
+        }
+        rl_shots.stamp = UI_BakeStamp();
+    }
+    auto it = rl_shots.shot.find(map);
+
+    return it == rl_shots.shot.end() ? -1 : it->second;
+}
+
+static void RL_ShotMake(const std::string& map)
+{
+    int   w, h;
+    byte *pic = RL_MenuPhoto(menuManager.FindMenu(map.c_str()), &w, &h);
+
+    rl_shots.shot[map] = pic ? re.RegisterTexture2D(RL_ShotName(map).c_str(), pic, w, h) : 0;
+    if (pic) {
+        uii.Rend_FreeRawImage(pic);
+    }
+}
+
+/*
+====================================================================
+
 DRAWING
 
 ====================================================================
@@ -529,6 +725,43 @@ static void RL_Arrow(const rlView_t& v, float x, float y, float w, float h, bool
     const int x0 = RL_P(v, x), y0 = RL_P(v, y);
 
     RL_Shape(x0, y0, RL_P(v, x + w) - x0, RL_P(v, y + h) - y0, up ? "poly 1 1 1 1 0.5 0 1 1 0 1" : "poly 1 1 1 1 0 0 1 0 0.5 1", c, v.s);
+}
+
+// a photo (shown 4:3, as the stock load screens show theirs) filling a box, cut to its shape
+static void RL_Photo(const rlView_t& v, qhandle_t shot, float x, float y, float w, float h)
+{
+    const int   x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
+    const float k  = (w / h) / (4.0f / 3.0f); // over 1: the photo's top and bottom cut
+    const float cs = k < 1.0f ? (1.0f - k) / 2 : 0.0f, ct = k > 1.0f ? (1.0f - 1.0f / k) / 2 : 0.0f;
+
+    if (shot <= 0) {
+        RL_Box(v, x, y, w, h, RL_Rgb(22, 24, 26));
+        return;
+    }
+    if (!rl_bakeOnly) {
+        RL_SetColor(RL_Rgb(255, 255, 255));
+        uii.Rend_DrawPicStretched(x0, y0, x1 - x0, y1 - y0, cs, ct, 1.0f - cs, 1.0f - ct, shot);
+    }
+}
+
+// Omaha's segmented choice: a box a label, the one chosen brass, 40 high
+static void RL_Segments(UIReloadedMenu *m, const rlView_t& v, float x, float y, const char *const *labels, int n, int on, int id)
+{
+    for (int i = 0; i < n; i++) {
+        const float w = RL_TextW(v, labels[i], 15, true, 1.6f) + 36;
+        const bool  hot = m->Hot(id + i);
+
+        RL_Box(v, x, y, w, 40, i == on ? RL_BRASS : RL_Rgb(255, 255, 255, hot ? 36 : 18));
+        RL_Text(v, x + w / 2, y + 20, labels[i], 15, i == on ? RL_INK : hot ? RL_TEXT : RL_SOFT, true, RL_CENTER, 1.6f, RL_MID);
+        m->Hit(v, x, y, w, 40, id + i);
+        x += w + 4;
+    }
+}
+
+// a label over its control: the label's middle at y, the control 16 under it
+static void RL_Label(const rlView_t& v, float x, float y, const char *label)
+{
+    RL_Text(v, x, y, label, 14, RL_MUTED, true, RL_LEFT, 1.6f, RL_MID);
 }
 
 /*
@@ -927,6 +1160,87 @@ static void RL_Profile(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
 
 /*
 ================
+HOST: Omaha's host panel. The maps (the mode's) on the left, a row each:
+its photo, its name, its file; the one picked large on the right with its
+name over it, then a row each: the game type, the time and frag limits,
+the players and bots, the server's name, who can join; START on the foot
+row
+================
+*/
+static void RL_Host(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h)
+{
+    // (the rows on the right 74 apart: a label, its control 16 under it, 40 high)
+    const float lw = floorf(w * 0.40f + 0.5f), rh = 76, ly = y + 96, foot = y + h - RL_FOOT;
+    const float rx = x + lw + RL_PAD, rw = w - lw - 2 * RL_PAD, col = (rw - RL_PAD) / 2;
+    // (the picture's top on the first map's photo's)
+    const float py = ly + 8, ph = floorf(Q_min(Q_min(rw * 9 / 16, h * 0.42f), foot - py - 398));
+    const int   fit = Q_max(1, (int)((foot - ly) / rh)), n = (int)rl_host.maps.size();
+    float       fy  = py + ph + RL_PAD + 14;
+
+    RL_Panel(v, x, y, w, h, RL_PANEL);
+    RL_Head(v, x, y, w, 48);
+    RL_Text(v, x + RL_PAD, y + 24, "HOST A GAME", 20, RL_TEXT, true, RL_LEFT, 2, RL_MID);
+    RL_Box(v, x + lw, y + 49, 1, foot - (y + 49), RL_LINE);
+    // the maps
+    RL_Label(v, x + RL_PAD, y + 76, "MAP");
+    rl_host.top = Q_max(0, Q_min(rl_host.top, n - fit));
+    for (int i = 0; i < fit && rl_host.top + i < n; i++) {
+        const std::string& map = rl_host.maps[rl_host.top + i];
+        const float        yy = ly + i * rh, th = rh - 16, tw = floorf(th * 16 / 9 + 0.5f), tx = x + RL_PAD + tw + 16;
+        const bool         sel = map == rl_host.map;
+
+        if (sel) {
+            RL_Box(v, x + 2, yy, lw - 3, rh, RL_SEL);
+            RL_Box(v, x + 2, yy, 3, rh, RL_BRASS);
+        } else if (m->Hot(ID_MAP + i)) {
+            RL_Box(v, x + 2, yy, lw - 3, rh, RL_Rgb(255, 255, 255, 14));
+        }
+        RL_Photo(v, RL_Shot(map), x + RL_PAD, yy + 8, tw, th);
+        RL_Text(v, tx, yy + rh / 2 - 11, RL_Ellipsize(v, RL_MapName(map.c_str()), 19, sel, x + lw - RL_PAD - tx).c_str(), 19, RL_TEXT, sel,
+                RL_LEFT, 0, RL_MID);
+        RL_Text(v, tx, yy + rh / 2 + 15, map.c_str(), 14, RL_MUTED, false, RL_LEFT, 0.6f, RL_MID, x + lw - RL_PAD - tx);
+        m->Hit(v, x + 2, yy, lw - 3, rh, ID_MAP + i);
+    }
+    if (!n) {
+        RL_Text(v, x + RL_PAD, ly + rh / 2, "No maps for this mode.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+    } else if (n > fit) {
+        const float th = foot - ly - 8;
+
+        RL_Box(v, x + lw - 8, ly + 4 + th * rl_host.top / n, 3, Q_max(24.0f, th * fit / n), RL_Rgb(255, 255, 255, 60));
+    }
+    // the map picked, its name over its foot
+    RL_Photo(v, rl_host.map.empty() ? 0 : RL_Shot(rl_host.map), rx, py, rw, ph);
+    if (!rl_host.map.empty()) {
+        const int x0 = RL_P(v, rx), y0 = RL_P(v, py + ph - 72);
+
+        RL_Shape(x0, y0, RL_P(v, rx + rw) - x0, RL_P(v, py + ph) - y0, "vgradient 0 1 0 0 0 0 0 0 0 0.75", RL_Rgb(255, 255, 255), v.s);
+        RL_Text(v, rx + RL_PAD, py + ph - RL_PAD - 8, RL_MapName(rl_host.map.c_str()), 28, RL_TEXT, true, RL_LEFT, 0, RL_BASE, rw - 2 * RL_PAD);
+    }
+    // the settings
+    RL_Label(v, rx, fy, "GAMETYPE");
+    RL_Segments(m, v, rx, fy + 16, rl_modeLabels, 4, rl_host.mode, ID_MODE);
+    fy += 74;
+    for (int f = HF_TIME; f < HF_NUM; f++) {
+        static const char *const labels[HF_NUM] = {"TIME LIMIT", "FRAG LIMIT", "PLAYERS", "BOTS", "SERVER NAME"};
+        // (two a row; the name the whole row)
+        const float fx = rx + (f % 2) * (col + RL_PAD), fw = f == HF_NAME ? rw : col;
+
+        RL_Label(v, fx, fy, labels[f]);
+        RL_Field(v, fx, fy + 16, fw, 40, 0, 0, rl_host.field[f], "", rl_mm.edit == F_HOST + f, m->Hot(ID_FIELD + f));
+        m->Hit(v, fx, fy + 16, fw, 40, ID_FIELD + f);
+        fy += f % 2 || f == HF_NAME ? 74 : 0;
+    }
+    RL_Label(v, rx, fy, "WHO CAN JOIN");
+    RL_Segments(m, v, rx, fy + 16, rl_joinLabels, 2, rl_host.online, ID_LOCAL);
+    // the foot row
+    RL_Box(v, x + 1, foot, w - 2, RL_FOOT - 1, RL_HEAD);
+    RL_Box(v, x, foot, w, 1, RL_LINE);
+    RL_Button(v, x + w - RL_PAD - 190, foot + (RL_FOOT - RL_CTRL) / 2, 190, RL_CTRL, "START", true, 12, 0, m->Hot(ID_START), rl_host.map.empty());
+    m->Hit(v, x + w - RL_PAD - 190, foot + (RL_FOOT - RL_CTRL) / 2, 190, RL_CTRL, ID_START);
+}
+
+/*
+================
 DrawMain: the back layer the photo and what is under the model views (the
 profile's panel), the front the rest
 ================
@@ -944,9 +1258,8 @@ void UIReloadedMenu::DrawMain(const rlView_t& v)
         if (rl_mm.page == PAGE_PLAY) {
             RL_Profile(this, v, ax + aw - pw, ay, pw, ah);
         } else {
-            // (no model shown)
-            Cvar_Set("ui_reloaded_allies", "");
-            Cvar_Set("ui_reloaded_axis", "");
+            PlaceView(v, "allies", 0, 0, 0, 0);
+            PlaceView(v, "axis", 0, 0, 0, 0);
         }
         return;
     }
@@ -954,6 +1267,8 @@ void UIReloadedMenu::DrawMain(const rlView_t& v)
     if (rl_mm.page == PAGE_PLAY) {
         RL_Browser(this, v, ax, ay, aw - pw - 20, ah);
         RL_Profile(this, v, ax + aw - pw, ay, pw, ah);
+    } else if (rl_mm.page == PAGE_HOST) {
+        RL_Host(this, v, ax, ay, aw, ah);
     }
 }
 
@@ -989,6 +1304,12 @@ INPUT
 
 ====================================================================
 */
+
+// the text of the field typed in, NULL none
+static std::string *RL_Edited(void)
+{
+    return rl_mm.edit == F_SEARCH ? &rl_mm.search : rl_mm.edit == F_NAME ? &rl_mm.name : rl_mm.edit >= F_HOST ? &rl_host.field[rl_mm.edit - F_HOST] : NULL;
+}
 
 static void RL_ApplyName(void)
 {
@@ -1037,8 +1358,15 @@ void UIReloadedMenu::ChooseMain(int id)
             return;
         }
     }
-    if (id != ID_SEARCH && id != ID_NAME && id != ID_APPLY) {
+    if (id != ID_SEARCH && id != ID_NAME && id != ID_APPLY && (id < ID_FIELD || id >= ID_FIELD + HF_NUM)) {
         rl_mm.edit = F_NONE;
+    }
+    if (id >= ID_MAP) {
+        if (rl_host.top + id - ID_MAP < (int)rl_host.maps.size()) {
+            rl_host.map = rl_host.maps[rl_host.top + id - ID_MAP];
+            uii.Snd_PlaySound("sound/menu/apply.wav");
+        }
+        return;
     }
     if (id >= ID_PICK) {
         const int t = rl_mm.pick, k = id - ID_PICK;
@@ -1080,7 +1408,25 @@ void UIReloadedMenu::ChooseMain(int id)
         rl_vis.dirty = true;
         return;
     }
+    if (id >= ID_MODE && id < ID_MODE + (int)ARRAY_LEN(rl_modeTypes)) {
+        rl_host.mode = id - ID_MODE;
+        RL_HostList();
+        uii.Snd_PlaySound("sound/menu/apply.wav");
+        return;
+    }
+    if (id >= ID_FIELD && id < ID_FIELD + HF_NUM) {
+        rl_mm.edit = F_HOST + id - ID_FIELD;
+        return;
+    }
     switch (id) {
+    case ID_LOCAL:
+    case ID_ONLINE:
+        rl_host.online = id == ID_ONLINE;
+        uii.Snd_PlaySound("sound/menu/apply.wav");
+        break;
+    case ID_START:
+        RL_HostStart();
+        break;
     case ID_PLAY:
     case ID_HOST:
     case ID_OPTIONS:
@@ -1142,17 +1488,19 @@ qboolean UIReloadedMenu::MainKey(int key)
         return qfalse;
     }
     if (step) {
-        // the wheel: the model list open, else the servers
+        // the wheel: the model list open, else the page's list
         if (rl_mm.pick >= 0) {
             rl_mm.pickTop += step;
+        } else if (rl_mm.page == PAGE_HOST) {
+            rl_host.top += step;
         } else {
             rl_mm.top += step;
         }
         RL_Changed();
         return qtrue;
     }
-    if (rl_mm.edit != F_NONE) {
-        std::string& text = rl_mm.edit == F_NAME ? rl_mm.name : rl_mm.search;
+    if (RL_Edited()) {
+        std::string& text = *RL_Edited();
 
         if (key == K_BACKSPACE) {
             if (!text.empty()) {
@@ -1201,13 +1549,17 @@ qboolean UIReloadedMenu::MainKey(int key)
 
 void UIReloadedMenu::MainChar(int ch)
 {
-    std::string& text = rl_mm.edit == F_NAME ? rl_mm.name : rl_mm.search;
+    std::string *text = RL_Edited();
+    // (the printable ones; the player's name as long as the game keeps it, a
+    // server's as the stock host menu's, Host's numbers three digits)
+    const bool number = rl_mm.edit >= F_HOST && rl_mm.edit != F_HOST + HF_NAME;
+    const int  most   = rl_mm.edit == F_NAME ? MAX_NAME_LENGTH - 1 : rl_mm.edit == F_HOST + HF_NAME ? 31 : number ? 3 : 40;
 
-    // (the printable ones; the name as long as the game keeps it)
-    if (rl_mm.edit == F_NONE || ch < ' ' || ch > '~' || (int)text.size() >= (rl_mm.edit == F_NAME ? MAX_NAME_LENGTH - 1 : 40)) {
+    if (!text || ch < ' ' || ch > '~' || (int)text->size() >= most || (number && !isdigit(ch))
+        || (rl_mm.edit == F_HOST + HF_NAME && !RL_NameChar(ch))) {
         return;
     }
-    text += (char)ch;
+    *text += (char)ch;
     if (rl_mm.edit == F_SEARCH) {
         rl_mm.top    = 0;
         rl_vis.dirty = true;
@@ -1220,8 +1572,9 @@ void UIReloadedMenu::MainChar(int ch)
 MainTick
 
 Each frame the menu shows: the back layer's photos moved on; the front's
-lists' queries run on. Opened: the models listed, the name as it is, the
-favourites read, the servers asked for the first time
+lists' queries run on, Host's maps' photos made. Opened: the models
+listed, the name as it is, the favourites read, the servers asked for the
+first time
 ================
 */
 void UIReloadedMenu::MainTick(bool opened)
@@ -1261,6 +1614,25 @@ void UIReloadedMenu::MainTick(bool opened)
     for (GServerList l : rl_sv.list) {
         if (l && ServerListState(l) != sl_idle) {
             ServerListThink(l);
+        }
+    }
+    if (rl_mm.page == PAGE_HOST) {
+        // Host's settings read the first time, the maps' photos made one a frame (the one picked first)
+        if (!rl_host.ready) {
+            RL_HostRead();
+            RL_Changed();
+        }
+        if (!rl_host.map.empty() && RL_Shot(rl_host.map) < 0) {
+            RL_ShotMake(rl_host.map);
+            RL_Changed();
+            return;
+        }
+        for (const std::string& map : rl_host.maps) {
+            if (RL_Shot(map) < 0) {
+                RL_ShotMake(map);
+                RL_Changed();
+                break;
+            }
         }
     }
 }
