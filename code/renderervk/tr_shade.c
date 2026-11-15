@@ -603,7 +603,17 @@ static void ComputeColors( shaderStage_t *pStage )
 				}
 				break;
 			}
-			if (tr.identityLight == 1)
+			if (tess.colors2D && pStage->alphaGen == AGEN_ONE_MINUS_VERTEX)
+			{
+				// the game's 2D vertex colors (see AGEN_ONE_MINUS_VERTEX)
+				for (i = 0; i < tess.numVertexes; i++)
+				{
+					tess.svars.colors[i][0] = (byte)(tess.vertexColors[i][0] * tr.identityLightByte) * tr.identityLight;
+					tess.svars.colors[i][1] = (byte)(tess.vertexColors[i][1] * tr.identityLightByte) * tr.identityLight;
+					tess.svars.colors[i][2] = (byte)(tess.vertexColors[i][2] * tr.identityLightByte) * tr.identityLight;
+				}
+			}
+			else if (tr.identityLight == 1)
 			{
 				Com_Memcpy(tess.svars.colors, tess.vertexColors, tess.numVertexes * sizeof(tess.vertexColors[0]));
 			}
@@ -820,9 +830,14 @@ static void ComputeColors( shaderStage_t *pStage )
 		}
 		break;
 	case AGEN_ONE_MINUS_VERTEX:
+		// A 2D draw's vertexes carry the 2D color (tr_draw.c). The game's 2D draws gave them the 2D
+		// color's bytes times 255 again (RB_Color4f), modulo 256: 256 - c, 0 for 0. The stock shaders
+		// with alphaGen oneMinusVertex (the zoom overlays, gfx/2d/blank, the HUD's compass, health
+		// meter, clips, weapon icons) were made for that: they get the 2D alpha less one, and rgbGen
+		// vertex of white nearly black
 		for (i = 0; i < tess.numVertexes; i++)
 		{
-			tess.svars.colors[i][3] = 255 - tess.vertexColors[i][3];
+			tess.svars.colors[i][3] = 255 - ( tess.colors2D ? (byte)( tess.vertexColors[i][3] * 255 ) : tess.vertexColors[i][3] );
 		}
 		break;
 	case AGEN_LIGHTING_SPECULAR:
