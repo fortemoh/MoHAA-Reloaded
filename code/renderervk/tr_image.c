@@ -3270,10 +3270,11 @@ restarts)
 #define ATLAS_FIRST		256
 #define ATLAS_MAX		4096
 #define ATLAS_NODES		1024
+#define ATLAS_PITCH		( ATLAS_MAX * 4 )	// the texels kept: a row's bytes at any side
 
 static struct {
 	image_t		*page;
-	byte		*texels;	// side x side RGBA
+	byte		*texels;	// side x side RGBA, kept (untouched until written: its rows stay as it grows)
 	int			side;
 	int			numNodes;
 	int			nodes[ATLAS_NODES][3];	// the skyline: x, y, width
@@ -3343,25 +3344,22 @@ int R_AtlasGeneration( void ) {
 	return atlasGeneration;
 }
 
-// the page made, or at twice its side: its texels again, its images' places
+// the page made, or at twice its side: its texels again (cleared on the GPU,
+// the old page's uploaded into it), its images' places
 static void R_AtlasResize( int side ) {
+	const int	oldSide = atlas.side;
+	int			i;
+
 	atlasGeneration++;
 	R_2DShadersChanged();
-	byte	*texels = ri.Malloc( side * side * 4 );
-	int		i;
-
-	Com_Memset( texels, 0, side * side * 4 );
 	if ( atlas.texels ) {
-		for ( i = 0; i < atlas.side; i++ ) {
-			Com_Memcpy( texels + i * side * 4, atlas.texels + i * atlas.side * 4, atlas.side * 4 );
-		}
-		ri.Free( atlas.texels );
 		atlas.nodes[atlas.numNodes][0] = atlas.side;
 		atlas.nodes[atlas.numNodes][1] = 0;
 		atlas.nodes[atlas.numNodes++][2] = side - atlas.side;
 	} else {
 		static byte clear[4];
 
+		atlas.texels = calloc( ATLAS_MAX, ATLAS_PITCH );
 		atlas.page = R_CreateImageOld( "*atlas2D", clear, 1, 1, 0, 0, qfalse, qtrue, qtrue, 0, WRAP_CLAMP, WRAP_CLAMP );
 		atlas.page->r_sequence = -1;
 		// (its clear and uniform areas compressed: most of what the 2D draws read)
@@ -3370,7 +3368,6 @@ static void R_AtlasResize( int side ) {
 		atlas.nodes[0][2] = side;
 		atlas.numNodes = 1;
 	}
-	atlas.texels = texels;
 	atlas.side = side;
 
 	atlas.page->width = atlas.page->uploadWidth = side;
@@ -3378,7 +3375,10 @@ static void R_AtlasResize( int side ) {
 	atlas.page->numMipmaps = 0;
 	atlas.page->internalFormat = TEXFMT_RGBA8;
 	vk_create_texture( atlas.page, side, side, 1, TEXFMT_RGBA8 );
-	vk_upload_texture( atlas.page, 0, 0, 0, side, side, texels );
+	vk_clear_texture( atlas.page );
+	if ( oldSide ) {
+		vk_upload_texture_pitch( atlas.page, 0, 0, oldSide, oldSide, atlas.texels, ATLAS_PITCH );
+	}
 	for ( i = 0; i < tr.numImages; i++ ) {
 		image_t *image = &tr.images[i];
 
@@ -3395,19 +3395,18 @@ static void R_AtlasResize( int side ) {
 static void R_AtlasFill( image_t *image, const byte *rgba ) {
 	const int	w = image->width, h = image->height;
 	const int	x0 = image->atlasRoom[0], y0 = image->atlasRoom[1];
-	byte		*room = ri.Hunk_AllocateTempMemory( ( w + 2 ) * ( h + 2 ) * 4 );
+	byte		*room = atlas.texels + y0 * ATLAS_PITCH + x0 * 4;
 	int			x, y;
 
 	for ( y = 0; y < h + 2; y++ ) {
-		const byte *row = rgba + (int)Com_Clamp( 0, h - 1, y - 1 ) * w * 4;
+		const byte	*row = rgba + Q_min( h - 1, Q_max( 0, y - 1 ) ) * w * 4;
+		byte		*out = room + y * ATLAS_PITCH;
 
-		for ( x = 0; x < w + 2; x++ ) {
-			Com_Memcpy( room + ( y * ( w + 2 ) + x ) * 4, row + (int)Com_Clamp( 0, w - 1, x - 1 ) * 4, 4 );
-		}
-		Com_Memcpy( atlas.texels + ( ( y0 + y ) * atlas.side + x0 ) * 4, room + y * ( w + 2 ) * 4, ( w + 2 ) * 4 );
+		Com_Memcpy( out, row, 4 );
+		Com_Memcpy( out + 4, row, w * 4 );
+		Com_Memcpy( out + ( w + 1 ) * 4, row + ( w - 1 ) * 4, 4 );
 	}
-	vk_upload_texture( atlas.page, 0, x0, y0, w + 2, h + 2, room );
-	ri.Hunk_FreeTempMemory( room );
+	vk_upload_texture_pitch( atlas.page, x0, y0, w + 2, h + 2, room, ATLAS_PITCH );
 
 	// what covers its texels not clear (tr_draw.c, R_2DTiles): the runs of its
 	// 16 x 16 tiles holding any in each row of them, a run as wide as the one
@@ -3501,9 +3500,7 @@ void R_AtlasShutdown( void ) {
 			tr.images[i].numAtlasRects = 0;
 		}
 	}
-	if ( atlas.texels ) {
-		ri.Free( atlas.texels );
-	}
+	free( atlas.texels );
 	Com_Memset( &atlas, 0, sizeof( atlas ) );
 }
 

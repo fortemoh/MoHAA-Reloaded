@@ -1066,7 +1066,8 @@ void vk_create_texture( image_t *image, int width, int height, int mipLevels, te
 	VK_TextureArrayMark( slot );
 }
 
-void vk_upload_texture( image_t *image, int mipLevel, int x, int y, int width, int height, const byte *rgba ) {
+// (rows pitch bytes apart)
+static void VK_UploadTexture( image_t *image, int mipLevel, int x, int y, int width, int height, const byte *rgba, int pitch ) {
 	R_FrontEndSync();
 	vkTexture_t *texture;
 	VkBuffer buffer;
@@ -1101,9 +1102,45 @@ void vk_upload_texture( image_t *image, int mipLevel, int x, int y, int width, i
 
 	size = (VkDeviceSize)width * height * 4;
 	data = VK_StagingAlloc( size, 16, &buffer, &offset );
-	Com_Memcpy( data, rgba, size );
+	for ( int row = 0; row < height; row++ ) {
+		Com_Memcpy( (byte *)data + (size_t)row * width * 4, rgba + (size_t)row * pitch, width * 4 );
+	}
 
 	VK_RecordUpload( texture, mipLevel, x, y, width, height, buffer, offset );
+}
+
+void vk_upload_texture( image_t *image, int mipLevel, int x, int y, int width, int height, const byte *rgba ) {
+	VK_UploadTexture( image, mipLevel, x, y, width, height, rgba, width * 4 );
+}
+
+void vk_upload_texture_pitch( image_t *image, int x, int y, int width, int height, const byte *rgba, int pitch ) {
+	VK_UploadTexture( image, 0, x, y, width, height, rgba, pitch );
+}
+
+/*
+===============
+vk_clear_texture
+
+A texture just made (vk_create_texture) cleared to 0, on the GPU: its
+uploads after are ordered after it
+===============
+*/
+void vk_clear_texture( image_t *image ) {
+	R_FrontEndSync();
+	vkTexture_t *texture = vk.device ? VK_GetTexture( image->texnum ) : NULL;
+	VkClearColorValue zero;
+	VkImageSubresourceRange range;
+
+	if ( !texture || texture->compressed || !texture->uploadPending ) {
+		return;
+	}
+	Com_Memset( &zero, 0, sizeof( zero ) );
+	Com_Memset( &range, 0, sizeof( range ) );
+	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	range.levelCount = VK_REMAINING_MIP_LEVELS;
+	range.layerCount = 1;
+	qvkCmdClearColorImage( VK_GetUploadCommandBuffer(), texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range );
+	texture->uploadMips = ~0u;
 }
 
 void vk_upload_compressed_texture( image_t *image, int mipLevel, int width, int height, const byte *data, int size ) {
