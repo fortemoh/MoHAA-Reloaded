@@ -466,6 +466,11 @@ functions exported to the main executable
         // R_DrawBox for count boxes (x, y, width, height) in one draw, in the color given (the crosshair)
         void (*R_DrawBoxes)(const float (*boxes)[4], int count, const float *color);
 
+        // Added: the zoom overlay drawn by the client (the Competitive HUD's,
+        // cg_hudstyle 1): type 0 a scope, 1 the Kar98's, 2 the spy camera's,
+        // 3 the binoculars'; faded by alpha. qfalse: the stock one is to be drawn
+        qboolean (*UI_DrawZoomOverlay)(int type, float alpha);
+
     } clientGameImport_t;
 
     /*

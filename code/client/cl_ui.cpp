@@ -32,6 +32,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../uilib/uibake.h"
 #include "cl_uicomp.h"
 #include "cl_uimenus.h"
+#include "cl_uiextras.h"
 #include "cl_uigamespy.h"
 
 #include <chrono>
@@ -4234,6 +4235,8 @@ void UI_ResolutionChange(void)
     UI_CompHud_PreBake(qfalse);
     // Added: the Reloaded menus too
     UI_Menus_PreBake();
+    // Added: the HUD's extras too (the zoom overlays' masks)
+    UI_Extras_PreBake(qfalse);
 }
 
 /*

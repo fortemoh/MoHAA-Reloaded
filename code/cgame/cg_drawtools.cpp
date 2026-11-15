@@ -542,6 +542,11 @@ void CG_DrawZoomOverlay()
         }
     }
 
+    // Added: the Competitive HUD's (cg_hudstyle 1), drawn by the client
+    if (cgi.UI_DrawZoomOverlay && cgi.UI_DrawZoomOverlay(zoomType, fAlpha)) {
+        return;
+    }
+
     switch (zoomType) {
     case 1:
         CG_DrawOverlayTopBottom(cgs.media.kar98TopOverlayShader, cgs.media.kar98BottomOverlayShader, fAlpha);

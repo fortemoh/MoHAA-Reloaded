@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "client.h"
 #include "cl_uicomp.h"
 #include "cl_uimenus.h"
+#include "cl_uiextras.h"
 #include "cl_ui.h"
 #include "cl_uiradar.h"
 #include "../corepp/tiki.h"
@@ -868,6 +869,7 @@ void CL_InitCGameDLL( clientGameImport_t *cgi, clientGameExport_t **cge ) {
 	cgi->CM_EntityString			= CM_EntityString;
 	cgi->GetConfigString			= CL_ConfigString;
 	cgi->R_DrawBoxes				= re.DrawBoxes;
+	cgi->UI_DrawZoomOverlay			= UI_DrawZoomOverlay;
 	// FIXME
 	//cgi->pUnknownVar				= NULL;
 
@@ -962,6 +964,8 @@ void CL_InitCGame( void ) {
 
 	// Added: the Competitive HUD's pictures begun now, baked at the load's end (UI_CompHud_MapLoaded)
 	UI_CompHud_PreBake(qtrue);
+	// Added: the zoom overlays' masks too (registered at the load's end)
+	UI_Extras_PreBake(qtrue);
 
 	// find the current mapname
 	info = cl.gameState.stringData + cl.gameState.stringOffsets[ CS_SERVERINFO ];
@@ -1014,6 +1018,8 @@ void CL_InitCGame( void ) {
 	UI_CompHud_MapLoaded();
 	// Added: the Reloaded menus' faces and shapes baked with the load
 	UI_Menus_PreBake();
+	// Added: the HUD's extras' too (the zoom overlays' masks made while it loaded)
+	UI_Extras_PreBake(qfalse);
 
 	CL_EndRegistration();
 
