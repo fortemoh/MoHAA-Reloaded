@@ -2010,12 +2010,15 @@ IN_SetCursorFromImage
 
 The UI's color cursor over the window from its RGBA pixels, hotspot at the top left, as SDL made it (Cocoa_CreateImage:
 alpha premultiplied, the image's size in points). The pixels are copied, so they are freed here (SDL kept pointing
-at them and never freed them).
+at them and never freed them). Without a free function the caller keeps them: a picture made for the screen's
+pixels (the Reloaded menus' cursor, as the UI draws it while the mouse is captured), its size in the window's
+pixels then, so it is as big over a window on a Retina display as the menus' scale
 ===============
 */
 qboolean IN_SetCursorFromImage( const byte *pic, int width, int height, pCursorFree cursorFreeFn )
 {
 	NSBitmapImageRep *bitmap;
+	const CGFloat scale = !cursorFreeFn && in_window && in_window.backingScaleFactor > 1.0 ? in_window.backingScaleFactor : 1.0;
 
 	IN_FreeCursor( );
 
@@ -2027,7 +2030,7 @@ qboolean IN_SetCursorFromImage( const byte *pic, int width, int height, pCursorF
 		if( bitmap )
 		{
 			byte *pixels = bitmap.bitmapData;
-			NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize( width, height )];
+			NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize( width / scale, height / scale )];
 			int i;
 
 			memcpy( pixels, pic, 4 * width * height );
@@ -2038,12 +2041,14 @@ qboolean IN_SetCursorFromImage( const byte *pic, int width, int height, pCursorF
 				pixels[ 2 ] = pixels[ 2 ] * pixels[ 3 ] / 255;
 			}
 
+			bitmap.size = image.size;	// (at a scale above 1, that many pixels a point: drawn at the display's density)
 			[image addRepresentation:bitmap];
 			in_cursor = [[NSCursor alloc] initWithImage:image hotSpot:NSZeroPoint];
 		}
 	}
 
-	cursorFreeFn( (byte *)pic );
+	if( cursorFreeFn )
+		cursorFreeFn( (byte *)pic );
 	IN_UpdateCursor( );
 
 	return bitmap != nil;
