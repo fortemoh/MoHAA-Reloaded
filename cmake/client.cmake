@@ -102,13 +102,15 @@ if(USE_DISCORD)
     list(APPEND CLIENT_LIBRARY_SOURCES ${SOURCE_DIR}/client/cl_discord.c)
 endif()
 
-# the Competitive HUD's menus, faces and pictures (cg_hudstyle 1) compiled
-# in: the files the filesystem reads when no file on disk or in a pak has
-# the name (cl_uicomp.cpp, FS_SetBuiltinFiles)
+# the Competitive HUD's menus, faces, pictures and outlines (cg_hudstyle 1)
+# compiled in: the files the filesystem reads when no file on disk or in a
+# pak has the name (cl_uicomp.cpp, FS_SetBuiltinFiles); any .svg under ui/
 file(GLOB BUILTIN_FILES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/assets/main/ui/*.urc
     ${CMAKE_SOURCE_DIR}/assets/main/ui/competitive/*.png
     ${CMAKE_SOURCE_DIR}/assets/main/fonts/*)
+file(GLOB_RECURSE BUILTIN_SVG CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/assets/main/ui/*.svg)
+list(APPEND BUILTIN_FILES ${BUILTIN_SVG})
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/builtin_files.c
     COMMAND ${CMAKE_COMMAND} -DROOT=${CMAKE_SOURCE_DIR}/assets/main -DOUT=${CMAKE_BINARY_DIR}/builtin_files.c

@@ -2106,6 +2106,7 @@ long FS_ReadFileEx( const char *qpath, void **buffer, qboolean quiet ) {
 	byte*			buf;
 	qboolean		isConfig;
 	int				len;
+	const builtinFile_t	*f;
 
 	if ( !fs_searchpaths ) {
 		Com_Error( ERR_FATAL, "Filesystem call made without initialization\n" );
@@ -2170,10 +2171,8 @@ long FS_ReadFileEx( const char *qpath, void **buffer, qboolean quiet ) {
 
 	// look for it in the filesystem or pack files
 	len = FS_FOpenFileRead( qpath, &h, qfalse, qtrue );
-	if ( h == 0 && FS_BuiltinFile( qpath ) ) {
+	if ( h == 0 && ( f = FS_BuiltinFile( qpath ) ) ) {
 		// Added: one compiled in
-		const builtinFile_t *f = FS_BuiltinFile( qpath );
-
 		if ( buffer ) {
 			fs_loadCount++;
 			fs_loadStack++;
