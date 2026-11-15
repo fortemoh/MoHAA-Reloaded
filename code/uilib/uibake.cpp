@@ -856,6 +856,362 @@ static void Bake_Picture(uiCanvas_t *cv, const char *file, const float *c, int a
     }
 }
 
+/*
+====================================================================
+
+OUTLINES (SVG)
+
+The moh-icons outlines (Added): an <svg viewBox="X Y W H"> of <path
+fill="#rrggbb" d="..."> (M L H V C Q Z, absolute or relative; a hole
+wound against the shape it cuts) and <circle cx cy r fill>, nothing
+else of SVG. Read once on the main thread and kept (like the pictures);
+filled at the size drawn with the faces' rasterizer, each element in its
+fill times the layer's color (a white outline is tinted as the white
+pictures are)
+
+====================================================================
+*/
+
+typedef struct {
+    char  op; // M L C Q Z (absolute)
+    float p[6];
+} uiSvgCmd_t;
+
+typedef struct {
+    bool                    circle;
+    float                   c[3];   // a circle's cx cy r
+    float                   rgb[3];
+    std::vector<uiSvgCmd_t> cmds;
+} uiSvgElem_t;
+
+typedef struct {
+    float                    vb[4]; // the viewBox; vb[2] 0: not read
+    std::vector<uiSvgElem_t> elems;
+} uiSvg_t;
+
+static std::unordered_map<std::string, std::shared_ptr<uiSvg_t>> bake_svgs; // (bake_lock)
+
+// an attribute's value in a tag's text, "" none
+static std::string Svg_Attr(const std::string& tag, const char *name)
+{
+    const std::string key = std::string(" ") + name + "=\"";
+    size_t            at  = tag.find(key);
+
+    if (at == std::string::npos) {
+        return "";
+    }
+    at += key.size();
+    const size_t end = tag.find('"', at);
+    return tag.substr(at, end == std::string::npos ? std::string::npos : end - at);
+}
+
+static void Svg_Color(const std::string& fill, float *rgb)
+{
+    unsigned v = 0xFFFFFF;
+
+    if (fill.size() == 7 && fill[0] == '#') {
+        v = (unsigned)strtoul(fill.c_str() + 1, NULL, 16);
+    } else if (fill.size() == 4 && fill[0] == '#') {
+        const unsigned s = (unsigned)strtoul(fill.c_str() + 1, NULL, 16);
+
+        v = ((s >> 8) & 15) * 0x110000 + ((s >> 4) & 15) * 0x1100 + (s & 15) * 0x11;
+    }
+    rgb[0] = ((v >> 16) & 255) / 255.0f;
+    rgb[1] = ((v >> 8) & 255) / 255.0f;
+    rgb[2] = (v & 255) / 255.0f;
+}
+
+// a path's d into absolute commands
+static void Svg_Path(const char *d, std::vector<uiSvgCmd_t>& out)
+{
+    char  op = 0;
+    float cx = 0, cy = 0, sx = 0, sy = 0; // the pen, the subpath's start
+
+    while (*d) {
+        while (*d == ' ' || *d == ',' || *d == '\t' || *d == '\n' || *d == '\r') {
+            d++;
+        }
+        if (!*d) {
+            break;
+        }
+        if (isalpha((unsigned char)*d)) {
+            op = *d++;
+            if (op == 'Z' || op == 'z') {
+                uiSvgCmd_t c = {'Z', {0}};
+
+                out.push_back(c);
+                cx = sx;
+                cy = sy;
+            }
+            continue;
+        }
+        // the numbers this command takes
+        const int  n   = strchr("MmLlTt", op) ? 2 : strchr("HhVv", op) ? 1 : strchr("Cc", op) ? 6 : strchr("QqSs", op) ? 4 : 0;
+        const bool rel = op >= 'a';
+        float      v[6];
+        int        i;
+
+        if (!n) {
+            return; // an unknown command (or numbers before any): the rest dropped
+        }
+        for (i = 0; i < n; i++) {
+            char *end;
+
+            while (*d == ' ' || *d == ',' || *d == '\t' || *d == '\n' || *d == '\r') {
+                d++;
+            }
+            v[i] = strtof(d, &end);
+            if (end == d) {
+                return;
+            }
+            d = end;
+        }
+        uiSvgCmd_t c;
+
+        memset(&c, 0, sizeof(c));
+        switch (op) {
+        case 'M':
+        case 'm':
+            c.op   = 'M';
+            c.p[0] = v[0] + (rel ? cx : 0);
+            c.p[1] = v[1] + (rel ? cy : 0);
+            sx = c.p[0];
+            sy = c.p[1];
+            op = rel ? 'l' : 'L'; // more pairs after a move are lines
+            break;
+        case 'L':
+        case 'l':
+        case 'T':
+        case 't':
+            c.op   = 'L';
+            c.p[0] = v[0] + (rel ? cx : 0);
+            c.p[1] = v[1] + (rel ? cy : 0);
+            break;
+        case 'H':
+        case 'h':
+            c.op   = 'L';
+            c.p[0] = v[0] + (rel ? cx : 0);
+            c.p[1] = cy;
+            break;
+        case 'V':
+        case 'v':
+            c.op   = 'L';
+            c.p[0] = cx;
+            c.p[1] = v[0] + (rel ? cy : 0);
+            break;
+        case 'C':
+        case 'c':
+            c.op = 'C';
+            for (i = 0; i < 6; i++) {
+                c.p[i] = v[i] + (rel ? (i & 1 ? cy : cx) : 0);
+            }
+            break;
+        case 'Q':
+        case 'q':
+        case 'S':
+        case 's':
+            // (S's first control point taken as the pen: a smooth curve's reflection isn't kept)
+            c.op = op == 'Q' || op == 'q' ? 'Q' : 'C';
+            if (c.op == 'Q') {
+                for (i = 0; i < 4; i++) {
+                    c.p[i] = v[i] + (rel ? (i & 1 ? cy : cx) : 0);
+                }
+            } else {
+                c.p[0] = cx;
+                c.p[1] = cy;
+                for (i = 0; i < 4; i++) {
+                    c.p[2 + i] = v[i] + (rel ? (i & 1 ? cy : cx) : 0);
+                }
+            }
+            break;
+        }
+        out.push_back(c);
+        // the pen: the command's last point
+        {
+            const int last = c.op == 'C' ? 4 : c.op == 'Q' ? 2 : 0;
+
+            cx = c.p[last];
+            cy = c.p[last + 1];
+        }
+    }
+}
+
+static std::shared_ptr<uiSvg_t> Svg_Parse(const char *text)
+{
+    std::shared_ptr<uiSvg_t> svg = std::make_shared<uiSvg_t>();
+    const std::string        s(text);
+    size_t                   at;
+
+    memset(svg->vb, 0, sizeof(svg->vb));
+    at = s.find("<svg");
+    if (at != std::string::npos) {
+        const std::string tag = s.substr(at, s.find('>', at) - at);
+
+        sscanf(Svg_Attr(tag, "viewBox").c_str(), "%f %f %f %f", &svg->vb[0], &svg->vb[1], &svg->vb[2], &svg->vb[3]);
+        if (svg->vb[2] <= 0 || svg->vb[3] <= 0) {
+            svg->vb[2] = (float)atof(Svg_Attr(tag, "width").c_str());
+            svg->vb[3] = (float)atof(Svg_Attr(tag, "height").c_str());
+        }
+    }
+    for (at = s.find('<'); at != std::string::npos; at = s.find('<', at + 1)) {
+        const bool path = !s.compare(at, 6, "<path ");
+        const bool circ = !s.compare(at, 8, "<circle ");
+
+        if (!path && !circ) {
+            continue;
+        }
+        const std::string tag = s.substr(at, s.find('>', at) - at);
+        uiSvgElem_t       e;
+        std::string       fill = Svg_Attr(tag, "fill");
+
+        e.circle = circ;
+        memset(e.c, 0, sizeof(e.c));
+        if (fill == "none") {
+            continue;
+        }
+        Svg_Color(fill.empty() ? "#000000" : fill, e.rgb);
+        if (circ) {
+            e.c[0] = (float)atof(Svg_Attr(tag, "cx").c_str());
+            e.c[1] = (float)atof(Svg_Attr(tag, "cy").c_str());
+            e.c[2] = (float)atof(Svg_Attr(tag, "r").c_str());
+        } else {
+            Svg_Path(Svg_Attr(tag, "d").c_str(), e.cmds);
+        }
+        svg->elems.push_back(e);
+    }
+    return svg;
+}
+
+// an outline's file, read on the main thread (on another, only one read before: Bake_Prepare)
+static std::shared_ptr<uiSvg_t> Bake_Svg(const char *file)
+{
+    std::lock_guard<std::mutex> l(bake_lock);
+    auto                        it = bake_svgs.find(file);
+    void                       *buf;
+    long                        len;
+
+    if (it != bake_svgs.end()) {
+        return it->second;
+    }
+    if (std::this_thread::get_id() != bake_main) {
+        return NULL;
+    }
+    len = uii.File_OpenFile(file, &buf);
+    if (len <= 0) {
+        bake_svgs[file] = NULL;
+        Com_DPrintf("UI: no outline %s\n", file);
+        return NULL;
+    }
+    std::string text((const char *)buf, len);
+    uii.File_FreeFile(buf);
+    return bake_svgs[file] = Svg_Parse(text.c_str());
+}
+
+bool UI_OutlineSize(const char *file, float *w, float *h)
+{
+    std::shared_ptr<uiSvg_t> svg = Bake_Svg(file);
+
+    if (!svg || svg->vb[2] <= 0 || svg->vb[3] <= 0) {
+        return false;
+    }
+    *w = svg->vb[2];
+    *h = svg->vb[3];
+    return true;
+}
+
+// a cubic's points after the pen into bake_path, as lines a pixel or two long
+static void Bake_Cubic(float x0, float y0, float x1, float y1, float x2, float y2, float x3, float y3)
+{
+    const float len = sqrtf((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)) + sqrtf((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1))
+                    + sqrtf((x3 - x2) * (x3 - x2) + (y3 - y2) * (y3 - y2));
+    const int   n   = Q_max(2, Q_min(64, (int)(len / 1.5f) + 1));
+
+    for (int i = 1; i <= n; i++) {
+        const float t = (float)i / n, u = 1.0f - t;
+        const float a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t;
+
+        Bake_MoveTo(a * x0 + b * x1 + c * x2 + d * x3, a * y0 + b * y1 + c * y2 + d * y3, STBTT_vline);
+    }
+}
+
+// an outline fitted in the canvas (its aspect kept: align 0 left, 1 middle, 2 right; up and down in the
+// middle); grey: each part in its fill's brightness
+static void Bake_Outline(uiCanvas_t *cv, const char *file, const float *color, int align, qboolean mirror, qboolean grey)
+{
+    std::shared_ptr<uiSvg_t> svg = Bake_Svg(file);
+    std::vector<byte>        mask(cv->w * cv->h);
+    float                    k, ox, oy;
+
+    if (!svg || svg->vb[2] <= 0 || svg->vb[3] <= 0) {
+        return;
+    }
+    k  = Q_min(cv->w / svg->vb[2], cv->h / svg->vb[3]);
+    ox = align == 0 ? 0.0f : align == 1 ? (cv->w - svg->vb[2] * k) * 0.5f : cv->w - svg->vb[2] * k;
+    oy = (cv->h - svg->vb[3] * k) * 0.5f;
+    // the viewBox's point on the canvas
+    auto X = [&](float x) { return ox + (mirror ? svg->vb[0] + svg->vb[2] - x : x - svg->vb[0]) * k; };
+    auto Y = [&](float y) { return oy + (y - svg->vb[1]) * k; };
+
+    for (const uiSvgElem_t& e : svg->elems) {
+        const float lum  = 0.299f * e.rgb[0] + 0.587f * e.rgb[1] + 0.114f * e.rgb[2];
+        float       c[4] = {(grey ? lum : e.rgb[0]) * color[0], (grey ? lum : e.rgb[1]) * color[1], (grey ? lum : e.rgb[2]) * color[2], color[3]};
+
+        if (e.circle) {
+            Bake_Circle(X(e.c[0]), Y(e.c[1]), e.c[2] * k, qfalse);
+        } else {
+            float px = 0, py = 0, sx = 0, sy = 0;
+            bool  open = false;
+
+            for (const uiSvgCmd_t& m : e.cmds) {
+                switch (m.op) {
+                case 'M':
+                    if (open) {
+                        Bake_MoveTo(sx, sy, STBTT_vline); // (closed: the rasterizer's edges come in pairs)
+                    }
+                    px = sx = X(m.p[0]);
+                    py = sy = Y(m.p[1]);
+                    Bake_MoveTo(px, py, STBTT_vmove);
+                    open = true;
+                    break;
+                case 'L':
+                    px = X(m.p[0]);
+                    py = Y(m.p[1]);
+                    Bake_MoveTo(px, py, STBTT_vline);
+                    break;
+                case 'Q':
+                    // (as a cubic)
+                    {
+                        const float qx = X(m.p[0]), qy = Y(m.p[1]), ex = X(m.p[2]), ey = Y(m.p[3]);
+
+                        Bake_Cubic(px, py, px + (qx - px) * 2 / 3, py + (qy - py) * 2 / 3, ex + (qx - ex) * 2 / 3, ey + (qy - ey) * 2 / 3, ex, ey);
+                        px = ex;
+                        py = ey;
+                    }
+                    break;
+                case 'C':
+                    Bake_Cubic(px, py, X(m.p[0]), Y(m.p[1]), X(m.p[2]), Y(m.p[3]), X(m.p[4]), Y(m.p[5]));
+                    px = X(m.p[4]);
+                    py = Y(m.p[5]);
+                    break;
+                case 'Z':
+                    if (open) {
+                        Bake_MoveTo(sx, sy, STBTT_vline);
+                    }
+                    px = sx;
+                    py = sy;
+                    open = false;
+                    break;
+                }
+            }
+            if (open) {
+                Bake_MoveTo(sx, sy, STBTT_vline);
+            }
+        }
+        Bake_Fill(mask.data(), cv->w, cv->h);
+        Bake_Mask(cv, mask.data(), c);
+    }
+}
+
 // the tokens of a layer, a quoted string one
 static int Bake_Tokens(const char *text, std::vector<std::string>& out)
 {
@@ -905,6 +1261,8 @@ fractions of the box. The shapes:
   text COLOR FONT X Y ANGLE STRING   (FONT a face's name; its capitals'
                                 middle at X Y, turned ANGLE about the middle)
   picture COLOR FILE [left|center|right] [mirror]
+  svg COLOR FILE [left|center|right] [mirror] [grey]  (an outline, each part
+                                in its fill, or its fill's brightness, times COLOR)
 A layer can start with "in X0 Y0 X1 Y1": drawn in that part of the box
 (fractions, or design units with "px", from the right or bottom edge when
 negative: "in -2px 0 1 1" the box's 2 units at its right).
@@ -1105,6 +1463,17 @@ static void Bake_Layer(uiCanvas_t *cv, const char *text)
 
         Bake_Picture(cv, t[a].c_str(), c, align, n > a + 2 && t[a + 2] == "mirror");
         return;
+    } else if (t[0] == "svg") {
+        int      align  = 1;
+        qboolean mirror = qfalse, grey = qfalse;
+
+        for (int i = a + 1; i < n; i++) {
+            align  = t[i] == "left" ? 0 : t[i] == "center" ? 1 : t[i] == "right" ? 2 : align;
+            mirror = mirror || t[i] == "mirror" ? qtrue : qfalse;
+            grey   = grey || t[i] == "grey" ? qtrue : qfalse;
+        }
+        Bake_Outline(cv, t[a].c_str(), c, align, mirror, grey);
+        return;
     } else {
         if (std::this_thread::get_id() == bake_main) {
             Com_DPrintf("UI: unknown shape '%s'\n", t[0].c_str()); // (made ahead: told by Bake_Prepare)
@@ -1156,13 +1525,14 @@ static void Bake_ShapeTexels(const std::vector<std::string>& layers, int w, int 
     }
 }
 
-// what a layer reads, read now (on the main thread): the faces and the
-// pictures it names (its tokens "<file>-<px>..." and "....png"); an unknown
+// what a layer reads, read now (on the main thread): the faces, the
+// pictures and the outlines it names (its tokens "<file>-<px>...", "....png"
+// and "....svg"); an unknown
 // kind told here, as Bake_Layer tells it on the main thread
 static void Bake_Prepare(const char *text)
 {
     static const char *const kinds[] = {
-        "fill", "vgradient", "hgradient", "circle", "ring", "frame", "roundbox", "poly", "crescent", "text", "picture"
+        "fill", "vgradient", "hgradient", "circle", "ring", "frame", "roundbox", "poly", "crescent", "text", "picture", "svg"
     };
     std::vector<std::string> t;
     uiFontSpec_t             spec;
@@ -1182,6 +1552,8 @@ static void Bake_Prepare(const char *text)
     for (const std::string& s : t) {
         if (s.size() > 4 && !Q_stricmp(s.c_str() + s.size() - 4, ".png")) {
             Bake_PictureEntry(s.c_str());
+        } else if (s.size() > 4 && !Q_stricmp(s.c_str() + s.size() - 4, ".svg")) {
+            Bake_Svg(s.c_str());
         } else if (strchr(s.c_str(), '-')) {
             Bake_ParseFont(s.c_str(), &spec);
         }
@@ -1225,6 +1597,18 @@ static qhandle_t Bake_Shape(const std::string& key, const char *image, const cha
         Bake_ShapeTexels(std::vector<std::string>(layers, layers + numLayers), w, h, scale, texels);
     }
     return uii.Rend_RegisterImage2D(image, texels.data(), w, h);
+}
+
+void UI_BakeTexels(const char *const *layers, int numLayers, int w, int h, float scale, byte *out)
+{
+    const std::vector<std::string> lines(layers, layers + numLayers);
+    std::vector<byte>              t;
+
+    for (const std::string& l : lines) {
+        Bake_Prepare(l.c_str());
+    }
+    Bake_ShapeTexels(lines, w, h, scale, t);
+    memcpy(out, t.data(), t.size());
 }
 
 qhandle_t UI_BakeShape(const char *key, const char *const *layers, int numLayers, int w, int h, float scale)

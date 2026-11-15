@@ -20,8 +20,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
-// uibake.h: what the UI bakes into pictures (Added): TrueType faces, shapes
-// and PNG pictures, rasterized once at the size they are drawn
+// uibake.h: what the UI bakes into pictures (Added): TrueType faces, shapes,
+// PNG pictures and SVG outlines, rasterized once at the size they are drawn
 
 #pragma once
 
@@ -34,6 +34,8 @@ float UI_BakedFontScale(const fontheader_t *font);
 // a shape's layers (the URC's "shape" lines) baked at w x h pixels, scale
 // pixels a design unit; key names it among the others
 qhandle_t UI_BakeShape(const char *key, const char *const *layers, int numLayers, int w, int h, float scale);
+// the same layers' texels (RGBA, w x h, rows down) into out, nothing registered
+void UI_BakeTexels(const char *const *layers, int numLayers, int w, int h, float scale, byte *out);
 
 // pixels a unit of a w x h design: the screen fitted both ways, times the
 // scale set (UI_SetDesignScale: true when it changed, the faces and shapes
@@ -61,3 +63,5 @@ void UI_BakeRelease(void);
 
 // a picture's texels across and down (read once); false: none
 bool UI_PictureSize(const char *file, int *w, int *h);
+// an outline's (an SVG's) size in its own units, its viewBox (read once); false: none
+bool UI_OutlineSize(const char *file, float *w, float *h);
