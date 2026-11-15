@@ -90,8 +90,8 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
     "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_target", "ui_hud_target_col",
     "ui_hud_target_hp", "ui_hud_target_hpcol", "ui_hud_target_on", "ui_hud_timer", "ui_hud_vote_on",
-    "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_vs_on",
-    "ui_hud_weapons_on", "ui_hud_cards_allies", "ui_hud_cards_axis", "ui_hud_never",
+    "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_weapons_on",
+    "ui_hud_cards_allies", "ui_hud_cards_axis", "ui_hud_cards_on", "ui_hud_never",
 };
 
 // the accent (cg_hud_accent, the HUD's pale yellow by default) and its
@@ -1195,7 +1195,7 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_msgs_c", msgs && !radar);
         flag("ui_hud_score_on", Comp_Int("cg_hud_score") && gametype != GT_SINGLE_PLAYER);
         // the cards
-        flag("ui_hud_vs_on", rounds && Comp_Int("cg_hud_alive"));
+        flag("ui_hud_cards_on", rounds && Comp_Int("cg_hud_alive"));
         flag("ui_hud_health_on", strip && Comp_Int("cg_hud_health"));
         flag("ui_hud_badge_on", strip && Comp_Int("cg_hud_badge"));
         flag("ui_hud_ammo_on", strip && weapon[0] && Comp_Int("cg_hud_ammo"));

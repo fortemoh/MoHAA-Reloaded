@@ -71,7 +71,7 @@ rect 484 5 426 60
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-15s
-enabledcvar ui_hud_vs_on
+enabledcvar ui_hud_cards_on
 team allies
 icons iconallies iconaxis
 }
@@ -84,7 +84,7 @@ rect 1010 5 426 60
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-15s
-enabledcvar ui_hud_vs_on
+enabledcvar ui_hud_cards_on
 team axis
 icons iconallies iconaxis
 }
