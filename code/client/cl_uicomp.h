@@ -33,4 +33,4 @@ void     UI_CompHud_Clear(void);          // a new map or server
 void     UI_CompHud_Shutdown(void);       // the UI's end
 void     UI_CompHud_ConfigString(void);   // a configstring changed
 void     UI_CompHud_MapLoaded(void);      // the radar's walk and the pictures, at the load
-void     UI_CompHud_PreBake(void);        // the pictures (after the renderer's restart)
+void     UI_CompHud_PreBake(qboolean ahead); // the pictures (after the renderer's restart); ahead: their texels begun

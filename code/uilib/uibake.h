@@ -47,3 +47,16 @@ int UI_FontStamp(void);
 void UI_BakeForget(void);
 // changes when a baked handle may have: a map load, a renderer's restart
 int UI_BakeStamp(void);
+
+// between true and false the faces asked for are baked on other threads,
+// their pages registered at false in the order asked for (the .urc files read)
+void UI_BakeBatch(bool begin);
+// while on (1; 0 off, -1 asks), UI_BakeShape only begins the shapes' texels
+// on other threads (it registers nothing and returns 0): the same bake after
+// finds them made
+bool UI_BakeAhead(int on = -1);
+// the shapes made ahead and not baked, and the pictures read: let go
+void UI_BakeRelease(void);
+
+// a picture's texels across and down; false: none
+bool UI_PictureSize(const char *file, int *w, int *h);

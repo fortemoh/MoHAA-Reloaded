@@ -1855,7 +1855,10 @@ void UIWidget::BakeShapes(void)
         text += resolved[i];
         text += "\n";
     }
-    if (n && (m_shapeStamp != UI_BakeStamp() || w != m_shapeW || h != m_shapeH || text != m_shapeText)) {
+    if (n && UI_BakeAhead()) {
+        // (made ahead: baked, and kept, when asked for again)
+        UI_BakeShape("w", layers, n, w, h, m_vVirtualScale[0]);
+    } else if (n && (m_shapeStamp != UI_BakeStamp() || w != m_shapeW || h != m_shapeH || text != m_shapeText)) {
         m_shapeHandle = UI_BakeShape("w", layers, n, w, h, m_vVirtualScale[0]);
         m_shapeStamp  = UI_BakeStamp();
         m_shapeW      = w;

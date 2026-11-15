@@ -27,13 +27,29 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // is baked once (RegisterImage2D) and again only after the renderer restarts;
 // the images outlive map loads, their shaders are looked up again by name.
 // stb_truetype reads the faces and fills every outline, glyph or shape.
+//
+// The texels are made on other threads where they can be ahead of their
+// registration: the faces asked for while the .urc files are read
+// (their pages registered after, in the order asked for) and the shapes a
+// menu walk will bake (UI_BakeAhead: the HUD's, made while the map loads).
+// The registrations stay on the main thread, in the same order as before, so
+// every image has the same place in the renderer's atlas.
 
 #include "ui_local.h"
 #include "uibake.h"
 
+#include <condition_variable>
+#include <deque>
+#include <functional>
+#include <future>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
+
+#include <zlib.h>
 
 #define stbtt_vertex_type float
 typedef struct {
@@ -77,14 +93,15 @@ typedef struct {
     char      image[32];
 } uiBaked_t;
 
-static std::vector<uiFace_t *>                    bake_faces;
+static std::vector<uiFace_t *>                    bake_faces; // (bake_lock: the threads find theirs)
 static std::vector<uiBakedFont_t *>               bake_fonts;
 // the names asked for, lowercased: their baked face, or NULL when the name
 // isn't one (a RitualFont: not looked at again, as faces aren't, Bake_Face)
 static std::unordered_map<std::string, uiBakedFont_t *> bake_fontNames;
 static std::unordered_map<std::string, uiBaked_t> bake_shapes;
-static std::vector<uiVertex_t>                    bake_path;
+static thread_local std::vector<uiVertex_t>       bake_path; // the outline being filled
 static int                                        bake_gen;
+static std::mutex                                 bake_lock; // bake_faces, bake_pictures
 
 static const float SLANT = 0.21256f; // tan 12 degrees: CSS's text-skew -12deg
 
@@ -125,6 +142,60 @@ int UI_BakeStamp(void)
 /*
 ====================================================================
 
+THREADS
+
+Texels made on other threads: a job reads only what it was given and what
+the main thread read for it before (the faces, the pictures' files)
+
+====================================================================
+*/
+
+static const std::thread::id bake_main = std::this_thread::get_id();
+
+// the jobs, run in order by up to 4 threads made at the first (two cores
+// left to the game and the renderer; never freed: they wait on it until the
+// process ends)
+static struct uiJobs_s {
+    std::mutex                        lock;
+    std::condition_variable           wake;
+    std::deque<std::function<void()>> queue;
+} *bake_jobs;
+
+static void Bake_Work(void)
+{
+    for (;;) {
+        std::unique_lock<std::mutex> l(bake_jobs->lock);
+
+        bake_jobs->wake.wait(l, [] { return !bake_jobs->queue.empty(); });
+        std::function<void()> job = std::move(bake_jobs->queue.front());
+
+        bake_jobs->queue.pop_front();
+        l.unlock();
+        job();
+    }
+}
+
+// f() on one of the threads (on the main thread only)
+template <typename F> static std::future<decltype(std::declval<F>()())> Bake_Run(F f)
+{
+    auto task = std::make_shared<std::packaged_task<decltype(f())()>>(f);
+
+    if (!bake_jobs) {
+        bake_jobs = new uiJobs_s();
+        for (int i = 0; i < Q_max(1, Q_min(4, (int)std::thread::hardware_concurrency() - 2)); i++) {
+            std::thread(Bake_Work).detach();
+        }
+    }
+    std::lock_guard<std::mutex> l(bake_jobs->lock);
+
+    bake_jobs->queue.push_back([task] { (*task)(); });
+    bake_jobs->wake.notify_one();
+    return task->get_future();
+}
+
+/*
+====================================================================
+
 FACES
 
 ====================================================================
@@ -132,13 +203,17 @@ FACES
 
 static uiFace_t *Bake_Face(const char *file)
 {
-    void     *buf;
-    uiFace_t *f;
+    std::lock_guard<std::mutex> l(bake_lock);
+    void                       *buf;
+    uiFace_t                   *f;
 
     for (uiFace_t *face : bake_faces) {
         if (!Q_stricmp(face->file.c_str(), file)) {
             return face->data ? face : NULL;
         }
+    }
+    if (std::this_thread::get_id() != bake_main) {
+        return NULL; // (a shape made ahead has its faces read before, Bake_Prepare)
     }
     f       = new uiFace_t();
     f->file = file;
@@ -286,17 +361,29 @@ width in design units, drawn a texel a pixel. The baseline sits where a
 label's text, centered, has its capitals' middle on the label's
 ================
 */
+// the pages asked for in a batch (UI_BakeBatch), registered at its end
+typedef struct {
+    uiBakedFont_t                     *f;
+    int                                w, h;
+    std::shared_ptr<std::vector<byte>> page;
+    std::vector<std::future<void>>     parts;
+} uiPendingPage_t;
+
+static bool                         bake_batch;
+static std::vector<uiPendingPage_t> bake_pages;
+
 static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
 {
-    const float       s     = UI_DesignScale(1920.0f, 1080.0f);
-    const float       slant = spec->slant ? SLANT : 0.0f;
-    const int         pageW = Q_max(32, (int)(256.0f * s + 0.001f));
-    const uiFace_t   *face  = spec->face;
-    fontheader_sgl_t *sgl   = &f->sgl;
+    const float       s      = UI_DesignScale(1920.0f, 1080.0f);
+    const float       slant  = spec->slant ? SLANT : 0.0f;
+    const qboolean    shadow = spec->shadow;
+    const int         pageW  = Q_max(32, (int)(256.0f * s + 0.001f));
+    const uiFace_t   *face   = spec->face;
+    fontheader_sgl_t *sgl    = &f->sgl;
     uiMetrics_t       m;
     int               cells[256][3]; // x, y, w
     int               x = 0, y = 0, pageH, c;
-    byte             *page, *mask;
+    std::vector<byte> page;
 
     Bake_Metrics(face, spec->px * s, &m);
     memset(sgl, 0, sizeof(*sgl));
@@ -319,50 +406,85 @@ static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
         x += cells[c][2] + 1;
     }
     pageH = y + m.lineH;
-    page  = (byte *)Z_Malloc(pageW * pageH * 4);
-    mask  = (byte *)Z_Malloc(pageW * m.lineH);
-    memset(page, 0, pageW * pageH * 4);
-
     for (c = 32; c < 256; c++) {
-        const int w = cells[c][2];
-
-        if (!w) {
-            continue;
+        if (cells[c][2]) {
+            sgl->indirection[c]       = c;
+            sgl->locations[c].pos[0]  = (float)cells[c][0] / pageW;
+            sgl->locations[c].pos[1]  = (float)cells[c][1] / pageH;
+            sgl->locations[c].size[0] = (float)cells[c][2] / pageW;
+            sgl->locations[c].size[1] = (float)m.lineH / pageH;
         }
-        // the slant leans about the capitals' middle
-        Bake_GlyphPath(face, c, m.scale, slant, -m.capH * slant * 0.5f, m.base, 1.0f, 0.0f, 0.0f, 0.0f);
-        Bake_Fill(mask, w, m.lineH);
-        for (int row = 0; row < m.lineH; row++) {
-            byte *out = page + ((cells[c][1] + row) * pageW + cells[c][0]) * 4;
-
-            for (int col = 0; col < w; col++, out += 4) {
-                const float a     = mask[row * w + col] / 255.0f;
-                const float sh    = spec->shadow ? Bake_ShadowAt(mask, w, m.lineH, col, row, s) : 0.0f;
-                const float alpha = a + sh * (1.0f - a);
-
-                out[0] = out[1] = out[2] = (byte)(alpha > 0.0f ? a / alpha * 255.0f + 0.5f : 255.0f);
-                out[3]                   = (byte)(alpha * 255.0f + 0.5f);
-            }
-        }
-        sgl->indirection[c]        = c;
-        sgl->locations[c].pos[0]   = (float)cells[c][0] / pageW;
-        sgl->locations[c].pos[1]   = (float)cells[c][1] / pageH;
-        sgl->locations[c].size[0]  = (float)w / pageW;
-        sgl->locations[c].size[1]  = (float)m.lineH / pageH;
     }
     f->pageScale     = pageW / 256.0f;
     sgl->height      = m.lineH / s;
     sgl->aspectRatio = 1.0f;
     sgl->trhandle    = -1;
     Q_strncpyz(sgl->name, f->name.c_str(), sizeof(sgl->name));
-    // the renderer's font shader: gfx/fonts/<name>
-    uii.Rend_RegisterImage2D(va("gfx/fonts/%s", f->name.c_str()), page, pageW, pageH);
-    Z_Free(mask);
-    Z_Free(page);
-
     memset(&f->header, 0, sizeof(f->header));
     f->header.sgl[0] = sgl;
     Q_strncpyz(f->header.name, f->name.c_str(), sizeof(f->header.name));
+
+    // the texels of the characters from first to last (on any thread)
+    auto texels = [=](byte *t, int first, int last) {
+        std::vector<byte> mask(pageW * m.lineH);
+
+        for (int k = first; k <= last; k++) {
+            const int w = cells[k][2];
+
+            if (!w) {
+                continue;
+            }
+            // the slant leans about the capitals' middle
+            Bake_GlyphPath(face, k, m.scale, slant, -m.capH * slant * 0.5f, m.base, 1.0f, 0.0f, 0.0f, 0.0f);
+            Bake_Fill(mask.data(), w, m.lineH);
+            for (int row = 0; row < m.lineH; row++) {
+                byte *out = t + ((cells[k][1] + row) * pageW + cells[k][0]) * 4;
+
+                for (int col = 0; col < w; col++, out += 4) {
+                    const float a     = mask[row * w + col] / 255.0f;
+                    const float sh    = shadow ? Bake_ShadowAt(mask.data(), w, m.lineH, col, row, s) : 0.0f;
+                    const float alpha = a + sh * (1.0f - a);
+
+                    out[0] = out[1] = out[2] = (byte)(alpha > 0.0f ? a / alpha * 255.0f + 0.5f : 255.0f);
+                    out[3]                   = (byte)(alpha * 255.0f + 0.5f);
+                }
+            }
+        }
+    };
+    // the renderer's font shader: gfx/fonts/<name>
+    if (bake_batch) {
+        // (in four parts: the last ones asked for are waited for)
+        bake_pages.push_back({f, pageW, pageH, std::make_shared<std::vector<byte>>(pageW * pageH * 4)});
+        for (c = 32; c < 256; c += 56) {
+            byte *t = bake_pages.back().page->data();
+
+            bake_pages.back().parts.push_back(Bake_Run([texels, t, c] { texels(t, c, c + 55); }));
+        }
+        return;
+    }
+    page.assign(pageW * pageH * 4, 0);
+    texels(page.data(), 32, 255);
+    uii.Rend_RegisterImage2D(va("gfx/fonts/%s", f->name.c_str()), page.data(), pageW, pageH);
+}
+
+// the batch's pages registered, in the order asked for
+static void Bake_FlushPages(void)
+{
+    for (uiPendingPage_t& pp : bake_pages) {
+        for (std::future<void>& part : pp.parts) {
+            part.get();
+        }
+        uii.Rend_RegisterImage2D(va("gfx/fonts/%s", pp.f->name.c_str()), pp.page->data(), pp.w, pp.h);
+    }
+    bake_pages.clear();
+}
+
+void UI_BakeBatch(bool begin)
+{
+    bake_batch = begin;
+    if (!begin) {
+        Bake_FlushPages();
+    }
 }
 
 float UI_BakedFontScale(const fontheader_t *font)
@@ -519,17 +641,154 @@ static void Bake_RoundBox(float cx, float cy, float w, float h, float r, float a
     Bake_MoveTo(bake_path[bake_path.size() - n].x, bake_path[bake_path.size() - n].y, STBTT_vline);
 }
 
+/*
+====================================================================
+
+PICTURES
+
+A picture's file is read on the main thread; an RGBA PNG (the HUD's) is
+decoded by whichever thread first needs its texels, the same texels as the
+renderer's loader gives (zlib's inflate, much faster than the loader's); any
+other picture is loaded by the renderer at once
+
+====================================================================
+*/
+
+typedef struct {
+    int                                   w, h; // 0: none
+    std::shared_future<std::vector<byte>> rgba;
+} uiPicture_t;
+
+static std::unordered_map<std::string, std::shared_ptr<uiPicture_t>> bake_pictures; // (bake_lock)
+
+static unsigned Bake_Be32(const byte *p)
+{
+    return ((unsigned)p[0] << 24) | ((unsigned)p[1] << 16) | ((unsigned)p[2] << 8) | p[3];
+}
+
+// a PNG decoded here (RGBA, 8 bits a channel, not interlaced: the HUD's):
+// its size, and with rgba its texels; false: another kind
+static bool Bake_Png(const std::vector<byte>& f, int *w, int *h, std::vector<byte> *rgba)
+{
+    static const byte sig[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+    std::vector<byte> z, raw;
+    z_stream          zs = {};
+    int               r;
+
+    if (f.size() < 33 || memcmp(f.data(), sig, 8) || memcmp(&f[12], "IHDR", 4) || f[24] != 8 || f[25] != 6 || f[26] || f[27] || f[28]) {
+        return false;
+    }
+    *w = (int)Bake_Be32(&f[16]);
+    *h = (int)Bake_Be32(&f[20]);
+    if (*w <= 0 || *h <= 0 || *w > 16384 || *h > 16384 || !rgba) {
+        return *w > 0 && *h > 0 && *w <= 16384 && *h <= 16384;
+    }
+    for (size_t p = 8, len = 0; p + 12 <= f.size() && memcmp(&f[p + 4], "IEND", 4); p += 12 + len) {
+        if ((len = Bake_Be32(&f[p])) > f.size() - p - 12) {
+            return false;
+        } else if (!memcmp(&f[p + 4], "IDAT", 4)) {
+            z.insert(z.end(), &f[p + 8], &f[p + 8] + len);
+        }
+    }
+    const int stride = *w * 4;
+
+    raw.resize((size_t)(stride + 1) * *h);
+    if (inflateInit(&zs) != Z_OK) {
+        return false;
+    }
+    zs.next_in   = z.data();
+    zs.avail_in  = (uInt)z.size();
+    zs.next_out  = raw.data();
+    zs.avail_out = (uInt)raw.size();
+    r            = inflate(&zs, Z_FINISH);
+    inflateEnd(&zs);
+    if (r != Z_STREAM_END || zs.avail_out) {
+        return false;
+    }
+    // the rows unfiltered
+    rgba->resize((size_t)stride * *h);
+    for (int y = 0; y < *h; y++) {
+        byte       *cur    = &raw[(size_t)y * (stride + 1) + 1];
+        const byte *up     = y ? cur - stride - 1 : NULL;
+        const int   filter = cur[-1];
+
+        for (int i = 0; i < stride && filter <= 4; i++) {
+            const int a = i >= 4 ? cur[i - 4] : 0, b = up ? up[i] : 0, c = up && i >= 4 ? up[i - 4] : 0;
+            const int p = a + b - c, pa = abs(p - a), pb = abs(p - b), pc = abs(p - c);
+
+            cur[i] += filter == 1 ? a : filter == 2 ? b : filter == 3 ? (a + b) >> 1 : filter == 4 ? (pa <= pb && pa <= pc ? a : pb <= pc ? b : c) : 0;
+        }
+        if (filter > 4) {
+            return false;
+        }
+        memcpy(&(*rgba)[(size_t)y * stride], cur, stride);
+    }
+    return true;
+}
+
+// a picture: on the main thread found, or read and its texels begun (a PNG
+// decoded on the threads, another kind by the renderer now); on another
+// thread only found (a shape made ahead has its pictures read before)
+static std::shared_ptr<uiPicture_t> Bake_PictureEntry(const char *file)
+{
+    std::lock_guard<std::mutex>  l(bake_lock);
+    std::shared_ptr<uiPicture_t> p = bake_pictures[file];
+    std::vector<byte>            f, rgba;
+    byte                        *buf;
+    int                          len;
+
+    if (p || std::this_thread::get_id() != bake_main) {
+        return p;
+    }
+    p = bake_pictures[file] = std::make_shared<uiPicture_t>();
+    if ((len = uii.File_OpenFile(file, (void **)&buf)) > 0) {
+        f.assign(buf, buf + len);
+        uii.File_FreeFile(buf);
+    }
+    if (Bake_Png(f, &p->w, &p->h, NULL)) {
+        p->rgba = Bake_Run([f] {
+            std::vector<byte> t;
+            int               w, h;
+
+            return Bake_Png(f, &w, &h, &t) ? t : std::vector<byte>();
+        }).share();
+        return p;
+    }
+    p->w = p->h = 0;
+    if (uii.Rend_LoadRawImage(file, &buf, &p->w, &p->h) && buf) {
+        rgba.assign(buf, buf + p->w * p->h * 4);
+        uii.Rend_FreeRawImage(buf);
+    } else {
+        Com_DPrintf("UI: no picture %s\n", file);
+    }
+    p->rgba = std::async(std::launch::deferred, [rgba] { return rgba; }).share();
+    return p;
+}
+
+bool UI_PictureSize(const char *file, int *w, int *h)
+{
+    std::shared_ptr<uiPicture_t> p = Bake_PictureEntry(file);
+
+    *w = p ? p->w : 0;
+    *h = p ? p->h : 0;
+    return *w && *h;
+}
+
 // a PNG fitted in the canvas (align: 0 left, 1 center, 2 right), its texels
 // averaged over each pixel
 static void Bake_Picture(uiCanvas_t *cv, const char *file, const float *c, int align, qboolean mirror)
 {
-    byte *pic;
-    int   sw, sh, tw, th, x0, y0, x, y;
+    std::shared_ptr<uiPicture_t>          picture = Bake_PictureEntry(file);
+    std::shared_future<std::vector<byte>> texels  = picture ? picture->rgba : std::shared_future<std::vector<byte>>();
+    const byte                           *pic;
+    int                                   sw, sh, tw, th, x0, y0, x, y;
 
-    if (!uii.Rend_LoadRawImage(file, &pic, &sw, &sh) || !pic) {
-        Com_DPrintf("UI: no picture %s\n", file);
+    if (!texels.valid() || texels.get().size() < (size_t)picture->w * picture->h * 4 || !picture->w || !picture->h) {
         return;
     }
+    pic = texels.get().data();
+    sw  = picture->w;
+    sh  = picture->h;
     {
         const float        fit = Q_min((float)cv->w / sw, (float)cv->h / sh);
         std::vector<float> rows; // across first: tw x sh, premultiplied
@@ -577,7 +836,6 @@ static void Bake_Picture(uiCanvas_t *cv, const char *file, const float *c, int a
             }
         }
     }
-    uii.Rend_FreeRawImage(pic);
 }
 
 // the tokens of a layer, a quoted string one
@@ -830,25 +1088,28 @@ static void Bake_Layer(uiCanvas_t *cv, const char *text)
         Bake_Picture(cv, t[a].c_str(), c, align, n > a + 2 && t[a + 2] == "mirror");
         return;
     } else {
-        Com_DPrintf("UI: unknown shape '%s'\n", t[0].c_str());
+        if (std::this_thread::get_id() == bake_main) {
+            Com_DPrintf("UI: unknown shape '%s'\n", t[0].c_str()); // (made ahead: not told)
+        }
         return;
     }
     Bake_Fill(mask.data(), cv->w, cv->h);
     Bake_Mask(cv, mask.data(), c);
 }
 
-static qhandle_t Bake_Shape(const char *image, const char *const *layers, int numLayers, int w, int h, float scale)
+// a shape's texels (on any thread)
+static void Bake_ShapeTexels(const std::vector<std::string>& layers, int w, int h, float scale, std::vector<byte>& out)
 {
-    uiCanvas_t        cv;
-    std::vector<byte> out(w * h * 4);
-    int               i;
+    uiCanvas_t cv;
+    int        i;
 
+    out.assign(w * h * 4, 0);
     cv.w     = w;
     cv.h     = h;
     cv.scale = scale;
     cv.px.assign(w * h * 4, 0.0f);
-    for (i = 0; i < numLayers; i++) {
-        Bake_Layer(&cv, layers[i]);
+    for (const std::string& l : layers) {
+        Bake_Layer(&cv, l.c_str());
     }
     for (i = 0; i < w * h; i++) {
         const float *p = &cv.px[i * 4];
@@ -875,7 +1136,61 @@ static qhandle_t Bake_Shape(const char *image, const char *const *layers, int nu
             }
         }
     }
-    return uii.Rend_RegisterImage2D(image, out.data(), w, h);
+}
+
+// what a layer reads, read now (on the main thread): the faces and the
+// pictures it names (its tokens "<file>-<px>..." and "....png")
+static void Bake_Prepare(const char *text)
+{
+    std::vector<std::string> t;
+    uiFontSpec_t             spec;
+
+    Bake_Tokens(text, t);
+    for (const std::string& s : t) {
+        if (s.size() > 4 && !Q_stricmp(s.c_str() + s.size() - 4, ".png")) {
+            Bake_PictureEntry(s.c_str());
+        } else if (strchr(s.c_str(), '-')) {
+            Bake_ParseFont(s.c_str(), &spec);
+        }
+    }
+}
+
+// the shapes made ahead (UI_BakeAhead), by their keys, until baked
+static bool                                                            bake_ahead;
+static std::unordered_map<std::string, std::future<std::vector<byte>>> bake_made;
+
+bool UI_BakeAhead(int on)
+{
+    return bake_ahead = on < 0 ? bake_ahead : on != 0;
+}
+
+void UI_BakeRelease(void)
+{
+    // (the jobs not begun dropped: theirs)
+    bake_made.clear();
+    if (bake_jobs) {
+        std::lock_guard<std::mutex> l(bake_jobs->lock);
+
+        bake_jobs->queue.clear();
+    }
+    std::lock_guard<std::mutex> l(bake_lock);
+    bake_pictures.clear();
+}
+
+static qhandle_t Bake_Shape(const std::string& key, const char *image, const char *const *layers, int numLayers, int w, int h, float scale)
+{
+    auto              made = bake_made.find(key);
+    std::vector<byte> texels;
+
+    // (after the faces asked for before it: the atlas is filled in the order asked for)
+    Bake_FlushPages();
+    if (made != bake_made.end()) {
+        texels = made->second.get();
+        bake_made.erase(made);
+    } else {
+        Bake_ShapeTexels(std::vector<std::string>(layers, layers + numLayers), w, h, scale, texels);
+    }
+    return uii.Rend_RegisterImage2D(image, texels.data(), w, h);
 }
 
 qhandle_t UI_BakeShape(const char *key, const char *const *layers, int numLayers, int w, int h, float scale)
@@ -892,6 +1207,23 @@ qhandle_t UI_BakeShape(const char *key, const char *const *layers, int numLayers
         k += layers[i];
     }
     auto it = bake_shapes.find(k);
+    if (bake_ahead) {
+        // its texels begun now, unless baked or begun
+        if ((it == bake_shapes.end() || it->second.seq != uii.GetRefSequence()) && !bake_made.count(k)) {
+            const std::vector<std::string> lines(layers, layers + numLayers);
+
+            for (const std::string& l : lines) {
+                Bake_Prepare(l.c_str());
+            }
+            bake_made[k] = Bake_Run([lines, w, h, scale] {
+                std::vector<byte> t;
+
+                Bake_ShapeTexels(lines, w, h, scale, t);
+                return t;
+            });
+        }
+        return 0;
+    }
     if (it == bake_shapes.end()) {
         uiBaked_t nb;
 
@@ -904,7 +1236,7 @@ qhandle_t UI_BakeShape(const char *key, const char *const *layers, int numLayers
     if (b->seq != uii.GetRefSequence()) {
         b->seq    = uii.GetRefSequence();
         b->gen    = bake_gen;
-        b->handle = Bake_Shape(b->image, layers, numLayers, w, h, scale);
+        b->handle = Bake_Shape(k, b->image, layers, numLayers, w, h, scale);
     } else if (b->gen != bake_gen) {
         b->gen    = bake_gen;
         b->handle = uii.Rend_RegisterMaterial(b->image);

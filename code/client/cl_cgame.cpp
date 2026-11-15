@@ -955,6 +955,9 @@ void CL_InitCGame( void ) {
 
 	t1 = Sys_Milliseconds();
 
+	// Added: the Competitive HUD's pictures begun now, baked at the load's end (UI_CompHud_MapLoaded)
+	UI_CompHud_PreBake(qtrue);
+
 	// find the current mapname
 	info = cl.gameState.stringData + cl.gameState.stringOffsets[ CS_SERVERINFO ];
 	mapname = Info_ValueForKey( info, "mapname" );

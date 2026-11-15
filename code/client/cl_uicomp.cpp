@@ -838,7 +838,7 @@ void UI_CompHud_Frame(void)
             scale = end == v || scale != scale ? 1.0f : Com_Clamp(0.25f, 2.0f, scale);
             if (UI_SetDesignScale(scale)) {
                 menuManager.RealignMenus();
-                UI_CompHud_PreBake();
+                UI_CompHud_PreBake(qfalse);
             }
         }
     }
@@ -1120,11 +1120,10 @@ WIDGETS
 ====================================================================
 */
 
-// a picture's texels across and down (read once)
+// a picture's texels across and down (read once: the PNG's header)
 static void Comp_PictureSize(const char *pic, int *w, int *h)
 {
     static std::vector<std::pair<str, std::pair<int, int>>> sizes;
-    byte                                                    *data;
 
     for (auto& e : sizes) {
         if (e.first == pic) {
@@ -1133,9 +1132,8 @@ static void Comp_PictureSize(const char *pic, int *w, int *h)
             return;
         }
     }
-    *w = *h = 1;
-    if (uii.Rend_LoadRawImage(va(COMP_PICTURES "%s.png", pic), &data, w, h) && data) {
-        uii.Rend_FreeRawImage(data);
+    if (!UI_PictureSize(va(COMP_PICTURES "%s.png", pic), w, h)) {
+        *w = *h = 1;
     }
     sizes.push_back({str(pic), {*w, *h}});
 }
@@ -2017,6 +2015,8 @@ void UI_CompHud_Shutdown(void)
     if (rm.worker.joinable()) {
         rm.worker.join();
     }
+    // (no picture's texels made after the UI)
+    UI_BakeRelease();
 }
 
 // a picture made: the radar's (the main thread's: the renderer)
@@ -2111,10 +2111,12 @@ UI_CompHud_PreBake
 
 At a map's load and after the renderer's restart: every picture the HUD can
 draw baked now (the menus' shapes and faces, the kill feed's and the weapons'
-pictures, the cards, the radar's marks), none at its first draw
+pictures, the cards, the radar's marks), none at its first draw. Ahead (at
+the UI's start and a map load's): their texels begun on threads of their
+own, made while the rest loads, so the bake at the load's end finds them made
 ================
 */
-void UI_CompHud_PreBake(void)
+void UI_CompHud_PreBake(qboolean ahead)
 {
     // (in this order: the atlas is filled in it)
     static const char *const menus[] = {
@@ -2132,6 +2134,7 @@ void UI_CompHud_PreBake(void)
     if (!UI_CompHud_Active() || !uii.IsRendererLoaded()) {
         return;
     }
+    UI_BakeAhead(ahead);
     for (i = 0; i < ARRAY_LEN(menus); i++) {
         Menu *m = menuManager.FindMenu(menus[i]);
 
@@ -2171,14 +2174,16 @@ void UI_CompHud_PreBake(void)
     Comp_ArrowShader(k, s, &d);
     Comp_ObjectiveShader(qtrue, k, s, &d);
     Comp_ObjectiveShader(qfalse, k, s, &d);
-    Com_DPrintf("Competitive HUD: baked in %d ms\n", Sys_Milliseconds() - start);
+    UI_BakeAhead(0);
+    Com_DPrintf("Competitive HUD: %s in %d ms\n", ahead ? "begun ahead" : "baked", Sys_Milliseconds() - start);
 }
 
 void UI_CompHud_MapLoaded(void)
 {
     const char *map = (Comp_ConfigStrings(), cs.map);
 
-    UI_CompHud_PreBake();
+    UI_CompHud_PreBake(qfalse);
+    UI_BakeRelease();
     if (!UI_CompHud_Active() || !Comp_Int("cg_hud_radar") || !strcmp(map, rm.map)) {
         return;
     }
@@ -2369,14 +2374,16 @@ void UIHudRadar::Draw(void)
 // a menu's widgets: their shapes and faces (the widgets' own faces too)
 static void Comp_PreBakeWidget(UIWidget *w)
 {
+    const bool faces = !UI_BakeAhead(); // (baked where they are now, not made ahead)
+
     w->BakeShapes();
-    if (w->getFont()) {
+    if (w->getFont() && faces) {
         w->getFont()->getHeight((const float *)NULL);
     }
-    if (w->isSubclassOf(UIHudFeed) && ((UIHudFeed *)w)->m_bold) {
+    if (w->isSubclassOf(UIHudFeed) && ((UIHudFeed *)w)->m_bold && faces) {
         ((UIHudFeed *)w)->m_bold->getHeight((const float *)NULL);
     }
-    if (w->isSubclassOf(UIHudWeapons) && ((UIHudWeapons *)w)->m_countFont) {
+    if (w->isSubclassOf(UIHudWeapons) && ((UIHudWeapons *)w)->m_countFont && faces) {
         ((UIHudWeapons *)w)->m_countFont->getHeight((const float *)NULL);
     }
     for (UIWidget *c = w->getFirstChild(); c; c = w->getNextChild(c)) {

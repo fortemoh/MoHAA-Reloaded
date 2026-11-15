@@ -4220,7 +4220,7 @@ void UI_ResolutionChange(void)
     }
 
     // Added: the Competitive HUD baked at the new size
-    UI_CompHud_PreBake();
+    UI_CompHud_PreBake(qfalse);
 }
 
 /*
@@ -5703,6 +5703,8 @@ void CL_InitializeUI(void)
     }
 
     // Load all urc files
+    // Added: their faces baked meanwhile on worker threads (registered after, in the order asked for)
+    UI_BakeBatch(true);
     filenames = FS_ListFiles("ui/", "urc", qfalse, &nfiles);
 
     for (i = 0; i < nfiles; i++) {
@@ -5717,6 +5719,7 @@ void CL_InitializeUI(void)
     UI_LoadBuiltinMenus();
 
     uWinMan.CreateMenus();
+    UI_BakeBatch(false);
 
     // find the crosshair
     // Removed in 2.0
@@ -5754,6 +5757,9 @@ void CL_InitializeUI(void)
 
     // realign menus
     menuManager.RealignMenus();
+
+    // Added: the Competitive HUD's pictures begun ahead of the first map's load
+    UI_CompHud_PreBake(qtrue);
 
     // clear input
     CL_ClearButtons();
