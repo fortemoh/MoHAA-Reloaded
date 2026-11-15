@@ -29,8 +29,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 void        UI_Menus_Init(void);
 // the menu shown for a stock menu's name, NULL: the stock one
 const char *UI_Menus_Alias(const char *name);
-// a menu about to be pushed by that name (the weapon menu's nation)
-void        UI_Menus_Pushing(const char *name);
+// a menu about to be pushed by that name (the weapon menu's nation and
+// preview); qfalse: not pushed (the server's push after a side picked in the weapon menu)
+qboolean    UI_Menus_Pushing(const char *name);
 // a server command just tokenized (the scoreboard's "scores")
 void        UI_Menus_ServerCommand(void);
 // the scoreboard of this (stock) name is the Reloaded one: the stock list isn't shown

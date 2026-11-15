@@ -716,8 +716,9 @@ static rlWeapon_t RL_W(const char *cls, const char *name, const char *svg)
     return w;
 }
 
-// what a nation gets for a class
-static rlWeapon_t RL_WeaponFor(int nation, int wc, int target, int dmflags)
+// what a nation gets for a class; axisModel: the Axis model it is for (the
+// German sniper's), NULL the player's (dm_playergermanmodel)
+static rlWeapon_t RL_WeaponFor(int nation, int wc, int target, int dmflags, const char *axisModel = NULL)
 {
     const bool bt = target >= TG_MOHTT, aa = target < TG_MOHTA;
 
@@ -743,7 +744,8 @@ static rlWeapon_t RL_WeaponFor(int nation, int wc, int target, int dmflags)
             return RL_W("SNIPER", "SVT-40", "svt_rifle");
         }
         if (nation == NAT_DE) {
-            if (aa || (dmflags & DF_OLD_SNIPER) || !Q_stricmpn(Cvar_VariableString("dm_playergermanmodel"), "german_panzer", 13)) {
+            if (aa || (dmflags & DF_OLD_SNIPER)
+                || !Q_stricmpn(axisModel ? axisModel : Cvar_VariableString("dm_playergermanmodel"), "german_panzer", 13)) {
                 return RL_W("SNIPER", "KAR98K SNIPER", "kar98sniper");
             }
             return RL_W("SNIPER", "GEWEHR 43", "g43");
@@ -821,6 +823,156 @@ static int RL_NationTeam(int nation)
 /*
 ====================================================================
 
+PLAYER MODELS
+
+The weapon menu's side tabs and model cycler. Each side's models are the
+stock picker's (PlayerModelPickerClass::SetupFiles: models/player's .tik
+but the view models and hidden ones, the Axis' german*, axis*, it*, sc*),
+in the order of its names ("US - Soldier"). What the menu previews (the
+side, each side's model) is kept here for both layers (the back one places
+the live model) and set again each time the menu opens; nothing is sent
+until a weapon is picked (UIReloadedMenu::Choose)
+
+====================================================================
+*/
+
+typedef struct {
+    std::string file;  // models/player/<file>.tik
+    std::string order; // the picker's name ("DE - Wehrmacht Soldier")
+    std::string name;  // shown ("WEHRMACHT SOLDIER")
+} rlModel_t;
+
+static struct {
+    std::vector<rlModel_t> models[2];
+    int                    own[2];  // the player's (dm_playermodel, dm_playergermanmodel), -1 not listed
+    int                    pick[2]; // the one previewed
+    int                    tab;     // the side previewed
+    int                    serial;  // the lists' (the draw cache's key)
+    bool                   swallow; // a switch of side sent: the server's push of the weapon menu not shown
+    int                    swallowAt;
+} rl_wp = {{}, {-1, -1}, {-1, -1}, 0, 0, false, 0};
+
+// the picker's name without its nation ("DE - Wehrmacht Soldier": "WEHRMACHT
+// SOLDIER"), else the file's
+static std::string RL_ModelName(const char *file)
+{
+    const char *shown = PM_FilenameToDisplayname(file);
+    std::string s;
+
+    if (shown == file) {
+        s = file;
+        std::replace(s.begin(), s.end(), '_', ' ');
+    } else if (strlen(shown) > 5 && shown[2] == ' ' && shown[3] == '-' && shown[4] == ' ') {
+        s = shown + 5;
+    } else {
+        s = shown;
+    }
+    return RL_Upper(s.c_str());
+}
+
+// the nation a side's model gives (fgame's GetPlayerAlliedTeamType and GetPlayerAxisTeamType)
+static int RL_ModelNation(int side, const char *file, int target)
+{
+    if (target < TG_MOHTA) {
+        return side ? NAT_DE : NAT_US;
+    }
+    if (side) {
+        if (target >= TG_MOHTT && (!Q_stricmpn(file, "it", 2) || !Q_stricmpn(file, "sc", 2))) {
+            return NAT_IT;
+        }
+        return NAT_DE;
+    }
+    if (!Q_stricmpn(file, "allied_russian", 14)) {
+        return NAT_RU;
+    }
+    if (!Q_stricmpn(file, "allied_british", 14) || !Q_stricmpn(file, "allied_sas", 10)) {
+        return NAT_UK;
+    }
+    return NAT_US;
+}
+
+// the model a side previews: its file (no extension)
+static std::string RL_PreviewModel(int side)
+{
+    const int pick = rl_wp.pick[side];
+
+    if (pick >= 0 && pick < (int)rl_wp.models[side].size()) {
+        return rl_wp.models[side][pick].file;
+    }
+    return Cvar_VariableString(side ? "dm_playergermanmodel" : "dm_playermodel");
+}
+
+// the nation previewed: the server's (the menu's name) for the side and model it
+// was opened for, else what the model gives
+static int RL_PreviewNation(int target)
+{
+    const int t = rl_wp.tab;
+
+    if (RL_NationTeam(RL_Nation()) == t && rl_wp.pick[t] == rl_wp.own[t]) {
+        return RL_Nation();
+    }
+    return RL_ModelNation(t, RL_PreviewModel(t).c_str(), target);
+}
+
+// the menu opened: the models listed, the player's side and models previewed
+static void RL_WeaponPreviewReset(void)
+{
+    const int team = cl.snap.valid ? cl.snap.ps.stats[STAT_TEAM] : TEAM_NONE;
+    char    **files;
+    int       count;
+
+    for (int t = 0; t < 2; t++) {
+        rl_wp.models[t].clear();
+        rl_wp.own[t] = rl_wp.pick[t] = -1;
+    }
+    files = FS_ListFiles("models/player", ".tik", qfalse, &count);
+    for (int i = 0; i < count; i++) {
+        char      work[128];
+        rlModel_t m;
+        size_t    len;
+
+        Q_strncpyz(work, files[i], sizeof(work));
+        len = strlen(work);
+        // (not the view models, not the hidden ones)
+        if (len <= 4 || strstr(work, "_fps") || work[0] == '_') {
+            continue;
+        }
+        work[len - 4] = 0;
+        m.file  = work;
+        m.order = PM_FilenameToDisplayname(work);
+        m.name  = RL_ModelName(work);
+        rl_wp.models[!Q_stricmpn(work, "german", 6) || !Q_stricmpn(work, "axis", 4) || !Q_stricmpn(work, "it", 2)
+                     || !Q_stricmpn(work, "sc", 2)]
+            .push_back(m);
+    }
+    FS_FreeFileList(files);
+    for (int t = 0; t < 2; t++) {
+        std::vector<rlModel_t>& list = rl_wp.models[t];
+        char                    own[MAX_QPATH];
+
+        std::sort(list.begin(), list.end(), [](const rlModel_t& a, const rlModel_t& b) {
+            return Q_stricmp(a.order.c_str(), b.order.c_str()) < 0;
+        });
+        Q_strncpyz(own, Cvar_VariableString(t ? "dm_playergermanmodel" : "dm_playermodel"), sizeof(own));
+        // (the old Waffen-SS names: the files' german_waffenss_, as UI_GetPlayerModel_f shows them)
+        if (t && !Q_stricmpn(own, "german_waffen_", 14)) {
+            Com_sprintf(own, sizeof(own), "german_waffenss_%s", Cvar_VariableString("dm_playergermanmodel") + 14);
+        }
+        for (int i = 0; i < (int)list.size(); i++) {
+            if (!Q_stricmp(list[i].file.c_str(), own)) {
+                rl_wp.own[t] = rl_wp.pick[t] = i;
+                break;
+            }
+        }
+    }
+    // the player's side (FFA's too), a spectator's the menu's nation's
+    rl_wp.tab = team == TEAM_ALLIES ? 0 : team == TEAM_AXIS ? 1 : RL_NationTeam(RL_Nation());
+    rl_wp.serial++;
+}
+
+/*
+====================================================================
+
 ALIASES
 
 ====================================================================
@@ -892,14 +1044,22 @@ qboolean UI_Menus_Covering(void)
 
 void UI_GetPlayerModel_f(void);
 
-void UI_Menus_Pushing(const char *name)
+qboolean UI_Menus_Pushing(const char *name)
 {
     const char *alias = UI_Menus_Alias(name);
 
     if (!alias) {
-        return;
+        return qtrue;
     }
     if (!strcmp(alias, "reloaded_weapon")) {
+        // a side picked in the weapon menu: the server pushes the new side's
+        // weapon menu (fgame's Player::Join_DM_Team), the weapon already sent
+        if (rl_wp.swallow) {
+            rl_wp.swallow = false;
+            if (cls.realtime - rl_wp.swallowAt < 3000) {
+                return qfalse;
+            }
+        }
         // the nation: the name's (SH/BT servers send each nation its own), else
         // the team's (Allied Assault's Americans and Germans)
         const char *nation = strchr(name, '_');
@@ -912,9 +1072,15 @@ void UI_Menus_Pushing(const char *name)
             Cvar_Set("ui_reloaded_nation", "american");
         }
         UI_GetPlayerModel_f(); // (called, not executed: the push's own arguments stay)
-    } else if (!strcmp(alias, "reloaded_team")) {
+        RL_WeaponPreviewReset();
+        return qtrue;
+    }
+    // another menu opened since: the push isn't the switch's
+    rl_wp.swallow = false;
+    if (!strcmp(alias, "reloaded_team")) {
         UI_GetPlayerModel_f(); // (called, not executed: the push's own arguments stay)
     }
+    return qtrue;
 }
 
 void UI_Menus_Init(void)
@@ -1202,6 +1368,7 @@ int UIReloadedMenu::DrawKey(void)
 {
     struct {
         int cs, scores, seconds, focus, self, team, vote, gametype;
+        int wtab, wpick[2], wserial; // the weapon menu's preview
     } k;
     int h = 0;
 
@@ -1216,12 +1383,18 @@ int UIReloadedMenu::DrawKey(void)
     if (m_screen == SCR_TEAM || m_screen == SCR_SCOREBOARD) {
         k.scores = rl_sb.stamp;
     }
-    if (m_screen == SCR_ESC || m_screen == SCR_SCOREBOARD) {
+    if (m_screen == SCR_WEAPON || m_screen == SCR_ESC || m_screen == SCR_SCOREBOARD) {
         // (the time left's seconds)
         k.seconds = (atoi(CL_ConfigString(CS_MATCHEND)) - cl.serverTime) / 1000;
     }
     if (m_screen == SCR_ESC) {
         k.vote = RL_VoteState();
+    }
+    if (m_screen == SCR_WEAPON) {
+        k.wtab     = rl_wp.tab;
+        k.wpick[0] = rl_wp.pick[0];
+        k.wpick[1] = rl_wp.pick[1];
+        k.wserial  = rl_wp.serial;
     }
     for (size_t i = 0; i + 4 <= sizeof(k); i += 4) {
         int w;
@@ -1500,20 +1673,20 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
 
 /*
 ================
-Weapon select: the Esc menu's grid, two tiles a row (rifle and sniper, SMG
-and MG, anti-tank and shotgun; Breakthrough's mine detector a row of its
-own), each the weapon's name in its corner, the nation's outline, the class
-as its label, the last pick marked, a banned class dimmed in its place; the
-header panel over it, the live model beside
+Weapon select: one menu for the side, the model and the weapon. The header
+panel's emblem and side tabs (ALLIES, AXIS: the one previewed underlined in
+its colour) and the time left; the Esc menu's grid, two tiles a row (rifle
+and sniper, SMG and MG, anti-tank and shotgun; Breakthrough's mine detector
+a row of its own), each the weapon's name in its corner, the nation's
+outline, the class as its label, the last pick marked, a banned class
+dimmed in its place; a footer panel cycling the side's models (the name,
+its place, a dash each); the live model beside. The tabs and chevrons only
+preview: a weapon picked sends them (Choose)
 ================
 */
 
-static const char *RL_NationName(int nation)
-{
-    static const char *const names[] = {"UNITED STATES", "BRITAIN", "SOVIET UNION", "GERMANY", "ITALY"};
-
-    return names[nation >= 0 && nation < (int)ARRAY_LEN(names) ? nation : 0];
-}
+// the weapon menu's items past its tiles (WC_*)
+enum { ID_WTAB = 10, ID_WTAB_AXIS, ID_WPREV, ID_WNEXT };
 
 // the Esc menu's grid: its tiles' size and its width
 static void RL_Grid(const rlView_t& v, float *tw, float *th, float *gap, float *gw)
@@ -1526,42 +1699,76 @@ static void RL_Grid(const rlView_t& v, float *tw, float *th, float *gap, float *
 
 void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
 {
-    const int       nation = RL_Nation();
-    const int       team   = RL_NationTeam(nation);
-    const rlTeam_t& T      = rl_teams[team];
-    const int       n      = in.target >= TG_MOHTT ? 7 : 6;
-    const int       rows   = (n + 1) / 2;
-    const float     head = 104, modelW = 380;
-    float           tw, th, gap, gw;
+    const int                     tab    = rl_wp.tab;
+    const int                     nation = RL_PreviewNation(in.target);
+    const rlTeam_t&               T      = rl_teams[tab];
+    const std::vector<rlModel_t>& models = rl_wp.models[tab];
+    const int                     nm = (int)models.size(), pick = rl_wp.pick[tab] < nm ? rl_wp.pick[tab] : -1;
+    // (the player's own model unlisted: the one listed is another)
+    const bool                    cycle     = nm > 1 || (nm == 1 && pick < 0);
+    const std::string             axisModel = RL_PreviewModel(1); // (the German sniper's)
+    const int                     n         = in.target >= TG_MOHTT ? 7 : 6;
+    const int                     rows      = (n + 1) / 2;
+    const float                   head = 104, foot = 104, modelW = 380;
+    float                         tw, th, gap, gw;
 
     RL_Grid(v, &tw, &th, &gap, &gw);
+    {
+        // the tiles shorter where the rows don't fit (Breakthrough's four at 900 lines)
+        const float fit = (v.dh - 80 - head - foot - (rows + 1) * gap) / rows;
+
+        th = Q_min(th, fit);
+    }
     const float wtw   = (gw - gap) / 2; // two a row, as wide as the Esc menu's three
-    const float total = head + gap + rows * th + (rows - 1) * gap;
+    const float total = head + foot + rows * th + (rows + 1) * gap;
     // the block centred, then 150 units right as far as the model's slot stays
     // on screen: the figure is narrower than his slot and lighter than the
     // grid, so centred on the slot the block reads left of the middle
     const float spare = Q_max(0.0f, (v.dw - (gw + 40 + modelW)) / 2);
     const float x0 = spare + Q_min(150.0f, spare), y0 = (v.dh - total) / 2;
-    const float gy = y0 + head + gap;
+    const float gy = y0 + head + gap, fy = y0 + total - foot;
 
     // (the cvars it draws from: the cache draws again when one changes)
     UI_DrawDep(ui_reloaded_nation);
     UI_DrawDep(ui_dm_primary);
+    UI_DrawDep(Cvar_Get("dm_playermodel", "", 0));
     UI_DrawDep(Cvar_Get("dm_playergermanmodel", "", 0));
     for (int i = 0; i < WC_NUM; i++) {
         UI_DrawDep(Cvar_Get(rl_classCvar[i], "1", 0));
     }
     if (m_back) {
         RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
-        // the model beside, of the menu's side, as tall as the menu
-        PlaceModel("modelallies", v, x0 + gw + 40 + modelW / 2, y0 + total - 4, total + 40, team == 0);
-        PlaceModel("modelaxis", v, x0 + gw + 40 + modelW / 2, y0 + total - 4, total + 40, team == 1);
+        // the model beside, of the side and model previewed, as tall as the menu
+        PlaceModel("modelallies", v, x0 + gw + 40 + modelW / 2, y0 + total - 4, total + 40, tab == 0);
+        PlaceModel("modelaxis", v, x0 + gw + 40 + modelW / 2, y0 + total - 4, total + 40, tab == 1);
         return;
     }
-    RL_HeaderPanel(v, x0, y0, gw, head, "SELECT YOUR WEAPON", RL_H2, team,
-                   va("%s  \xb7  %s", rl_teams[team].name, RL_NationName(nation)), RL_TimeLeft(in.gametype));
+
+    // the header: the emblem of the side previewed, the tabs, the time left
+    RL_HeaderPanel(v, x0, y0, gw, head, "", RL_H2, -1, "", RL_TimeLeft(in.gametype));
+    RL_TeamIcon(v, tab, x0 + 28 + 22, y0 + 52, 44);
+    {
+        float tx = x0 + 28 + 44 + 24;
+
+        for (int t = 0; t < 2; t++) {
+            const bool  on = t == tab, hot = Hot(ID_WTAB + t);
+            const float w  = RL_TextW(v, rl_teams[t].name, RL_H2, true);
+
+            RL_Text(v, tx, y0 + 48, rl_teams[t].name, RL_H2, on ? RL_TEXT : hot ? RL_MUTED : RL_FAINT, true, RL_LEFT, 0, RL_MID);
+            // the side previewed underlined in its colour, the hot one in brass
+            if (on || hot) {
+                RL_Box(v, tx, y0 + 69, w, 3, hot ? RL_BRASS : RL_T(rl_teams[t].light));
+            }
+            Hit(v, tx - 14, y0 + 10, w + 28, head - 20, ID_WTAB + t);
+            tx += w + 40;
+        }
+    }
+
+    // the keys: the tabs, the tiles two a row (a last one alone the whole row), the chevrons
+    m_order.push_back(ID_WTAB);
+    m_order.push_back(ID_WTAB_AXIS);
     for (int i = 0; i < n; i++) {
-        const rlWeapon_t w       = RL_WeaponFor(nation, i, in.target, in.dmflags);
+        const rlWeapon_t w       = RL_WeaponFor(nation, i, in.target, in.dmflags, axisModel.c_str());
         // (the cgame's cg_weapon_<class>: 0 banned)
         const char      *on      = Cvar_VariableString(rl_classCvar[i]);
         const bool       allowed = !(on[0] == '0' && !on[1]);
@@ -1589,6 +1796,49 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
             Hit(v, x, y, cw, th, i);
         }
         m_order.push_back(allowed ? i : -1);
+    }
+    if (n % 2) {
+        m_order.push_back(m_order.back());
+    }
+
+    // the footer: the side's models, cycled by the chevrons
+    RL_Round(v, x0, fy, gw, foot, 6, RL_Rgb(10, 11, 12, 236));
+    for (int d = 0; d < 2; d++) {
+        const int   id  = d ? ID_WNEXT : ID_WPREV;
+        const bool  hot = cycle && Hot(id);
+        const float cx  = d ? x0 + gw - 46 : x0 + 46;
+
+        if (hot) {
+            RL_Round(v, cx - 30, fy + 22, 60, foot - 44, 4, RL_Rgb(255, 255, 255, 18));
+        }
+        RL_Outline(v, RL_OUTLINES "glyphs/chevron.svg", cx, fy + foot / 2, 16, 26, !cycle ? RL_Alpha(RL_FAINT, 110) : hot ? RL_BRASS : RL_MUTED,
+                   !d);
+        if (cycle) {
+            Hit(v, cx - 46, fy, 92, foot, id);
+        }
+        m_order.push_back(cycle ? id : -1);
+    }
+    {
+        const std::string name   = pick >= 0 ? models[pick].name : RL_ModelName(RL_PreviewModel(tab).c_str());
+        // a dash a model, while they fit between the chevrons
+        const bool        dashes = nm > 1 && nm * 20 - 6 <= gw - 220;
+        const float       ny     = fy + (dashes ? 36 : 42);
+        char              caption[64];
+
+        if (pick >= 0) {
+            Com_sprintf(caption, sizeof(caption), "PLAYER MODEL  \xb7  %d / %d", pick + 1, nm);
+        } else {
+            Q_strncpyz(caption, "PLAYER MODEL", sizeof(caption));
+        }
+        RL_Text(v, x0 + gw / 2, ny, name.c_str(), RL_H2, RL_TEXT, true, RL_CENTER, 0, RL_MID, gw - 200);
+        RL_Text(v, x0 + gw / 2, ny + 30, caption, RL_S2, RL_MUTED, false, RL_CENTER, 2.4f, RL_MID);
+        if (dashes) {
+            const float dx = x0 + gw / 2 - (nm * 20 - 6) / 2.0f;
+
+            for (int i = 0; i < nm; i++) {
+                RL_Box(v, dx + i * 20, fy + 82, 14, 3, i == pick ? RL_T(T.light) : RL_Rgb(255, 255, 255, 40));
+            }
+        }
     }
     m_cols = 2;
 }
@@ -1710,15 +1960,58 @@ Choose: what an item does (the stock menus' commands)
 void UIReloadedMenu::Choose(int id)
 {
     const char *cmd = NULL;
+    std::string sent;
 
     switch (m_screen) {
     case SCR_TEAM:
         cmd = id == ID_ALLIES ? "join_team allies;popmenu 0\n" : id == ID_AXIS ? "join_team axis;popmenu 0\n" : "popmenu 0;wait 250;spectator\n";
         break;
     case SCR_WEAPON:
-        if (id >= 0 && id < WC_NUM) {
+        if (id == ID_WTAB || id == ID_WTAB_AXIS) {
+            // a side previewed
+            if (id - ID_WTAB != rl_wp.tab) {
+                rl_wp.tab = id - ID_WTAB;
+                uii.Snd_PlaySound("sound/menu/apply.wav");
+            }
+        } else if (id == ID_WPREV || id == ID_WNEXT) {
+            // its next or previous model previewed (the live model's cvar)
+            const int t = rl_wp.tab, nm = (int)rl_wp.models[t].size();
+            int       p = rl_wp.pick[t];
+
+            if (nm) {
+                p = p < 0 || p >= nm ? (id == ID_WNEXT ? 0 : nm - 1) : (p + (id == ID_WNEXT ? 1 : nm - 1)) % nm;
+                rl_wp.pick[t] = p;
+                Cvar_Set(t ? "ui_disp_playergermanmodel" : "ui_disp_playermodel", va("models/player/%s.tik", rl_wp.models[t][p].file.c_str()));
+                uii.Snd_PlaySound("sound/menu/apply.wav");
+            }
+        } else if (id >= 0 && id < WC_NUM) {
+            // the lot sent: the models cycled to, the side previewed, the weapon
+            const int team = cl.snap.valid ? cl.snap.ps.stats[STAT_TEAM] : TEAM_NONE;
+            bool      models = false;
+
+            sent = "popmenu 0\n";
+            for (int t = 0; t < 2; t++) {
+                const int p = rl_wp.pick[t];
+
+                if (p >= 0 && p < (int)rl_wp.models[t].size() && p != rl_wp.own[t]) {
+                    Cvar_Set(t ? "dm_playergermanmodel" : "dm_playermodel", rl_wp.models[t][p].file.c_str());
+                    models = true;
+                }
+            }
+            if (models) {
+                // (the userinfo the models are in sent first: CL_CheckUserinfo, a frame on)
+                sent += "wait 50\n";
+            }
+            // the other side (a spectator's any): joined, then the weapon taken there; the
+            // server pushes that side's weapon menu again, not shown (UI_Menus_Pushing)
+            if (team != (rl_wp.tab ? TEAM_AXIS : TEAM_ALLIES)) {
+                sent += rl_wp.tab ? "join_team axis\n" : "join_team allies\n";
+                rl_wp.swallow   = true;
+                rl_wp.swallowAt = cls.realtime;
+            }
+            sent += va("primarydmweapon %s\n", rl_classCmd[id]);
             Cvar_Set("ui_dm_primary", rl_classCmd[id]);
-            cmd = va("primarydmweapon %s;popmenu 0\n", rl_classCmd[id]);
+            cmd = sent.c_str();
         }
         break;
     case SCR_ESC:

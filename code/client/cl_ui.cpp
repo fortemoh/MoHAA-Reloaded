@@ -2883,8 +2883,11 @@ void UI_PushMenu(const char *name)
     Menu    *menu  = menuManager.CurrentMenu();
     qboolean bDiff = qfalse;
 
-    // Added: the Reloaded menus told what they are opened as
-    UI_Menus_Pushing(name);
+    // Added: the Reloaded menus told what they are opened as (and the weapon
+    // menu the server pushes after a side picked in it not shown again)
+    if (!UI_Menus_Pushing(name)) {
+        return;
+    }
 
     if (menu) {
         bDiff = strcmp(menu->m_name, name) != 0;
