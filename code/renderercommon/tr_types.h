@@ -63,6 +63,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define RDF_NOWORLDMODEL	0x0001		// used for player configuration screen
 #define RDF_HUD				0x0002
 #define RDF_HYPERSPACE		0x0004		// teleportation effect
+#define RDF_STUDIOLIGHT		0x0008		// Added: with RDF_HUD, lit by a light of its own fixed to the view, not by
+										// the world's where the view is (a menu's figure: the label's modelstudio)
 
 typedef struct {
 	vec3_t		xyz;
