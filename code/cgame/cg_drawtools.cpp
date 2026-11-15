@@ -1402,17 +1402,65 @@ static void CG_CrosshairColor(const cvar_t *hex, unsigned int fallback, const cv
     );
 }
 
-// the pixels of n boxes (x, y, width, height) as boxes that don't overlap, as many as fit in max: the bands between
-// the boxes' top and bottom edges, the boxes across each band joined, a box going on down into the next band when
-// it has the same span there. CS2 draws each pixel once where pieces (or outline strips) meet: no double blending
-static int CG_CrosshairUnion(int (*in)[4], int n, float (*out)[4], int max)
+// the spans of the boxes (x, y, width, height) across the band y0 to y1, sorted and joined where they touch: how many
+static int CG_CrosshairSpans(int (*boxes)[4], int n, int y0, int y1, int (*spans)[2])
 {
-    int edges[CROSSHAIR_PIECES * 8], spans[CROSSHAIR_PIECES * 4][2];
-    int ne = 0, count = 0, i, j, k, e, ns, x0, x1;
+    int ns = 0, m = 0, i, j, x0, x1;
 
     for (i = 0; i < n; i++) {
-        edges[ne++] = in[i][1];
-        edges[ne++] = in[i][1] + in[i][3];
+        if (boxes[i][1] <= y0 && boxes[i][1] + boxes[i][3] >= y1 && boxes[i][2] > 0) {
+            for (x0 = boxes[i][0], x1 = x0 + boxes[i][2], j = ns++; j > 0 && spans[j - 1][0] > x0; j--) {
+                spans[j][0] = spans[j - 1][0];
+                spans[j][1] = spans[j - 1][1];
+            }
+            spans[j][0] = x0;
+            spans[j][1] = x1;
+        }
+    }
+    for (i = 0; i < ns; i++) {
+        if (m && spans[i][0] <= spans[m - 1][1]) {
+            spans[m - 1][1] = Q_max(spans[m - 1][1], spans[i][1]);
+        } else {
+            spans[m][0] = spans[i][0];
+            spans[m][1] = spans[i][1];
+            m++;
+        }
+    }
+    return m;
+}
+
+// the span x0 to x1 across the band y0 to y1 as a box: a box of the bands above going on down when just as wide, else
+// a new one if it fits in max. How many boxes there are
+static int CG_CrosshairBox(float (*out)[4], int count, int above, int max, int x0, int x1, int y0, int y1)
+{
+    int i;
+
+    for (i = 0; i < above; i++) {
+        if (out[i][0] == x0 && out[i][2] == x1 - x0 && out[i][1] + out[i][3] == y0) {
+            out[i][3] += y1 - y0;
+            return count;
+        }
+    }
+    if (count < max) {
+        VectorSet4(out[count], x0, y0, x1 - x0, y1 - y0);
+        count++;
+    }
+    return count;
+}
+
+// the pixels of n boxes less those of nm others (x, y, width, height), as boxes that don't overlap (at most max):
+// in each band between the boxes' top and bottom edges, the first boxes' spans less the others'. CS2 draws each pixel
+// once where pieces (or outline strips) meet, and the outline nowhere under a piece
+static int CG_CrosshairUnion(int (*in)[4], int n, int (*minus)[4], int nm, float (*out)[4], int max)
+{
+    int edges[CROSSHAIR_PIECES * 10], spans[CROSSHAIR_PIECES * 4][2], cut[CROSSHAIR_PIECES][2];
+    int ne = 0, count = 0, i, j, k, e, ns, nc, x0, x1;
+
+    for (i = 0; i < n + nm; i++) {
+        const int *b = i < n ? in[i] : minus[i - n];
+
+        edges[ne++] = b[1];
+        edges[ne++] = b[1] + b[3];
     }
     for (i = 1; i < ne; i++) {
         for (e = edges[i], j = i; j > 0 && edges[j - 1] > e; j--) {
@@ -1422,37 +1470,23 @@ static int CG_CrosshairUnion(int (*in)[4], int n, float (*out)[4], int max)
     }
 
     for (k = 0; k + 1 < ne; k++) {
-        const int y0 = edges[k], y1 = edges[k + 1];
-        int       start = count;
+        const int y0 = edges[k], y1 = edges[k + 1], above = count;
 
         if (y0 == y1) {
             continue;
         }
-        // the boxes across the band, as spans sorted by their left edge
-        for (ns = 0, i = 0; i < n; i++) {
-            if (in[i][1] <= y0 && in[i][1] + in[i][3] >= y1 && in[i][2] > 0) {
-                for (x0 = in[i][0], x1 = x0 + in[i][2], j = ns++; j > 0 && spans[j - 1][0] > x0; j--) {
-                    spans[j][0] = spans[j - 1][0];
-                    spans[j][1] = spans[j - 1][1];
+        ns = CG_CrosshairSpans(in, n, y0, y1, spans);
+        nc = CG_CrosshairSpans(minus, nm, y0, y1, cut);
+        for (i = 0; i < ns; i++) {
+            // the span up to each cut, then on from its end
+            for (x0 = spans[i][0], j = 0; j <= nc && x0 < spans[i][1]; j++) {
+                x1 = j < nc ? Q_min(Q_max(cut[j][0], x0), spans[i][1]) : spans[i][1];
+                if (x1 > x0) {
+                    count = CG_CrosshairBox(out, count, above, max, x0, x1, y0, y1);
                 }
-                spans[j][0] = x0;
-                spans[j][1] = x1;
-            }
-        }
-        for (i = 0; i < ns; i = j) {
-            for (x0 = spans[i][0], x1 = spans[i][1], j = i + 1; j < ns && spans[j][0] <= x1; j++) {
-                x1 = Q_max(x1, spans[j][1]);
-            }
-            // the band above has a box just as wide that ends here: it goes on down
-            for (e = 0; e < start; e++) {
-                if (out[e][0] == x0 && out[e][2] == x1 - x0 && out[e][1] + out[e][3] == y0) {
-                    out[e][3] += y1 - y0;
-                    break;
+                if (j < nc) {
+                    x0 = Q_max(x0, cut[j][1]);
                 }
-            }
-            if (e == start && count < max) {
-                VectorSet4(out[count], x0, y0, x1 - x0, y1 - y0);
-                count++;
             }
         }
     }
@@ -1468,7 +1502,7 @@ Around the screen's middle pixel (width / 2, height / 2), a line t pixels thick 
 The gap counts from that pixel: the left arm ends gap pixels before it, the right arm starts gap pixels after it,
 a pixel sooner when t is odd (the same for the top and bottom); at gap 0 the arms meet. Length 0 draws no arms, the
 dot is the middle t by t, cg_crosshair_t has no top arm. The outline is always one pixel, round every piece (1) or
-above and left of it only (2, CS2's half outline), all of it under all the pieces. By default CS2's default crosshair
+above and left of it only (2, CS2's half outline), and nowhere under a piece. By default CS2's default crosshair
 without its outline, white: arms two pixels thick and eight long, a gap of four. Out-of-range settings are clamped
 here, never rewritten: crosshair_export gives back the code they were imported from
 ====================
@@ -1524,8 +1558,8 @@ void CG_UpdateCrosshair(void)
         }
     }
 
-    crosshairLayout.count        = CG_CrosshairUnion(pieces, n, crosshairLayout.boxes, CROSSHAIR_BOXES);
-    crosshairLayout.outlineCount = CG_CrosshairUnion(strips, ns, crosshairLayout.outline, CROSSHAIR_BOXES);
+    crosshairLayout.count        = CG_CrosshairUnion(pieces, n, NULL, 0, crosshairLayout.boxes, CROSSHAIR_BOXES);
+    crosshairLayout.outlineCount = CG_CrosshairUnion(strips, ns, pieces, n, crosshairLayout.outline, CROSSHAIR_BOXES);
     crosshairLayout.settings     = CG_CrosshairSettings();
 }
 

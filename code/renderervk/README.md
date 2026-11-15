@@ -8578,9 +8578,9 @@ selects the sample count (see Implementation notes).
   no arms, out-of-range values clamped where read): the outline, always
   one pixel, round every piece or above and left of it (CS2's half
   outline), is a second `DrawBoxes` call before the crosshair's, only when
-  on; pieces and strips are joined into boxes that don't overlap
-  (`CG_CrosshairUnion`), so nothing blends twice where they meet, as in
-  CS2. One difference stays: CS2 blends a see-through crosshair in linear
+  on; pieces and strips are joined into boxes that don't overlap, the
+  outline cut away under the pieces (`CG_CrosshairUnion`), so nothing
+  blends twice where they meet, as in CS2. One difference stays: CS2 blends a see-through crosshair in linear
   light (white at alpha 230 over grey 104 gives 246, here 240); at alpha
   255 there is none. The client's `crosshair_import`/`_export`
   (`cl_crosshair.c`) read and write CS2's share codes. It shows where the
