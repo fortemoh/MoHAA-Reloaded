@@ -924,6 +924,9 @@ void UI_CompHud_Frame(void)
     const char *weapon = ps->activeItems[ITEM_WEAPON] >= 0 && ps->activeItems[ITEM_WEAPON] < MAX_WEAPONS
                            ? CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON])
                            : "";
+    // the ammo shown for what has a clip or ammo: not for an item with
+    // neither (the binoculars, the papers: -1 and 0), as the stock HUD
+    const bool  ammo   = weapon[0] && (ps->stats[STAT_CLIPAMMO] >= 0 || ps->stats[STAT_AMMO] > 0);
     const int   team   = ps->stats[STAT_TEAM];
     const int   attacker = ps->stats[STAT_ATTACKERCLIENT];
     vec3_t      angles;
@@ -1002,7 +1005,7 @@ void UI_CompHud_Frame(void)
     Comp_SetI("ui_hud_health", health);
     Comp_SetF("ui_hud_health_frac", Com_Clamp(0.0f, 1.0f, (float)health / maxHealth));
     Comp_Set("ui_hud_health_col", health < Comp_Cvar("cg_hud_lowhealth")->value * maxHealth ? "0.753 0.188 0.129 1" : Comp_Cvar("ui_hud_acc")->string);
-    Comp_Set("ui_hud_ammo_on", weapon[0] ? "1" : "0");
+    Comp_Set("ui_hud_ammo_on", ammo ? "1" : "0");
     Comp_SetI("ui_hud_clip", ps->stats[STAT_CLIPAMMO]);
     Comp_SetI("ui_hud_ammo", ps->stats[STAT_AMMO]);
 
@@ -1193,7 +1196,7 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_cards_on", rounds && Comp_Int("cg_hud_alive"));
         flag("ui_hud_health_on", strip && Comp_Int("cg_hud_health"));
         flag("ui_hud_badge_on", strip && Comp_Int("cg_hud_badge"));
-        flag("ui_hud_ammo_on", strip && weapon[0] && Comp_Int("cg_hud_ammo"));
+        flag("ui_hud_ammo_on", strip && ammo && Comp_Int("cg_hud_ammo"));
         flag("ui_hud_weapons_on", strip && Comp_Int("cg_hud_ammo"));
         flag("ui_hud_killer_on", Comp_Cvar("ui_hud_killer")->string[0] && Comp_Int("cg_hud_killer"));
         flag("ui_hud_target_on", Comp_Cvar("ui_hud_target")->string[0] && Comp_Int("cg_hud_targetinfo"));
@@ -2263,11 +2266,19 @@ static void RM_SeedPlayers(const vec3_t eye)
     }
     rm.seedTime = cls.realtime;
     RM_Seed(eye[0], eye[1], eye[2] - 32.0f, eye[2] - 160.0f);
-    for (int i = 0; g_radarClients && i < MAX_CLIENTS; i++) {
-        const radarClient_t *c = &g_radarClients[i];
+    // the teammates the snapshot has, on the floor under their feet: the
+    // radar's own positions are x and y only (radarClient_t; its origin[2]
+    // read past them, into axis[0], a height near 0), the others not known
+    for (int i = 0; g_radarClients && cl.snap.valid && i < cl.snap.numEntities; i++) {
+        const entityState_t *e = &cl.parseEntities[(cl.snap.parseEntitiesNum + i) & (MAX_PARSE_ENTITIES - 1)];
+        const radarClient_t *c;
 
+        if (e->number < 0 || e->number >= MAX_CLIENTS) {
+            continue;
+        }
+        c = &g_radarClients[e->number];
         if (c->time && cl.snap.serverTime - c->time < 5000) {
-            RM_Seed(c->origin[0], c->origin[1], c->origin[2] + 32.0f, c->origin[2] - 96.0f);
+            RM_Seed(e->origin[0], e->origin[1], e->origin[2] + 32.0f, e->origin[2] - 96.0f);
         }
     }
 }

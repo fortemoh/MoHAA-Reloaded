@@ -50,6 +50,10 @@ protected:
     int refHandle;
     // drawn width / 640x480 layout width of text on the owner's virtual screen
     float widthRatio;
+    // Added: the virtual screen it was made for (setVirtualScale), to make it
+    // again for a face found anew (CheckRefreshFont)
+    float m_virtualScale[2];
+    bool  m_hasVirtualScale;
 
 public:
     UIFont();

@@ -127,7 +127,13 @@ bool UI_SetDesignScale(float scale)
 
 int UI_FontStamp(void)
 {
-    return uii.GetRefSequence() ^ (bake_scaleGen << 20);
+    // the screen's size too: a face is baked at its pixel size there
+    // (UI_DesignScale). A vid_restart's UI finds its fonts again before it
+    // learns the new size (CL_Vid_Restart_f: UI_ResolutionChange, then
+    // CL_BeginRegistration's glconfig), which baked them at the old one
+    const unsigned size = (unsigned)uid.vidWidth * 8191u + (unsigned)uid.vidHeight;
+
+    return (int)((size * 131u + (unsigned)bake_scaleGen) * 4099u + (unsigned)uii.GetRefSequence());
 }
 
 void UI_BakeForget(void)
