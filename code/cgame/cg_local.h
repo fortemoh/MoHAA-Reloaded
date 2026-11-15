@@ -547,6 +547,7 @@ extern "C" {
     extern cvar_t *cg_viewmodel_offset_z;
     extern cvar_t *cg_viewmodel_presetpos;
     extern cvar_t *cg_viewmodel_yaw;
+    extern cvar_t *cg_viewmodel_movedrop;
     extern cvar_t *cg_righthand;
     extern cvar_t *voiceChat;
     extern cvar_t *cg_shadowscount;
@@ -665,6 +666,7 @@ extern "C" {
     void CG_ViewModelAnimation(refEntity_t *pModel);
     void CG_CalcViewModelMovement(float fViewBobPhase, float fViewBobAmp, vec_t *vVelocity, vec_t *vMovement);
     void CG_ViewModelSettings(void);
+    float CG_ViewModelMoveDrop(void);
     void CG_MirrorViewModel(refEntity_t *pREnt);
 
     //

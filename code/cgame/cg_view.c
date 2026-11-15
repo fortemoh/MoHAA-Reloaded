@@ -234,8 +234,10 @@ it right, _y forward and _z up from where the game puts it, in units along
 the view, within limits that keep it on screen. A preset
 (cg_viewmodel_presetpos 1-3) sets the three; offsets set by hand that are no
 preset's make it 0 (custom). cg_viewmodel_yaw turns it left or right around
-the hand that holds it, in degrees (CS2 has none: no preset sets it). Called
-once a frame: it only compares modification counts until a setting changes
+the hand that holds it, in degrees (CS2 has none: no preset sets it), and
+cg_viewmodel_movedrop scales how far it drops and pulls back while moving
+(CG_CalcViewModelMovement). Called once a frame: it only compares
+modification counts until a setting changes
 ===============
 */
 typedef struct {
@@ -249,8 +251,9 @@ static const vmPreset_t vmPresets[] = {
     {0,    0,    0   }, // 3 Classic: the game's own position
 };
 
-#define VM_SETTINGS 4 // offsets x, y, z, then yaw
+#define VM_SETTINGS 5 // offsets x, y, z, then yaw, then the drop while moving
 #define VM_YAW      3
+#define VM_MOVEDROP 4
 #define VM_PRESET   VM_SETTINGS
 
 static const float vmLimits[VM_SETTINGS][2] = {
@@ -258,15 +261,18 @@ static const float vmLimits[VM_SETTINGS][2] = {
     {-2.0f, 2.0f},   // y: back, forward
     {-2.0f, 1.0f},   // z: down, up (higher, the weapons' ends come into view)
     {-15.0f, 15.0f}, // yaw: the muzzle out, to the middle
+    {0.0f, 1.0f},    // the drop while moving: none, the game's own
 };
 
-static float vmValues[VM_SETTINGS]; // right, forward, up, yaw
-static int   vmModCount[VM_SETTINGS + 1] = {-1, -1, -1, -1, -1};
+static float vmValues[VM_SETTINGS] = {0, 0, 0, 0, 1}; // right, forward, up, yaw, drop
+static int   vmModCount[VM_SETTINGS + 1] = {-1, -1, -1, -1, -1, -1};
 static int   vmPresetInit;
 
 void CG_ViewModelSettings(void)
 {
-    cvar_t *settings[VM_SETTINGS] = {cg_viewmodel_offset_x, cg_viewmodel_offset_y, cg_viewmodel_offset_z, cg_viewmodel_yaw};
+    cvar_t *settings[VM_SETTINGS] = {
+        cg_viewmodel_offset_x, cg_viewmodel_offset_y, cg_viewmodel_offset_z, cg_viewmodel_yaw, cg_viewmodel_movedrop
+    };
     qboolean offsetChanged = qfalse;
     int      preset;
     int      i;
@@ -319,6 +325,18 @@ void CG_ViewModelSettings(void)
             vmModCount[VM_PRESET] = cg_viewmodel_presetpos->modificationCount;
         }
     }
+}
+
+/*
+===============
+CG_ViewModelMoveDrop
+
+cg_viewmodel_movedrop as CG_ViewModelSettings took it: 0 to 1
+===============
+*/
+float CG_ViewModelMoveDrop(void)
+{
+    return vmValues[VM_MOVEDROP];
 }
 
 /*
