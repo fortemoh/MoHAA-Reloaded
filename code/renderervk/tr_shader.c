@@ -4062,6 +4062,10 @@ void R_SetupShaders()
 
     ri.Printf(0, "Setting up Shaders\n");
     currentShader = NULL;
+    // the shaders before are freed (RE_BeginRegistration's hunk clear, the
+    // render thread idle): the boxes' white shader is made again at the next
+    // box (R_White2D), not drawn from freed memory
+    tr.white2D = NULL;
     for (hash = 0; hash < FILE_HASH_SIZE; ++hash)
     {
 		for (shader = hashTable[hash]; shader; shader = shader->next) {
