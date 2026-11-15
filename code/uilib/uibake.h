@@ -49,7 +49,8 @@ void UI_BakeForget(void);
 int UI_BakeStamp(void);
 
 // between true and false the faces asked for are baked on other threads,
-// their pages registered at false in the order asked for (the .urc files read)
+// their pages registered at false (the UI's first frame after its start, or
+// before a shape) in the order asked for
 void UI_BakeBatch(bool begin);
 // while on (1; 0 off, -1 asks), UI_BakeShape only begins the shapes' texels
 // on other threads (it registers nothing and returns 0): the same bake after

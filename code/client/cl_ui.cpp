@@ -2052,6 +2052,8 @@ void UI_Update(void)
     Menu    *currentMenu;
     UIRect2D frame;
 
+    // Added: the faces asked for at the UI's start registered (their texels made meanwhile), before anything is drawn
+    UI_BakeBatch(false);
     re.SetRenderTime(cls.realtime);
     CL_FillUIDef();
     uWinMan.ServiceEvents();
@@ -5703,7 +5705,7 @@ void CL_InitializeUI(void)
     }
 
     // Load all urc files
-    // Added: their faces baked meanwhile on worker threads (registered after, in the order asked for)
+    // Added: their faces baked meanwhile on worker threads (registered at the first frame, in the order asked for)
     UI_BakeBatch(true);
     filenames = FS_ListFiles("ui/", "urc", qfalse, &nfiles);
 
@@ -5719,7 +5721,6 @@ void CL_InitializeUI(void)
     UI_LoadBuiltinMenus();
 
     uWinMan.CreateMenus();
-    UI_BakeBatch(false);
 
     // find the crosshair
     // Removed in 2.0

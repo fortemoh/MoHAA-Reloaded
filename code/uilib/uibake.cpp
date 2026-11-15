@@ -361,11 +361,11 @@ width in design units, drawn a texel a pixel. The baseline sits where a
 label's text, centered, has its capitals' middle on the label's
 ================
 */
-// the pages asked for in a batch (UI_BakeBatch), registered at its end
+// the pages asked for in a batch (UI_BakeBatch), registered at its end or before anything else is
 typedef struct {
     uiBakedFont_t                     *f;
     int                                w, h;
-    std::shared_ptr<std::vector<byte>> page;
+    std::shared_ptr<byte>              page;
     std::vector<std::future<void>>     parts;
 } uiPendingPage_t;
 
@@ -388,14 +388,14 @@ static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
     Bake_Metrics(face, spec->px * s, &m);
     memset(sgl, 0, sizeof(*sgl));
     for (c = 0; c < 256; c++) {
-        int adv, lsb;
+        int adv, lsb, glyph = c < 32 ? 0 : stbtt_FindGlyphIndex(&face->info, Bake_Unicode(c));
 
         sgl->indirection[c] = -1;
         cells[c][2]         = 0;
-        if (c < 32 || (c != ' ' && !stbtt_FindGlyphIndex(&face->info, Bake_Unicode(c)))) {
+        if (c < 32 || (c != ' ' && !glyph)) {
             continue;
         }
-        stbtt_GetGlyphHMetrics(&face->info, stbtt_FindGlyphIndex(&face->info, Bake_Unicode(c)), &adv, &lsb);
+        stbtt_GetGlyphHMetrics(&face->info, glyph, &adv, &lsb);
         cells[c][2] = Q_min(pageW, Q_max(1, (int)(adv * m.scale + 0.5f)));
         if (x + cells[c][2] > pageW) {
             x = 0;
@@ -453,12 +453,13 @@ static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
     };
     // the renderer's font shader: gfx/fonts/<name>
     if (bake_batch) {
-        // (in four parts: the last ones asked for are waited for)
-        bake_pages.push_back({f, pageW, pageH, std::make_shared<std::vector<byte>>(pageW * pageH * 4)});
-        for (c = 32; c < 256; c += 56) {
-            byte *t = bake_pages.back().page->data();
+        // (in four parts, after the page is cleared on a thread too: the last ones asked for are waited for)
+        std::shared_ptr<byte>    t((byte *)malloc(pageW * pageH * 4), free);
+        std::shared_future<void> clear = Bake_Run([t, pageW, pageH] { memset(t.get(), 0, pageW * pageH * 4); }).share();
 
-            bake_pages.back().parts.push_back(Bake_Run([texels, t, c] { texels(t, c, c + 55); }));
+        bake_pages.push_back({f, pageW, pageH, t});
+        for (c = 32; c < 256; c += 56) {
+            bake_pages.back().parts.push_back(Bake_Run([texels, t, clear, c] { clear.wait(); texels(t.get(), c, c + 55); }));
         }
         return;
     }
@@ -474,7 +475,10 @@ static void Bake_FlushPages(void)
         for (std::future<void>& part : pp.parts) {
             part.get();
         }
-        uii.Rend_RegisterImage2D(va("gfx/fonts/%s", pp.f->name.c_str()), pp.page->data(), pp.w, pp.h);
+        // (none when the UI ends after the renderer: the game quit before its first frame)
+        if (uii.IsRendererLoaded()) {
+            uii.Rend_RegisterImage2D(va("gfx/fonts/%s", pp.f->name.c_str()), pp.page.get(), pp.w, pp.h);
+        }
     }
     bake_pages.clear();
 }
@@ -1166,7 +1170,8 @@ bool UI_BakeAhead(int on)
 
 void UI_BakeRelease(void)
 {
-    // (the jobs not begun dropped: theirs)
+    // (the jobs not begun dropped: theirs; the faces' pages made, and registered, first)
+    Bake_FlushPages();
     bake_made.clear();
     if (bake_jobs) {
         std::lock_guard<std::mutex> l(bake_jobs->lock);
