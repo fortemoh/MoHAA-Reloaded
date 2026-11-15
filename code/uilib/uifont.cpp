@@ -278,6 +278,7 @@ UIFont::UIFont()
     name       = "verdana-14";
     widthRatio = 1.0f;
     m_fit      = 1.0f;
+    m_hasVirtualScale = false;
 }
 
 UIFont::UIFont(const char *fn)
@@ -285,11 +286,16 @@ UIFont::UIFont(const char *fn)
     setFont(fn);
     widthRatio = 1.0f;
     m_fit      = 1.0f;
+    m_hasVirtualScale = false;
 }
 
 void UIFont::setVirtualScale(const float *virtualScale)
 {
     const float page = UI_BakedFontScale(m_font);
+
+    m_virtualScale[0] = virtualScale[0];
+    m_virtualScale[1] = virtualScale[1];
+    m_hasVirtualScale = true;
 
     // the renderer scales glyphs across no more than down: on a wide screen,
     // text is narrower than its 640x480 layout width
@@ -841,6 +847,14 @@ void UIFont::CheckRefreshFont()
 {
     if (refHandle != UI_FontStamp()) {
         setFont(name);
+        // Added: a baked face found anew may have another page scale (baked at
+        // the screen's new size): the width ratio made again for it now, so
+        // what this frame measures (and a 2D list keeps) has the new one
+        if (m_hasVirtualScale) {
+            const float vs[2] = {m_virtualScale[0], m_virtualScale[1]};
+
+            setVirtualScale(vs);
+        }
     } else if (!uii.IsRendererLoaded()) {
         m_font = NULL;
     }
