@@ -182,7 +182,9 @@ static void Bake_Work(void)
 // f() on one of the threads (on the main thread only)
 template <typename F> static std::future<decltype(std::declval<F>()())> Bake_Run(F f)
 {
-    auto task = std::make_shared<std::packaged_task<decltype(f())()>>(f);
+    // (the cores counted once: hardware_concurrency reads a file each time)
+    static const int most = Q_max(1, Q_min(4, (int)std::thread::hardware_concurrency() - 2));
+    auto             task = std::make_shared<std::packaged_task<decltype(f())()>>(f);
 
     if (!bake_jobs) {
         bake_jobs = new uiJobs_s();
@@ -190,7 +192,7 @@ template <typename F> static std::future<decltype(std::declval<F>()())> Bake_Run
     std::lock_guard<std::mutex> l(bake_jobs->lock);
 
     bake_jobs->queue.push_back([task] { (*task)(); });
-    if (bake_jobs->threads < Q_max(1, Q_min(4, (int)std::thread::hardware_concurrency() - 2))) {
+    if (bake_jobs->threads < most) {
         bake_jobs->threads++;
         std::thread(Bake_Work).detach();
     }
