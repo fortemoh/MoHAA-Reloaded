@@ -140,7 +140,7 @@ void		vk_create_texture( image_t *image, int width, int height, int mipLevels, t
 // one mip level. Uploads may happen in the middle of a frame: draws recorded
 // before the upload see the old contents, draws after it the new ones.
 void		vk_upload_texture( image_t *image, int mipLevel, int x, int y, int width, int height, const byte *rgba );
-// make a texture (one RGBA level) again at another size, its texels kept at 0,0 (waits for the GPU)
+// make a texture (one RGBA level) again at another size, its texels kept at 0,0 (waits for the GPU when a draw not yet submitted reads it)
 void		vk_resize_texture( image_t *image, int width, int height );
 // upload one complete mip level of a BC-compressed texture
 void		vk_upload_compressed_texture( image_t *image, int mipLevel, int width, int height, const byte *data, int size );

@@ -1111,8 +1111,9 @@ void vk_upload_texture( image_t *image, int mipLevel, int x, int y, int width, i
 vk_resize_texture
 
 A texture (one RGBA level) made again at another size, its old texels
-copied in at 0,0 on the GPU once the GPU is done with the frames so far
-(none left to read the old storage): its uploads after are ordered after it
+copied in at 0,0 on the GPU, in the upload command buffer after the old
+storage's uploads (once the GPU is done with the frames so far when a draw
+not yet submitted reads it): its uploads after are ordered after it
 ===============
 */
 void vk_resize_texture( image_t *image, int width, int height ) {
@@ -1123,12 +1124,15 @@ void vk_resize_texture( image_t *image, int width, int height ) {
 	if ( !old ) {
 		return;
 	}
-	// (after it in SHADER_READ_ONLY_OPTIMAL, nothing pending)
-	VK_FlushAndWait();
+	if ( old->lastUseSegment == vk.segment ) {
+		VK_FlushAndWait();
+	}
+	// (in TRANSFER_DST_OPTIMAL in the upload command buffer, or SHADER_READ_ONLY_OPTIMAL: given back after)
+	const VkImageLayout layout = old->uploadPending ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	vk_slots[old->slot].texture = NULL;
 	vk_create_texture( image, width, height, 1, TEXFMT_RGBA8 );
-	VK_ImageBarrier( VK_GetUploadCommandBuffer(), old->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT );
+	VK_ImageBarrier( VK_GetUploadCommandBuffer(), old->image, VK_IMAGE_ASPECT_COLOR_BIT, layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT );
 	// (a blit at the same size, nearest: a copy)
 	Com_Memset( &blit, 0, sizeof( blit ) );
 	blit.srcSubresource.aspectMask = blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1138,6 +1142,8 @@ void vk_resize_texture( image_t *image, int width, int height ) {
 	blit.srcOffsets[1].z = blit.dstOffsets[1].z = 1;
 	qvkCmdBlitImage( VK_GetUploadCommandBuffer(), old->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		VK_GetTexture( image->texnum )->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST );
+	VK_ImageBarrier( VK_GetUploadCommandBuffer(), old->image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, layout,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, 0 );
 	VK_GetTexture( image->texnum )->uploadMips = ~0u;
 	VK_DestroyTextureStorage( old );
 }
