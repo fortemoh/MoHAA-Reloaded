@@ -150,6 +150,7 @@ IMAGE LOADERS
 */
 
 void R_LoadJPG( const char *name, byte **pic, int *width, int *height );
+void R_LoadPNG( const char *name, byte **pic, int *width, int *height );
 void R_LoadPVR( const char *name, byte **pic, int *width, int *height );
 
 /*

@@ -521,7 +521,8 @@ void R_LoadFontShader(fontheader_sgl_t* font)
     save = r_sequencenumber;
     r_sequencenumber = -1;
     Com_sprintf(filename, sizeof(filename), "gfx/fonts/%s", font->name);
-    font->shader = R_FindShader(filename, -1, qfalse, qfalse, qfalse, qfalse);
+    // Added: a face the UI baked (RegisterImage2D) has no shader script: its image's 2D shader
+    font->shader = R_FindShader(filename, R_ShaderTextExists(filename) ? -1 : LIGHTMAP_2D, qfalse, qfalse, qfalse, qfalse);
     r_sequencenumber = save;
 
     if (!font->shader) {
@@ -568,6 +569,9 @@ void R_DrawString_sgl(fontheader_sgl_t* font, const char* text, float x, float y
     starty = y;
     if (pvVirtualScreen) {
         R_VirtualScreenScale(pvVirtualScreen, &fWidthScale, &fHeightScale, &fGlyphScale);
+        // Added: the string starts on a whole pixel, so glyphs a texel each stay sharp
+        startx = x = floorf(x * fWidthScale + 0.5f) / fWidthScale;
+        starty = y = floorf(y * fHeightScale + 0.5f) / fHeightScale;
     }
 
     if (!font) {
@@ -699,6 +703,12 @@ void R_DrawString(fontheader_t* font, const char* text, float x, float y, int ma
     float curX, curY;
     float curHeight;
     float fWidthScale, fHeightScale, fGlyphScale;
+
+    if (R_2DListRecording()) {
+        // into the 2D list being made (tr_draw.c)
+        R_2DListString(font, text, x, y, maxlen, pvVirtualScreen);
+        return;
+    }
 
     if (!font->numPages) {
         if (font->sgl[0]) {

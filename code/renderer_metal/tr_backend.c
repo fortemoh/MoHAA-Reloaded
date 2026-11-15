@@ -135,11 +135,16 @@ void R_BindMultitexture( image_t *image0, unsigned int env0, image_t *image1, un
 ** R_Cull
 */
 void R_Cull( int cullType ) {
-	if ( glState.faceCulling == cullType ) {
+	// a mirror view, or a mirrored first-person entity (the left-handed view
+	// weapon) in a view that isn't: the other faces are the front ones
+	qboolean mirror = ( backEnd.viewParms.isMirror != 0 ) != ( backEnd.entityMirrored != 0 );
+
+	if ( glState.faceCulling == cullType && glState.faceCullingMirror == mirror ) {
 		return;
 	}
 
 	glState.faceCulling = cullType;
+	glState.faceCullingMirror = mirror;
 
 	if ( cullType == CT_TWO_SIDED ) 
 	{
@@ -151,7 +156,7 @@ void R_Cull( int cullType ) {
 
 		if ( cullType == CT_BACK_SIDED )
 		{
-			if ( backEnd.viewParms.isMirror )
+			if ( mirror )
 			{
 				mbCullFace( MB_FRONT );
 			}
@@ -162,7 +167,7 @@ void R_Cull( int cullType ) {
 		}
 		else
 		{
-			if ( backEnd.viewParms.isMirror )
+			if ( mirror )
 			{
 				mbCullFace( MB_BACK );
 			}
@@ -584,6 +589,43 @@ static void RB_Hyperspace( void ) {
 }
 
 
+/*
+=================
+RB_DepthHackProjection
+
+The draws with the depth hack (the first-person weapon, its flash) have the
+weapon's own projection when the view has one (viewParms.vmProjection), the
+others the view's
+=================
+*/
+static void RB_DepthHackProjection( qboolean depthHack ) {
+	if ( !backEnd.viewParms.vmProjection ) {
+		return;
+	}
+	mbMatrixMode( MB_PROJECTION );
+	mbLoadMatrixf( depthHack ? backEnd.viewParms.vmProjectionMatrix : backEnd.viewParms.projectionMatrix );
+	mbMatrixMode( MB_MODELVIEW );
+}
+
+/*
+=================
+RB_EntityMirrored
+
+Whether the current entity is a first-person one with a mirrored axis (the
+left-handed view weapon, cg_righthand 0): R_Cull turns its culling around.
+Only first-person ones: mirrored effects (splash drops) are drawn as before
+=================
+*/
+static qboolean RB_EntityMirrored( const trRefEntity_t *ent ) {
+	vec3_t c;
+
+	if ( !( ent->e.renderfx & RF_FIRST_PERSON ) ) {
+		return qfalse;
+	}
+	CrossProduct( ent->e.axis[0], ent->e.axis[1], c );
+	return DotProduct( c, ent->e.axis[2] ) < 0;
+}
+
 static void SetViewportAndScissor( void ) {
 	mbMatrixMode(MB_PROJECTION);
 	mbLoadMatrixf( backEnd.viewParms.projectionMatrix );
@@ -803,6 +845,7 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 		//
 		if ( entityNum != oldEntityNum || bStaticModel != oldbStaticModel ) {
 			depthRange = qfalse;
+			backEnd.entityMirrored = qfalse;
 
 			if (bStaticModel) {
 				backEnd.shaderStartTime = 0.0;
@@ -829,6 +872,7 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 						// hack the depth range to prevent view model from poking into walls
 						depthRange = qtrue;
 					}
+					backEnd.entityMirrored = RB_EntityMirrored( backEnd.currentEntity );
 				}
 				else {
 					backEnd.currentEntity = &tr.worldEntity;
@@ -849,6 +893,7 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 				} else {
 					mbDepthRange (0, 1.0);
 				}
+				RB_DepthHackProjection( depthRange );
 				oldDepthRange = depthRange;
 			}
 
@@ -929,7 +974,9 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 	mbLoadMatrixf( backEnd.viewParms.world.modelMatrix );
 	if ( depthRange ) {
 		mbDepthRange (0, 1.0);
+		RB_DepthHackProjection( qfalse );
 	}
+	backEnd.entityMirrored = qfalse;
 
 	RB_ShadowFinish();
 	if (!(backEnd.refdef.rdflags & RDF_HUD)) {
@@ -1000,6 +1047,7 @@ void RB_RenderSpriteSurfList(drawSurf_t* drawSurfs, int numDrawSurfs) {
 			} else {
                 mbDepthRange(0.0, 1.0);
 			}
+			RB_DepthHackProjection(depthRange);
 
             oldDepthRange = depthRange;
         }
@@ -1020,6 +1068,7 @@ void RB_RenderSpriteSurfList(drawSurf_t* drawSurfs, int numDrawSurfs) {
 	// go back to the previous depth range
 	if (depthRange) {
 		mbDepthRange(0.0, 1.0);
+		RB_DepthHackProjection(qfalse);
 	}
 }
 

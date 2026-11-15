@@ -1644,6 +1644,8 @@ void RE_Shutdown( qboolean destroyWindow ) {
 		Com_Memset( &glState, 0, sizeof( glState ) );
 	}
 
+	// the 2D lists name fonts and shaders: none outlives the renderer
+	R_2DListsShutdown();
 	R_ShutdownFont();
 
 	R_ShutdownTerrain();
@@ -1866,6 +1868,13 @@ refexport_t *GetRefAPI ( int apiVersion, refimport_t *rimp ) {
     re.FreeRawImage = R_FreeRawImage;
 
 	re.Set2DInitialShaderTime = Set2DInitialShaderTime;
+	re.RegisterImage2D = RE_RegisterImage2D;
+	re.Begin2DList = RE_Begin2DList;
+	re.End2DList = RE_End2DList;
+	re.Draw2DList = RE_Draw2DList;
+	re.Free2DList = RE_Free2DList;
+	re.DrawPolygon2D = DrawPolygon2D;
+	re.RegisterTexture2D = RE_RegisterTexture2D;
 
 	re.LatencyTag = mbLatencyTag;
 	re.LatencyPoll = mbLatencyPoll;

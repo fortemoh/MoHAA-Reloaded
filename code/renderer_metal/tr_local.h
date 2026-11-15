@@ -677,6 +677,9 @@ typedef struct {
     qboolean render_terrain;
 	//==
 
+	// refdef_t's: the field of view of the depth hack's draws, 0: the scene's
+	float		viewmodel_fov_x, viewmodel_fov_y;
+
 } trRefdef_t;
 
 
@@ -735,6 +738,10 @@ typedef struct {
 	int			viewportX, viewportY, viewportWidth, viewportHeight;
 	float		fovX, fovY;
 	float		projectionMatrix[16];
+	// the depth hack's draws (the first-person weapon) have a projection of
+	// their own (refdef_t viewmodel_fov_x/y): not in a portal
+	qboolean	vmProjection;
+	float		vmProjectionMatrix[16];
 	cplane_t	frustum[5];
 	vec3_t		visBounds[2];
 	float		zFar;
@@ -1264,6 +1271,7 @@ typedef struct {
 	qboolean	finishCalled;
 	int			texEnv[2];
 	int			faceCulling;
+	qboolean	faceCullingMirror;	// faceCulling's, turned around (R_Cull)
 	int			cntTexEnvExt;
 	int			cntnvblendmode;
 	long unsigned int glStateBits;
@@ -1310,6 +1318,9 @@ typedef struct {
 	trRefEntity_t entity2D;	// currentEntity will point at this when doing 2D rendering
     int backEndMsec;
     float shaderStartTime;
+	// the current entity is a first-person one with a mirrored axis (the
+	// left-handed view weapon, cg_righthand 0): its culling is turned around (R_Cull)
+	qboolean entityMirrored;
 } backEndState_t;
 
 /*
@@ -1766,6 +1777,16 @@ void Draw_TilePicOffset(float x, float y, float w, float h, qhandle_t hShader, i
 void Draw_TrianglePic(const vec2_t vPoints[3], const vec2_t vTexCoords[3], qhandle_t hShader);
 void DrawBox(float x, float y, float w, float h);
 void DrawBoxes(const float (*boxes)[4], int count, const float *color);
+void DrawPolygon2D(const float (*points)[4], int count, qhandle_t hShader);
+// the 2D lists (tr_draw.c)
+int RE_Begin2DList(int handle);
+void RE_End2DList(void);
+void RE_Draw2DList(int handle);
+void RE_Free2DList(int handle);
+qboolean R_2DListRecording(void);
+void R_2DListString(fontheader_t *font, const char *text, float x, float y, int maxlen, const float *pvVirtualScreen);
+void R_2DListsBeginFrame(void);
+void R_2DListsShutdown(void);
 void AddBox(float x, float y, float w, float h);
 void Set2DWindow(int x, int y, int w, int h, float left, float right, float bottom, float top, float n, float f);
 
@@ -1813,6 +1834,9 @@ image_t* R_CreateImageOld(
 );
 
 qboolean R_ImageExists(const char* name);
+qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height);
+qhandle_t RE_RegisterTexture2D(const char *name, byte *rgba, int width, int height);
+qboolean R_ShaderTextExists(const char *name);
 int R_CountTextureMemory();
 qboolean R_LoadRawImage(const char *name, byte **pic, int *width, int *height);
 void R_FreeRawImage(byte *pic);

@@ -3426,6 +3426,26 @@ static shader_t *FinishShader( void ) {
 
 /*
 ==================
+R_ShaderTextExists
+
+Added: whether a shader script defines name
+==================
+*/
+qboolean R_ShaderTextExists( const char *name ) {
+	char			strippedName[MAX_QPATH];
+	shadertext_t	*sh;
+
+	COM_StripExtension( name, strippedName, sizeof( strippedName ) );
+	for ( sh = hashTable[generateHashValue( strippedName )]; sh; sh = sh->next ) {
+		if ( !Q_stricmp( sh->name, strippedName ) ) {
+			return sh->text != NULL;
+		}
+	}
+	return qfalse;
+}
+
+/*
+==================
 R_FindShaderByName
 
 Will always return a valid shader, but it might be the

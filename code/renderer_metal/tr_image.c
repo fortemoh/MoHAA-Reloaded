@@ -2455,6 +2455,11 @@ static void R_LoadImage(const char* name, byte** pic, int* width, int* height, q
 			LoadJPG(name, pic, width, height);
 			*piMipmapsAvailable = 1;
         }
+		else if (!Q_stricmp(name + len - 4, ".png")) {
+			// Added: the Competitive HUD's pictures (ui/competitive/*.png)
+			R_LoadPNG(name, pic, width, height);
+			*piMipmapsAvailable = 1;
+		}
 		else if (!Q_stricmp(name + len - 4, ".gst")) {
 			LoadGHOST(name, pic, width, height);
 			*piMipmapsAvailable = 0;
@@ -3294,4 +3299,82 @@ R_FreeRawImage
 */
 void R_FreeRawImage(byte *pic) {
     ri.Free(pic);
+}
+
+/*
+===============
+RE_RegisterImage2D
+
+An image made in memory (RGBA, the texels may be changed) under a name, for
+the UI's baked text faces, shapes and pictures (the Competitive HUD and the
+Reloaded menus). Made again under the same name, its texels and size are
+replaced; a draw of this frame made before keeps the old texels (the texture
+is replaced, not written under it: MB_WriteTexture). Made at the size given,
+not resampled to powers of two, with no mipmaps: baked text is a texel a
+pixel. No map load frees it; its 2D shader is found by its name as a file's
+would be. Each is a texture of its own (renderervk packs them into a 2D
+atlas: not here)
+===============
+*/
+qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height)
+{
+	char	fileName[MAX_QPATH];
+	image_t	*image;
+
+	if (!name || !name[0] || !rgba || width <= 0 || height <= 0) {
+		return 0;
+	}
+	if (width > glConfig.maxTextureSize || height > glConfig.maxTextureSize) {
+		ri.Printf(PRINT_WARNING, "RE_RegisterImage2D: %s is %i x %i, more than %i\n", name, width, height, glConfig.maxTextureSize);
+		return 0;
+	}
+	R_IssuePendingRenderCommands();
+
+	Q_strncpyz(fileName, name, sizeof(fileName));
+	COM_DefaultExtension(fileName, sizeof(fileName), ".tga");
+	for (image = hashTable[generateHashValue(fileName)]; image; image = image->next) {
+		if (!strcmp(fileName, image->imgName)) {
+			break;
+		}
+	}
+	if (!image) {
+		// (made 1 x 1, then at its size below: not resampled to powers of two)
+		static byte clear[4];
+
+		image = R_CreateImageOld(fileName, clear, 1, 1, 0, 0, qfalse, qtrue, qtrue, 0, MB_CLAMP, MB_CLAMP);
+	}
+
+	if (mbMultitexture) {
+		R_SelectTexture(image->TMU);
+	}
+	R_Bind(image);
+	mbTexImage2D(MB_TEXTURE_2D, 0, MB_RGBA8, width, height, 0, MB_RGBA, MB_UNSIGNED_BYTE, rgba);
+	mbTexParameterf(MB_TEXTURE_2D, MB_TEXTURE_MIN_FILTER, MB_LINEAR);
+	mbTexParameterf(MB_TEXTURE_2D, MB_TEXTURE_MAG_FILTER, MB_LINEAR);
+	mbBindTexture(MB_TEXTURE_2D, 0);
+	glState.currenttextures[image->TMU] = -1;
+	if (image->TMU == 1) {
+		R_SelectTexture(0);
+	}
+
+	image->width = image->uploadWidth = width;
+	image->height = image->uploadHeight = height;
+	image->numMipmaps = 0;
+	image->internalFormat = MB_RGBA8;
+	image->bytesUsed = width * height * 4;
+	image->r_sequence = -1;
+	return RE_RegisterShaderNoMip(name);
+}
+
+/*
+===============
+RE_RegisterTexture2D
+
+RE_RegisterImage2D's image as a texture of its own (the zoom overlays'
+masks). Every RegisterImage2D image is one here, so the same
+===============
+*/
+qhandle_t RE_RegisterTexture2D(const char *name, byte *rgba, int width, int height)
+{
+	return RE_RegisterImage2D(name, rgba, width, height);
 }
