@@ -32,6 +32,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../uilib/uibake.h"
 #include "cl_uicomp.h"
 #include "cl_uimenus.h"
+#include "cl_uiextras.h"
 #include "cl_uigamespy.h"
 
 #include <chrono>
@@ -1187,6 +1188,10 @@ UIFloatingDMConsole *getNewDMConsole()
     console->setConsoleHandler(DMConsoleCommandHandler);
     console->setConsoleBackground(UBlack, 0.8f);
     console->setShow(false);
+    // Added: faded by ui_hud_dmconsole (0 with cg_hudstyle 1: not drawn, the chat's typing line instead)
+    event = new Event(EV_Layout_AlphaCvar);
+    event->AddString("ui_hud_dmconsole");
+    console->ProcessEvent(event);
     console->Connect(&s_dmconsolehider, UIFloatingWindow::W_ClosePressed, UIFloatingWindow::W_ClosePressed);
     console->Connect(&s_dmconsolehider, W_Destroyed, W_Destroyed);
 
@@ -1281,8 +1286,9 @@ static void UI_CompHuds(bool show, bool messages = false)
     }
     for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
         Menu      *hud = menus[i];
-        // (messages only: the menus with the game messages, the chat, the kills and the vote)
-        const bool on  = show || (messages && (i == 1 || i == 3 || i == 4 || i == 12));
+        // (messages only: the menus with the game messages, the chat, the kills and the vote;
+        // the bottom's health and ammo: cg_hud_layout's)
+        const bool on  = (show && ui_compHudInLayout[i]) || (messages && (i == 1 || i == 3 || i == 4 || i == 12));
 
         if (hud && containers[i] && on != containers[i]->IsVisible()) {
             if (on) {
@@ -1648,6 +1654,8 @@ void UI_OpenDMConsole(int iMode)
         return;
     }
 
+    // Added: with cg_hudstyle 1 its window isn't drawn (the chat's typing line instead)
+    Cvar_Set("ui_hud_dmconsole", UI_CompHud_Active() ? "0" : "1");
     UI_SetDMConsoleMode(iMode);
     dm_console->setShow(true);
     uWinMan.ActivateControl(dm_console);
@@ -1665,6 +1673,29 @@ void UI_CloseDMConsole(void)
         dm_console->setShow(false);
     }
     UI_FocusMenuIfExists();
+}
+
+/*
+====================
+UI_DMConsoleState
+====================
+*/
+qboolean UI_DMConsoleState(int *mode, const char **line, int *caret)
+{
+    UIDMConsole *console;
+
+    if (!dm_console || !dm_console->getShow() || !(console = dm_console->getConsole())) {
+        return qfalse;
+    }
+    // (UIDMConsole::Draw's check: its window isn't drawn)
+    if (!console->IsThisOrChildActive()) {
+        UI_CloseDMConsole();
+        return qfalse;
+    }
+    *mode  = console->GetMessageMode();
+    *line  = console->getCurrentLine().c_str();
+    *caret = (int)console->getCaret();
+    return qtrue;
 }
 
 /*
@@ -4248,6 +4279,8 @@ void UI_ResolutionChange(void)
     UI_CompHud_PreBake(qfalse);
     // Added: the Reloaded menus too
     UI_Menus_PreBake();
+    // Added: the HUD's extras too (the zoom overlays' masks)
+    UI_Extras_PreBake(qfalse);
 }
 
 /*
@@ -4718,6 +4751,19 @@ void UI_ShowScoreboard_f(const char *pszMenuName)
             scoreboardlist->setShow(true);
         }
     }
+}
+
+/*
+====================
+UI_ScoreboardShown
+====================
+*/
+qboolean UI_ScoreboardShown(void)
+{
+    if (UI_Menus_Scoreboard(scoreboard_menuname.c_str())) {
+        return scoreboard_up && scoreboard_menu ? qtrue : qfalse;
+    }
+    return scoreboardlist && scoreboardlist->IsVisible() ? qtrue : qfalse;
 }
 
 /*
@@ -5590,6 +5636,7 @@ void CL_InitializeUI(void)
     ui_gmboxspam           = Cvar_Get("ui_gmboxspam", "1", 0);
     UI_CompHud_Init();
     UI_Menus_Init();
+    UI_Extras_Init();
     ui_gotmedal            = Cvar_Get("ui_gotmedal", "0", 0);
     ui_success             = Cvar_Get("ui_success", "0", 0);
     ui_failed              = Cvar_Get("ui_failed", "0", 0);

@@ -2260,6 +2260,7 @@ refexport_t *GetRefAPI ( int apiVersion, refimport_t *rimp ) {
 	re.Draw2DList = RE_Draw2DList;
 	re.Free2DList = RE_Free2DList;
 	re.DrawPolygon2D = DrawPolygon2D;
+	re.RegisterTexture2D = RE_RegisterTexture2D;
 
 	return VK_FrameLogExports( &re );
 }

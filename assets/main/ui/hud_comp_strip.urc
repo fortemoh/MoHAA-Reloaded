@@ -1,4 +1,4 @@
-// The Competitive HUD (cg_hudstyle 1): bottom center, along an 800 px strip:
+// The Competitive HUD (cg_hudstyle 1), cg_hud_layout 0: bottom center, along an 800 px strip:
 // the health over its bar, a thin line in to the team's badge in the middle,
 // a thin line out to the ammo (clip | reserve and a bullet)
 menu "hud_comp_strip" 800 104 NONE 0

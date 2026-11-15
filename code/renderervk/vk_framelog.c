@@ -405,6 +405,9 @@ static fontheader_t *FL_LoadFont( const char *name ) {
 static qhandle_t FL_RegisterImage2D( const char *name, byte *rgba, int width, int height ) {
 	FL_LOAD( qhandle_t, fl.real.RegisterImage2D( name, rgba, width, height ) )
 }
+static qhandle_t FL_RegisterTexture2D( const char *name, byte *rgba, int width, int height ) {
+	FL_LOAD( qhandle_t, fl.real.RegisterTexture2D( name, rgba, width, height ) )
+}
 
 /*
 ====================================================================
@@ -746,6 +749,7 @@ refexport_t *VK_FrameLogExports( refexport_t *real ) {
 	e->RegisterFont = FL_RegisterFont;
 	e->LoadFont = FL_LoadFont;
 	e->RegisterImage2D = FL_RegisterImage2D;
+	e->RegisterTexture2D = FL_RegisterTexture2D;
 
 	ri.Cmd_AddCommand( "vkframelog", FL_Command_f );
 	ri.Printf( PRINT_ALL, "r_vkFrameLog: recording the last %d frames, see vkframelog\n", fl.size );

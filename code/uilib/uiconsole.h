@@ -86,6 +86,9 @@ public:
 
     void     setConsoleHandler(consoleHandler_t handler);
     void     AddText(const char *text, const UColor *pColor);
+    // Added: the line being typed, the caret in it
+    const str& getCurrentLine(void) const { return m_currentline; }
+    size_t     getCaret(void) const { return m_caret; }
     void     CalcLineBreaks(item& theItem);
     void     Clear(void);
     void     FrameInitialized(void) override;
@@ -173,4 +176,6 @@ public:
     void     SetQuickMessageMode(qboolean bQuickMessage);
     int      GetMessageMode(void);
     void     SetMessageMode(int iMode);
+    // Added: the console in it
+    UIDMConsole *getConsole(void) { return m_console; }
 };

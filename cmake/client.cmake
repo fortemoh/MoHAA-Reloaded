@@ -39,6 +39,7 @@ set(CLIENT_SOURCES
     ${SOURCE_DIR}/client/cl_uiradar.cpp
     ${SOURCE_DIR}/client/cl_uicomp.cpp
     ${SOURCE_DIR}/client/cl_uimenus.cpp
+    ${SOURCE_DIR}/client/cl_uiextras.cpp
     ${SOURCE_DIR}/client/cl_uiserverlist.cpp
     ${SOURCE_DIR}/client/cl_uisoundpicker.cpp
     ${SOURCE_DIR}/client/cl_uistd.cpp

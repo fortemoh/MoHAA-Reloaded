@@ -28,7 +28,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 extern "C" {
 #endif
 
-#define	REF_API_VERSION		19	// 15: DrawBoxes, 16: FrameToken, PresentGate, 17: RegisterImage2D, 18: 2D lists, 19: DrawPolygon2D
+#define	REF_API_VERSION		20	// 15: DrawBoxes, 16: FrameToken, PresentGate, 17: RegisterImage2D, 18: 2D lists, 19: DrawPolygon2D, 20: RegisterTexture2D
 
 typedef struct dtiki_s dtiki_t;
 typedef struct skelAnimFrame_s skelAnimFrame_t;
@@ -199,6 +199,11 @@ typedef struct {
 
     // a convex polygon of count points (x, y, s, t each), a fan, in one draw
     void (*DrawPolygon2D)(const float (*points)[4], int count, qhandle_t shader);
+
+    // RegisterImage2D's image as a texture of its own, never in the 2D atlas:
+    // a big picture drawn whole (the zoom overlays' masks), which would make
+    // the atlas's page grow
+    qhandle_t (*RegisterTexture2D)(const char *name, byte *rgba, int width, int height);
 } refexport_t;
 
 //
