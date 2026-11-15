@@ -226,6 +226,202 @@ static void CG_OffsetThirdPersonView(void)
 
 /*
 ===============
+CG_ViewModelSettings
+
+The player's own position of the first-person weapon, like CS2's
+viewmodel_offset_x/y/z and viewmodel_presetpos: cg_viewmodel_offset_x moves
+it right, _y forward and _z up from where the game puts it, in units along
+the view, within limits that keep it on screen. A preset
+(cg_viewmodel_presetpos 1-3) sets the three; offsets set by hand that are no
+preset's make it 0 (custom). cg_viewmodel_yaw turns it left or right around
+the hand that holds it, in degrees (CS2 has none: no preset sets it), and
+cg_viewmodel_movedrop scales how far it drops and pulls back while moving
+(CG_CalcViewModelMovement). Called once a frame: it only compares
+modification counts until a setting changes
+===============
+*/
+typedef struct {
+    float x, y, z;
+} vmPreset_t;
+
+static const vmPreset_t vmPresets[] = {
+    {0,    0,    0   }, // 0 custom: the offsets as they are
+    {1.0f, 1.0f, -1.0f}, // 1 Desktop: out of the way, right, forward and down
+    {0,    -1.5f, 0.5f}, // 2 Couch: closer, so bigger
+    {0,    0,    0   }, // 3 Classic: the game's own position
+};
+
+#define VM_SETTINGS 5 // offsets x, y, z, then yaw, then the drop while moving
+#define VM_YAW      3
+#define VM_MOVEDROP 4
+#define VM_PRESET   VM_SETTINGS
+
+static const float vmLimits[VM_SETTINGS][2] = {
+    {-2.5f, 2.5f},   // x: left, right
+    {-2.0f, 2.0f},   // y: back, forward
+    {-2.0f, 1.0f},   // z: down, up (higher, the weapons' ends come into view)
+    {-15.0f, 15.0f}, // yaw: the muzzle out, to the middle
+    {0.0f, 1.0f},    // the drop while moving: none, the game's own
+};
+
+static float vmValues[VM_SETTINGS] = {0, 0, 0, 0, 1}; // right, forward, up, yaw, drop
+static int   vmModCount[VM_SETTINGS + 1] = {-1, -1, -1, -1, -1, -1};
+static int   vmPresetInit;
+
+void CG_ViewModelSettings(void)
+{
+    cvar_t *settings[VM_SETTINGS] = {
+        cg_viewmodel_offset_x, cg_viewmodel_offset_y, cg_viewmodel_offset_z, cg_viewmodel_yaw, cg_viewmodel_movedrop
+    };
+    qboolean offsetChanged = qfalse;
+    int      preset;
+    int      i;
+
+    preset = cg_viewmodel_presetpos->integer;
+    if (!vmPresetInit) {
+        // the offsets of the config stand: the preset is only checked against them
+        vmPresetInit          = 1;
+        vmModCount[VM_PRESET] = cg_viewmodel_presetpos->modificationCount;
+    } else if (cg_viewmodel_presetpos->modificationCount != vmModCount[VM_PRESET]) {
+        if (preset > 0 && preset < (int)ARRAY_LEN(vmPresets)) {
+            cgi.Cvar_Set("cg_viewmodel_offset_x", va("%g", vmPresets[preset].x));
+            cgi.Cvar_Set("cg_viewmodel_offset_y", va("%g", vmPresets[preset].y));
+            cgi.Cvar_Set("cg_viewmodel_offset_z", va("%g", vmPresets[preset].z));
+        } else if (preset != 0) {
+            // no such preset: custom
+            cgi.Cvar_Set("cg_viewmodel_presetpos", "0");
+            preset = 0;
+        }
+        vmModCount[VM_PRESET] = cg_viewmodel_presetpos->modificationCount;
+    }
+
+    for (i = 0; i < VM_SETTINGS; i++) {
+        float v;
+
+        if (settings[i]->modificationCount == vmModCount[i]) {
+            continue;
+        }
+
+        v = settings[i]->value;
+        if (!(v >= vmLimits[i][0] && v <= vmLimits[i][1])) {
+            // out of range (or not a number): the nearest limit
+            v = v > vmLimits[i][1] ? vmLimits[i][1] : v < vmLimits[i][0] ? vmLimits[i][0] : 0;
+            cgi.Cvar_Set(settings[i]->name, va("%g", v));
+        }
+
+        vmValues[i]   = v;
+        vmModCount[i] = settings[i]->modificationCount;
+        if (i < 3) {
+            offsetChanged = qtrue;
+        }
+    }
+
+    if (offsetChanged && preset != 0) {
+        const vmPreset_t *p = &vmPresets[preset > 0 && preset < (int)ARRAY_LEN(vmPresets) ? preset : 0];
+
+        if (p == vmPresets || vmValues[0] != p->x || vmValues[1] != p->y || vmValues[2] != p->z) {
+            // set by hand (or the config's preset is none): custom
+            cgi.Cvar_Set("cg_viewmodel_presetpos", "0");
+            vmModCount[VM_PRESET] = cg_viewmodel_presetpos->modificationCount;
+        }
+    }
+}
+
+/*
+===============
+CG_ViewModelMoveDrop
+
+cg_viewmodel_movedrop as CG_ViewModelSettings took it: 0 to 1
+===============
+*/
+float CG_ViewModelMoveDrop(void)
+{
+    return vmValues[VM_MOVEDROP];
+}
+
+/*
+===============
+CG_TurnViewModel
+
+Turns the first-person model left or right by cg_viewmodel_yaw degrees
+(positive: the muzzle to the middle of the screen), around the view's up
+axis through the hand that holds the weapon (tag_weapon_right), so the
+weapon turns where it is. A model without the tag isn't turned
+===============
+*/
+static void CG_TurnViewModel(refEntity_t *pREnt)
+{
+    orientation_t oHand;
+    vec3_t        vForward, vLeft, vUp;
+    vec3_t        vPivot, v;
+    float         fSin, fCos, f, l;
+    int           iTag;
+    int           i;
+
+    iTag = pREnt->tiki ? cgi.Tag_NumForName(pREnt->tiki, "tag_weapon_right") : -1;
+    if (iTag < 0) {
+        return;
+    }
+
+    oHand = cgi.TIKI_Orientation(pREnt, iTag);
+    VectorCopy(pREnt->origin, vPivot);
+    for (i = 0; i < 3; i++) {
+        VectorMA(vPivot, oHand.origin[i], pREnt->axis[i], vPivot);
+    }
+
+    AngleVectorsLeft(cg.refdefViewAngles, vForward, vLeft, vUp);
+    fSin = sin(DEG2RAD(vmValues[VM_YAW]));
+    fCos = cos(DEG2RAD(vmValues[VM_YAW]));
+
+    // the origin around the pivot, then each axis: forward turns to the left
+    for (i = -1; i < 3; i++) {
+        float *p = i < 0 ? pREnt->origin : pREnt->axis[i];
+
+        if (i < 0) {
+            VectorSubtract(p, vPivot, v);
+        } else {
+            VectorCopy(p, v);
+        }
+        f = DotProduct(v, vForward);
+        l = DotProduct(v, vLeft);
+        VectorMA(v, f * fCos - l * fSin - f, vForward, v);
+        VectorMA(v, f * fSin + l * fCos - l, vLeft, v);
+        if (i < 0) {
+            VectorAdd(vPivot, v, p);
+        } else {
+            VectorCopy(v, p);
+        }
+    }
+}
+
+/*
+===============
+CG_MirrorViewModel
+
+With cg_righthand 0, the first-person model (and what is attached to it, the
+weapon) is mirrored across the plane of the view's forward and up axes: the
+same picture, flipped left to right. The renderer turns the culling of a
+first-person model with a mirrored axis around
+===============
+*/
+void CG_MirrorViewModel(refEntity_t *pREnt)
+{
+    const float *vLeft = cg.refdef.viewaxis[1];
+    vec3_t       vDelta;
+    int          i;
+
+    VectorSubtract(pREnt->origin, cg.refdef.vieworg, vDelta);
+    VectorMA(pREnt->origin, -2.0f * DotProduct(vDelta, vLeft), vLeft, pREnt->origin);
+    VectorSubtract(pREnt->lightingOrigin, cg.refdef.vieworg, vDelta);
+    VectorMA(pREnt->lightingOrigin, -2.0f * DotProduct(vDelta, vLeft), vLeft, pREnt->lightingOrigin);
+
+    for (i = 0; i < 3; i++) {
+        VectorMA(pREnt->axis[i], -2.0f * DotProduct(pREnt->axis[i], vLeft), vLeft, pREnt->axis[i]);
+    }
+}
+
+/*
+===============
 CG_OffsetFirstPersonView
 
 ===============
@@ -468,6 +664,21 @@ void CG_OffsetFirstPersonView(refEntity_t *pREnt, qboolean bUseWorldPosition)
         VectorMA(pREnt->origin, vDelta[0], mat[0], pREnt->origin);
         VectorMA(pREnt->origin, vDelta[1], mat[1], pREnt->origin);
         VectorMA(pREnt->origin, vDelta[2], mat[2], pREnt->origin);
+
+        if (vmValues[0] || vmValues[1] || vmValues[2]) {
+            // the player's own position (CG_ViewModelSettings), along the view
+            vec3_t vForward, vRight, vUp;
+
+            AngleVectors(cg.refdefViewAngles, vForward, vRight, vUp);
+            VectorMA(pREnt->origin, vmValues[0], vRight, pREnt->origin);
+            VectorMA(pREnt->origin, vmValues[1], vForward, pREnt->origin);
+            VectorMA(pREnt->origin, vmValues[2], vUp, pREnt->origin);
+        }
+
+        if (vmValues[VM_YAW]) {
+            // and its turn
+            CG_TurnViewModel(pREnt);
+        }
     }
 
     VectorCopy(origin, cg.playerHeadPos);
@@ -480,6 +691,9 @@ CG_CalcFov
 Fixed fov at intermissions, otherwise account for fov variable and zooms.
 ====================
 */
+// the field of view of the first-person weapon (cg_fov's default)
+#define CG_VIEWMODEL_FOV 80.0f
+
 #define WAVE_AMPLITUDE 1
 #define WAVE_FREQUENCY 0.4
 
@@ -519,6 +733,30 @@ static int CG_CalcFov(void)
     // set it
     cg.refdef.fov_x    = fov_x;
     cg.refdef.fov_y    = fov_y;
+
+    if (cg.camera_fov != CG_VIEWMODEL_FOV && !cg.predicted_player_state.stats[STAT_INZOOM]
+        && !(cg.snap->ps.pm_flags & PMF_CAMERA_VIEW)) {
+        // the first-person weapon keeps cg_fov's default whatever cg_fov is (like CS2's,
+        // which has its own): its field of view made the way the scene's is. Zoomed or
+        // through a camera, the scene's
+        float vm_fov_x, vm_fov_y;
+
+        if (fov_ratio == 1) {
+            vm_fov_x = CG_VIEWMODEL_FOV;
+        } else {
+            vm_fov_x = RAD2DEG(atan(tan(DEG2RAD(CG_VIEWMODEL_FOV / 2.0)) * fov_ratio)) * 2.0;
+        }
+        x        = cg.refdef.width / tan(vm_fov_x / 360 * M_PI);
+        vm_fov_y = atan2(cg.refdef.height, x);
+        vm_fov_y = vm_fov_y * 360 / M_PI;
+        if (inwater) {
+            vm_fov_x += v;
+            vm_fov_y -= v;
+        }
+
+        cg.refdef.viewmodel_fov_x = vm_fov_x;
+        cg.refdef.viewmodel_fov_y = vm_fov_y;
+    }
     cg.fRefFovXCos     = cos(fov_x / 114.0f);
     cg.fRefFovXSin     = sin(fov_x / 114.0f);
     cg.fRefFovYCos     = cos(fov_y / 114.0f);
@@ -872,6 +1110,9 @@ void CG_DrawActiveFrame(int serverTime, int frameTime, stereoFrame_t stereoView,
     } else if (cg_fov->value > 120) {
         cgi.Cvar_Set("cg_fov", "120");
     }
+
+    // the player's position of the first-person weapon
+    CG_ViewModelSettings();
 
     // update cg.predicted_player_state
     CG_PredictPlayerState();

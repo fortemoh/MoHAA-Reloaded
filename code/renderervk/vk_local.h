@@ -1254,6 +1254,10 @@ typedef struct {
 	float			prevModelview[16];
 	float			prevModelviewFor[16];	// the modelview it was given with
 	qboolean		objectMotion;	// it applies: the draws move (VK_PIPE_MOTION)
+	// the explicit last frame's projection of the perspective draws
+	// (vk_set_prev_projection: the first-person weapon's own)
+	qboolean		prevProjectionSet;
+	float			drawPrevProjection[16];
 } vkTemporal_t;
 
 extern vkTemporal_t	vkt;

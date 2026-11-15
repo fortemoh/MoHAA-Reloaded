@@ -87,6 +87,9 @@ static struct {
 	unsigned			frameSerial;
 	qboolean			history;
 	float				prevProjection[16], prevView[16], cameraDelta[16];
+	// the projection of the depth hack's draws (the first-person weapon's
+	// own, or the view's), this frame's and the last one's
+	float				vmProjection[16], prevVmProjection[16];
 
 	// per entity of the scene: its last frame and this frame's slot (or NULL)
 	rbTemporalEntity_t	*prev[MAX_REFENTITIES];
@@ -212,6 +215,7 @@ static void R_TemporalPrimary( unsigned serial ) {
 		&& fabs( backEnd.refdef.fov_x - rbt.fovX ) < 0.01f && fabs( backEnd.refdef.fov_y - rbt.fovY ) < 0.01f;
 	if ( rbt.history ) {
 		Com_Memcpy( rbt.prevProjection, rbt.projection, sizeof( rbt.prevProjection ) );
+		Com_Memcpy( rbt.prevVmProjection, rbt.vmProjection, sizeof( rbt.prevVmProjection ) );
 		Com_Memcpy( rbt.prevView, rbt.view, sizeof( rbt.prevView ) );
 		R_TemporalInvertRigid( view, invView );
 		R_TemporalMultiply( rbt.prevView, invView, rbt.cameraDelta );
@@ -233,6 +237,8 @@ static void R_TemporalPrimary( unsigned serial ) {
 	rbt.floatTime = backEnd.refdef.floatTime;
 	Com_Memcpy( rbt.view, view, sizeof( rbt.view ) );
 	Com_Memcpy( rbt.projection, backEnd.viewParms.projectionMatrix, sizeof( rbt.projection ) );
+	Com_Memcpy( rbt.vmProjection, backEnd.viewParms.vmProjection ? backEnd.viewParms.vmProjectionMatrix
+		: backEnd.viewParms.projectionMatrix, sizeof( rbt.vmProjection ) );
 	VectorCopy( backEnd.viewParms.ori.origin, rbt.origin );
 	rbt.fovX = backEnd.refdef.fov_x;
 	rbt.fovY = backEnd.refdef.fov_y;
@@ -426,6 +432,19 @@ void RB_TemporalBeginView( void ) {
 	}
 	backEnd.temporalScene = vk_begin_scene( &view );
 	backEnd.temporalPrimary = backEnd.temporalScene && primary;
+}
+
+/*
+===============
+RB_TemporalPrevVmProjection
+
+The last frame's projection of the depth hack's draws (the first-person
+weapon's own, RB_DepthHackProjection) for the primary view's motion
+vectors; NULL: the view's
+===============
+*/
+const float *RB_TemporalPrevVmProjection( void ) {
+	return backEnd.temporalPrimary && rbt.history ? rbt.prevVmProjection : NULL;
 }
 
 /*

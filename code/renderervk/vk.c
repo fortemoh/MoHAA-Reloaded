@@ -3229,9 +3229,11 @@ static void VK_TemporalPushConstants( vkTemporalPush_t *tp ) {
 			// a surface that doesn't move: the camera's motion only
 			VK_MultiplyMatrix( vkt.cameraDelta, mv, prevModelview );
 		}
-		// the view's last projection, but for the orthographic ones drawn
-		// in it (flares)
-		VK_MultiplyMVP( vks.projection[11] == -1.0f ? vkt.prevProjection : vks.projection, prevModelview, NULL, tp->prevMvp );
+		// the view's last projection (or the draws' own, the first-person
+		// weapon's: vk_set_prev_projection), but for the orthographic ones
+		// drawn in it (flares)
+		VK_MultiplyMVP( vks.projection[11] != -1.0f ? vks.projection
+			: vkt.prevProjectionSet ? vkt.drawPrevProjection : vkt.prevProjection, prevModelview, NULL, tp->prevMvp );
 	}
 
 	for ( i = 0; i < 4; i++ ) {
@@ -5737,6 +5739,7 @@ qboolean vk_begin_scene( const vkSceneView_t *view ) {
 	}
 	vkt.prevModelviewSet = qfalse;
 	vkt.objectMotion = qfalse;
+	vkt.prevProjectionSet = qfalse;
 	vk_dirty |= VK_DIRTY_MVP;
 	return qtrue;
 }
@@ -5821,6 +5824,25 @@ void vk_set_reactive( qboolean reactive ) {
 	// only while the anti-aliasing reads it: without it the effects are
 	// drawn as before
 	vks.reactive = reactive && vkt.active && vkt.reactiveOn;
+}
+
+void vk_set_prev_projection( const float *matrix ) {
+	if ( !vkt.active ) {
+		return;
+	}
+	if ( !matrix ) {
+		if ( vkt.prevProjectionSet ) {
+			vkt.prevProjectionSet = qfalse;
+			vk_dirty |= VK_DIRTY_MVP;
+		}
+		return;
+	}
+	if ( vkt.prevProjectionSet && !memcmp( vkt.drawPrevProjection, matrix, sizeof( vkt.drawPrevProjection ) ) ) {
+		return;
+	}
+	Com_Memcpy( vkt.drawPrevProjection, matrix, sizeof( vkt.drawPrevProjection ) );
+	vkt.prevProjectionSet = qtrue;
+	vk_dirty |= VK_DIRTY_MVP;
 }
 
 void vk_set_prev_modelview( const float *matrix ) {

@@ -700,6 +700,9 @@ typedef struct {
     qboolean render_terrain;
 	//==
 
+	// refdef_t's: the field of view of the depth hack's draws, 0: the scene's
+	float		viewmodel_fov_x, viewmodel_fov_y;
+
 } trRefdef_t;
 
 
@@ -758,6 +761,10 @@ typedef struct {
 	int			viewportX, viewportY, viewportWidth, viewportHeight;
 	float		fovX, fovY;
 	float		projectionMatrix[16];
+	// the depth hack's draws (the first-person weapon) have a projection of
+	// their own (refdef_t viewmodel_fov_x/y): not in a portal
+	qboolean	vmProjection;
+	float		vmProjectionMatrix[16];
 	cplane_t	frustum[5];
 	vec3_t		visBounds[2];
 	float		zFar;
@@ -1365,6 +1372,7 @@ typedef struct {
 	float		projection[16];
 	float		modelview[16];
 	int			faceCulling;
+	qboolean	faceCullingMirror;	// faceCulling's, turned around (R_Cull)
 	int			cntTexEnvExt;
 	int			cntnvblendmode;
 	long unsigned int glStateBits;
@@ -1430,6 +1438,9 @@ typedef struct {
 	// keeps the entities' motion for the next frame
 	qboolean	temporalScene;
 	qboolean	temporalPrimary;
+	// the current entity is a first-person one with a mirrored axis (the
+	// left-handed view weapon): its culling is turned around (R_Cull)
+	qboolean	entityMirrored;
 } backEndState_t;
 
 /*
@@ -2293,6 +2304,7 @@ void RB_TemporalBeginView( void );
 void RB_TemporalEndScene( void );
 void RB_TemporalAo( void );
 void RB_TemporalModelview( void );
+const float *RB_TemporalPrevVmProjection( void );
 void RB_TemporalDeformTime( float *seconds, int *msec );
 qboolean RB_TemporalReactive( qboolean override );
 qboolean RB_ShaderAnimated( shader_t *shader );
