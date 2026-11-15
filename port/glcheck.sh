@@ -39,6 +39,9 @@ allowed = [
 	(r"^code/(renderercommon/tr_public\.h|client/cl_main\.cpp|sys/sys_local\.h|sys/sys_unix\.c)$", r"Sys_GLimp(Safe)?Init"),
 	(r"^code/client/cl_main\.cpp$", r"Cvar_Get\(\"cl_renderer\", \"opengl1\""),
 	(r"^code/qcommon/q_math\.c$", r"the OpenGL order"),
+	# vendored stb_truetype.h (the TrueType faces of the URC HUD, uilib/uibake.cpp): the GL calls of its usage example,
+	# in a comment, and its opengl_fillrule argument (the texel offset of a baked quad)
+	(r"^code/thirdparty/stb/stb_truetype\.h$", r"gl[A-Z]\w*\([^;]*\);|opengl(_fillrule)?|GL_\w+"),
 ]
 allowed = [(re.compile(f), re.compile(t)) for f, t in allowed]
 for line in sys.stdin:
