@@ -350,6 +350,21 @@ static void FL_DrawString( fontheader_t *font, const char *text, float x, float 
 static void FL_DrawStretchRaw( int x, int y, int w, int h, int cols, int rows, int components, const byte *data ) {
 	FL_2D( fl.real.DrawStretchRaw( x, y, w, h, cols, rows, components, data ) )
 }
+static int FL_Begin2DList( int handle ) {
+	FL_TIME_RETURN( int, twoD, fl.real.Begin2DList( handle ) )
+}
+static void FL_End2DList( void ) {
+	FL_2D( fl.real.End2DList() )
+}
+static void FL_Draw2DList( int handle ) {
+	FL_2D( fl.real.Draw2DList( handle ) )
+}
+static void FL_Free2DList( int handle ) {
+	FL_2D( fl.real.Free2DList( handle ) )
+}
+static void FL_DrawPolygon2D( const float (*points)[4], int count, qhandle_t shader ) {
+	FL_2D( fl.real.DrawPolygon2D( points, count, shader ) )
+}
 
 // the registration exports: time added to cur.load
 #define FL_LOAD( type, call ) FL_TIME_RETURN( type, load, call )
@@ -386,6 +401,9 @@ static void FL_RegisterFont( const char *fontName, int pointSize, fontInfo_t *fo
 }
 static fontheader_t *FL_LoadFont( const char *name ) {
 	FL_LOAD( fontheader_t *, fl.real.LoadFont( name ) )
+}
+static qhandle_t FL_RegisterImage2D( const char *name, byte *rgba, int width, int height ) {
+	FL_LOAD( qhandle_t, fl.real.RegisterImage2D( name, rgba, width, height ) )
 }
 
 /*
@@ -711,6 +729,11 @@ refexport_t *VK_FrameLogExports( refexport_t *real ) {
 	e->DrawLineLoop = FL_DrawLineLoop;
 	e->DrawString = FL_DrawString;
 	e->DrawStretchRaw = FL_DrawStretchRaw;
+	e->Begin2DList = FL_Begin2DList;
+	e->End2DList = FL_End2DList;
+	e->Draw2DList = FL_Draw2DList;
+	e->Free2DList = FL_Free2DList;
+	e->DrawPolygon2D = FL_DrawPolygon2D;
 	e->BeginRegistration = FL_BeginRegistration;
 	e->LoadWorld = FL_LoadWorld;
 	e->EndRegistration = FL_EndRegistration;
@@ -722,6 +745,7 @@ refexport_t *VK_FrameLogExports( refexport_t *real ) {
 	e->RefreshShaderNoMip = FL_RefreshShaderNoMip;
 	e->RegisterFont = FL_RegisterFont;
 	e->LoadFont = FL_LoadFont;
+	e->RegisterImage2D = FL_RegisterImage2D;
 
 	ri.Cmd_AddCommand( "vkframelog", FL_Command_f );
 	ri.Printf( PRINT_ALL, "r_vkFrameLog: recording the last %d frames, see vkframelog\n", fl.size );
