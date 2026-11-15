@@ -1485,7 +1485,7 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
 ================
 Weapon select: the Esc menu's grid, two tiles a row (rifle and sniper, SMG
 and MG, anti-tank and shotgun; Breakthrough's mine detector a row of its
-own), each the class over the nation's outline over the weapon's name, the
+own), each the weapon's name over the nation's outline over the class, the
 last pick marked, a banned class dimmed in its place; the header panel over
 it, the live model beside
 ================
@@ -1520,7 +1520,11 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
     RL_Grid(v, &tw, &th, &gap, &gw);
     const float wtw   = (gw - gap) / 2; // two a row, as wide as the Esc menu's three
     const float total = head + gap + rows * th + (rows - 1) * gap;
-    const float x0 = (v.dw - (gw + 40 + modelW)) / 2, y0 = (v.dh - total) / 2;
+    // the block centred, then 150 units right as far as the model's slot stays
+    // on screen: the figure is narrower than his slot and lighter than the
+    // grid, so centred on the slot the block reads left of the middle
+    const float spare = Q_max(0.0f, (v.dw - (gw + 40 + modelW)) / 2);
+    const float x0 = spare + Q_min(150.0f, spare), y0 = (v.dh - total) / 2;
     const float gy = y0 + head + gap;
 
     // (the cvars it draws from: the cache draws again when one changes)
@@ -1553,18 +1557,20 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
         if (hot) {
             RL_RoundFrame(v, x, y, cw, th, 4, 2, RL_BRASS);
         }
-        if (allowed) {
-            RL_Text(v, x + 18, y + 24, w.cls, RL_S2, hot ? RL_T(T.pale, 220) : RL_MUTED, false, RL_LEFT, 1.8f, RL_MID, cw - 50);
-        } else {
-            RL_Text(v, x + 18, y + 24, "OFF ON THIS SERVER", RL_S2, RL_Rgb(200, 120, 100), false, RL_LEFT, 1.8f, RL_MID, cw - 50);
-        }
+        // the name at the top, the class at the bottom, both on the outline's
+        // axis as the Esc tiles' labels are (the name clear of the last pick's dot)
+        RL_Text(v, x + cw / 2, y + 26, w.name, RL_S1, allowed ? RL_TEXT : RL_FAINT, true, RL_CENTER, 1.6f, RL_MID, cw - 76);
         if (!Q_stricmp(ui_dm_primary->string, rl_classCmd[i])) {
             // the last pick
-            RL_Round(v, x + cw - 26, y + 20, 8, 8, 4, RL_BRASS);
+            RL_Round(v, x + cw - 26, y + 22, 8, 8, 4, RL_BRASS);
         }
-        RL_Outline(v, va(RL_OUTLINES "weapons/%s.svg", w.svg), x + cw / 2, y + th * 0.47f, Q_min(wtw * 0.8f, cw - 40), th * 0.38f,
+        RL_Outline(v, va(RL_OUTLINES "weapons/%s.svg", w.svg), x + cw / 2, y + th * 0.5f, Q_min(wtw * 0.8f, cw - 40), th * 0.38f,
                    allowed ? RL_T(hot ? T.pale : T.light, hot ? 255 : 220) : RL_T(T.light, 70));
-        RL_Text(v, x + cw / 2, y + th - 30, w.name, RL_S1, allowed ? RL_TEXT : RL_FAINT, true, RL_CENTER, 1.6f, RL_MID, cw - 20);
+        if (allowed) {
+            RL_Text(v, x + cw / 2, y + th - 26, w.cls, RL_S2, hot ? RL_T(T.pale, 220) : RL_MUTED, false, RL_CENTER, 1.8f, RL_MID, cw - 20);
+        } else {
+            RL_Text(v, x + cw / 2, y + th - 26, "OFF ON THIS SERVER", RL_S2, RL_Rgb(200, 120, 100), false, RL_CENTER, 1.8f, RL_MID, cw - 20);
+        }
         if (allowed) {
             Hit(v, x, y, cw, th, i);
         }
