@@ -3338,8 +3338,6 @@ static qboolean R_AtlasPack( int w, int h, int *outX, int *outY ) {
 	return qtrue;
 }
 
-static int atlasGeneration;	// changes with the page's size (the 2D lists' kept geometry)
-
 // an image's place in the page: its texels' texture coordinates
 static void R_AtlasPlace( image_t *image ) {
 	image->atlasRect[0] = ( image->atlasRoom[0] + 1 ) / (float)atlas.side;
@@ -3348,15 +3346,10 @@ static void R_AtlasPlace( image_t *image ) {
 	image->atlasRect[3] = image->height / (float)atlas.side;
 }
 
-int R_AtlasGeneration( void ) {
-	return atlasGeneration;
-}
-
 // the page made, or at twice its side (its texels copied), its images' places
 static void R_AtlasResize( int side ) {
 	int			i;
 
-	atlasGeneration++;
 	R_2DShadersChanged();
 	if ( atlas.page ) {
 		atlas.nodes[atlas.numNodes][0] = atlas.side;

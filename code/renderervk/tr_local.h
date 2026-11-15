@@ -1978,7 +1978,6 @@ void R_2DListsShutdown( void );
 void R_2DTransform( float *x, float *y );
 void R_2DScissor( qboolean clip );
 shader_t *R_White2D( void );	// the atlas's white texel (tr_image.c)
-int R_AtlasGeneration( void );
 void R_2DShadersChanged( void );	// an image made again or the atlas resized: the shaders' 2D info made again (tr_draw.c)
 void R_End2D( void );
 void R_End2DBatch( void );
