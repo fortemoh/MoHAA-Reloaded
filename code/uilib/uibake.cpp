@@ -79,6 +79,9 @@ typedef struct {
 
 static std::vector<uiFace_t *>                    bake_faces;
 static std::vector<uiBakedFont_t *>               bake_fonts;
+// the names asked for, lowercased: their baked face, or NULL when the name
+// isn't one (a RitualFont: not looked at again, as faces aren't, Bake_Face)
+static std::unordered_map<std::string, uiBakedFont_t *> bake_fontNames;
 static std::unordered_map<std::string, uiBaked_t> bake_shapes;
 static std::vector<uiVertex_t>                    bake_path;
 static int                                        bake_gen;
@@ -376,23 +379,31 @@ fontheader_t *UI_BakeFont(const char *name)
 {
     uiBakedFont_t *f = NULL;
     uiFontSpec_t   spec;
+    std::string    key(name);
 
-    for (uiBakedFont_t *b : bake_fonts) {
-        if (!Q_stricmp(b->name.c_str(), name)) {
-            f = b;
-            break;
+    // (by name: the UI makes fonts every frame, View3D's for one)
+    for (char& c : key) {
+        c = tolower((unsigned char)c);
+    }
+    auto it = bake_fontNames.find(key);
+    if (it != bake_fontNames.end()) {
+        f = it->second;
+        if (!f) {
+            return NULL;
+        }
+        if (f->seq == UI_FontStamp()) {
+            return &f->header;
         }
     }
-    if (f && f->seq == UI_FontStamp()) {
-        return &f->header;
-    }
     if (!Bake_ParseFont(name, &spec)) {
+        bake_fontNames[key] = NULL;
         return NULL;
     }
     if (!f) {
         f       = new uiBakedFont_t();
         f->name = name;
         bake_fonts.push_back(f);
+        bake_fontNames[key] = f;
     }
     f->seq = UI_FontStamp();
     Bake_FontPage(f, &spec);
@@ -670,7 +681,12 @@ static void Bake_Layer(uiCanvas_t *cv, const char *text)
     std::vector<byte>        mask(cv->w * cv->h);
     float                    c[4];
     int                      a = 5; // the first token after the color
-    auto                     num = [&](int i) { return i < n ? (float)atof(t[i].c_str()) : 0.0f; };
+    std::vector<float>       v(n);
+    // (the tokens' numbers read once: the gradients and crescents read them for each texel)
+    for (int i = 0; i < n; i++) {
+        v[i] = (float)atof(t[i].c_str());
+    }
+    auto num = [&](int i) { return i < n ? v[i] : 0.0f; };
 
     if (n < 5) {
         return;

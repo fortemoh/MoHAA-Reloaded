@@ -2530,15 +2530,27 @@ bool UIWidget::CacheDraw(void)
 
 void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
 {
-    const int stamp = UI_BakeStamp() ^ (uid.vidWidth << 3) ^ (uid.vidHeight << 17);
-    const int live  = ui_drawLive;
-    int       state;
-    bool      make;
+    int  stamp, live, state;
+    bool make;
 
-    if ((!m_drawCache && !ui_drawScope) || !uii.Rend_Begin2DList) {
+    // (every widget's every frame, most of them hidden menus: what isn't
+    // shown is left as DisplayNow leaves it, before anything of the cache is
+    // read, so it costs what it did before the cache)
+    if (!ui_drawScope) {
+        if (!isEnabled()) {
+            lastShowTime = -1;
+            return;
+        }
+        if (!m_enabledCvar.length() && !IsVisible()) {
+            return;
+        }
+    }
+    if ((!ui_drawScope && !m_drawCache) || !uii.Rend_Begin2DList) {
         DisplayNow(drawframe, parent_alpha);
         return;
     }
+    stamp = UI_BakeStamp() ^ (uid.vidWidth << 3) ^ (uid.vidHeight << 17);
+    live  = ui_drawLive;
     ui_drawScope++;
     if (!m_rules.empty()) {
         Flow();

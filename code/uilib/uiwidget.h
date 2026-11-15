@@ -127,6 +127,9 @@ protected:
     borderstyle_t         m_borderStyle;
     bool                  m_visible;
     bool                  m_enabled;
+    // Added: drawcache (the draw cache, below): beside what every frame's
+    // Display reads of every widget, shown or not
+    bool                  m_drawCache;
     UIFont               *m_font;
     class UIWidget       *m_parent;
     Container<UIWidget *> m_children;
@@ -223,7 +226,6 @@ protected:
     // the draw cache (drawcache): what it and its children drew, a 2D list,
     // drawn again while what it was drawn from stays: the cvars read
     // (UI_DrawDep), its frames, the alpha given, DrawKey
-    bool                                 m_drawCache;
     int                                  m_drawList;
     bool                                 m_drawValid, m_drawLive;
     int                                  m_drawStamp, m_drawKey;
