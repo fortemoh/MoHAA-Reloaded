@@ -1,6 +1,7 @@
 // The Competitive HUD (cg_hudstyle 1): top center, one dark box with the
 // timer over the scores, Allies | Axis (self | the leader in free-for-all),
-// a thin line between them; the players' cards either side in round modes
+// a thin line between them; either side in round modes, the players' cards
+// or each team's count of the alive (cg_hud_alivecount)
 menu "hud_comp_score" 1920 80 NONE 0
 virtualres 1 1920 1080
 drawcache 1
@@ -87,6 +88,41 @@ font oswald-medium-15s
 enabledcvar ui_hud_cards_on
 team axis
 icons iconallies iconaxis
+}
+
+// or how many of each team are alive (cg_hud_alivecount, CS2's): the number
+// on the team's colour, the team's icon faint behind it
+
+resource
+Label
+{
+name "countallies"
+rect 838 0 72 64
+fgcolor 0.988 0.988 0.988 1
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-32s
+textalign centerx
+linkcvar ui_hud_count_allies
+enabledcvar ui_hud_cards_on&ui_hud_count_on
+shape fill 0.294 0.435 0.549 0.851
+shape in 8px 2px -8px -2px svg 1 1 1 0.22 ui/outlines/team/allies.svg center grey
+}
+
+resource
+Label
+{
+name "countaxis"
+rect 1010 0 72 64
+fgcolor 0.988 0.988 0.988 1
+bgcolor 0 0 0 0
+borderstyle NONE
+font oswald-medium-32s
+textalign centerx
+linkcvar ui_hud_count_axis
+enabledcvar ui_hud_cards_on&ui_hud_count_on
+shape fill 0.549 0.333 0.294 0.851
+shape in 8px 2px -8px -2px svg 1 1 1 0.22 ui/outlines/team/axis.svg center grey
 }
 
 // the teams' icons (moh-icons team/allies.svg and team/axis.svg) the cards
