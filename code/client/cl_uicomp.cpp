@@ -58,6 +58,7 @@ static const char *const comp_toggles[] = {
 
 // what the menus (ui/hud_comp_*.urc) read and this file sets
 static const char *const comp_menuCvars[] = {
+    "ui_hud_acc", "ui_hud_acc_banner", "ui_hud_acc_line", "ui_hud_acc_radar", "ui_hud_acc_ring",
     "ui_hud_allies", "ui_hud_ammo", "ui_hud_ammo_on", "ui_hud_arc0_alpha", "ui_hud_arc0_angle", "ui_hud_arc1_alpha",
     "ui_hud_arc1_angle", "ui_hud_arc2_alpha", "ui_hud_arc2_angle", "ui_hud_axis", "ui_hud_badge_on", "ui_hud_banner1",
     "ui_hud_banner1_on", "ui_hud_banner2", "ui_hud_banner2_on", "ui_hud_charge", "ui_hud_charge_on", "ui_hud_clip",
@@ -71,6 +72,28 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_vs_on",
     "ui_hud_weapons_on", "ui_hud_cards_allies", "ui_hud_cards_axis",
 };
+
+// the accent (cg_hud_accent, the HUD's pale yellow by default) and its
+// shades: each moves with the accent as much as it has of the accent's color
+// (its spread between its brightest and darkest channel against the
+// accent's), so a paler shade stays a paler shade of a new accent. The menus
+// read them as ui_hud_acc* (a shape's $cvar, colorcvar)
+enum { ACC_MAIN, ACC_LINE, ACC_RING, ACC_RADAR, ACC_BANNER, ACC_WEAPON };
+
+static const struct {
+    const char *cvar;
+    float       color[3]; // with the default accent (the first)
+} comp_shades[] = {
+    {"ui_hud_acc",        {0.965f, 0.965f, 0.478f}}, // health, ammo, the bullet, the grenades' counts
+    {"ui_hud_acc_line",   {0.933f, 0.941f, 0.659f}}, // the badge's lines, the ammo's separator
+    {"ui_hud_acc_ring",   {0.91f, 0.922f, 0.643f} }, // the badge's ring
+    {"ui_hud_acc_radar",  {0.863f, 0.894f, 0.643f}}, // the radar's ring
+    {"ui_hud_acc_banner", {0.706f, 0.753f, 0.549f}}, // the banners' edges
+    {NULL,                {0.98f, 0.98f, 0.565f}  }, // the weapons carried
+};
+
+static float comp_accent[ARRAY_LEN(comp_shades)][3];
+static int   comp_accentStamp;
 
 typedef struct {
     int      time;
@@ -569,6 +592,59 @@ static void Comp_SetF(const char *name, float value)
     }
 }
 
+// a color as "f6f67a", "#f6f67a" or "R G B" (0 to 1), to three decimals
+static qboolean Comp_ParseColor(const char *text, float out[3])
+{
+    int n = 0;
+
+    while (*text == ' ') {
+        text++;
+    }
+    if (*text == '#') {
+        text++;
+    }
+    while (isxdigit((byte)text[n])) {
+        n++;
+    }
+    if (n == 6 && (!text[n] || text[n] == ' ')) {
+        const unsigned long v = strtoul(text, NULL, 16);
+
+        for (int k = 0; k < 3; k++) {
+            out[k] = ((v >> (16 - 8 * k)) & 255) / 255.0f;
+        }
+    } else if (sscanf(text, "%f %f %f", &out[0], &out[1], &out[2]) != 3) {
+        return qfalse;
+    }
+    for (int k = 0; k < 3; k++) {
+        out[k] = roundf(Com_Clamp(0.0f, 1.0f, out[k]) * 1000.0f) / 1000.0f;
+    }
+    return qtrue;
+}
+
+// the accent's shades from cg_hud_accent (the default's when it can't be read)
+static void Comp_Accent(void)
+{
+    const float *base = comp_shades[ACC_MAIN].color;
+    const float  spread = Q_max(base[0], Q_max(base[1], base[2])) - Q_min(base[0], Q_min(base[1], base[2]));
+    float        accent[3];
+
+    if (!Comp_ParseColor(Comp_Cvar("cg_hud_accent")->string, accent)) {
+        VectorCopy(base, accent);
+    }
+    for (size_t i = 0; i < ARRAY_LEN(comp_shades); i++) {
+        const float *c     = comp_shades[i].color;
+        const float  share = (Q_max(c[0], Q_max(c[1], c[2])) - Q_min(c[0], Q_min(c[1], c[2]))) / spread;
+
+        for (int k = 0; k < 3; k++) {
+            comp_accent[i][k] = roundf(Com_Clamp(0.0f, 1.0f, c[k] + share * (accent[k] - base[k])) * 1000.0f) / 1000.0f;
+        }
+        if (comp_shades[i].cvar) {
+            Comp_Set(comp_shades[i].cvar, va("%g %g %g", comp_accent[i][0], comp_accent[i][1], comp_accent[i][2]));
+        }
+    }
+    comp_accentStamp++;
+}
+
 // who is alive and the cards (round modes), and the silent score requests:
 // a new round, a death, a team joined, and every 2 s without flood protection
 static void Comp_Roster(int gametype)
@@ -851,6 +927,17 @@ void UI_CompHud_Frame(void)
             }
         }
     }
+    // cg_hud_accent: the shades again (what reads them is drawn and baked
+    // again), the health's color with them
+    {
+        static int read = -1;
+
+        if (Comp_Cvar("cg_hud_accent")->modificationCount != read) {
+            read = Comp_Cvar("cg_hud_accent")->modificationCount;
+            Comp_Accent();
+            lastChange = -1;
+        }
+    }
     cge->CG_EyeAngles(&angles);
     viewYaw = angles[YAW];
 
@@ -880,7 +967,7 @@ void UI_CompHud_Frame(void)
         maxHealth = 100;
     }
     Comp_SetI("ui_hud_health", health);
-    Comp_Set("ui_hud_health_col", health < Comp_Cvar("cg_hud_lowhealth")->value * maxHealth ? "0.753 0.188 0.129 1" : "0.965 0.965 0.478 1");
+    Comp_Set("ui_hud_health_col", health < Comp_Cvar("cg_hud_lowhealth")->value * maxHealth ? "0.753 0.188 0.129 1" : Comp_Cvar("ui_hud_acc")->string);
     Comp_Set("ui_hud_ammo_on", weapon[0] ? "1" : "0");
     Comp_SetI("ui_hud_clip", ps->stats[STAT_CLIPAMMO]);
     Comp_SetI("ui_hud_ammo", ps->stats[STAT_AMMO]);
@@ -1113,6 +1200,8 @@ void UI_CompHud_Init(void)
     Cvar_Get("cg_hud_lowhealth", "0.4", CVAR_ARCHIVE);
     // the HUD's size: its 1920x1080 design fitted in the screen, times this (0.25 to 2)
     Cvar_Get("cg_hud_scale", "1", CVAR_ARCHIVE);
+    // the accent: "f6f67a", "#f6f67a" or "R G B" (0 to 1)
+    Cvar_Get("cg_hud_accent", "f6f67a", CVAR_ARCHIVE);
     // the menus' never shown widgets (the teams' icons, the cards' shapes)
     Cvar_Get("ui_hud_never", "0", 0);
     // what the menus read, made now, empty: a widget reading a cvar that
@@ -1121,6 +1210,7 @@ void UI_CompHud_Init(void)
     for (size_t i = 0; i < ARRAY_LEN(comp_menuCvars); i++) {
         Cvar_Get(comp_menuCvars[i], "", 0);
     }
+    Comp_Accent();
     UI_CompHud_Clear();
 }
 
@@ -1630,8 +1720,8 @@ public:
     int  DrawKey(void) override
     {
         const playerState_t *ps   = &cl.snap.ps;
-        const int            v[6] = {comp.frags, comp.smokes, comp.nation, ps->stats[STAT_WEAPONS], ps->stats[STAT_EQUIPPED_WEAPON],
-                                     Comp_Int("cg_hud_grenades")};
+        const int            v[7] = {comp.frags, comp.smokes, comp.nation, ps->stats[STAT_WEAPONS], ps->stats[STAT_EQUIPPED_WEAPON],
+                                     Comp_Int("cg_hud_grenades"), comp_accentStamp};
         const char          *hand = CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON]);
         int                  h    = Comp_Hash(0, v, sizeof(v));
 
@@ -1667,12 +1757,13 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
     for (i = 0; i < n; i++) {
         const float alpha = hand == i ? 1.0f : 0.55f;
 
-        Comp_Picture(pics[i], x, top + floorf((ph - phi[i]) * 0.5f * s) / s, pw[i], phi[i], s, qfalse, UColor(0.98f, 0.98f, 0.565f, alpha));
+        Comp_Picture(pics[i], x, top + floorf((ph - phi[i]) * 0.5f * s) / s, pw[i], phi[i], s, qfalse,
+                     UColor(comp_accent[ACC_WEAPON][0], comp_accent[ACC_WEAPON][1], comp_accent[ACC_WEAPON][2], alpha));
         x += pw[i];
         if (counts) {
             x += 4.0f;
             x += Comp_Text(m_countFont, x, top + ph - m_countFont->getHeight((const float *)NULL) * 0.5f, va("%d", counts[i]),
-                           UColor(0.965f, 0.965f, 0.478f, alpha), getVirtualScale());
+                           UColor(comp_accent[ACC_MAIN][0], comp_accent[ACC_MAIN][1], comp_accent[ACC_MAIN][2], alpha), getVirtualScale());
             x += 8.0f;
         }
         x += 4.0f;

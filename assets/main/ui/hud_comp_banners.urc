@@ -21,8 +21,8 @@ textalign centerx
 linkcvar ui_hud_banner1
 enabledcvar ui_hud_banner1_on
 shape fill 0.196 0.204 0.18 0.6
-shape in 0 0 2px 1 fill 0.706 0.753 0.549 1
-shape in -2px 0 1 1 fill 0.706 0.753 0.549 1
+shape in 0 0 2px 1 fill $ui_hud_acc_banner 1
+shape in -2px 0 1 1 fill $ui_hud_acc_banner 1
 fittext 24 300 1536
 fitwidth 1488
 }
@@ -40,8 +40,8 @@ textalign centerx
 linkcvar ui_hud_banner2
 enabledcvar ui_hud_banner2_on
 shape fill 0.196 0.204 0.18 0.6
-shape in 0 0 2px 1 fill 0.706 0.753 0.549 1
-shape in -2px 0 1 1 fill 0.706 0.753 0.549 1
+shape in 0 0 2px 1 fill $ui_hud_acc_banner 1
+shape in -2px 0 1 1 fill $ui_hud_acc_banner 1
 fittext 24 300 1536
 fitwidth 1488
 }

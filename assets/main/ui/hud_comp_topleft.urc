@@ -43,7 +43,7 @@ rect 25 25 248 248
 bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_radar_on
-shape ring 2 0.863 0.894 0.643 0.902
+shape ring 2 $ui_hud_acc_radar 0.902
 }
 
 end.

@@ -30,7 +30,7 @@ rect 59 72 47 5
 bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_health_on
-shape fill 0.965 0.965 0.478 1
+shape fill $ui_hud_acc 1
 }
 
 resource
@@ -41,7 +41,7 @@ rect 194 52 172 1
 bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_badge_on
-shape hgradient 0 1 0.933 0.941 0.659 0 0.933 0.941 0.659 0.702
+shape hgradient 0 1 $ui_hud_acc_line 0 $ui_hud_acc_line 0.702
 }
 
 resource
@@ -52,7 +52,7 @@ rect 432 52 190 1
 bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_badge_on
-shape hgradient 0 1 0.933 0.941 0.659 0.702 0.933 0.941 0.659 0
+shape hgradient 0 1 $ui_hud_acc_line 0.702 $ui_hud_acc_line 0
 }
 
 // the badge: a disc, the team's icon filling it, the ring over it
@@ -101,7 +101,7 @@ rect 372 24 56 56
 bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_badge_on
-shape ring 2 0.91 0.922 0.643 1
+shape ring 2 $ui_hud_acc_ring 1
 }
 
 // the ammo, each after the one before
@@ -110,7 +110,7 @@ Label
 {
 name "clip"
 rect 655 24 80 56
-fgcolor 0.965 0.965 0.478 1
+colorcvar ui_hud_acc
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-36
@@ -128,7 +128,7 @@ bgcolor 0 0 0 0
 borderstyle NONE
 flowafter clip 24
 enabledcvar ui_hud_ammo_on
-shape fill 0.933 0.941 0.659 0.6
+shape fill $ui_hud_acc_line 0.6
 }
 
 resource
@@ -136,7 +136,7 @@ Label
 {
 name "reserve"
 rect 714 24 80 56
-fgcolor 0.965 0.965 0.478 1
+colorcvar ui_hud_acc
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-21
@@ -155,7 +155,7 @@ bgcolor 0 0 0 0
 borderstyle NONE
 flowafter reserve 19.5
 enabledcvar ui_hud_ammo_on
-shape roundbox 2 0.965 0.965 0.478 1 5 17 -45
+shape roundbox 2 $ui_hud_acc 1 5 17 -45
 }
 
 end.
