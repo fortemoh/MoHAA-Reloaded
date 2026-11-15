@@ -51,10 +51,22 @@ extern int            g_radarClientNum;
 static cvar_t *cg_hudstyle;
 
 const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
-    "hud_comp_topleft", "hud_comp_topleft_compass", "hud_comp_score",   "hud_comp_killfeed", "hud_comp_chat",
-    "hud_comp_strip",   "hud_comp_weapons",         "hud_comp_damage",  "hud_comp_banners",  "hud_comp_bars",
-    "hud_comp_killer",  "hud_comp_target",          "hud_comp_vote",
+    "hud_comp_topleft",     "hud_comp_topleft_compass", "hud_comp_score",      "hud_comp_killfeed", "hud_comp_chat",
+    "hud_comp_strip",       "hud_comp_weapons",         "hud_comp_damage",     "hud_comp_banners",  "hud_comp_bars",
+    "hud_comp_killer",      "hud_comp_target",          "hud_comp_vote",       "hud_comp_csgo_health",
+    "hud_comp_csgo_ammo",   "hud_comp_cs2_health",      "hud_comp_cs2_ammo",
 };
+
+// cg_hud_layout, the bottom's health and ammo: 0 the strip along the middle
+// (the team's badge between them), 1 CS:GO's corners (the default), 2 CS2's;
+// each menu's layout (-1 all's). The others' menus are hidden (cl_ui.cpp
+// UI_CompHuds), not drawn; all are baked (a change of layout bakes nothing)
+#define COMP_LAYOUTS 3
+static const signed char comp_menuLayout[UI_COMPHUD_MENUS] = {
+    -1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1, 1, 1, 2, 2,
+};
+
+bool ui_compHudInLayout[UI_COMPHUD_MENUS];
 
 // the elements one can turn off (as cgame's Competitive HUD); the menus' enabledcvar
 static const char *const comp_toggles[] = {
@@ -70,9 +82,10 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_allies", "ui_hud_ammo", "ui_hud_ammo_on", "ui_hud_arc0_alpha", "ui_hud_arc0_angle", "ui_hud_arc1_alpha",
     "ui_hud_arc1_angle", "ui_hud_arc2_alpha", "ui_hud_arc2_angle", "ui_hud_axis", "ui_hud_badge_on", "ui_hud_banner1",
     "ui_hud_banner1_on", "ui_hud_banner2", "ui_hud_banner2_on", "ui_hud_charge", "ui_hud_charge_on", "ui_hud_clip",
-    "ui_hud_compass_on", "ui_hud_dmg_alpha", "ui_hud_dmg_angle", "ui_hud_follow", "ui_hud_follow_col",
-    "ui_hud_follow_on", "ui_hud_health", "ui_hud_health_col", "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col",
-    "ui_hud_hurt_on", "ui_hud_killer", "ui_hud_killer_col", "ui_hud_killer_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
+    "ui_hud_compass_on", "ui_hud_corners", "ui_hud_dmg_alpha", "ui_hud_dmg_angle", "ui_hud_follow",
+    "ui_hud_follow_col", "ui_hud_follow_on", "ui_hud_health", "ui_hud_health_col", "ui_hud_health_frac",
+    "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col", "ui_hud_hurt_on", "ui_hud_killer", "ui_hud_killer_col",
+    "ui_hud_killer_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
     "ui_hud_north", "ui_hud_obj0", "ui_hud_obj0_on", "ui_hud_obj1", "ui_hud_obj1_on", "ui_hud_obj2", "ui_hud_obj2_on",
     "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
     "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_target", "ui_hud_target_col",
@@ -652,6 +665,21 @@ static void Comp_Accent(void)
     comp_accentStamp++;
 }
 
+// cg_hud_layout's menus shown (an unknown layout: CS:GO's); the chat above
+// the health in the corners (ui_hud_corners)
+static void Comp_Layout(void)
+{
+    int layout = Comp_Int("cg_hud_layout");
+
+    if (layout < 0 || layout >= COMP_LAYOUTS) {
+        layout = 1;
+    }
+    for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
+        ui_compHudInLayout[i] = comp_menuLayout[i] < 0 || comp_menuLayout[i] == layout;
+    }
+    Comp_Set("ui_hud_corners", layout ? "1" : "0");
+}
+
 // who is alive and the cards (round modes), and the silent score requests:
 // a new round, a death, a team joined, and every 2 s without flood protection
 static void Comp_Roster(int gametype)
@@ -945,6 +973,15 @@ void UI_CompHud_Frame(void)
             lastChange = -1;
         }
     }
+    // cg_hud_layout: the menus shown
+    {
+        static int read = -1;
+
+        if (Comp_Cvar("cg_hud_layout")->modificationCount != read) {
+            read = Comp_Cvar("cg_hud_layout")->modificationCount;
+            Comp_Layout();
+        }
+    }
     cge->CG_EyeAngles(&angles);
     viewYaw = angles[YAW];
 
@@ -973,6 +1010,7 @@ void UI_CompHud_Frame(void)
         maxHealth = 100;
     }
     Comp_SetI("ui_hud_health", health);
+    Comp_SetF("ui_hud_health_frac", Com_Clamp(0.0f, 1.0f, (float)health / maxHealth));
     Comp_Set("ui_hud_health_col", health < Comp_Cvar("cg_hud_lowhealth")->value * maxHealth ? "0.753 0.188 0.129 1" : Comp_Cvar("ui_hud_acc")->string);
     Comp_Set("ui_hud_ammo_on", weapon[0] ? "1" : "0");
     Comp_SetI("ui_hud_clip", ps->stats[STAT_CLIPAMMO]);
@@ -1270,6 +1308,8 @@ void UI_CompHud_Init(void)
     Cvar_Get("cg_hud_scale", "1", CVAR_ARCHIVE);
     // the accent: "f6f67a", "#f6f67a" or "R G B" (0 to 1)
     Cvar_Get("cg_hud_accent", "f6f67a", CVAR_ARCHIVE);
+    // the bottom's health and ammo: 0 along the middle, 1 CS:GO's corners, 2 CS2's
+    Cvar_Get("cg_hud_layout", "1", CVAR_ARCHIVE);
     // what the menus read, made now, empty (ui_hud_never stays so: the never
     // shown widgets, the teams' icons and the cards' shapes): a widget
     // reading a cvar that isn't there draws every frame (the draw cache
@@ -1279,6 +1319,7 @@ void UI_CompHud_Init(void)
         Cvar_Get(comp_menuCvars[i], "", 0);
     }
     Comp_Accent();
+    Comp_Layout();
     UI_CompHud_Clear();
 }
 

@@ -38,5 +38,7 @@ void     UI_CompHud_MapLoaded(void);      // the radar's walk and the pictures, 
 void     UI_CompHud_PreBake(qboolean ahead); // the pictures (after the renderer's restart); ahead: their texels begun
 
 // the HUD's menus (ui/hud_comp_*.urc), in the order they are baked (the atlas is filled in it)
-#define UI_COMPHUD_MENUS 13
+#define UI_COMPHUD_MENUS 17
 extern const char *const ui_compHudMenus[UI_COMPHUD_MENUS];
+// which of them cg_hud_layout shows (the bottom's health and ammo: the strip or a corners' pair), set when it changes
+extern bool ui_compHudInLayout[UI_COMPHUD_MENUS];

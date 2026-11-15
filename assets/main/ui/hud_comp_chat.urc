@@ -1,11 +1,23 @@
 // The Competitive HUD (cg_hudstyle 1): bottom left, the chat, who you
-// follow and who last hurt you under it
+// follow and who last hurt you under it; all higher with the health in the
+// corner (cg_hud_layout 1 and 2: ui_hud_corners)
 menu "hud_comp_chat" 420 256 NONE 0
 virtualres 1 1920 1080
 drawcache 1
 align left bottom
 bgcolor 0 0 0 0
 borderstyle NONE
+
+// (never drawn: shown, the others move up)
+resource
+Label
+{
+name "corners"
+rect 0 0 1 1
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_corners
+}
 
 resource
 HudFeed
@@ -17,6 +29,7 @@ borderstyle NONE
 font oswald-medium-16s
 enabledcvar cg_hud_chat
 feed chat
+moveif corners 0 -56
 }
 
 resource
@@ -33,6 +46,7 @@ colorcvar ui_hud_follow_col
 enabledcvar ui_hud_follow_on
 fitwidth 360
 moveif hurt 0 -31
+moveif corners 0 -56
 }
 
 resource
@@ -48,6 +62,7 @@ linkcvar ui_hud_hurt
 colorcvar ui_hud_hurt_col
 enabledcvar ui_hud_hurt_on
 fitwidth 360
+moveif corners 0 -56
 }
 
 end.
