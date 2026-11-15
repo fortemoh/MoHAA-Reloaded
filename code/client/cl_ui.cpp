@@ -1265,9 +1265,9 @@ shown in place of the stock HUD's
 static void UI_CompHuds(bool show, bool messages = false)
 {
     static const char *const names[] = {
-        "hud_comp_topleft", "hud_comp_score",  "hud_comp_killfeed", "hud_comp_chat",   "hud_comp_strip",
-        "hud_comp_weapons", "hud_comp_damage", "hud_comp_banners",  "hud_comp_bars",   "hud_comp_killer",
-        "hud_comp_target",  "hud_comp_vote",
+        "hud_comp_topleft", "hud_comp_topleft_compass", "hud_comp_score",   "hud_comp_killfeed", "hud_comp_chat",
+        "hud_comp_strip",   "hud_comp_weapons",         "hud_comp_damage",  "hud_comp_banners",  "hud_comp_bars",
+        "hud_comp_killer",  "hud_comp_target",          "hud_comp_vote",
     };
 
     static Menu *menus[ARRAY_LEN(names)];
@@ -1283,7 +1283,7 @@ static void UI_CompHuds(bool show, bool messages = false)
     for (size_t i = 0; i < ARRAY_LEN(names); i++) {
         Menu      *hud = menus[i];
         // (messages only: the menus with the game messages, the chat, the kills and the vote)
-        const bool on  = show || (messages && (i == 0 || i == 2 || i == 3 || i == 11));
+        const bool on  = show || (messages && (i == 1 || i == 3 || i == 4 || i == 12));
 
         if (hud && on != !!hud->isVisible()) {
             if (on) {

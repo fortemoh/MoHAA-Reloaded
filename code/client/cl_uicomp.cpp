@@ -56,6 +56,22 @@ static const char *const comp_toggles[] = {
     "cg_hud_stopwatch", "cg_hud_damage",
 };
 
+// what the menus (ui/hud_comp_*.urc) read and this file sets
+static const char *const comp_menuCvars[] = {
+    "ui_hud_allies", "ui_hud_ammo", "ui_hud_ammo_on", "ui_hud_arc0_alpha", "ui_hud_arc0_angle", "ui_hud_arc1_alpha",
+    "ui_hud_arc1_angle", "ui_hud_arc2_alpha", "ui_hud_arc2_angle", "ui_hud_axis", "ui_hud_badge_on", "ui_hud_banner1",
+    "ui_hud_banner1_on", "ui_hud_banner2", "ui_hud_banner2_on", "ui_hud_charge", "ui_hud_charge_on", "ui_hud_clip",
+    "ui_hud_compass_on", "ui_hud_dmg_alpha", "ui_hud_dmg_angle", "ui_hud_follow", "ui_hud_follow_col",
+    "ui_hud_follow_on", "ui_hud_health", "ui_hud_health_col", "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col",
+    "ui_hud_hurt_on", "ui_hud_killer", "ui_hud_killer_col", "ui_hud_killer_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
+    "ui_hud_north", "ui_hud_obj0", "ui_hud_obj0_on", "ui_hud_obj1", "ui_hud_obj1_on", "ui_hud_obj2", "ui_hud_obj2_on",
+    "ui_hud_p3", "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
+    "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_target", "ui_hud_target_col",
+    "ui_hud_target_hp", "ui_hud_target_hpcol", "ui_hud_target_on", "ui_hud_timer", "ui_hud_vote_on",
+    "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_vs", "ui_hud_vs_on",
+    "ui_hud_weapons_on", "ui_hud_cards_allies", "ui_hud_cards_axis",
+};
+
 typedef struct {
     int      time;
     char     text[160];
@@ -810,14 +826,20 @@ void UI_CompHud_Frame(void)
     }
     // cg_hud_scale: the menus at the new size, their faces and shapes baked again
     {
-        const char *v = Comp_Cvar("cg_hud_scale")->string;
-        char       *end;
-        float       scale = strtof(v, &end);
+        static int  read = -1;
+        cvar_t     *cv = Comp_Cvar("cg_hud_scale");
 
-        scale = end == v || scale != scale ? 1.0f : Com_Clamp(0.25f, 2.0f, scale);
-        if (UI_SetDesignScale(scale)) {
-            menuManager.RealignMenus();
-            UI_CompHud_PreBake();
+        if (cv->modificationCount != read) {
+            const char *v = cv->string;
+            char       *end;
+            float       scale = strtof(v, &end);
+
+            read  = cv->modificationCount;
+            scale = end == v || scale != scale ? 1.0f : Com_Clamp(0.25f, 2.0f, scale);
+            if (UI_SetDesignScale(scale)) {
+                menuManager.RealignMenus();
+                UI_CompHud_PreBake();
+            }
         }
     }
     cge->CG_EyeAngles(&angles);
@@ -1076,6 +1098,12 @@ void UI_CompHud_Init(void)
     Cvar_Get("cg_hud_scale", "1", CVAR_ARCHIVE);
     // the menus' never shown widgets (the teams' icons, the cards' shapes)
     Cvar_Get("ui_hud_never", "0", 0);
+    // what the menus read, made now, empty: a widget reading a cvar that
+    // isn't there draws every frame (the draw cache can't tell when it comes),
+    // and some are set only now and then (a vote's, the compass's, a charge)
+    for (size_t i = 0; i < ARRAY_LEN(comp_menuCvars); i++) {
+        Cvar_Get(comp_menuCvars[i], "", 0);
+    }
     UI_CompHud_Clear();
 }
 
@@ -2067,10 +2095,11 @@ pictures, the cards, the radar's marks), none at its first draw
 */
 void UI_CompHud_PreBake(void)
 {
+    // (in this order: the atlas is filled in it)
     static const char *const menus[] = {
-        "hud_comp_topleft", "hud_comp_score",  "hud_comp_killfeed", "hud_comp_chat",   "hud_comp_strip",
-        "hud_comp_weapons", "hud_comp_damage", "hud_comp_banners",  "hud_comp_bars",   "hud_comp_killer",
-        "hud_comp_target",  "hud_comp_vote",
+        "hud_comp_topleft", "hud_comp_topleft_compass", "hud_comp_score",   "hud_comp_killfeed", "hud_comp_chat",
+        "hud_comp_strip",   "hud_comp_weapons",         "hud_comp_damage",  "hud_comp_banners",  "hud_comp_bars",
+        "hud_comp_killer",  "hud_comp_target",          "hud_comp_vote",
     };
     const float s = UI_DesignScale(1920.0f, 1080.0f), k = 248.0f / 220.0f;
     const int   start = Sys_Milliseconds();
