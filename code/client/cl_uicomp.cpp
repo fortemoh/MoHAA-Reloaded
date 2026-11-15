@@ -86,6 +86,7 @@ typedef struct {
     const char *pic;
     float       picW, picH; // design pixels
     qboolean    suicide, headshot;
+    qboolean    mine; // the player's kill or death: red
 } compKill_t;
 
 static struct {
@@ -445,6 +446,7 @@ static void Comp_AddKill(const char *text, qboolean ourVictim)
     k->pic  = axis ? pic->axis : pic->allies;
     k->picW = axis ? pic->xw : pic->aw;
     k->picH = axis ? pic->xh : pic->ah;
+    k->mine = client == cl.snap.ps.clientNum || (k->killer[0] && Comp_FindName(k->killer) == cl.snap.ps.clientNum);
     if (client >= 0) {
         comp.dead[client] = qtrue;
     }
@@ -1228,11 +1230,13 @@ static int Comp_Hash(int h, const void *data, size_t size)
 ================
 UIHudFeed
 
-The kill feed (feed kills: right aligned, the newest at the bottom, 6 s,
-fading in the last 1.5), the chat (feed chat: from the bottom up) and the
-game messages (feed messages: from the top), 8 s fading in the last 2;
-lines wrapped between words, the newest that fit. boldfont: the white
-game messages'
+The kill feed (feed kills: right aligned pad px before the widget's right
+edge, the newest at the bottom, 6 s, fading in the last 1.5; each line in a
+box reaching pad px either side of it, at least 30 tall, 4 apart: dark, red
+with a red edge for the player's kill or death), the chat (feed chat: from
+the bottom up) and the game messages (feed messages: from the top), 8 s
+fading in the last 2; lines wrapped between words, the newest that fit.
+boldfont: the white game messages'
 ================
 */
 class UIHudFeed : public UIWidget
@@ -1303,17 +1307,26 @@ void UIHudFeed::SetBoldFont(Event *ev)
     m_bold = new UIFont(ev->GetString(1));
 }
 
+// a box of design pixels, its edges on whole pixels
+static void Comp_Box(float x0, float y0, float x1, float y1, float s)
+{
+    const float px = floorf(x0 * s + 0.5f), py = floorf(y0 * s + 0.5f);
+
+    uii.Rend_DrawBox(px, py, floorf(x1 * s + 0.5f) - px, floorf(y1 * s + 0.5f) - py);
+}
+
 void UIHudFeed::DrawKills(float w, float h, float s)
 {
-    const float lineH = m_font->getHeight((const float *)NULL), gap = 6.0f;
+    const float lineH = m_font->getHeight((const float *)NULL), gap = 6.0f, pad = 9.0f, space = 4.0f;
     float       used = 0.0f, y = 0.0f;
     int         first, i, count = comp.numKills, oldest = 0;
 
+    w -= pad;
     while (oldest < count && cls.realtime - comp.kills[oldest].time >= 6000) {
         oldest++;
     }
     for (first = count; first > oldest; first--) {
-        const float rowH = Q_max(lineH, comp.kills[first - 1].picH) + (used > 0.0f ? 3.0f : 0.0f);
+        const float rowH = Q_max(30.0f, Q_max(lineH, comp.kills[first - 1].picH)) + (used > 0.0f ? space : 0.0f);
 
         if (used + rowH > h) {
             break;
@@ -1323,7 +1336,7 @@ void UIHudFeed::DrawKills(float w, float h, float s)
     for (i = first; i < count; i++) {
         const compKill_t *k     = &comp.kills[i];
         const float       alpha = Comp_Fade(k->time, 6000, 1500);
-        const float       rowH  = Q_max(lineH, k->picH), mid = y + rowH * 0.5f;
+        const float       rowH  = Q_max(30.0f, Q_max(lineH, k->picH)), mid = y + rowH * 0.5f;
         const qboolean    mark  = k->suicide && strcmp(k->pic, "skull_50");
         UColor            kc, vc, white(1, 1, 1, alpha);
         float             x;
@@ -1334,6 +1347,25 @@ void UIHudFeed::DrawKills(float w, float h, float s)
         // a long name smaller, to fit 150 px
         x = w - Comp_TextW(m_font, k->victim, 150.0f) - k->picW - gap - (mark ? 18.0f + gap : 0.0f) - (k->headshot ? 18.0f + gap : 0.0f)
           - (k->killer[0] ? Comp_TextW(m_font, k->killer, 150.0f) + gap : 0.0f);
+        // the box, the red one's edge 2 px (on whole pixels, at least one)
+        if (k->mine) {
+            const float  e    = Q_max(1.0f, floorf(2.0f * s + 0.5f)) / s;
+            const vec4_t fill = {0.361f, 0.055f, 0.047f, 0.784f * alpha};
+            const vec4_t edge = {0.769f, 0.141f, 0.118f, alpha};
+
+            uii.Rend_SetColor(fill);
+            Comp_Box(x - pad + e, y + e, w + pad - e, y + rowH - e, s);
+            uii.Rend_SetColor(edge);
+            Comp_Box(x - pad, y, w + pad, y + e, s);
+            Comp_Box(x - pad, y + rowH - e, w + pad, y + rowH, s);
+            Comp_Box(x - pad, y + e, x - pad + e, y + rowH - e, s);
+            Comp_Box(w + pad - e, y + e, w + pad, y + rowH - e, s);
+        } else {
+            const vec4_t fill = {0.0f, 0.0f, 0.0f, 0.49f * alpha};
+
+            uii.Rend_SetColor(fill);
+            Comp_Box(x - pad, y, w + pad, y + rowH, s);
+        }
         if (k->killer[0]) {
             x += Comp_Text(m_font, x, mid, k->killer, kc, getVirtualScale(), 150.0f) + gap;
         }
@@ -1349,7 +1381,7 @@ void UIHudFeed::DrawKills(float w, float h, float s)
             x += 18.0f + gap;
         }
         Comp_Text(m_font, x, mid, k->victim, vc, getVirtualScale(), 150.0f);
-        y += rowH + 3.0f;
+        y += rowH + space;
     }
 }
 

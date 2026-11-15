@@ -10,7 +10,7 @@ resource
 HudFeed
 {
 name "kills"
-rect 0 25 420 140
+rect 0 22 429 143
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-16s
