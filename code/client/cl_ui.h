@@ -126,6 +126,9 @@ qboolean UI_IsResourceLoaded(const char *name);
 void     UI_RegisterLoadResource(const char *name);
 void     UI_ClearResource(void);
 void     UI_LoadResource(const char *name);
+// Added: the load's progress (0 to 1, -1 not known: the map has no timing
+// file yet); *what: the start of the name of the resource loading
+float    UI_LoadProgress(const char **what);
 
 //
 // windows

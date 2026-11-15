@@ -21,8 +21,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 // cl_uimenus.cpp: the Reloaded menus (Added). The weapon select (which picks
-// the side and the model too: the team menus show it), the Esc menu and
-// the scoreboard, each a URC
+// the side and the model too: the team menus show it), the Esc menu, the
+// scoreboard and the load screen (UI_Menus_Loading), each a URC
 // menu (ui/reloaded_*.urc) of a ReloadedMenu widget, which lays the screen
 // out and draws it, and the stock 3D player model views it places. They are
 // shown for the stock menus' names (SelectTeam, ObjSelectTeam,
@@ -1156,9 +1156,281 @@ void UI_Menus_Init(void)
 /*
 ====================================================================
 
+THE LOAD SCREEN
+
+Shown while a map loads in place of the stock one (the menu named after
+the map, else loading_default), unless ui_classicmenus is 1 or the game is
+single player (the missions keep their paintings and Continue button).
+The map's picture as a 4:3 card in the middle, over a dimmed, blurred copy
+of it filling the screen; the map's name above it on the left, the mode on
+the right (the name made smaller, then cut, to leave it room), a brass
+bar and what loads under it. The picture is the stock screen's: the dm
+and obj maps' photo (a label of its own, its image in textures/mohmenu/
+dmloading/ or objloading/), read from its file in colour (its shader fades
+it to sepia over white with the alpha); without one (loading_default's
+painting, a custom map's own screen) the stock screen's pictures are drawn
+into the card, on black
+
+====================================================================
+*/
+
+#define RL_LOADSHOT "*rl_loadshot"
+#define RL_LOADBLUR "*rl_loadblur"
+
+static struct {
+    char      map[MAX_QPATH];
+    int       gametype;
+    Menu     *stock;         // the stock load screen
+    qhandle_t shot, blur;    // the photo and its blurred copy, 0 none
+    int       stamp, refSeq; // UI_BakeStamp and the renderer's sequence then
+} rl_ld;
+
+// the photo shrunk to 36 texels high in the screen's shape (the part of it
+// a screen filled with it shows), blurred, dimmed and darker to the corners:
+// stretched over the screen, a blur that costs nothing a frame
+static void RL_LoadBlur(const byte *pic, int pw, int ph)
+{
+    const float aspect = (float)uid.vidWidth / (float)uid.vidHeight, photo = 4.0f / 3.0f;
+    const int   bh = 36, bw = Q_max(1, Q_min(128, (int)(bh * aspect + 0.5f)));
+    float       sx0 = 0, sx1 = (float)pw, sy0 = 0, sy1 = (float)ph;
+
+    if (aspect > photo) {
+        sy0 = ph * (1.0f - photo / aspect) * 0.5f;
+        sy1 = ph - sy0;
+    } else {
+        sx0 = pw * (1.0f - aspect / photo) * 0.5f;
+        sx1 = pw - sx0;
+    }
+    std::vector<float> a(bw * bh * 3), b(bw * bh * 3);
+    std::vector<byte>  out(bw * bh * 4);
+
+    // each texel the mean of its part of the photo
+    for (int y = 0; y < bh; y++) {
+        const int ya = (int)(sy0 + (sy1 - sy0) * y / bh), yb = Q_max(ya + 1, (int)(sy0 + (sy1 - sy0) * (y + 1) / bh));
+
+        for (int x = 0; x < bw; x++) {
+            const int xa = (int)(sx0 + (sx1 - sx0) * x / bw), xb = Q_max(xa + 1, (int)(sx0 + (sx1 - sx0) * (x + 1) / bw));
+            float     sum[3] = {0, 0, 0};
+
+            for (int sy = ya; sy < yb; sy++) {
+                for (int sx = xa; sx < xb; sx++) {
+                    const byte *p = pic + (sy * pw + sx) * 4;
+
+                    sum[0] += p[0];
+                    sum[1] += p[1];
+                    sum[2] += p[2];
+                }
+            }
+            for (int c = 0; c < 3; c++) {
+                a[(y * bw + x) * 3 + c] = sum[c] / ((yb - ya) * (xb - xa));
+            }
+        }
+    }
+    // twice 1 2 1 across, then down (the edges clamped)
+    for (int pass = 0; pass < 4; pass++) {
+        const bool across = pass < 2;
+
+        for (int y = 0; y < bh; y++) {
+            for (int x = 0; x < bw; x++) {
+                const int i0 = across ? y * bw + Q_max(x - 1, 0) : Q_max(y - 1, 0) * bw + x;
+                const int i2 = across ? y * bw + Q_min(x + 1, bw - 1) : Q_min(y + 1, bh - 1) * bw + x;
+
+                for (int c = 0; c < 3; c++) {
+                    b[(y * bw + x) * 3 + c] = (a[i0 * 3 + c] + 2 * a[(y * bw + x) * 3 + c] + a[i2 * 3 + c]) * 0.25f;
+                }
+            }
+        }
+        a.swap(b);
+    }
+    for (int y = 0; y < bh; y++) {
+        for (int x = 0; x < bw; x++) {
+            const float r = sqrtf(Square((x + 0.5f) / bw * 2 - 1) + Square((y + 0.5f) / bh * 2 - 1)) * 0.7071f;
+            const float k = 0.42f * Q_max(0.0f, 1.0f - 0.7f * powf(r, 1.8f));
+
+            for (int c = 0; c < 3; c++) {
+                out[(y * bw + x) * 4 + c] = (byte)Q_min(255.0f, a[(y * bw + x) * 3 + c] * k + 0.5f);
+            }
+            out[(y * bw + x) * 4 + 3] = 255;
+        }
+    }
+    rl_ld.blur = re.RegisterTexture2D(RL_LOADBLUR, out.data(), bw, bh);
+}
+
+// the stock screen's photo: of its pictures covering a third to nine tenths
+// of the screen (the dm maps': the photo, its white mount, its sepia tint),
+// the one with the most texels where the stock maps keep their photos;
+// registered opaque (in colour), with its blurred copy
+static void RL_LoadPictures(void)
+{
+    UIWidget *c   = rl_ld.stock ? rl_ld.stock->GetContainerWidget() : NULL;
+    byte     *pic = NULL;
+    int       w = 0, h = 0;
+
+    rl_ld.shot = rl_ld.blur = 0;
+    rl_ld.stamp             = UI_BakeStamp();
+    rl_ld.refSeq            = uii.GetRefSequence();
+    for (UIWidget *l = c ? c->getFirstChild() : NULL; l; l = c->getNextChild(l)) {
+        const UIRect2D f = l->getFrame(), cf = c->getFrame();
+        const float    k = f.size.width * f.size.height / (cf.size.width * cf.size.height);
+
+        if (!l->getMaterial() || k < 0.3f || k > 0.9f) {
+            continue;
+        }
+        for (const char *dir : {"dmloading", "objloading"}) {
+            byte *p;
+            int   pw, ph;
+
+            if (uii.Rend_LoadRawImage(va("textures/mohmenu/%s/%s.tga", dir, l->getMaterial()->GetName().c_str()), &p, &pw, &ph)) {
+                if (pw * ph > w * h) {
+                    std::swap(pic, p);
+                    w = pw;
+                    h = ph;
+                }
+                if (p) {
+                    uii.Rend_FreeRawImage(p);
+                }
+                break;
+            }
+        }
+    }
+    if (!pic) {
+        return;
+    }
+    for (int i = 0; i < w * h; i++) {
+        pic[i * 4 + 3] = 255;
+    }
+    rl_ld.shot = re.RegisterTexture2D(RL_LOADSHOT, pic, w, h);
+    RL_LoadBlur(pic, w, h);
+    uii.Rend_FreeRawImage(pic);
+}
+
+qboolean UI_Menus_Loading(Menu *stock, const char *map)
+{
+    // (a local server's own: its configstring isn't here yet when it loads a map)
+    const char *info = com_sv_running->integer ? Cvar_InfoString(CVAR_SERVERINFO) : CL_ConfigString(CS_SERVERINFO);
+    char       *dollar;
+
+    rl_ld.gametype = atoi(Info_ValueForKey(info, "g_gametype"));
+    if (!ui_classicmenus || ui_classicmenus->integer || rl_ld.gametype == GT_SINGLE_PLAYER || !menuManager.FindMenuNamed("reloaded_loading")) {
+        return qfalse;
+    }
+    Q_strncpyz(rl_ld.map, map, sizeof(rl_ld.map));
+    dollar = strchr(rl_ld.map, '$');
+    if (dollar) {
+        *dollar = 0;
+    }
+    rl_ld.stock = stock;
+    RL_LoadPictures();
+    return qtrue;
+}
+
+// the stock screen's pictures (not its bar, button and text) in the card
+// x0 y0 x1 y1, as on its screen, clipped to it
+static void RL_LoadStockCard(int x0, int y0, int x1, int y1)
+{
+    UIWidget *c = rl_ld.stock ? rl_ld.stock->GetContainerWidget() : NULL;
+
+    RL_SetColor(RL_Rgb(255, 255, 255));
+    for (UIWidget *l = c ? c->getFirstChild() : NULL; l; l = c->getNextChild(l)) {
+        const UIRect2D f = l->getFrame(), cf = c->getFrame();
+        const float    u0 = f.pos.x / cf.size.width, v0 = f.pos.y / cf.size.height;
+        const float    u1 = (f.pos.x + f.size.width) / cf.size.width, v1 = (f.pos.y + f.size.height) / cf.size.height;
+        const float    cu0 = Q_max(u0, 0.0f), cv0 = Q_max(v0, 0.0f), cu1 = Q_min(u1, 1.0f), cv1 = Q_min(v1, 1.0f);
+
+        if (!l->getMaterial() || !l->isEnabled() || !Q_stricmpn(l->getName(), "loading", 7) || !l->isSubclassOf(UILabel)
+            || (l->getTitle() && l->getTitle()[0]) || cu1 <= cu0 || cv1 <= cv0) {
+            continue;
+        }
+        uii.Rend_DrawPicStretched(
+            x0 + (x1 - x0) * cu0, y0 + (y1 - y0) * cv0, (x1 - x0) * (cu1 - cu0), (y1 - y0) * (cv1 - cv0), (cu0 - u0) / (u1 - u0),
+            (cv0 - v0) / (v1 - v0), (cu1 - u0) / (u1 - u0), (cv1 - v0) / (v1 - v0), l->getMaterial()->GetMaterial()
+        );
+    }
+}
+
+// what loads, from its name's start (UI_LoadResource's callers)
+static const char *RL_LoadStage(const char *what)
+{
+    switch (what[0]) {
+    case 'n':
+        return "Loading textures";
+    case 'k':
+        return "Loading sounds";
+    case 'm':
+    case 'o':
+        return "Loading scripts";
+    case '*':
+        // (*14x: the level's entities spawned; the rest the world's steps)
+        return what[1] == '1' && what[2] == '4' ? "Spawning entities" : "Loading the map";
+    case 0:
+        return "Loading the map";
+    default:
+        // (a to e, h: the TIKIs and their animations; g, l: the skeletons)
+        return "Loading models";
+    }
+}
+
+static void RL_DrawLoading(const rlView_t& v)
+{
+    const char *what;
+    const float frac = UI_LoadProgress(&what);
+    const float cw = Q_min(720.0f, v.dw * 0.88f), ch = cw * 0.75f, head = 80, foot = 70;
+    const float x = (v.dw - cw) / 2, y = (v.dh - head - ch - foot) / 2 + head, by = y + ch + 22;
+    const int   x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + cw), y1 = RL_P(v, y + ch);
+    const rlColor_t white = RL_Rgb(255, 255, 255), line = RL_Rgb(255, 255, 255, 40);
+
+    // the renderer restarted since: made again; the map's load reset its shaders: looked up again
+    if (rl_ld.shot && rl_ld.refSeq != uii.GetRefSequence()) {
+        RL_LoadPictures();
+    } else if (rl_ld.shot && rl_ld.stamp != UI_BakeStamp()) {
+        rl_ld.shot  = re.RegisterShaderNoMip(RL_LOADSHOT);
+        rl_ld.blur  = re.RegisterShaderNoMip(RL_LOADBLUR);
+        rl_ld.stamp = UI_BakeStamp();
+    }
+    if (rl_ld.blur) {
+        RL_SetColor(white);
+        uii.Rend_DrawPicStretched(0, 0, uid.vidWidth, uid.vidHeight, 0, 0, 1, 1, rl_ld.blur);
+    } else {
+        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(8, 9, 10));
+    }
+    if (rl_ld.shot) {
+        RL_SetColor(white);
+        uii.Rend_DrawPicStretched(x0, y0, x1 - x0, y1 - y0, 0, 0, 1, 1, rl_ld.shot);
+    } else {
+        RL_LoadStockCard(x0, y0, x1, y1);
+    }
+    RL_BoxPx(x0, y0, x1, y0 + 1, line);
+    RL_BoxPx(x0, y1 - 1, x1, y1, line);
+    RL_BoxPx(x0, y0 + 1, x0 + 1, y1 - 1, line);
+    RL_BoxPx(x1 - 1, y0 + 1, x1, y1 - 1, line);
+    {
+        // the name in what the mode leaves: smaller (to H2 at least), then cut
+        const char *mode = RL_ModeName(rl_ld.gametype, true), *name = RL_MapName(rl_ld.map);
+        const float room = cw - RL_TextW(v, mode, 16, true, 2.6f) - 32, w = RL_TextW(v, name, RL_H1, true);
+        const float size = w > room ? Q_max(RL_H2, floorf(RL_H1 * room / w)) : RL_H1;
+
+        RL_Text(v, x, y - 26, RL_Ellipsize(v, name, size, true, room).c_str(), size, RL_TEXT, true, RL_LEFT, 0, RL_BASE);
+        RL_Text(v, x + cw, y - 26, mode, 16, RL_BRASS, true, RL_RIGHT, 2.6f, RL_BASE);
+    }
+    // the bar: the part loaded, or (the map's first load: not known) a dash sweeping across
+    RL_Box(v, x, by, cw, 4, RL_Rgb(255, 255, 255, 30));
+    if (frac >= 0.0f) {
+        RL_Box(v, x, by, cw * Q_min(frac, 1.0f), 4, RL_BRASS);
+        RL_Text(v, x + cw, by + 28, va("%d%%", (int)(Q_min(frac, 1.0f) * 100)), RL_S1, RL_TEXT, true, RL_RIGHT, 0, RL_TOP);
+    } else {
+        const float dw = cw * 0.2f, dx = (cw + dw) * (cls.realtime % 1400) / 1400.0f - dw;
+
+        RL_Box(v, x + Q_max(dx, 0.0f), by, Q_min(dx + dw, cw) - Q_max(dx, 0.0f), 4, RL_BRASS);
+    }
+    RL_Text(v, x, by + 28, va("%s\x85", RL_LoadStage(what)), RL_S1, RL_MUTED, false, RL_LEFT, 0, RL_TOP);
+}
+
+/*
+====================================================================
+
 THE WIDGET
 
-ReloadedMenu: "screen weapon|esc|scoreboard", "layer back|front".
+ReloadedMenu: "screen weapon|esc|scoreboard|loading", "layer back|front".
 The back layer draws what is under the 3D model view (a dimming, the
 weapon menu's warm haze) and places the view (the weapon menu's label
 named figure); the front layer draws the rest and takes the mouse and the
@@ -1167,7 +1439,7 @@ keys. Both lay the screen out alike from the same data
 ====================================================================
 */
 
-enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD };
+enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD, SCR_LOADING };
 
 // the front layer's hot item, for the back layer (a frame later)
 static int rl_hot[3] = {-1, -1, -1};
@@ -1202,8 +1474,11 @@ public:
     {
         const str s = ev->GetString(1);
 
-        m_screen = !str::icmp(s, "esc") ? SCR_ESC : !str::icmp(s, "scoreboard") ? SCR_SCOREBOARD : SCR_WEAPON;
-        AllowActivate(m_screen != SCR_SCOREBOARD);
+        m_screen = !str::icmp(s, "esc")          ? SCR_ESC
+                   : !str::icmp(s, "scoreboard") ? SCR_SCOREBOARD
+                   : !str::icmp(s, "loading")    ? SCR_LOADING
+                                                 : SCR_WEAPON;
+        AllowActivate(m_screen != SCR_SCOREBOARD && m_screen != SCR_LOADING);
     }
     void SetLayer(Event *ev) { m_back = !str::icmp(ev->GetString(1), "back"); }
     void MouseUp(Event *ev);
@@ -1227,7 +1502,7 @@ public:
     void DrawScoreboard(const rlView_t& v, const rlInfo_t& in);
 };
 
-Event EV_ReloadedMenu_Screen("screen", EV_DEFAULT, "s", "screen", "weapon, esc or scoreboard");
+Event EV_ReloadedMenu_Screen("screen", EV_DEFAULT, "s", "screen", "weapon, esc, scoreboard or loading");
 Event EV_ReloadedMenu_Layer("layer", EV_DEFAULT, "s", "layer", "back (under the model views) or front");
 
 CLASS_DECLARATION(UIWidget, UIReloadedMenu, NULL) {
@@ -1438,8 +1713,14 @@ int UIReloadedMenu::DrawKey(void)
 void UIReloadedMenu::Draw(void)
 {
     const rlView_t v = RL_View();
+    const vec4_t   white = {1, 1, 1, 1};
     rlInfo_t       in;
 
+    if (m_screen == SCR_LOADING) {
+        RL_DrawLoading(v);
+        uii.Rend_SetColor(white);
+        return;
+    }
     if (clc.state < CA_PRIMED) {
         return;
     }
@@ -1461,11 +1742,7 @@ void UIReloadedMenu::Draw(void)
         DrawScoreboard(v, in);
         break;
     }
-    {
-        const vec4_t white = {1, 1, 1, 1};
-
-        uii.Rend_SetColor(white);
-    }
+    uii.Rend_SetColor(white);
 }
 
 /*
