@@ -419,16 +419,6 @@ static void RL_Box(const rlView_t& v, float x, float y, float w, float h, rlColo
     uii.Rend_DrawBox(x0, y0, x1 - x0, y1 - y0);
 }
 
-// a box in pixels (x1, y1 past its edge)
-static void RL_BoxPx(int x0, int y0, int x1, int y1, rlColor_t c)
-{
-    if (x1 <= x0 || y1 <= y0 || c.a <= 0.0f || rl_bakeOnly) {
-        return;
-    }
-    RL_SetColor(c);
-    uii.Rend_DrawBox(x0, y0, x1 - x0, y1 - y0);
-}
-
 // a hairline: a pixel at least
 static void RL_HLine(const rlView_t& v, float x0, float x1, float y, rlColor_t c)
 {
@@ -554,6 +544,13 @@ Text: Oswald Medium (m) and SemiBold (b), baked at the pixel size drawn
 least on the screen
 ----------------
 */
+
+// the type scale (design pixels): three header sizes, two for what's under them
+#define RL_H1 60.0f // the teams' names on the team screen, the scores
+#define RL_H2 36.0f // a screen's title
+#define RL_H3 28.0f // the map's name, the time left
+#define RL_S1 20.0f // an item's name: weapons, tiles, buttons, teams in the lists, players
+#define RL_S2 14.0f // captions: modes, counts, classes, columns
 
 enum { RL_LEFT, RL_CENTER, RL_RIGHT };
 enum { RL_TOP, RL_MID, RL_BASE }; // the capitals' top, middle, the baseline at y
@@ -1064,29 +1061,39 @@ qboolean UIReloadedMenu::KeyEvent(int key, unsigned int time)
     if (key != K_UPARROW && key != K_DOWNARROW && key != K_LEFTARROW && key != K_RIGHTARROW) {
         return qfalse;
     }
-    for (at = 0; at < n && m_order[at] != m_focus; at++) {
+    // (m_order is the grid, row by row; -1: a place that can't be chosen, a
+    // banned class or a vote that can't be cast, stepped over)
+    for (at = 0; at < n && (m_focus < 0 || m_order[at] != m_focus); at++) {
     }
     if (at == n) {
-        // nothing hot yet: the first
-        m_focus = m_order[0];
+        // nothing hot yet: the first that can be chosen
+        for (at = 0; at < n && m_order[at] < 0; at++) {
+        }
+        if (at < n) {
+            m_focus = m_order[at];
+        }
         return qtrue;
     }
-    if (key == K_LEFTARROW || key == K_RIGHTARROW) {
-        const int step = key == K_LEFTARROW ? -1 : 1;
-        // within the row
-        const int row = at / m_cols, col = at % m_cols + step;
+    {
+        const bool across = key == K_LEFTARROW || key == K_RIGHTARROW;
+        const int  step   = across ? (key == K_LEFTARROW ? -1 : 1) : (key == K_UPARROW ? -m_cols : m_cols);
+        const int  row    = at / m_cols;
+        int        to     = at;
 
-        if (m_cols > 1 && col >= 0 && col < m_cols && row * m_cols + col < n) {
-            at = row * m_cols + col;
+        // the next place that can be chosen that way (across: within the row)
+        do {
+            to += step;
+        } while (to >= 0 && to < n && (!across || to / m_cols == row) && m_order[to] < 0);
+        if (to < 0 || to >= n || (across && to / m_cols != row)) {
+            // down past the last row: the last that can be chosen
+            if (!across && step > 0) {
+                for (to = n - 1; to > at && m_order[to] < 0; to--) {
+                }
+            } else {
+                to = at;
+            }
         }
-    } else {
-        at += (key == K_UPARROW ? -m_cols : m_cols);
-        if (at >= n) {
-            at = n - 1;
-        }
-        if (at < 0) {
-            at = 0;
-        }
+        at = to;
     }
     m_focus = m_order[at];
     uii.Snd_PlaySound("sound/menu/scroll.wav");
@@ -1246,6 +1253,40 @@ void UIReloadedMenu::Draw(void)
 
 /*
 ================
+RL_HeaderPanel
+
+The header of the weapon menu, the Esc menu and the scoreboard: a dark
+panel, the title (H2 or H3, an emblem before it: team 0 or 1) over its
+caption on the left, the time left over "TIME LEFT" on the right; k scales
+it (the scoreboard's slimmer header); the title and the caption fit
+leftW (0: all the panel but the time)
+================
+*/
+static void RL_HeaderPanel(const rlView_t& v, float x, float y, float w, float h, const char *titleText, float titleSize, int team,
+                           const char *captionText, const char *leftText, float k = 1.0f, float leftW = 0.0f)
+{
+    // (copied: the strings va gives are reused while it draws)
+    const std::string title(titleText), caption(captionText), left(leftText ? leftText : "");
+    const float       iconD = 40 * k;
+    float             tx    = x + 28, room;
+
+    RL_Round(v, x, y, w, h, 6, RL_Rgb(10, 11, 12, 236));
+    if (team >= 0) {
+        RL_TeamIcon(v, team, tx + iconD / 2, y + 32 * k, iconD);
+        tx += iconD + 14;
+    }
+    room = leftW > 0.0f ? leftW - (tx - x - 28)
+                        : x + w - 28 - tx - (left.empty() ? 0.0f : RL_TextW(v, left.c_str(), RL_H3 * k, true) + 24);
+    RL_Text(v, tx, y + 32 * k, title.c_str(), titleSize * k, RL_TEXT, true, RL_LEFT, 0, RL_MID, room);
+    RL_Text(v, tx, y + 68 * k, caption.c_str(), RL_S2 * Q_max(k, 0.85f), RL_MUTED, false, RL_LEFT, 2.4f, RL_MID, room);
+    if (!left.empty()) {
+        RL_Text(v, x + w - 28, y + 32 * k, left.c_str(), RL_H3 * k, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
+        RL_Text(v, x + w - 28, y + 68 * k, "TIME LEFT", RL_S2 * Q_max(k, 0.85f), RL_MUTED, false, RL_RIGHT, 2.4f, RL_MID);
+    }
+}
+
+/*
+================
 Team select (and FFA's soldier select)
 
 Black bars top and bottom (the title, the map and mode; Spectate), the
@@ -1269,7 +1310,7 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
     const float fh = band * (narrow ? 0.62f : 0.86f);
     const float fd = half * (narrow ? 0.80f : 0.70f);
     const float areaW = fd - fh * 0.37f / 2 - 56 - 24;
-    const float nameSize = 60, iconD = 54;
+    const float nameSize = RL_H1, iconD = 54;
     const float capH = nameSize * 0.81f;
     const int   hover = m_focus == ID_ALLIES ? 0 : m_focus == ID_AXIS ? 1 : -1;
     const std::vector<rlPlayer_t> *sides[2] = {&in.allies, &in.axis};
@@ -1278,20 +1319,20 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
     float       yStats = yName + capH + 34;
     float       listTop = yStats + 30;
     const float avail = bandBot - 26 - (listTop + 10);
-    auto        lhFor = [&](int n) { return n == 0 ? 36.0f : Q_max(19.0f, Q_min(36.0f, avail / n)); };
+    auto        lhFor = [&](int n) { return n == 0 ? 30.0f : Q_max(19.0f, Q_min(30.0f, avail / n)); };
     float       lh = Q_min(lhFor(na), lhFor(nx));
     int         cap = Q_max(1, (int)((avail + 0.01f) / lh));
     int         cols[2] = {Q_max(1, (na + cap - 1) / cap), Q_max(1, (nx + cap - 1) / cap)};
-    float       namePx = Q_max(15.0f, Q_min(26.0f, lh * 0.72f));
+    float       namePx = Q_max(15.0f, Q_min(RL_S1, lh * 0.72f));
     int         rowsA = na ? Q_min(na, cap) : 1, rowsX = nx ? Q_min(nx, cap) : 1;
     int         capm = cap, mcols = 1, nm = 0;
 
     if (ffa) {
         nm      = Q_max(1, na + nx);
-        lh      = Q_max(18.0f, Q_min(36.0f, avail / nm));
+        lh      = Q_max(18.0f, Q_min(30.0f, avail / nm));
         capm    = Q_max(1, (int)((avail + 0.01f) / lh));
         mcols   = (nm + capm - 1) / capm;
-        namePx  = Q_max(15.0f, Q_min(26.0f, lh * 0.72f));
+        namePx  = Q_max(15.0f, Q_min(RL_S1, lh * 0.72f));
         rowsA = rowsX = Q_min(nm, capm);
     }
     // short lists: the whole block moves down toward the middle
@@ -1331,8 +1372,8 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
         const float ty  = bh / 2;
         std::string sub = RL_Upper(RL_MapName(in.map)) + "  \xb7  " + RL_ModeName(in.gametype, true);
 
-        RL_Text(v, cx, ty - 9, ffa ? "CHOOSE YOUR SOLDIER" : "CHOOSE YOUR SIDE", 34, RL_TEXT, true, RL_CENTER, 0, RL_MID);
-        RL_Text(v, cx, ty + 24, sub.c_str(), 14, RL_MUTED, false, RL_CENTER, 2.4f, RL_MID);
+        RL_Text(v, cx, ty - 9, ffa ? "CHOOSE YOUR SOLDIER" : "CHOOSE YOUR SIDE", RL_H2, RL_TEXT, true, RL_CENTER, 0, RL_MID);
+        RL_Text(v, cx, ty + 24, sub.c_str(), RL_S2, RL_MUTED, false, RL_CENTER, 2.4f, RL_MID);
     }
     if (!ffa) {
         RL_VLine(v, cx, bandTop + 40, bandBot - 40, RL_Rgb(255, 255, 255, 34));
@@ -1365,7 +1406,7 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
 
             Q_strcat(stats, sizeof(stats), sc >= 0 ? va("  \xb7  SCORE %d", sc) : "  \xb7  SCORE \x96");
         }
-        RL_Text(v, tx, yStats, stats, 17, RL_T(T.pale, 230), false, anch, 2, RL_MID);
+        RL_Text(v, tx, yStats, stats, RL_S2, RL_T(T.pale, 230), false, anch, 2, RL_MID);
         if (ffa) {
             continue;
         }
@@ -1433,7 +1474,7 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
 
         RL_Round(v, bx, by, bw, bhh, 4, RL_Rgb(255, 255, 255, hot ? 26 : 14));
         RL_RoundFrame(v, bx, by, bw, bhh, 4, hot ? 2 : 1, hot ? RL_BRASS : RL_Rgb(255, 255, 255, 46));
-        RL_Text(v, bx + bw / 2, by + bhh / 2, "SPECTATE", 19, RL_TEXT, true, RL_CENTER, 1.5f, RL_MID);
+        RL_Text(v, bx + bw / 2, by + bhh / 2, "SPECTATE", RL_S1, RL_TEXT, true, RL_CENTER, 1.5f, RL_MID);
         Hit(v, bx, by, bw, bhh, ID_SPECTATE);
     }
     m_order = {ID_ALLIES, ID_AXIS, ID_SPECTATE};
@@ -1442,25 +1483,45 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
 
 /*
 ================
-Weapon select: one column of wide cards (the class and name on the left,
-the nation's outline on the right), the last pick marked, a banned class
-dimmed in its place; the live model beside
+Weapon select: the Esc menu's grid, two tiles a row (rifle and sniper, SMG
+and MG, anti-tank and shotgun; Breakthrough's mine detector a row of its
+own), each the class over the nation's outline over the weapon's name, the
+last pick marked, a banned class dimmed in its place; the header panel over
+it, the live model beside
 ================
 */
 
+static const char *RL_NationName(int nation)
+{
+    static const char *const names[] = {"UNITED STATES", "BRITAIN", "SOVIET UNION", "GERMANY", "ITALY"};
+
+    return names[nation >= 0 && nation < (int)ARRAY_LEN(names) ? nation : 0];
+}
+
+// the Esc menu's grid: its tiles' size and its width
+static void RL_Grid(const rlView_t& v, float *tw, float *th, float *gap, float *gw)
+{
+    *gap = 14;
+    *tw  = v.layout == 0 ? 200.0f : 210.0f;
+    *th  = 168;
+    *gw  = 3 * *tw + 2 * *gap;
+}
+
 void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
 {
-    const int   nation = RL_Nation();
-    const int   team   = RL_NationTeam(nation);
-    const rlTeam_t& T  = rl_teams[team];
-    const int   n      = in.target >= TG_MOHTT ? 7 : 6;
-    const float gap = 10, pad = 16, headH = 70, cardW = 720, modelW = 380;
-    const float cardH  = Q_min(112.0f, (v.dh - 150 - headH - 2 * pad - (n - 1) * gap) / n);
-    const float panelW = cardW + 2 * pad;
-    const float panelH = 2 * pad + n * cardH + (n - 1) * gap;
-    const float compW  = panelW + 40 + modelW;
-    const float x0 = (v.dw - compW) / 2, y0 = (v.dh - headH - panelH) / 2;
-    const float py = y0 + headH;
+    const int       nation = RL_Nation();
+    const int       team   = RL_NationTeam(nation);
+    const rlTeam_t& T      = rl_teams[team];
+    const int       n      = in.target >= TG_MOHTT ? 7 : 6;
+    const int       rows   = (n + 1) / 2;
+    const float     head = 104, modelW = 380;
+    float           tw, th, gap, gw;
+
+    RL_Grid(v, &tw, &th, &gap, &gw);
+    const float wtw   = (gw - gap) / 2; // two a row, as wide as the Esc menu's three
+    const float total = head + gap + rows * th + (rows - 1) * gap;
+    const float x0 = (v.dw - (gw + 40 + modelW)) / 2, y0 = (v.dh - total) / 2;
+    const float gy = y0 + head + gap;
 
     // (the cvars it draws from: the cache draws again when one changes)
     UI_DrawDep(ui_reloaded_nation);
@@ -1469,61 +1530,47 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
     for (int i = 0; i < WC_NUM; i++) {
         UI_DrawDep(Cvar_Get(rl_classCvar[i], "1", 0));
     }
-    // the panel's inside in pixels: no darkening under it, the panel drawn
-    // there with it as one layer (the screen filled once less), its rim a
-    // frame over the darkening (roundframe: as wide as the corners' radius)
-    const rlColor_t dim = RL_Rgb(0, 0, 0, 120), panel = RL_Rgb(14, 16, 18, 214);
-    const int       rim = Q_max(1, (int)floorf(6 * v.s + 0.5f));
-    const int       ix0 = RL_P(v, x0) + rim, iy0 = RL_P(v, py) + rim, ix1 = RL_P(v, x0 + panelW) - rim, iy1 = RL_P(v, py + panelH) - rim;
-
     if (m_back) {
-        RL_BoxPx(0, 0, uid.vidWidth, iy0, dim);
-        RL_BoxPx(0, iy1, uid.vidWidth, uid.vidHeight, dim);
-        RL_BoxPx(0, iy0, ix0, iy1, dim);
-        RL_BoxPx(ix1, iy0, uid.vidWidth, iy1, dim);
-        // the model beside, of the menu's side
-        PlaceModel("modelallies", v, x0 + panelW + 40 + modelW / 2, py + panelH - 4, panelH + 40, team == 0);
-        PlaceModel("modelaxis", v, x0 + panelW + 40 + modelW / 2, py + panelH - 4, panelH + 40, team == 1);
+        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
+        // the model beside, of the menu's side, as tall as the menu
+        PlaceModel("modelallies", v, x0 + gw + 40 + modelW / 2, y0 + total - 4, total + 40, team == 0);
+        PlaceModel("modelaxis", v, x0 + gw + 40 + modelW / 2, y0 + total - 4, total + 40, team == 1);
         return;
     }
-    RL_TeamIcon(v, team, x0 + 22, y0 + 26, 44);
-    RL_Text(v, x0 + 56, y0 + 26, "SELECT YOUR WEAPON", 36, RL_TEXT, true, RL_LEFT, 0, RL_MID);
-    RL_BoxPx(ix0, iy0, ix1, iy1, RL_Over(panel, dim));
-    RL_RoundFrame(v, x0, py, panelW, panelH, 6, 6, panel);
+    RL_HeaderPanel(v, x0, y0, gw, head, "SELECT YOUR WEAPON", RL_H2, team,
+                   va("%s  \xb7  %s", rl_teams[team].name, RL_NationName(nation)), RL_TimeLeft(in.gametype));
     for (int i = 0; i < n; i++) {
-        const rlWeapon_t w     = RL_WeaponFor(nation, i, in.target, in.dmflags);
+        const rlWeapon_t w       = RL_WeaponFor(nation, i, in.target, in.dmflags);
         // (the cgame's cg_weapon_<class>: 0 banned)
-        const char      *on    = Cvar_VariableString(rl_classCvar[i]);
+        const char      *on      = Cvar_VariableString(rl_classCvar[i]);
         const bool       allowed = !(on[0] == '0' && !on[1]);
-        const bool       hot   = Hot(i) && allowed;
-        const float      x = x0 + pad, y = py + pad + i * (cardH + gap), cw = cardW;
-        float            nw;
+        const bool       hot     = Hot(i) && allowed;
+        const int        col = i % 2, row = i / 2;
+        // (a last tile alone takes the row)
+        const float      x = x0 + col * (wtw + gap), y = gy + row * (th + gap), cw = i == n - 1 && !col ? gw : wtw;
 
-        RL_Round(v, x, y, cw, cardH, 4, hot ? RL_T(T.mid, 240) : RL_T(T.base, allowed ? 215 : 120));
+        RL_Round(v, x, y, cw, th, 4, hot ? RL_T(T.mid, 150) : RL_Rgb(14, 16, 18, 226));
         if (hot) {
-            RL_RoundFrame(v, x, y, cw, cardH, 4, 2, RL_BRASS);
+            RL_RoundFrame(v, x, y, cw, th, 4, 2, RL_BRASS);
         }
         if (allowed) {
-            RL_Text(v, x + 22, y + cardH / 2 - 15, w.cls, 13, hot ? RL_T(T.pale, 210) : RL_Rgb(150, 146, 136), false, RL_LEFT, 1.8f, RL_MID);
+            RL_Text(v, x + 18, y + 24, w.cls, RL_S2, hot ? RL_T(T.pale, 220) : RL_MUTED, false, RL_LEFT, 1.8f, RL_MID, cw - 50);
         } else {
-            RL_Text(v, x + 22, y + cardH / 2 - 15, va("%s  \xb7  OFF ON THIS SERVER", w.cls), 13, RL_Rgb(200, 120, 100), false, RL_LEFT,
-                    1.8f, RL_MID);
+            RL_Text(v, x + 18, y + 24, "OFF ON THIS SERVER", RL_S2, RL_Rgb(200, 120, 100), false, RL_LEFT, 1.8f, RL_MID, cw - 50);
         }
-        nw = RL_Text(v, x + 22, y + cardH / 2 + 13, w.name, 26, allowed ? RL_TEXT : RL_FAINT, true, RL_LEFT, 0, RL_MID, 250);
         if (!Q_stricmp(ui_dm_primary->string, rl_classCmd[i])) {
-            RL_Round(v, x + 22 + nw + 12, y + cardH / 2 + 9, 8, 8, 4, RL_BRASS);
+            // the last pick
+            RL_Round(v, x + cw - 26, y + 20, 8, 8, 4, RL_BRASS);
         }
-        {
-            const float ow = cw * 0.56f, oh = cardH - 28;
-
-            RL_Outline(v, va(RL_OUTLINES "weapons/%s.svg", w.svg), x + cw - 24 - ow / 2, y + cardH / 2, ow, oh,
-                       allowed ? RL_T(hot ? T.pale : T.light, hot ? 255 : 220) : RL_T(T.light, 70));
-        }
+        RL_Outline(v, va(RL_OUTLINES "weapons/%s.svg", w.svg), x + cw / 2, y + th * 0.47f, Q_min(wtw * 0.8f, cw - 40), th * 0.38f,
+                   allowed ? RL_T(hot ? T.pale : T.light, hot ? 255 : 220) : RL_T(T.light, 70));
+        RL_Text(v, x + cw / 2, y + th - 30, w.name, RL_S1, allowed ? RL_TEXT : RL_FAINT, true, RL_CENTER, 1.6f, RL_MID, cw - 20);
         if (allowed) {
-            Hit(v, x, y, cw, cardH, i);
-            m_order.push_back(i);
+            Hit(v, x, y, cw, th, i);
         }
+        m_order.push_back(allowed ? i : -1);
     }
+    m_cols = 2;
 }
 
 /*
@@ -1540,11 +1587,13 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
 {
     const int      team = in.selfTeam == TEAM_AXIS ? 1 : 0;
     const rlTeam_t& T   = rl_teams[team];
-    const float    gap = 14, tw = v.layout == 0 ? 200.0f : 210.0f, th = 168, gw = 3 * tw + 2 * gap;
-    const float    head = 84, rb = 56;
-    const float    total = head + 2 * th + gap + 22 + rb + 50;
+    float          tw, th, gap, gw;
+
+    RL_Grid(v, &tw, &th, &gap, &gw);
+    const float    head = 104, rb = 56;
+    const float    total = head + gap + 2 * th + gap + 22 + rb + 50;
     const float    x0 = (v.dw - gw) / 2, y0 = (v.dh - total) / 2;
-    const float    gy = y0 + head;
+    const float    gy = y0 + head + gap;
     const int      vote = RL_VoteState();
     static const char *const voteLabels[] = {"CALL A VOTE", "VOTE NOW", "VOTED", "VOTING OFF"};
 
@@ -1552,20 +1601,16 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
         return;
     }
     RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
-    RL_Text(v, x0, y0 + 2, RL_MapName(in.map), 30, RL_TEXT, true, RL_LEFT, 0, RL_TOP, gw - 140);
     {
         char line[128];
 
         // (bots take slots past sv_maxclients, which the client isn't told: then no limit shown)
         if (in.connected <= in.maxClients) {
-            Com_sprintf(line, sizeof(line), "%s  \xb7  %d / %d players", RL_ModeName(in.gametype, false), in.connected, in.maxClients);
+            Com_sprintf(line, sizeof(line), "%s  \xb7  %d / %d PLAYERS", RL_ModeName(in.gametype, true), in.connected, in.maxClients);
         } else {
-            Com_sprintf(line, sizeof(line), "%s  \xb7  %d players", RL_ModeName(in.gametype, false), in.connected);
+            Com_sprintf(line, sizeof(line), "%s  \xb7  %d PLAYERS", RL_ModeName(in.gametype, true), in.connected);
         }
-        RL_Text(v, x0, y0 + 60, line, 16, RL_MUTED, false, RL_LEFT, 0, RL_MID);
-    }
-    if (RL_TimeLeft(in.gametype)[0]) {
-        RL_Text(v, x0 + gw, y0 + 60, va("%s LEFT", RL_TimeLeft(in.gametype)), 15, RL_MUTED, false, RL_RIGHT, 2, RL_MID);
+        RL_HeaderPanel(v, x0, y0, gw, head, RL_MapName(in.map), RL_H3, -1, line, RL_TimeLeft(in.gametype));
     }
     for (int i = 0; i < 6; i++) {
         static const char *const labels[] = {"TEAM", "WEAPON", "", "OPTIONS", "SPECTATE", "DISCONNECT"};
@@ -1606,7 +1651,7 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
             RL_Outline(v, RL_OUTLINES "glyphs/disconnect.svg", gcx, gcy, S, S, gc);
             break;
         }
-        RL_Text(v, x + tw / 2, y + th - 30, i == ID_VOTE ? voteLabels[vote] : labels[i], 17, inert ? RL_FAINT : RL_TEXT, hot, RL_CENTER, 1.6f,
+        RL_Text(v, x + tw / 2, y + th - 30, i == ID_VOTE ? voteLabels[vote] : labels[i], RL_S1, inert ? RL_FAINT : RL_TEXT, true, RL_CENTER, 1.6f,
                 RL_MID, tw - 20);
         if (!inert) {
             Hit(v, x, y, tw, th, i);
@@ -1615,18 +1660,18 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
     {
         const float ry = gy + 2 * th + gap + 22;
         const bool  hot = Hot(ID_RESUME), mhot = Hot(ID_MAINMENU);
-        const float mw = RL_TextW(v, "MAIN MENU", 15, false, 2.5f) + 24;
+        const float mw = RL_TextW(v, "MAIN MENU", RL_S2, false, 2.5f) + 24;
 
         RL_Round(v, x0, ry, gw, rb, 4, RL_Rgb(255, 255, 255, hot ? 26 : 16));
         RL_RoundFrame(v, x0, ry, gw, rb, 4, hot ? 2 : 1, hot ? RL_BRASS : RL_Rgb(255, 255, 255, 50));
-        RL_Text(v, x0 + gw / 2, ry + rb / 2, "RESUME", 21, RL_TEXT, true, RL_CENTER, 2, RL_MID);
+        RL_Text(v, x0 + gw / 2, ry + rb / 2, "RESUME", RL_S1, RL_TEXT, true, RL_CENTER, 2, RL_MID);
         Hit(v, x0, ry, gw, rb, ID_RESUME);
-        RL_Text(v, x0 + gw / 2, ry + rb + 30, "MAIN MENU", 15, mhot ? RL_BRASS : RL_MUTED, false, RL_CENTER, 2.5f, RL_MID);
+        RL_Text(v, x0 + gw / 2, ry + rb + 30, "MAIN MENU", RL_S2, mhot ? RL_BRASS : RL_MUTED, false, RL_CENTER, 2.5f, RL_MID);
         Hit(v, x0 + gw / 2 - mw / 2, ry + rb + 14, mw, 32, ID_MAINMENU);
     }
     // the keys: the tiles three a row, then Resume, then Main menu
     for (int i = 0; i < 6; i++) {
-        m_order.push_back(i);
+        m_order.push_back(i == ID_VOTE && (vote == VOTE_VOTED || vote == VOTE_OFF) ? -1 : i);
     }
     m_order.push_back(ID_RESUME);
     m_order.push_back(ID_RESUME);
@@ -1739,13 +1784,8 @@ static void RL_SbHeader(const rlView_t& v, float x, float y, float w, float h, c
     const char *left = RL_TimeLeft(in.gametype);
     const float cx = x + w / 2;
 
-    RL_Round(v, x, y, w, h, 6, RL_Rgb(10, 11, 12, 236));
-    RL_Text(v, x + 28, y + 30 * k, RL_MapName(in.map), 28 * k, RL_TEXT, true, RL_LEFT, 0, RL_MID, w / 2 - 260 * k);
-    RL_Text(v, x + 28, y + 66 * k, RL_ModeName(in.gametype, true), 14 * Q_max(k, 0.85f), RL_MUTED, false, RL_LEFT, 2.4f, RL_MID);
-    if (left[0]) {
-        RL_Text(v, x + w - 28, y + 30 * k, left, 28 * k, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
-        RL_Text(v, x + w - 28, y + 66 * k, "TIME LEFT", 14 * Q_max(k, 0.85f), RL_MUTED, false, RL_RIGHT, 2.4f, RL_MID);
-    }
+    // (the title and caption left of the score in the middle)
+    RL_HeaderPanel(v, x, y, w, h, RL_MapName(in.map), RL_H3, -1, RL_ModeName(in.gametype, true), left, k, w / 2 - 260 * k - 28);
     if (in.gametype == GT_FFA) {
         const rlRow_t *lead = !ffaRows.empty() && ffaRows[0].sc ? &ffaRows[0] : NULL;
         std::string    line = lead ? "LEADER: " + RL_Upper(lead->p->name) : std::string("NO SCORES YET");
@@ -1753,8 +1793,8 @@ static void RL_SbHeader(const rlView_t& v, float x, float y, float w, float h, c
         if (in.fraglimit > 0) {
             line += va("  \xb7  FRAG LIMIT %d", in.fraglimit);
         }
-        RL_Text(v, cx, y + 36 * k, lead ? va("%d", lead->sc->kills) : "\x96", 46 * k, RL_TEXT, true, RL_CENTER, 0, RL_MID);
-        RL_Text(v, cx, y + 76 * k, line.c_str(), 13 * Q_max(k, 0.85f), RL_MUTED, false, RL_CENTER, 2, RL_MID, w / 2 - 80);
+        RL_Text(v, cx, y + 40 * k, lead ? va("%d", lead->sc->kills) : "\x96", RL_H1 * k, RL_TEXT, true, RL_CENTER, 0, RL_MID);
+        RL_Text(v, cx, y + 82 * k, line.c_str(), RL_S2 * Q_max(k, 0.85f), RL_MUTED, false, RL_CENTER, 2, RL_MID, w / 2 - 80);
         return;
     }
     for (int t = 0; t < 2; t++) {
@@ -1762,12 +1802,12 @@ static void RL_SbHeader(const rlView_t& v, float x, float y, float w, float h, c
         const int   s = in.teamScore[t], o = in.teamScore[!t];
         const float nx = cx + sgn * 120 * k;
 
-        RL_Text(v, cx + sgn * 34 * k, y + h / 2 - 2, s >= 0 ? va("%d", s) : "\x96", 58 * k, s >= o ? RL_TEXT : RL_Rgb(200, 196, 186), true,
+        RL_Text(v, cx + sgn * 34 * k, y + h / 2 - 2, s >= 0 ? va("%d", s) : "\x96", RL_H1 * k, s >= o ? RL_TEXT : RL_Rgb(200, 196, 186), true,
                 t ? RL_LEFT : RL_RIGHT, 0, RL_MID);
         RL_TeamIcon(v, t, nx + sgn * 22 * k, y + h / 2 - 2, 40 * k);
-        RL_Text(v, nx + sgn * 52 * k, y + h / 2 - 2, rl_teams[t].name, 22 * k, RL_T(rl_teams[t].pale), true, t ? RL_LEFT : RL_RIGHT, 2, RL_MID);
+        RL_Text(v, nx + sgn * 52 * k, y + h / 2 - 2, rl_teams[t].name, RL_S1 * k, RL_T(rl_teams[t].pale), true, t ? RL_LEFT : RL_RIGHT, 2, RL_MID);
     }
-    RL_Text(v, cx, y + h / 2 - 2, ":", 40 * k, RL_FAINT, true, RL_CENTER, 0, RL_MID);
+    RL_Text(v, cx, y + h / 2 - 2, ":", RL_H2 * k, RL_FAINT, true, RL_CENTER, 0, RL_MID);
     RL_Box(v, x, y + h - 4, w / 2, 4, RL_T(rl_teams[0].mid));
     RL_Box(v, x + w / 2, y + h - 4, w / 2, 4, RL_T(rl_teams[1].mid));
 }
@@ -1799,7 +1839,7 @@ static void RL_SbLabels(const rlView_t& v, float x, float y, float w, rlColor_t 
     float r = x + w - 16;
 
     for (int i = (int)ARRAY_LEN(rl_cols) - 1; i >= 0; i--) {
-        RL_Text(v, r, y, rl_cols[i].label, 13, c, true, RL_RIGHT, 1.5f, RL_MID);
+        RL_Text(v, r, y, rl_cols[i].label, RL_S2, c, true, RL_RIGHT, 1.5f, RL_MID);
         r -= rl_cols[i].w;
     }
 }
@@ -1811,7 +1851,7 @@ static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, con
     const bool      dead = rounds && r.sc && r.sc->dead;
     const int       a    = dead ? 110 : 255;
     const rlColor_t col  = me ? RL_Alpha(RL_BRASS, a) : dead ? RL_Rgb(150, 146, 136, a) : RL_TEXT;
-    const float     fs   = Q_min(19.0f, rh * 0.66f);
+    const float     fs   = Q_min(RL_S1, rh * 0.66f);
     const float     cy   = y + rh / 2 - 1;
     float           nx   = x + 14;
 
@@ -1827,7 +1867,7 @@ static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, con
         RL_Box(v, x, y, 4, rh - 2, RL_BRASS);
     }
     if (rank > 0) {
-        RL_Text(v, x + 14, cy, va("%d", rank), fs * 0.9f, rank == 1 ? RL_BRASS : RL_MUTED, true, RL_LEFT, 0, RL_MID);
+        RL_Text(v, x + 14, cy, va("%d", rank), fs, rank == 1 ? RL_BRASS : RL_MUTED, true, RL_LEFT, 0, RL_MID);
         RL_TeamIcon(v, r.side, x + 50, cy, Q_min(18.0f, rh * 0.55f));
         nx = x + 66;
     }
@@ -1861,7 +1901,7 @@ static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, con
             if (c >= 3 && !me) {
                 vc = RL_Alpha(RL_MUTED, a);
             }
-            RL_Text(v, rx, cy, vals[c], fs * (c >= 3 ? 0.88f : 0.95f), vc, c == 0, RL_RIGHT, 0, RL_MID);
+            RL_Text(v, rx, cy, vals[c], fs, vc, c == 0, RL_RIGHT, 0, RL_MID);
             rx -= rl_cols[c].w;
         }
     }
@@ -1883,16 +1923,16 @@ static float RL_SbTeam(const rlView_t& v, float x, float y, float w, int t, cons
     // the band: a gradient from the team's mid to its base
     RL_HGradient(v, x, y, w, bh, RL_T(T.mid, 235), RL_T(T.base, 235));
     RL_TeamIcon(v, t, x + 28, y + bh / 2, 30);
-    RL_Text(v, x + 52, y + bh / 2, T.name, 22, RL_TEXT, true, RL_LEFT, 2, RL_MID);
+    RL_Text(v, x + 52, y + bh / 2, T.name, RL_S1, RL_TEXT, true, RL_LEFT, 2, RL_MID);
     Com_sprintf(info, sizeof(info), "%d PLAYER%s", n, n == 1 ? "" : "S");
     if (rounds) {
         Q_strcat(info, sizeof(info), va("  \xb7  %d ALIVE", alive));
     }
     {
-        const float iw = RL_TextW(v, T.name, 22, true, 2);
+        const float iw = RL_TextW(v, T.name, RL_S1, true, 2);
 
-        if (x + 52 + iw + 16 + RL_TextW(v, info, 14, false, 2) <= x + w - 16 - RL_ColsW() - 12) {
-            RL_Text(v, x + 52 + iw + 16, y + bh / 2, info, 14, RL_T(T.pale, 220), false, RL_LEFT, 2, RL_MID);
+        if (x + 52 + iw + 16 + RL_TextW(v, info, RL_S2, false, 2) <= x + w - 16 - RL_ColsW() - 12) {
+            RL_Text(v, x + 52 + iw + 16, y + bh / 2, info, RL_S2, RL_T(T.pale, 220), false, RL_LEFT, 2, RL_MID);
         }
     }
     RL_SbLabels(v, x, y + bh / 2, w, RL_T(T.pale, 200));
@@ -1900,7 +1940,7 @@ static float RL_SbTeam(const rlView_t& v, float x, float y, float w, int t, cons
         RL_SbRow(v, x, y + bh + 4 + i * rh, w, rh, rows[i], i, 0, rounds, self);
     }
     if (shown < n) {
-        RL_Text(v, x + 14, y + bh + 4 + shown * rh + rh / 2 - 1, va("+ %d more", n - shown), Q_min(19.0f, rh * 0.66f), RL_FAINT, false, RL_LEFT, 0,
+        RL_Text(v, x + 14, y + bh + 4 + shown * rh + rh / 2 - 1, va("+ %d more", n - shown), Q_min(RL_S1, rh * 0.66f), RL_FAINT, false, RL_LEFT, 0,
                 RL_MID);
         return bh + 4 + (shown + 1) * rh;
     }
@@ -1911,12 +1951,12 @@ static float RL_SbTeam(const rlView_t& v, float x, float y, float w, int t, cons
 static std::vector<std::string> RL_SpecLines(const rlView_t& v, float w, const std::vector<rlPlayer_t>& names)
 {
     std::vector<std::string> lines;
-    const float              lead = RL_TextW(v, "SPECTATING", 13, true, 2.5f) + 20;
+    const float              lead = RL_TextW(v, "SPECTATING", RL_S2, true, 2.5f) + 20;
     std::string              cur;
     float                    cw = lead;
 
     for (const rlPlayer_t& p : names) {
-        const float nw = RL_TextW(v, va("%s  \xb7  ", p.name), 16, false);
+        const float nw = RL_TextW(v, va("%s  \xb7  ", p.name), RL_S2, false);
 
         if (!cur.empty() && cw + nw > w - 8) {
             lines.push_back(cur);
@@ -1966,11 +2006,11 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
         if (spec.empty()) {
             return;
         }
-        const float lead = RL_TextW(v, "SPECTATING", 13, true, 2.5f) + 20;
+        const float lead = RL_TextW(v, "SPECTATING", RL_S2, true, 2.5f) + 20;
 
-        RL_Text(v, x + 4, y, "SPECTATING", 13, RL_FAINT, true, RL_LEFT, 2.5f, RL_MID);
+        RL_Text(v, x + 4, y, "SPECTATING", RL_S2, RL_FAINT, true, RL_LEFT, 2.5f, RL_MID);
         for (size_t k = 0; k < spec.size(); k++) {
-            RL_Text(v, x + 4 + lead, y + k * 24, spec[k].c_str(), 16, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+            RL_Text(v, x + 4 + lead, y + k * 24, spec[k].c_str(), RL_S2, RL_MUTED, false, RL_LEFT, 0, RL_MID);
         }
     };
 
@@ -1992,14 +2032,14 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
 
         RL_SbHeader(v, x, top, w, hdrH, in, ffaRows);
         RL_Round(v, x, y0, w, 40, 4, RL_Rgb(30, 33, 36, 235));
-        RL_Text(v, x + 14, y0 + 20, "#", 13, RL_MUTED, true, RL_LEFT, 1.5f, RL_MID);
-        RL_Text(v, x + 66, y0 + 20, "PLAYER", 13, RL_MUTED, true, RL_LEFT, 1.5f, RL_MID);
+        RL_Text(v, x + 14, y0 + 20, "#", RL_S2, RL_MUTED, true, RL_LEFT, 1.5f, RL_MID);
+        RL_Text(v, x + 66, y0 + 20, "PLAYER", RL_S2, RL_MUTED, true, RL_LEFT, 1.5f, RL_MID);
         RL_SbLabels(v, x, y0 + 20, w, RL_MUTED);
         for (int j = 0; j < shown; j++) {
             RL_SbRow(v, x, y0 + 44 + j * rh, w, rh, ffaRows[j], j, j + 1, false, in.self);
         }
         if (shown < (int)ffaRows.size()) {
-            RL_Text(v, x + 14, y0 + 44 + shown * rh + rh / 2 - 1, va("+ %d more", (int)ffaRows.size() - shown), Q_min(19.0f, rh * 0.66f), RL_FAINT,
+            RL_Text(v, x + 14, y0 + 44 + shown * rh + rh / 2 - 1, va("+ %d more", (int)ffaRows.size() - shown), Q_min(RL_S1, rh * 0.66f), RL_FAINT,
                     false, RL_LEFT, 0, RL_MID);
         }
         spectators(y0 + 44 + per * rh + 22);
