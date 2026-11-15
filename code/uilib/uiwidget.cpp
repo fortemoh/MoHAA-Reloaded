@@ -2405,6 +2405,11 @@ void UIWidget::setMaterial(UIReggedMaterial *mat)
     m_material = mat;
 }
 
+UIReggedMaterial *UIWidget::getMaterial(void)
+{
+    return m_material;
+}
+
 void UIWidget::setHoverMaterial(UIReggedMaterial *mat)
 {
     m_hovermaterial = mat;

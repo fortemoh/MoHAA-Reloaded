@@ -493,6 +493,12 @@ extern "C" {
     extern cvar_t *cg_crosshair_gap;
     extern cvar_t *cg_crosshair_thickness;
     extern cvar_t *cg_crosshair_color;
+    extern cvar_t *cg_crosshair_alpha;
+    extern cvar_t *cg_crosshair_outline;
+    extern cvar_t *cg_crosshair_outline_color;
+    extern cvar_t *cg_crosshair_outline_alpha;
+    extern cvar_t *cg_crosshair_dot;
+    extern cvar_t *cg_crosshair_t;
     extern cvar_t *vm_offset_max;
     extern cvar_t *vm_offset_speed;
     extern cvar_t *vm_sway_front;

@@ -54,16 +54,15 @@ const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
     "hud_comp_topleft",     "hud_comp_topleft_compass", "hud_comp_score",      "hud_comp_killfeed", "hud_comp_chat",
     "hud_comp_strip",       "hud_comp_weapons",         "hud_comp_damage",     "hud_comp_bars",     "hud_comp_killer",
     "hud_comp_target",      "hud_comp_vote",            "hud_comp_csgo_health",
-    "hud_comp_csgo_ammo",   "hud_comp_cs2_health",      "hud_comp_cs2_ammo",
+    "hud_comp_csgo_ammo",
 };
 
-// cg_hud_layout, the bottom's health and ammo: 0 the strip along the middle
-// (the team's badge between them), 1 CS:GO's corners (the default), 2 CS2's;
-// each menu's layout (-1 all's). The others' menus are hidden (cl_ui.cpp
-// UI_CompHuds), not drawn; all are baked (a change of layout bakes nothing)
-#define COMP_LAYOUTS 3
+// cg_hudstyle's presets, the bottom's health and ammo: 1 CS:GO's corners
+// (the default), 2 CS2's strip along the middle (the team's badge between
+// them); each menu's preset (0 both's). The other's menus are hidden (cl_ui.cpp
+// UI_CompHuds), not drawn; all are baked (a change of preset bakes nothing)
 static const signed char comp_menuLayout[UI_COMPHUD_MENUS] = {
-    -1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, 1, 1, 2, 2,
+    0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 1, 1,
 };
 
 bool ui_compHudInLayout[UI_COMPHUD_MENUS];
@@ -72,7 +71,7 @@ bool ui_compHudInLayout[UI_COMPHUD_MENUS];
 static const char *const comp_toggles[] = {
     "cg_hud_radar", "cg_hud_killfeed", "cg_hud_chat", "cg_hud_messages", "cg_hud_health", "cg_hud_ammo",
     "cg_hud_grenades", "cg_hud_grenadecharge", "cg_hud_score", "cg_hud_timer", "cg_hud_alive", "cg_hud_teamicon",
-    "cg_hud_killer", "cg_hud_targetinfo", "cg_hud_vote", "cg_hud_following", "cg_hud_attacker",
+    "cg_hud_badge", "cg_hud_killer", "cg_hud_targetinfo", "cg_hud_vote", "cg_hud_following", "cg_hud_attacker",
     "cg_hud_stopwatch", "cg_hud_damage",
 };
 
@@ -688,19 +687,16 @@ static void Comp_Accent(void)
     comp_accentStamp++;
 }
 
-// cg_hud_layout's menus shown (an unknown layout: CS:GO's); the chat above
-// the health in the corners (ui_hud_corners)
+// cg_hudstyle's menus shown (2 CS2's, else CS:GO's); the chat above the
+// health in CS:GO's corners (ui_hud_corners)
 static void Comp_Layout(void)
 {
-    int layout = Comp_Int("cg_hud_layout");
+    const int layout = cg_hudstyle->integer == 2 ? 2 : 1;
 
-    if (layout < 0 || layout >= COMP_LAYOUTS) {
-        layout = 1;
-    }
     for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
-        ui_compHudInLayout[i] = comp_menuLayout[i] < 0 || comp_menuLayout[i] == layout;
+        ui_compHudInLayout[i] = !comp_menuLayout[i] || comp_menuLayout[i] == layout;
     }
-    Comp_Set("ui_hud_corners", layout ? "1" : "0");
+    Comp_Set("ui_hud_corners", layout == 1 ? "1" : "0");
 }
 
 // who is alive and the cards (round modes), and the silent score requests:
@@ -972,12 +968,12 @@ void UI_CompHud_Frame(void)
             lastChange = -1;
         }
     }
-    // cg_hud_layout: the menus shown
+    // cg_hudstyle's preset: the menus shown
     {
         static int read = -1;
 
-        if (Comp_Cvar("cg_hud_layout")->modificationCount != read) {
-            read = Comp_Cvar("cg_hud_layout")->modificationCount;
+        if (cg_hudstyle->modificationCount != read) {
+            read = cg_hudstyle->modificationCount;
             Comp_Layout();
         }
     }
@@ -1336,7 +1332,8 @@ void UI_CompHud_HeadIcons(void)
 
 void UI_CompHud_Init(void)
 {
-    cg_hudstyle = Cvar_Get("cg_hudstyle", "0", CVAR_ARCHIVE);
+    // the HUD: 0 the stock one, 1 this one as CS:GO's (the default), 2 as CS2's
+    cg_hudstyle = Cvar_Get("cg_hudstyle", "1", CVAR_ARCHIVE);
     for (size_t i = 0; i < ARRAY_LEN(comp_toggles); i++) {
         Cvar_Get(comp_toggles[i], "1", CVAR_ARCHIVE);
     }
@@ -1345,8 +1342,6 @@ void UI_CompHud_Init(void)
     Cvar_Get("cg_hud_scale", "1", CVAR_ARCHIVE);
     // the accent: "f6f67a", "#f6f67a" or "R G B" (0 to 1)
     Cvar_Get("cg_hud_accent", "f6f67a", CVAR_ARCHIVE);
-    // the bottom's health and ammo: 0 along the middle, 1 CS:GO's corners, 2 CS2's
-    Cvar_Get("cg_hud_layout", "1", CVAR_ARCHIVE);
     // the top's teams, beside the score: 0 a card per player, 1 how many are alive (CS2's)
     Cvar_Get("cg_hud_alivecount", "0", CVAR_ARCHIVE);
     // what the menus read, made now, empty (ui_hud_never stays so: the never
@@ -1364,7 +1359,7 @@ void UI_CompHud_Init(void)
 
 qboolean UI_CompHud_Active(void)
 {
-    return cg_hudstyle && cg_hudstyle->integer == 1;
+    return cg_hudstyle && cg_hudstyle->integer > 0;
 }
 
 /*
@@ -1877,10 +1872,11 @@ void UIHudCards::Draw(void)
 ================
 UIHudWeapons
 
-The weapons carried, up from the widget's bottom right: the sidearm, the
-primary, the grenades (frags then smokes, each with how many), each with
-room for its name under it so that a switch moves nothing (CS:GO's); the
-one in hand bright and named. countfont: the grenades' counts'
+The weapons carried at the widget's bottom right, CS:GO's order from the
+top: the primary, the sidearm, the grenades (frags then smokes, each with
+how many), each with room for its name under it so that a switch moves
+nothing (CS:GO's); the one in hand bright and named. countfont: the
+grenades' counts'
 ================
 */
 class UIHudWeapons : public UIWidget
@@ -1939,16 +1935,15 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
     for (i = 0; i < n; i++) {
         const float alpha = hand == i ? 1.0f : 0.55f;
 
-        Comp_Picture(pics[i], x, top + floorf((ph - phi[i]) * 0.5f * s) / s, pw[i], phi[i], s, qfalse,
-                     UColor(comp_accent[ACC_WEAPON][0], comp_accent[ACC_WEAPON][1], comp_accent[ACC_WEAPON][2], alpha));
-        x += pw[i];
+        // a count left of its picture, so the pictures line up with the weapons above
         if (counts) {
-            x += 4.0f;
             x += Comp_Text(m_countFont, x, top + ph - m_countFont->getHeight((const float *)NULL) * 0.5f, va("%d", counts[i]),
                            UColor(comp_accent[ACC_MAIN][0], comp_accent[ACC_MAIN][1], comp_accent[ACC_MAIN][2], alpha), getVirtualScale());
-            x += 8.0f;
+            x += 4.0f;
         }
-        x += 4.0f;
+        Comp_Picture(pics[i], x, top + floorf((ph - phi[i]) * 0.5f * s) / s, pw[i], phi[i], s, qfalse,
+                     UColor(comp_accent[ACC_WEAPON][0], comp_accent[ACC_WEAPON][1], comp_accent[ACC_WEAPON][2], alpha));
+        x += pw[i] + (counts ? 8.0f : 0.0f) + 4.0f;
     }
     if (hand >= 0) {
         const char *name = CL_ConfigString(CS_WEAPONS + cl.snap.ps.activeItems[ITEM_WEAPON]);
@@ -1982,16 +1977,7 @@ void UIHudWeapons::Draw(void)
             primarySlot = i + 1;
         }
     }
-    if (comp.sidearm[0] && Comp_Weapon(comp.sidearm)) {
-        const char *pic = Comp_Weapon(comp.sidearm)->pic;
-
-        Item(right, &bottom, &pic, NULL, 1, handSlot == 1 ? 0 : -1, 110.0f, 30.0f);
-    }
-    if (primarySlot && Comp_Weapon(comp.primary)) {
-        const char *pic = Comp_Weapon(comp.primary)->pic;
-
-        Item(right, &bottom, &pic, NULL, 1, handSlot == primarySlot ? 0 : -1, 160.0f, 34.0f);
-    }
+    // laid out from the bottom up: the grenades, the sidearm, the primary
     if (Comp_Int("cg_hud_grenades") && (comp.frags > 0 || comp.smokes > 0)) {
         const char *pics[2];
         int         counts[2], n = 0, hand = -1;
@@ -2006,6 +1992,16 @@ void UIHudWeapons::Draw(void)
             }
         }
         Item(right, &bottom, pics, counts, n, hand, 200.0f, 38.0f);
+    }
+    if (comp.sidearm[0] && Comp_Weapon(comp.sidearm)) {
+        const char *pic = Comp_Weapon(comp.sidearm)->pic;
+
+        Item(right, &bottom, &pic, NULL, 1, handSlot == 1 ? 0 : -1, 110.0f, 30.0f);
+    }
+    if (primarySlot && Comp_Weapon(comp.primary)) {
+        const char *pic = Comp_Weapon(comp.primary)->pic;
+
+        Item(right, &bottom, &pic, NULL, 1, handSlot == primarySlot ? 0 : -1, 160.0f, 34.0f);
     }
 }
 

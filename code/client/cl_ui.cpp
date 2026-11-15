@@ -1286,7 +1286,7 @@ void UI_GetHighResolutionScale(vec2_t scale)
 ====================
 UI_CompHuds
 
-Added: the Competitive HUD's menus (cg_hudstyle 1, ui/hud_comp_*.urc),
+Added: the Competitive HUD's menus (cg_hudstyle 1 or 2, ui/hud_comp_*.urc),
 shown in place of the stock HUD's
 ====================
 */
@@ -1307,7 +1307,7 @@ static void UI_CompHuds(bool show, bool messages = false)
     for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
         Menu      *hud = menus[i];
         // (messages only: the menus with the game messages, the chat, the kills and the vote;
-        // the bottom's health and ammo: cg_hud_layout's)
+        // the bottom's health and ammo: cg_hudstyle's preset's)
         const bool on  = (show && ui_compHudInLayout[i]) || (messages && (i == 1 || i == 3 || i == 4 || i == 11));
 
         if (hud && containers[i] && on != containers[i]->IsVisible()) {
@@ -5750,6 +5750,8 @@ static unsigned int  currentLoadTime;
 static char        **loadStrings;
 static unsigned int *loadTimes;
 static char         *loadStringsBuffer;
+// Added: the start of the name of the resource loading (UI_LoadProgress)
+static char          ui_loadWhat[4];
 
 class LoadResourceInfo
 {
@@ -5941,6 +5943,8 @@ void UI_LoadResource(const char *name)
     if (cls.loading == LOAD_PROGRESS_FALSE) {
         return;
     }
+    // Added: what loads (the Reloaded load screen's line)
+    Q_strncpyz(ui_loadWhat, name, sizeof(ui_loadWhat));
 
     if (cls.loading == LOAD_PROGRESS_SAVE) {
         UI_EndLoadResource();
@@ -5952,6 +5956,24 @@ void UI_LoadResource(const char *name)
     }
 
     UI_TestUpdateScreen(33);
+}
+
+/*
+====================
+UI_LoadProgress
+====================
+*/
+float UI_LoadProgress(const char **what)
+{
+    *what = ui_loadWhat;
+    switch (cls.loading) {
+    case LOAD_PROGRESS_LOAD:
+        return totalLoadTime ? (float)currentLoadTime / (float)totalLoadTime : 0.0f;
+    case LOAD_PROGRESS_FALSE:
+        return 1.0f;
+    default:
+        return -1.0f;
+    }
 }
 
 /*
@@ -6106,6 +6128,13 @@ void UI_BeginLoad(const char *pszMapName)
         ui_sCurrentLoadingMenu = "loading_default";
         ui_pLoadingMenu        = menuManager.FindMenu(ui_sCurrentLoadingMenu);
     }
+
+    // Added: the Reloaded load screen, the stock one's picture in it (cl_uimenus.cpp)
+    if (UI_Menus_Loading(ui_pLoadingMenu, pszMapName)) {
+        ui_sCurrentLoadingMenu = "reloaded_loading";
+        ui_pLoadingMenu        = menuManager.FindMenu(ui_sCurrentLoadingMenu);
+    }
+    ui_loadWhat[0] = 0;
 
     UI_ForceMenuOff(true);
     UI_DeactiveFloatingWindows();

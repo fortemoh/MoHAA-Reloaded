@@ -1324,54 +1324,216 @@ void CG_DrawSpectatorView()
     }
 }
 
-// The crosshair: four arms as boxes, laid out at a map load and on a resolution change, drawn in one draw
+// The crosshair: its boxes in whole pixels, laid out again on a resolution change and when a setting changes
+#define CROSSHAIR_PIECES 5  // four arms and the center dot
+#define CROSSHAIR_BOXES  64 // the pieces and their outline strips as boxes that don't overlap
+
 static struct {
-    vec4_t color;
-    float  arms[4][4]; // x, y, width, height, in whole pixels
+    vec4_t color, outlineColor;
+    float  boxes[CROSSHAIR_BOXES][4];   // x, y, width, height: the pieces
+    float  outline[CROSSHAIR_BOXES][4]; // the outline, drawn first in its own color
+    int    count, outlineCount;
+    int    settings; // the settings' modification counts added up, as laid out
 } crosshairLayout;
 
-// a size in pixels at 1080 lines (1 to maximum), scaled with the screen's height as CS2 does, in whole pixels
-static int CG_CrosshairPixels(float value, float maximum)
+static cvar_t **const crosshairSettings[] = {
+    &cg_crosshair_length, &cg_crosshair_gap, &cg_crosshair_thickness, &cg_crosshair_color, &cg_crosshair_alpha,
+    &cg_crosshair_outline, &cg_crosshair_outline_color, &cg_crosshair_outline_alpha, &cg_crosshair_dot, &cg_crosshair_t
+};
+
+// modification counts only grow: their sum changes whenever a setting does
+static int CG_CrosshairSettings(void)
 {
-    if (!(value >= 1.0f)) {
-        value = 1.0f; // NaN too
-    } else if (value > maximum) {
-        value = maximum;
+    int i, sum = 0;
+
+    for (i = 0; i < (int)ARRAY_LEN(crosshairSettings); i++) {
+        sum += (*crosshairSettings[i])->modificationCount;
     }
-    return Q_max((int)(value * cgs.glconfig.vidHeight / 1080.0f + 0.5f), 1);
+    return sum;
+}
+
+// a size in pixels at 1080 lines in whole pixels at this height, as CS2 rescales its sizes: rounded half away from
+// zero, and at least 1 if above 0 (0 below 0 and for NaN: a negative gap draws as 0, as on CS2's static cross)
+static int CG_CrosshairPixels(float value)
+{
+    if (!(value > 0.0f)) {
+        return 0;
+    }
+    return Q_max((int)(Q_min(value, 4096.0f) * cgs.glconfig.vidHeight / 1080.0f + 0.5f), 1);
+}
+
+static void CG_CrosshairColor(const cvar_t *hex, unsigned int fallback, const cvar_t *alpha, vec4_t color)
+{
+    unsigned int rgb = Com_HexColor(hex->string, fallback);
+
+    VectorSet4(
+        color,
+        (rgb >> 16) / 255.0f,
+        ((rgb >> 8) & 0xFF) / 255.0f,
+        (rgb & 0xFF) / 255.0f,
+        Q_min(Q_max(alpha->integer, 0), 255) / 255.0f
+    );
+}
+
+// the spans of the boxes (x, y, width, height) across the band y0 to y1, sorted and joined where they touch: how many
+static int CG_CrosshairSpans(int (*boxes)[4], int n, int y0, int y1, int (*spans)[2])
+{
+    int ns = 0, m = 0, i, j, x0, x1;
+
+    for (i = 0; i < n; i++) {
+        if (boxes[i][1] <= y0 && boxes[i][1] + boxes[i][3] >= y1 && boxes[i][2] > 0) {
+            for (x0 = boxes[i][0], x1 = x0 + boxes[i][2], j = ns++; j > 0 && spans[j - 1][0] > x0; j--) {
+                spans[j][0] = spans[j - 1][0];
+                spans[j][1] = spans[j - 1][1];
+            }
+            spans[j][0] = x0;
+            spans[j][1] = x1;
+        }
+    }
+    for (i = 0; i < ns; i++) {
+        if (m && spans[i][0] <= spans[m - 1][1]) {
+            spans[m - 1][1] = Q_max(spans[m - 1][1], spans[i][1]);
+        } else {
+            spans[m][0] = spans[i][0];
+            spans[m][1] = spans[i][1];
+            m++;
+        }
+    }
+    return m;
+}
+
+// the span x0 to x1 across the band y0 to y1 as a box: a box of the bands above going on down when just as wide, else
+// a new one if it fits in max. How many boxes there are
+static int CG_CrosshairBox(float (*out)[4], int count, int above, int max, int x0, int x1, int y0, int y1)
+{
+    int i;
+
+    for (i = 0; i < above; i++) {
+        if (out[i][0] == x0 && out[i][2] == x1 - x0 && out[i][1] + out[i][3] == y0) {
+            out[i][3] += y1 - y0;
+            return count;
+        }
+    }
+    if (count < max) {
+        VectorSet4(out[count], x0, y0, x1 - x0, y1 - y0);
+        count++;
+    }
+    return count;
+}
+
+// the pixels of n boxes less those of nm others (x, y, width, height), as boxes that don't overlap (at most max):
+// in each band between the boxes' top and bottom edges, the first boxes' spans less the others'. CS2 draws each pixel
+// once where pieces (or outline strips) meet, and the outline nowhere under a piece
+static int CG_CrosshairUnion(int (*in)[4], int n, int (*minus)[4], int nm, float (*out)[4], int max)
+{
+    int edges[CROSSHAIR_PIECES * 10], spans[CROSSHAIR_PIECES * 4][2], cut[CROSSHAIR_PIECES][2];
+    int ne = 0, count = 0, i, j, k, e, ns, nc, x0, x1;
+
+    for (i = 0; i < n + nm; i++) {
+        const int *b = i < n ? in[i] : minus[i - n];
+
+        edges[ne++] = b[1];
+        edges[ne++] = b[1] + b[3];
+    }
+    for (i = 1; i < ne; i++) {
+        for (e = edges[i], j = i; j > 0 && edges[j - 1] > e; j--) {
+            edges[j] = edges[j - 1];
+        }
+        edges[j] = e;
+    }
+
+    for (k = 0; k + 1 < ne; k++) {
+        const int y0 = edges[k], y1 = edges[k + 1], above = count;
+
+        if (y0 == y1) {
+            continue;
+        }
+        ns = CG_CrosshairSpans(in, n, y0, y1, spans);
+        nc = CG_CrosshairSpans(minus, nm, y0, y1, cut);
+        for (i = 0; i < ns; i++) {
+            // the span up to each cut, then on from its end
+            for (x0 = spans[i][0], j = 0; j <= nc && x0 < spans[i][1]; j++) {
+                x1 = j < nc ? Q_min(Q_max(cut[j][0], x0), spans[i][1]) : spans[i][1];
+                if (x1 > x0) {
+                    count = CG_CrosshairBox(out, count, above, max, x0, x1, y0, y1);
+                }
+                if (j < nc) {
+                    x0 = Q_max(x0, cut[j][1]);
+                }
+            }
+        }
+    }
+    return count;
 }
 
 /*
 ====================
 CG_UpdateCrosshair
 
-By default CS2's default crosshair without its outline, white: arms two pixels thick and eight long, a gap of four,
-at 1080 lines. The arms sit around a center square as wide as they are thick, the same whole
-number of pixels from it on every side, so the crosshair is symmetric at any size; the gap counts from the center.
+As CS2 draws its static cross, the sizes pixels at 1080 lines scaled with the screen's height (CG_CrosshairPixels).
+Around the screen's middle pixel (width / 2, height / 2), a line t pixels thick has (t + 1) / 2 of them before it.
+The gap counts from that pixel: the left arm ends gap pixels before it, the right arm starts gap pixels after it,
+a pixel sooner when t is odd (the same for the top and bottom); at gap 0 the arms meet. Length 0 draws no arms, the
+dot is the middle t by t, cg_crosshair_t has no top arm. The outline is always one pixel, round every piece (1) or
+above and left of it only (2, CS2's half outline), and nowhere under a piece. By default CS2's default crosshair
+without its outline, white: arms two pixels thick and eight long, a gap of four. Out-of-range settings are clamped
+here, never rewritten: crosshair_export gives back the code they were imported from
 ====================
 */
 void CG_UpdateCrosshair(void)
 {
-    const char  *hex = cg_crosshair_color->string;
-    unsigned int rgb = 0xFFFFFF;
-    int          length, thickness, space, x0, y0;
+    int pieces[CROSSHAIR_PIECES][4], strips[CROSSHAIR_PIECES * 4][4];
+    int length, thickness, gap, before, odd, x, y, n, ns, mode, i;
 
-    length    = CG_CrosshairPixels(cg_crosshair_length->value, 128.0f);
-    thickness = CG_CrosshairPixels(cg_crosshair_thickness->value, 16.0f);
-    space     = Q_max(CG_CrosshairPixels(cg_crosshair_gap->value, 64.0f) - thickness / 2, 1);
+    length    = CG_CrosshairPixels(cg_crosshair_length->value);
+    thickness = CG_CrosshairPixels(cg_crosshair_thickness->value);
+    gap       = CG_CrosshairPixels(cg_crosshair_gap->value);
+    before    = (thickness + 1) / 2;
+    odd       = thickness & 1;
+    x         = cgs.glconfig.vidWidth / 2;
+    y         = cgs.glconfig.vidHeight / 2;
 
-    hex += hex[0] == '#';
-    if (strlen(hex) == 6 && strspn(hex, "0123456789abcdefABCDEF") == 6) {
-        rgb = strtoul(hex, NULL, 16);
+    CG_CrosshairColor(cg_crosshair_color, 0xFFFFFF, cg_crosshair_alpha, crosshairLayout.color);
+    CG_CrosshairColor(cg_crosshair_outline_color, 0x000000, cg_crosshair_outline_alpha, crosshairLayout.outlineColor);
+
+    n = 0;
+    if (thickness && length) {
+        VectorSet4(pieces[n], x - gap - length, y - before, length, thickness);
+        n++;
+        VectorSet4(pieces[n], x + gap - odd, y - before, length, thickness);
+        n++;
+        VectorSet4(pieces[n], x - before, y + gap - odd, thickness, length);
+        n++;
+        if (!cg_crosshair_t->integer) {
+            VectorSet4(pieces[n], x - before, y - gap - length, thickness, length);
+            n++;
+        }
     }
-    VectorSet4(crosshairLayout.color, (rgb >> 16) / 255.0f, ((rgb >> 8) & 0xFF) / 255.0f, (rgb & 0xFF) / 255.0f, 1.0f);
+    if (thickness && cg_crosshair_dot->integer) {
+        VectorSet4(pieces[n], x - before, y - before, thickness, thickness);
+        n++;
+    }
 
-    x0 = (cgs.glconfig.vidWidth - thickness) / 2;
-    y0 = (cgs.glconfig.vidHeight - thickness) / 2;
-    VectorSet4(crosshairLayout.arms[0], x0 - space - length, y0, length, thickness);
-    VectorSet4(crosshairLayout.arms[1], x0 + thickness + space, y0, length, thickness);
-    VectorSet4(crosshairLayout.arms[2], x0, y0 - space - length, thickness, length);
-    VectorSet4(crosshairLayout.arms[3], x0, y0 + thickness + space, thickness, length);
+    mode = Q_min(Q_max(cg_crosshair_outline->integer, 0), 2);
+    for (ns = 0, i = 0; mode && i < n; i++) {
+        const int *p = pieces[i];
+
+        // above (over the corners) and left; full: below and right too
+        VectorSet4(strips[ns], p[0] - 1, p[1] - 1, p[2] + (mode == 1 ? 2 : 1), 1);
+        ns++;
+        VectorSet4(strips[ns], p[0] - 1, p[1], 1, p[3]);
+        ns++;
+        if (mode == 1) {
+            VectorSet4(strips[ns], p[0] - 1, p[1] + p[3], p[2] + 2, 1);
+            ns++;
+            VectorSet4(strips[ns], p[0] + p[2], p[1], 1, p[3]);
+            ns++;
+        }
+    }
+
+    crosshairLayout.count        = CG_CrosshairUnion(pieces, n, NULL, 0, crosshairLayout.boxes, CROSSHAIR_BOXES);
+    crosshairLayout.outlineCount = CG_CrosshairUnion(strips, ns, pieces, n, crosshairLayout.outline, CROSSHAIR_BOXES);
+    crosshairLayout.settings     = CG_CrosshairSettings();
 }
 
 void CG_DrawCrosshair()
@@ -1386,8 +1548,17 @@ void CG_DrawCrosshair()
         return;
     }
 
+    if (CG_CrosshairSettings() != crosshairLayout.settings) {
+        CG_UpdateCrosshair();
+    }
+
     cgi.R_SetColor(NULL);
-    cgi.R_DrawBoxes(crosshairLayout.arms, 4, crosshairLayout.color);
+    if (crosshairLayout.outlineCount) {
+        cgi.R_DrawBoxes(crosshairLayout.outline, crosshairLayout.outlineCount, crosshairLayout.outlineColor);
+    }
+    if (crosshairLayout.count) {
+        cgi.R_DrawBoxes(crosshairLayout.boxes, crosshairLayout.count, crosshairLayout.color);
+    }
 }
 
 void CG_DrawVote()
@@ -1487,11 +1658,11 @@ void CG_Draw2D(void)
     CG_HudDrawElements();
     CG_DrawObjectives();
     CG_DrawIcons();
-    // Added: the Competitive HUD's URC menus (cg_hudstyle 1, the client's
+    // Added: the Competitive HUD's URC menus (cg_hudstyle 1 or 2, the client's
     // cl_uicomp.cpp) show the stopwatch, the spectator's keys, the player
     // aimed at, the attacker and the vote their own way
-    static cvar_t *cg_hudstyle = cgi.Cvar_Get("cg_hudstyle", "0", CVAR_ARCHIVE);
-    if (cg_hudstyle->integer != 1) {
+    static cvar_t *cg_hudstyle = cgi.Cvar_Get("cg_hudstyle", "1", CVAR_ARCHIVE);
+    if (cg_hudstyle->integer <= 0) {
         CG_DrawStopwatch();
         CG_DrawSpectatorView();
         CG_DrawPlayerEntInfo();

@@ -1,4 +1,4 @@
-// The Competitive HUD (cg_hudstyle 1), CS:GO's corners (cg_hud_layout 1):
+// The Competitive HUD as CS:GO's (cg_hudstyle 1), its corners:
 // bottom right, under the weapons: clip / reserve and a bullet leaning
 // forward (/, the other way from the strip's), each before the one after
 // it, the bullet on the weapons' right edge

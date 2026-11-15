@@ -41,6 +41,10 @@ class UIWindowManager : public UIWidget
     class UIReggedMaterial       *m_cursor;
     str                           m_cursorname;
     bool                          m_showcursor;
+    // Added: the picture the system's cursor was last set from
+    // (ui_cursorPicture's, NULL the stock one), its size
+    const byte                   *m_cursorPic;
+    int                           m_cursorW, m_cursorH;
     Container<UIReggedMaterial *> m_materiallist;
     bool                          m_amidead;
     class UIWidget               *m_bindactive;
@@ -93,6 +97,11 @@ private:
     // Added in OPM
     void refreshCursor();
 };
+
+// Added: the cursor's picture in place of the stock one (the Reloaded UI's,
+// cl_uimenus.cpp): RGBA texels w x h, the hot spot their top-left, and their
+// 2D shader. NULL: the stock picture
+extern const byte *(*ui_cursorPicture)(int *w, int *h, uihandle_t *shader);
 
 extern Event W_MouseExited;
 extern Event W_MouseEntered;

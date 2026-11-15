@@ -20,8 +20,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
-// cl_uicomp.h: the Competitive HUD's data and widgets (Added, cg_hudstyle 1,
-// ui/hud_comp_*.urc)
+// cl_uicomp.h: the Competitive HUD's data and widgets (Added, cg_hudstyle 1
+// CS:GO's, 2 CS2's, ui/hud_comp_*.urc)
 
 #pragma once
 
@@ -30,7 +30,7 @@ void     UI_CompHud_HeadIcons(void);      // the head icons' pictures, made once
 // a file made while the game runs read as one compiled in (name and data kept until the client quits); qfalse: no room
 qboolean UI_CompHud_AddFile(const char *name, const void *data, int size);
 void     UI_CompHud_Init(void);
-qboolean UI_CompHud_Active(void);         // cg_hudstyle 1
+qboolean UI_CompHud_Active(void);         // cg_hudstyle 1 or 2
 void     UI_CompHud_Frame(void);          // the ui_hud_* cvars, before the menus draw
 void     UI_CompHud_Print(const char *msg); // a console line: the chat, the game messages, the kills
 void     UI_CompHud_Clear(void);          // a new map or server
@@ -40,7 +40,7 @@ void     UI_CompHud_MapLoaded(void);      // the radar's walk and the pictures, 
 void     UI_CompHud_PreBake(qboolean ahead); // the pictures (after the renderer's restart); ahead: their texels begun
 
 // the HUD's menus (ui/hud_comp_*.urc), in the order they are baked (the atlas is filled in it)
-#define UI_COMPHUD_MENUS 16
+#define UI_COMPHUD_MENUS 14
 extern const char *const ui_compHudMenus[UI_COMPHUD_MENUS];
-// which of them cg_hud_layout shows (the bottom's health and ammo: the strip or a corners' pair), set when it changes
+// which of them cg_hudstyle's preset shows (the bottom's health and ammo: CS2's strip or CS:GO's corners), set when it changes
 extern bool ui_compHudInLayout[UI_COMPHUD_MENUS];
