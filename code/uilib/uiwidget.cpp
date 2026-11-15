@@ -2485,8 +2485,18 @@ void UI_DrawLive(void)
 
 int UI_DrawHash(int h, const void *data, size_t size)
 {
-    for (size_t i = 0; i < size; i++) {
-        h = (h ^ ((const byte *)data)[i]) * 16777619;
+    const byte *p = (const byte *)data;
+    size_t      i = 0;
+
+    // (a word at a time: every kept widget's state, every frame)
+    for (; i + 4 <= size; i += 4) {
+        int w;
+
+        memcpy(&w, p + i, 4);
+        h = (h ^ w) * 16777619;
+    }
+    for (; i < size; i++) {
+        h = (h ^ p[i]) * 16777619;
     }
     return h;
 }
