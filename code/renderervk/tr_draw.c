@@ -73,7 +73,6 @@ static struct {
 	int				window[4];		// the window: x0 y0 x1 y1
 	float			zNear, zFar;	// the window's depth range, the GPU's while in 2D
 	qboolean		clipScissor;	// the GPU's scissor is the clip (lines, additive boxes), else the screen
-	shader_t		*drawShader;	// the draw's own shader (tess.shader is the batch's)
 	qboolean		fan;			// the draw is a convex polygon, a fan from its first vertex
 } r2d;
 
@@ -338,7 +337,6 @@ static void R_2DStartDraw( shader_t *shader ) {
 	r2d.firstVertex = tess.numVertexes;
 	r2d.firstIndex = tess.numIndexes;
 	r2d.atlas = shader->atlas2D;
-	r2d.drawShader = (shader_t *)shader;
 	r2d.fan = qfalse;
 }
 

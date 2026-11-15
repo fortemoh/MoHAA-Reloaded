@@ -190,7 +190,8 @@ typedef struct {
 
     // 2D lists: what the 2D calls between Begin2DList (0: a new handle, returned)
     // and End2DList draw, kept; drawn at End2DList and by Draw2DList again as one
-    // command. Free2DList frees one; the renderer's restart frees all
+    // command. Free2DList frees one; the renderer's restart frees all. A renderer
+    // may leave them NULL (or Begin2DList return 0): the UI then draws as it comes
     int (*Begin2DList)(int handle);
     void (*End2DList)(void);
     void (*Draw2DList)(int handle);
