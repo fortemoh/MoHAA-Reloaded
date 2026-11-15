@@ -1266,7 +1266,7 @@ void UI_GetHighResolutionScale(vec2_t scale)
 ====================
 UI_CompHuds
 
-Added: the Competitive HUD's menus (cg_hudstyle 1, ui/hud_comp_*.urc),
+Added: the Competitive HUD's menus (cg_hudstyle 1 or 2, ui/hud_comp_*.urc),
 shown in place of the stock HUD's
 ====================
 */
@@ -1287,7 +1287,7 @@ static void UI_CompHuds(bool show, bool messages = false)
     for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
         Menu      *hud = menus[i];
         // (messages only: the menus with the game messages, the chat, the kills and the vote;
-        // the bottom's health and ammo: cg_hud_layout's)
+        // the bottom's health and ammo: cg_hudstyle's preset's)
         const bool on  = (show && ui_compHudInLayout[i]) || (messages && (i == 1 || i == 3 || i == 4 || i == 11));
 
         if (hud && containers[i] && on != containers[i]->IsVisible()) {
