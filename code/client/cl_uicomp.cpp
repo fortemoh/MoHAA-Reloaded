@@ -1701,6 +1701,12 @@ typedef struct {
     vec3_t       origin, mins, maxs; // its bounds in the world
 } rmSolid_t;
 
+typedef struct {
+    float    top, bottom;
+    vec3_t   at;
+    qboolean ok;
+} rmDown_t;
+
 static struct {
     char                   map[MAX_QPATH];
     float                  x0, y0, zMin, zMax;
@@ -1708,6 +1714,7 @@ static struct {
     std::vector<int>       head; // a column's first floor, -1 none
     std::vector<rmNode_t>  nodes;
     std::vector<rmSolid_t> solids;          // the brush entities stood on
+    std::vector<rmDown_t>  down;            // each column's last trace down (asked again: its answer)
     std::vector<int>       queue, queueCell; // the floors still to walk out from
     size_t                 queued;
     int                    walked, seedTime; // the floors the picture has, the players' last check
@@ -1724,35 +1731,47 @@ static struct {
 } rm;
 
 // the first floor straight down from top to bottom (the world's or a brush
-// entity's, the higher), not too steep, with room for a crouched player
-static qboolean RM_Floor(float x, float y, float top, float bottom, float *z)
+// entity's, the higher), not too steep, not one of column c's (within 24
+// units: found again it adds nothing), with room for a crouched player. A
+// column's trace down asked again (its neighbours on a flat floor ask the
+// same) gives the answer it gave
+static qboolean RM_Floor(int c, float x, float y, float top, float bottom, float *z)
 {
     static const vec3_t mins = {-7, -7, 0}, maxs = {7, 7, 1}, cmins = {-15, -15, 18}, cmaxs = {15, 15, 50};
     const vec3_t        start = {x, y, top}, end = {x, y, bottom};
     trace_t             tr, t;
+    rmDown_t            own, *d = c < (int)rm.down.size() ? &rm.down[c] : &own;
 
-    CM_BoxTrace(&tr, start, end, mins, maxs, 0, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, qfalse);
-    for (const rmSolid_t& s : rm.solids) {
-        if (x < s.mins[0] - 8 || x > s.maxs[0] + 8 || y < s.mins[1] - 8 || y > s.maxs[1] + 8 || s.mins[2] > top || s.maxs[2] < bottom) {
-            continue;
+    if (d == &own || d->top != top || d->bottom != bottom) {
+        CM_BoxTrace(&tr, start, end, mins, maxs, 0, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, qfalse);
+        for (const rmSolid_t& s : rm.solids) {
+            if (x < s.mins[0] - 8 || x > s.maxs[0] + 8 || y < s.mins[1] - 8 || y > s.maxs[1] + 8 || s.mins[2] > top || s.maxs[2] < bottom) {
+                continue;
+            }
+            CM_TransformedBoxTrace(&t, start, end, mins, maxs, s.model, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, s.origin, vec3_origin, qfalse);
+            if (t.startsolid || t.fraction < tr.fraction) {
+                tr = t;
+            }
         }
-        CM_TransformedBoxTrace(&t, start, end, mins, maxs, s.model, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, s.origin, vec3_origin, qfalse);
-        if (t.startsolid || t.fraction < tr.fraction) {
-            tr = t;
-        }
+        *d = {top, bottom, {tr.endpos[0], tr.endpos[1], tr.endpos[2]}, !(tr.startsolid || tr.allsolid || tr.fraction >= 1.0f || tr.plane.normal[2] < 0.7f)};
     }
-    if (tr.startsolid || tr.allsolid || tr.fraction >= 1.0f || tr.plane.normal[2] < 0.7f) {
+    if (!d->ok) {
         return qfalse;
     }
-    *z = tr.endpos[2];
+    *z = d->at[2];
+    for (int n = rm.head[c]; n >= 0; n = rm.nodes[n].next) {
+        if (fabsf(rm.nodes[n].z - *z) < 24.0f) {
+            return qfalse;
+        }
+    }
     // a crouched player has room there
-    CM_BoxTrace(&t, tr.endpos, tr.endpos, cmins, cmaxs, 0, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, qfalse);
+    CM_BoxTrace(&t, d->at, d->at, cmins, cmaxs, 0, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, qfalse);
     for (const rmSolid_t& s : rm.solids) {
         if (t.startsolid || t.allsolid) {
             break;
         }
         if (x >= s.mins[0] - 16 && x <= s.maxs[0] + 16 && y >= s.mins[1] - 16 && y <= s.maxs[1] + 16) {
-            CM_TransformedBoxTrace(&t, tr.endpos, tr.endpos, cmins, cmaxs, s.model, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, s.origin, vec3_origin, qfalse);
+            CM_TransformedBoxTrace(&t, d->at, d->at, cmins, cmaxs, s.model, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, s.origin, vec3_origin, qfalse);
         }
     }
     return !t.startsolid && !t.allsolid;
@@ -1784,7 +1803,7 @@ static void RM_Seed(float x, float y, float top, float bottom)
     float     z;
 
     if (cx >= 0 && cy >= 0 && cx < rm.cw && cy < rm.ch
-        && RM_Floor(rm.x0 + (cx + 0.5f) * RM_CELL, rm.y0 + (cy + 0.5f) * RM_CELL, top, bottom, &z)) {
+        && RM_Floor(cy * rm.cw + cx, rm.x0 + (cx + 0.5f) * RM_CELL, rm.y0 + (cy + 0.5f) * RM_CELL, top, bottom, &z)) {
         const int n = RM_Node(cy * rm.cw + cx, z, &added);
 
         if (added) {
@@ -1809,7 +1828,7 @@ static void RM_Step(size_t most)
             float     nz;
 
             if (nx < 0 || ny < 0 || nx >= rm.cw || ny >= rm.ch
-                || !RM_Floor(rm.x0 + (nx + 0.5f) * RM_CELL, rm.y0 + (ny + 0.5f) * RM_CELL, z + 72.0f, z - 4096.0f, &nz)) {
+                || !RM_Floor(ny * rm.cw + nx, rm.x0 + (nx + 0.5f) * RM_CELL, rm.y0 + (ny + 0.5f) * RM_CELL, z + 72.0f, z - 4096.0f, &nz)) {
                 continue;
             }
             const int n = RM_Node(ny * rm.cw + nx, nz, &added);
@@ -1839,6 +1858,8 @@ static void RM_Walk(void)
     rm.cw = Q_min(2048, (int)((maxs[0] - mins[0]) / RM_CELL) + 1);
     rm.ch = Q_min(2048, (int)((maxs[1] - mins[1]) / RM_CELL) + 1);
     rm.head.assign(rm.cw * rm.ch, -1);
+    // (up to a million columns: 24 MB)
+    rm.down.assign(rm.cw * rm.ch <= (1 << 20) ? rm.cw * rm.ch : 0, {NAN, NAN, {0, 0, 0}, qfalse});
     rm.nodes.clear();
     rm.solids.clear();
     rm.queue.clear();
