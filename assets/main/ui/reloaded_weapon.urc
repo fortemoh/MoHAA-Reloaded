@@ -1,4 +1,4 @@
-// The Reloaded weapon select, shown for SelectPrimaryWeapon[_<nation>] and the team menus (SelectTeam, ObjSelectTeam, SelectFFAModel; cl_uimenus.cpp): one menu for the side, the model and the weapon; the model view of the side previewed beside the grid
+// The Reloaded weapon select, shown for SelectPrimaryWeapon[_<nation>] and the team menus (SelectTeam, ObjSelectTeam, SelectFFAModel; cl_uimenus.cpp): one menu for the side, the model and the weapon; the figure of the side and model previewed beside the grid, from the knees up (placed, made and framed by cl_uimenus.cpp: RL_FIG*)
 menu "reloaded_weapon" 640 480 NONE 0
 align left top
 fgcolor 1.00 1.00 1.00 1.00
@@ -22,35 +22,19 @@ layer back
 resource
 Label
 {
-name "modelallies"
+name "figure"
 rect 0 0 64 64
 fgcolor 1.00 1.00 1.00 1.00
 bgcolor 0.00 0.00 0.00 0.00
 borderstyle "NONE"
-linkcvar "ui_disp_playermodel"
+linkcvar "ui_reloaded_figure"
 rendermodel 1
-modeloffset "0 0 0"
+modeloffset "0 0 -15"
 modelrotateoffset "0 0 0"
-modelangles "10 180 0"
-modelscale 1.12
-modelanim americanselectionidle
-}
-
-resource
-Label
-{
-name "modelaxis"
-rect 0 0 64 64
-fgcolor 1.00 1.00 1.00 1.00
-bgcolor 0.00 0.00 0.00 0.00
-borderstyle "NONE"
-linkcvar "ui_disp_playergermanmodel"
-rendermodel 1
-modeloffset "0 0 0"
-modelrotateoffset "0 0 0"
-modelangles "10 180 0"
-modelscale 1.12
-modelanim germanselectionidle
+modelangles "4 160 0"
+modelscale 0.82
+modelaspect 1
+modelanim reloadedidle
 }
 
 resource

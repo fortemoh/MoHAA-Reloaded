@@ -68,7 +68,8 @@ void CL_Draw3DModel(
     vec3_t    offset,
     vec3_t    angle,
     vec3_t    color,
-    str       anim
+    str       anim,
+    bool      keepAspect
 )
 {
     refdef_t    inv_refdef {};
@@ -78,6 +79,10 @@ void CL_Draw3DModel(
 
     inv_refdef.fov_x   = 30;
     inv_refdef.fov_y   = 30;
+    if (keepAspect && h > 0) {
+        // Added: the model unstretched in a frame that isn't square
+        inv_refdef.fov_x = RAD2DEG(2.0f * atanf(tanf(DEG2RAD(15.0f)) * w / h));
+    }
     inv_refdef.x       = x;
     inv_refdef.y       = y;
     inv_refdef.width   = w;

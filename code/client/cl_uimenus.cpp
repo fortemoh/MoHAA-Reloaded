@@ -38,18 +38,26 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "client.h"
 #include "cl_ui.h"
 #include "cl_uimenus.h"
+#include "cl_uicomp.h"
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
 
 #include <algorithm>
+#include <map>
 #include <string>
 #include <vector>
 
 #define RL_OUTLINES "ui/outlines/"
-// the model views' modelscale (ui/reloaded_weapon.urc)
-#define RL_MODELSCALE 1.12f
+// the weapon menu's figure (ui/reloaded_weapon.urc's label "figure"): its
+// modelscale; the height in the middle of its view (48, the middle of the 96
+// units the model is fitted to, less modeloffset's height); his head's top
+// (a helmet's)
+#define RL_FIGSCALE 0.82f
+#define RL_FIGMID   63.0f
+#define RL_FIGHEAD  98.0f
 
 static cvar_t *ui_classicmenus;
+static cvar_t *ui_reloaded_figure; // the figure's model (the label's linkcvar)
 static cvar_t *ui_dm_primary;
 static cvar_t *ui_reloaded_nation;
 
@@ -870,6 +878,18 @@ static int RL_ModelNation(int side, const char *file, int target)
     return NAT_US;
 }
 
+// a side's own model (dm_playermodel, dm_playergermanmodel): its file (the old
+// Waffen-SS names the files' german_waffenss_, as UI_GetPlayerModel_f shows them)
+static std::string RL_OwnModel(int side)
+{
+    const char *own = Cvar_VariableString(side ? "dm_playergermanmodel" : "dm_playermodel");
+
+    if (side && !Q_stricmpn(own, "german_waffen_", 14)) {
+        return std::string("german_waffenss_") + (own + 14);
+    }
+    return own;
+}
+
 // the model a side previews: its file (no extension)
 static std::string RL_PreviewModel(int side)
 {
@@ -878,7 +898,61 @@ static std::string RL_PreviewModel(int side)
     if (pick >= 0 && pick < (int)rl_wp.models[side].size()) {
         return rl_wp.models[side][pick].file;
     }
-    return Cvar_VariableString(side ? "dm_playergermanmodel" : "dm_playermodel");
+    return RL_OwnModel(side);
+}
+
+/*
+The weapon menu's figure stands in the game's own unarmed idle (models/human/
+animation/idle/generic_idle_B.skc, a loop), which the player models don't
+have. So he is a copy of the player model previewed made here, ui/figures/
+<model>.tik, read as a file compiled in: the model's TIKI and that idle. The
+models the game shows in play aren't touched
+*/
+// (a name ending in digits would be one of a set played at random)
+#define RL_FIGANIM "reloadedidle"
+
+static const char rl_figAnims[] = "\n"
+                                  "animations\n"
+                                  "{\n"
+                                  "\t$path models/human/animation\n"
+                                  "\t" RL_FIGANIM "\tidle/generic_idle_B.skc\n"
+                                  "}\n";
+
+typedef struct {
+    std::string name; // ui/figures/<model>.tik
+    std::string text;
+} rlFigure_t;
+
+static std::map<std::string, rlFigure_t> rl_figures; // by the model's file, lower case
+
+// the figure of a model's file (no extension): its TIKI's name; the model's own
+// when it can't be made
+static std::string RL_Figure(const std::string& file)
+{
+    const std::string own = "models/player/" + file + ".tik";
+    std::string       key = file;
+
+    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return (char)tolower(c); });
+    auto it = rl_figures.find(key);
+    if (it == rl_figures.end()) {
+        rlFigure_t fig;
+        void      *buf;
+        const long len = FS_ReadFile(own.c_str(), &buf);
+
+        if (len <= 0 || !buf) {
+            return own;
+        }
+        fig.name = "ui/figures/" + key + ".tik";
+        fig.text.assign((const char *)buf, len);
+        fig.text += rl_figAnims;
+        FS_FreeFile(buf);
+        it = rl_figures.emplace(key, fig).first;
+        if (!UI_CompHud_AddFile(it->second.name.c_str(), it->second.text.data(), (int)it->second.text.size())) {
+            rl_figures.erase(it);
+            return own;
+        }
+    }
+    return it->second.name;
 }
 
 // the nation previewed: the server's (the menu's name) for the side and model it
@@ -949,18 +1023,13 @@ static void RL_WeaponPreviewReset(void)
     FS_FreeFileList(files);
     for (int t = 0; t < 2; t++) {
         std::vector<rlModel_t>& list = rl_wp.models[t];
-        char                    own[MAX_QPATH];
+        const std::string       own = RL_OwnModel(t);
 
         std::sort(list.begin(), list.end(), [](const rlModel_t& a, const rlModel_t& b) {
             return Q_stricmp(a.order.c_str(), b.order.c_str()) < 0;
         });
-        Q_strncpyz(own, Cvar_VariableString(t ? "dm_playergermanmodel" : "dm_playermodel"), sizeof(own));
-        // (the old Waffen-SS names: the files' german_waffenss_, as UI_GetPlayerModel_f shows them)
-        if (t && !Q_stricmpn(own, "german_waffen_", 14)) {
-            Com_sprintf(own, sizeof(own), "german_waffenss_%s", Cvar_VariableString("dm_playergermanmodel") + 14);
-        }
         for (int i = 0; i < (int)list.size(); i++) {
-            if (!Q_stricmp(list[i].file.c_str(), own)) {
+            if (!Q_stricmp(list[i].file.c_str(), own.c_str())) {
                 rl_wp.own[t] = rl_wp.pick[t] = i;
                 break;
             }
@@ -1105,6 +1174,7 @@ void UI_Menus_Init(void)
     ui_classicmenus    = Cvar_Get("ui_classicmenus", "0", CVAR_ARCHIVE);
     ui_dm_primary      = Cvar_Get("ui_dm_primary", "", CVAR_ARCHIVE);
     ui_reloaded_nation = Cvar_Get("ui_reloaded_nation", "american", 0);
+    ui_reloaded_figure = Cvar_Get("ui_reloaded_figure", "", 0);
     ui_menuAlias       = UI_Menus_Alias;
 }
 
@@ -1114,10 +1184,10 @@ void UI_Menus_Init(void)
 THE WIDGET
 
 ReloadedMenu: "screen weapon|esc|scoreboard", "layer back|front".
-The back layer draws what is under the 3D model views (a dimming) and
-places the views (the menu's labels named
-modelallies and modelaxis); the front layer draws the rest and takes the
-mouse and the keys. Both lay the screen out alike from the same data
+The back layer draws what is under the 3D model view (a dimming, the
+weapon menu's warm haze) and places the view (the weapon menu's label
+named figure); the front layer draws the rest and takes the mouse and the
+keys. Both lay the screen out alike from the same data
 
 ====================================================================
 */
@@ -1190,7 +1260,7 @@ public:
     int  HitAt(int x, int y);
     bool Hot(int id) const { return m_focus == id; }
     void Choose(int id);
-    void PlaceModel(const char *name, const rlView_t& v, float cx, float footY, float height, bool show);
+    void PlaceFigure(const rlView_t& v, float cx, float headY, float width);
 
     void DrawWeapon(const rlView_t& v, const rlInfo_t& in);
     void DrawEsc(const rlView_t& v, const rlInfo_t& in);
@@ -1298,30 +1368,18 @@ qboolean UIReloadedMenu::KeyEvent(int key, unsigned int time)
     return qtrue;
 }
 
-void UIReloadedMenu::PlaceModel(const char *name, const rlView_t& v, float cx, float footY, float height, bool show)
+// the figure from the knees up, CS2's: the view's foot on the screen's, his
+// head's top at headY, width wide about cx. The view (as wide as its frame:
+// modelaspect) shows RL_FIGSCALE of the 96 units the model is fitted to,
+// RL_FIGMID up from his feet in its middle
+void UIReloadedMenu::PlaceFigure(const rlView_t& v, float cx, float headY, float width)
 {
-    UIWidget *w = m_parent ? m_parent->FindWidget(name) : NULL;
+    UIWidget   *w = m_parent ? m_parent->FindWidget("figure") : NULL;
+    const float k = (v.dh - headY) / (RL_FIGHEAD - RL_FIGMID + 48.0f * RL_FIGSCALE); // units a model unit
+    const int   x = RL_P(v, cx - width / 2), y = RL_P(v, v.dh - 96.0f * RL_FIGSCALE * k);
 
-    if (!w) {
-        return;
-    }
-    if (!show) {
-        if (w->IsVisible()) {
-            w->setShow(false);
-        }
-        return;
-    }
-    // a square view (the model view's field of view is alike both ways): the
-    // model's bounds fill 1 / RL_MODELSCALE of it, in its middle, with room
-    // above for what a pose raises past them (a cap, a hand)
-    const float side = height * RL_MODELSCALE;
-    const int   px   = RL_P(v, side);
-    const int   x    = RL_P(v, cx) - px / 2;
-    const int   y    = RL_P(v, footY + side * (1.0f - 1.0f / RL_MODELSCALE) * 0.5f) - px;
-
-    w->setFrame(UIRect2D(x, y, px, px));
-    if (!w->IsVisible()) {
-        w->setShow(true);
+    if (w) {
+        w->setFrame(UIRect2D(x, y, RL_P(v, cx + width / 2) - x, RL_P(v, v.dh) - y));
     }
 }
 
@@ -1521,7 +1579,7 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
     const std::string             axisModel = RL_PreviewModel(1); // (the German sniper's)
     const int                     n         = in.target >= TG_MOHTT ? 7 : 6;
     const int                     rows      = (n + 1) / 2;
-    const float                   head = 104, foot = 104, modelW = 380;
+    const float                   head = 104, foot = 104, modelW = 440;
     float                         tw, th, gap, gw;
 
     RL_Grid(v, &tw, &th, &gap, &gw);
@@ -1549,10 +1607,18 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
         UI_DrawDep(Cvar_Get(rl_classCvar[i], "1", 0));
     }
     if (m_back) {
-        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
-        // the model beside, of the side and model previewed, as tall as the menu
-        PlaceModel("modelallies", v, x0 + gw + 40 + modelW / 2, y0 + total - 4, total + 40, tab == 0);
-        PlaceModel("modelaxis", v, x0 + gw + 40 + modelW / 2, y0 + total - 4, total + 40, tab == 1);
+        const std::string figure = RL_Figure(RL_PreviewModel(tab));
+        const float       cx     = x0 + gw + 40 + modelW / 2;
+
+        // the scene under a warm haze (one layer, CS2's)
+        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(58, 48, 30, 195));
+        // the figure beside, of the side and model previewed, from the knees up,
+        // his head's top level with the header's; his view as wide as an
+        // arm's reach, on screen (he stays in its middle)
+        if (Q_stricmp(ui_reloaded_figure->string, figure.c_str())) {
+            Cvar_Set("ui_reloaded_figure", figure.c_str());
+        }
+        PlaceFigure(v, cx, y0 - 6, 2 * Q_min(280.0f, Q_min(cx, v.dw - cx)));
         return;
     }
 
@@ -1795,14 +1861,13 @@ void UIReloadedMenu::Choose(int id)
                 uii.Snd_PlaySound("sound/menu/apply.wav");
             }
         } else if (id == ID_WPREV || id == ID_WNEXT) {
-            // its next or previous model previewed (the live model's cvar)
+            // its next or previous model previewed (the figure follows)
             const int t = rl_wp.tab, nm = (int)rl_wp.models[t].size();
             int       p = rl_wp.pick[t];
 
             if (nm) {
                 p = p < 0 || p >= nm ? (id == ID_WNEXT ? 0 : nm - 1) : (p + (id == ID_WNEXT ? 1 : nm - 1)) % nm;
                 rl_wp.pick[t] = p;
-                Cvar_Set(t ? "ui_disp_playergermanmodel" : "ui_disp_playermodel", va("models/player/%s.tik", rl_wp.models[t][p].file.c_str()));
                 uii.Snd_PlaySound("sound/menu/apply.wav");
             }
         } else if (id >= 0 && id < WC_NUM) {
@@ -2246,4 +2311,9 @@ void UI_Menus_PreBake(void)
     }
     rl_bakeOnly = false;
     UI_BakeBatch(false);
+    // the figures of the player's own models (both sides) loaded with the map,
+    // so the weapon menu's first opening loads nothing
+    for (int t = 0; t < 2; t++) {
+        re.RegisterModel(RL_Figure(RL_OwnModel(t)).c_str());
+    }
 }

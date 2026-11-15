@@ -62,6 +62,7 @@ protected:
     vec3_t                    m_angles;
     float                     m_scale;
     str                       m_anim;
+    bool                      m_modelaspect; // Added: the model's view as wide as the label (modelaspect)
     UIReggedMaterial         *m_statbar_material;
     UIReggedMaterial         *m_statbar_material_flash;
     UIReggedMaterial         *m_statbar_material_marker;
@@ -94,6 +95,7 @@ public:
     void LayoutRenderModelAngles(Event *ev);
     void LayoutRenderModelScale(Event *ev);
     void LayoutRenderModelAnim(Event *ev);
+    void LayoutRenderModelAspect(Event *ev); // Added
 
     void DrawStatbar(float frac);
     void DrawStatCircle(float frac);

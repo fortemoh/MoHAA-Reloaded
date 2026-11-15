@@ -27,6 +27,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 void     UI_CompHud_Files(void);          // the files compiled in, before the renderer starts (its shader script)
 void     UI_CompHud_HeadIcons(void);      // the head icons' pictures, made once the UI can bake
+// a file made while the game runs read as one compiled in (name and data kept until the client quits); qfalse: no room
+qboolean UI_CompHud_AddFile(const char *name, const void *data, int size);
 void     UI_CompHud_Init(void);
 qboolean UI_CompHud_Active(void);         // cg_hudstyle 1
 void     UI_CompHud_Frame(void);          // the ui_hud_* cvars, before the menus draw

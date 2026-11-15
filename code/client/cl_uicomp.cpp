@@ -1238,6 +1238,46 @@ in. The discs fill as much of the picture as the game's 32 px allies.tga
 static std::vector<builtinFile_t> comp_files;
 static std::vector<byte>          comp_headIcons[2];
 
+/*
+================
+UI_CompHud_AddFile
+
+A file made while the game runs, given to the filesystem with the files
+compiled in (the head icons, the weapon menu's figures); its name and data
+are the caller's, kept until the client quits. The list has room made once,
+so it never moves, and an entry is written before the list's end moves past
+it: a file read on another thread meanwhile finds the list whole
+================
+*/
+qboolean UI_CompHud_AddFile(const char *name, const void *data, int size)
+{
+    // (room for the files made: the head icons, a figure a player model)
+    static const size_t room = 256;
+    size_t              n;
+
+    if (comp_files.empty()) {
+        n = 0;
+        for (const builtinFile_t *f = builtin_files; f->name; f++) {
+            n++;
+        }
+        comp_files.reserve(n + room + 1);
+        comp_files.assign(builtin_files, builtin_files + n);
+        comp_files.push_back({NULL, NULL, 0});
+        FS_SetBuiltinFiles(comp_files.data());
+    }
+    if (comp_files.size() == comp_files.capacity()) {
+        return qfalse;
+    }
+    // the new end first, then the entry over the old end, its name last
+    n = comp_files.size() - 1;
+    comp_files.push_back({NULL, NULL, 0});
+    comp_files[n].data = (const unsigned char *)data;
+    comp_files[n].size = size;
+    std::atomic_thread_fence(std::memory_order_release);
+    comp_files[n].name = name;
+    return qtrue;
+}
+
 void UI_CompHud_HeadIcons(void)
 {
     static const char *const icons[2][2] = {
@@ -1247,11 +1287,8 @@ void UI_CompHud_HeadIcons(void)
     const int         size = 128;
     std::vector<byte> rgba(size * size * 4);
 
-    if (!comp_files.empty()) {
+    if (!comp_headIcons[0].empty()) {
         return;
-    }
-    for (const builtinFile_t *f = builtin_files; f->name; f++) {
-        comp_files.push_back(*f);
     }
     for (int i = 0; i < 2; i++) {
         std::vector<byte>& tga = comp_headIcons[i];
@@ -1276,10 +1313,8 @@ void UI_CompHud_HeadIcons(void)
                 tga.push_back(p[3]);
             }
         }
-        comp_files.push_back({icons[i][0], tga.data(), (int)tga.size()});
+        UI_CompHud_AddFile(icons[i][0], tga.data(), (int)tga.size());
     }
-    comp_files.push_back({NULL, NULL, 0});
-    FS_SetBuiltinFiles(comp_files.data());
 }
 
 void UI_CompHud_Init(void)
