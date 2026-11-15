@@ -2270,11 +2270,19 @@ static void RM_SeedPlayers(const vec3_t eye)
     }
     rm.seedTime = cls.realtime;
     RM_Seed(eye[0], eye[1], eye[2] - 32.0f, eye[2] - 160.0f);
-    for (int i = 0; g_radarClients && i < MAX_CLIENTS; i++) {
-        const radarClient_t *c = &g_radarClients[i];
+    // the teammates the snapshot has, on the floor under their feet: the
+    // radar's own positions are x and y only (radarClient_t; its origin[2]
+    // read past them, into axis[0], a height near 0), the others not known
+    for (int i = 0; g_radarClients && cl.snap.valid && i < cl.snap.numEntities; i++) {
+        const entityState_t *e = &cl.parseEntities[(cl.snap.parseEntitiesNum + i) & (MAX_PARSE_ENTITIES - 1)];
+        const radarClient_t *c;
 
+        if (e->number < 0 || e->number >= MAX_CLIENTS) {
+            continue;
+        }
+        c = &g_radarClients[e->number];
         if (c->time && cl.snap.serverTime - c->time < 5000) {
-            RM_Seed(c->origin[0], c->origin[1], c->origin[2] + 32.0f, c->origin[2] - 96.0f);
+            RM_Seed(e->origin[0], e->origin[1], e->origin[2] + 32.0f, e->origin[2] - 96.0f);
         }
     }
 }
