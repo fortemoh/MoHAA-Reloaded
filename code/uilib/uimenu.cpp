@@ -496,7 +496,26 @@ void MenuManager::DeleteAllMenus(void)
     m_showmenustack.Clear();
 }
 
+// Added: the name of a menu shown for another's (the client's Reloaded
+// menus for the stock ones: cl_uimenus.cpp), NULL none
+const char *(*ui_menuAlias)(const char *name);
+
 Menu *MenuManager::FindMenu(str name)
+{
+    const char *alias = ui_menuAlias ? ui_menuAlias(name.c_str()) : NULL;
+
+    if (alias) {
+        // (the stock menu when the other isn't loaded)
+        Menu *m = FindMenuNamed(alias);
+
+        if (m) {
+            return m;
+        }
+    }
+    return FindMenuNamed(name);
+}
+
+Menu *MenuManager::FindMenuNamed(str name)
 {
     int         i;
     int         count;
