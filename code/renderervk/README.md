@@ -9159,7 +9159,13 @@ selects the sample count (see Implementation notes).
     data again when it was made without them, which the temporal shaders
     would read out of bounds). Not moved: CPU deforms, the effects
     shader's deforms, skeletal models skinned on the CPU, the terrain's
-    geomorphs. Portal views have no motion of their own.
+    geomorphs. Portal views have no motion of their own. The depth hack's
+    draws (the first-person weapon, its flash) have a projection of their
+    own when the game gives one (`refdef_t` `viewmodel_fov_x/y`,
+    `viewParms.vmProjection`, `RB_DepthHackProjection`): their last position
+    is through the last frame's of that one (`vk_set_prev_projection`,
+    `RB_TemporalPrevVmProjection`), so a weapon that moves with the camera
+    has no motion.
   - *After the scene* (`VK_TemporalResolve`): the depth pyramid
     (`R32G32_SFLOAT`, min and max view distance, level 0 half the
     framebuffer's size; the weapon and the sky at the far distance: they

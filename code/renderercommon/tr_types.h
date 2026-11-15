@@ -198,6 +198,10 @@ typedef struct {
     float       sky_alpha;
     vec3_t      sky_origin;
     vec3_t      sky_axis[3];
+
+	// the field of view of what has the depth hack (the first-person weapon
+	// and its flash), drawn with a projection of its own; 0: the scene's
+	float		viewmodel_fov_x, viewmodel_fov_y;
 } refdef_t;
 
 

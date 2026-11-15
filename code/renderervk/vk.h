@@ -321,6 +321,11 @@ void		vk_ao_scene( const float *fog );
 // the last frame's modelview of the following draws while the modelview is
 // the current one (vk_set_modelview); NULL: the camera's motion only
 void		vk_set_prev_modelview( const float *matrix );
+// the last frame's projection of the following perspective draws, while
+// they have a projection other than the view's (the first-person weapon's
+// own); NULL: the view's (vkSceneView_t prevProjection). A scene starts
+// with NULL
+void		vk_set_prev_projection( const float *matrix );
 // the following draws show what the motion vectors don't follow (effects,
 // sprites, flares, animated textures): blended ones put their share of the
 // pixel into the scene's alpha, where the anti-aliasing takes less history

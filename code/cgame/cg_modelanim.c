@@ -1580,6 +1580,11 @@ void CG_ModelAnim(centity_t *cent, qboolean bDoShaderTime)
                 }
 
                 AnglesToAxis(cg.refdefViewAngles, cg.refdef.viewaxis);
+
+                if (!cg_righthand->integer && cg.snap->ps.stats[STAT_HEALTH] > 0 && !cg_animationviewmodel->integer) {
+                    // left-handed
+                    CG_MirrorViewModel(&model);
+                }
             }
 
             model.renderfx &= ~(RF_FIRST_PERSON | RF_THIRD_PERSON);
