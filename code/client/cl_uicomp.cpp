@@ -1848,8 +1848,10 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
         ph = Q_max(ph, phi[i]);
         w += pw[i] + (counts ? 4.0f + m_countFont->getWidth(va("%d", counts[i]), -1) : 0.0f) + (i + 1 < n ? (counts ? 8.0f : 0.0f) + 4.0f : 0.0f);
     }
-    // the name's line kept in hand or not: the list stays put
-    top = *bottom - ph - 8.0f - lineH;
+    // the name's line kept in hand or not, so the list stays put; as tight as
+    // reads well: the line just under the pictures, a little more room up to
+    // the next weapon
+    top = *bottom - ph - 2.0f - lineH;
     x = right - w;
     for (i = 0; i < n; i++) {
         const float alpha = hand == i ? 1.0f : 0.55f;
@@ -1869,9 +1871,9 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
         const char *name = CL_ConfigString(CS_WEAPONS + cl.snap.ps.activeItems[ITEM_WEAPON]);
 
         // a long name smaller, to fit 200 px
-        Comp_Text(m_font, right - Comp_TextW(m_font, name, 200.0f), top + ph + 8.0f + lineH * 0.5f, name, white, getVirtualScale(), 200.0f);
+        Comp_Text(m_font, right - Comp_TextW(m_font, name, 200.0f), top + ph + 2.0f + lineH * 0.5f, name, white, getVirtualScale(), 200.0f);
     }
-    *bottom = top - 14.0f;
+    *bottom = top - 8.0f;
 }
 
 void UIHudWeapons::Draw(void)
