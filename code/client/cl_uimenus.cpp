@@ -1169,21 +1169,6 @@ keys. Both lay the screen out alike from the same data
 
 enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD };
 
-// the vote tile's state, as the stock menu's widgets show it (UI_MultiplayerMainMenuWidgetsUpdate)
-enum { VOTE_CALL, VOTE_NOW, VOTE_VOTED, VOTE_OFF };
-
-static int RL_VoteState(void)
-{
-    if (!Cvar_VariableIntegerValue("cg_allowvote")) {
-        return VOTE_OFF;
-    }
-    if (atoi(CL_ConfigString(CS_VOTE_TIME))) {
-        return cl.snap.ps.voted ? VOTE_VOTED : VOTE_NOW;
-    }
-    return VOTE_CALL;
-}
-
-
 // the front layer's hot item, for the back layer (a frame later)
 static int rl_hot[3] = {-1, -1, -1};
 
@@ -1304,7 +1289,7 @@ qboolean UIReloadedMenu::KeyEvent(int key, unsigned int time)
         return qfalse;
     }
     // (m_order is the grid, row by row; -1: a place that can't be chosen, a
-    // banned class or a vote that can't be cast, stepped over)
+    // banned class, stepped over)
     for (at = 0; at < n && (m_focus < 0 || m_order[at] != m_focus); at++) {
     }
     if (at == n) {
@@ -1411,7 +1396,7 @@ void UIReloadedMenu::Tick(void)
 int UIReloadedMenu::DrawKey(void)
 {
     struct {
-        int cs, scores, seconds, focus, self, team, vote, gametype, banner;
+        int cs, scores, seconds, focus, self, team, gametype, banner;
         int wtab, wpick[2], wserial; // the weapon menu's preview
     } k;
     int h = 0;
@@ -1430,9 +1415,6 @@ int UIReloadedMenu::DrawKey(void)
     if (m_screen == SCR_WEAPON || m_screen == SCR_ESC || m_screen == SCR_SCOREBOARD) {
         // (the time left's seconds)
         k.seconds = (atoi(CL_ConfigString(CS_MATCHEND)) - cl.serverTime) / 1000;
-    }
-    if (m_screen == SCR_ESC) {
-        k.vote = RL_VoteState();
     }
     if (m_screen == SCR_WEAPON) {
         k.wtab     = rl_wp.tab;
@@ -1703,23 +1685,24 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
 /*
 ================
 The Esc menu: the map, mode and players, the time left; two rows of
-tiles (Team & weapon two wide, as the weapon menu picks the side too, and
-Call a vote; Options, Spectate, Disconnect), Resume under them and a small
-Main menu link
+tiles (Main menu, Team & weapon, as the weapon menu picks the side too,
+Options; Spectate, Disconnect, Quit) and Resume under them
 ================
 */
 
-enum { ID_WEAPON, ID_VOTE, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_RESUME, ID_MAINMENU };
+// (in the grid's order, row by row: the keys step through them so)
+enum { ID_MAINMENU, ID_WEAPON, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_QUIT, ID_RESUME };
 
 static const struct {
     int         id, col, row, span; // span: the columns it takes
-    const char *label;              // (the vote's from its state)
+    const char *label;
 } rl_escTiles[] = {
-    {ID_WEAPON,     0, 0, 2, "TEAM & WEAPON"},
-    {ID_VOTE,       2, 0, 1, ""             },
-    {ID_OPTIONS,    0, 1, 1, "OPTIONS"      },
-    {ID_SPECTATOR,  1, 1, 1, "SPECTATE"     },
-    {ID_DISCONNECT, 2, 1, 1, "DISCONNECT"   },
+    {ID_MAINMENU,   0, 0, 1, "MAIN MENU"    },
+    {ID_WEAPON,     1, 0, 1, "TEAM & WEAPON"},
+    {ID_OPTIONS,    2, 0, 1, "OPTIONS"      },
+    {ID_SPECTATOR,  0, 1, 1, "SPECTATE"     },
+    {ID_DISCONNECT, 1, 1, 1, "DISCONNECT"   },
+    {ID_QUIT,       2, 1, 1, "QUIT"         },
 };
 
 void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
@@ -1730,11 +1713,9 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
 
     RL_Grid(v, &tw, &th, &gap, &gw);
     const float    head = 104, rb = 56;
-    const float    total = head + gap + 2 * th + gap + 22 + rb + 50;
+    const float    total = head + gap + 2 * th + gap + 22 + rb;
     const float    x0 = (v.dw - gw) / 2, y0 = (v.dh - total) / 2;
     const float    gy = y0 + head + gap;
-    const int      vote = RL_VoteState();
-    static const char *const voteLabels[] = {"CALL A VOTE", "VOTE NOW", "VOTED", "VOTING OFF"};
 
     if (m_back) {
         return;
@@ -1754,9 +1735,8 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
     for (const auto& t : rl_escTiles) {
         const int   i = t.id;
         const float x = x0 + t.col * (tw + gap), y = gy + t.row * (th + gap), w = t.span * tw + (t.span - 1) * gap;
-        const bool  inert = i == ID_VOTE && (vote == VOTE_VOTED || vote == VOTE_OFF);
-        const bool  hot   = Hot(i) && !inert;
-        const rlColor_t gc = inert ? RL_FAINT : hot ? RL_TEXT : RL_Rgb(200, 196, 186);
+        const bool  hot = Hot(i);
+        const rlColor_t gc = hot ? RL_TEXT : RL_Rgb(200, 196, 186);
         const float gcx = x + w / 2, gcy = y + th * 0.44f, S = th * 0.30f;
 
         RL_Round(v, x, y, w, th, 4, hot ? RL_T(T.mid, 150) : RL_Rgb(14, 16, 18, 226));
@@ -1775,8 +1755,11 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
                            S * 1.5f, S * 0.8f, gc);
             }
             break;
-        case ID_VOTE:
-            RL_Outline(v, RL_OUTLINES "glyphs/vote.svg", gcx, gcy, S, S, gc);
+        case ID_MAINMENU:
+            RL_Outline(v, RL_OUTLINES "glyphs/mainmenu.svg", gcx, gcy, S, S, gc);
+            break;
+        case ID_QUIT:
+            RL_Outline(v, RL_OUTLINES "glyphs/quit.svg", gcx, gcy, S, S, gc);
             break;
         case ID_OPTIONS:
             RL_Outline(v, RL_OUTLINES "glyphs/options.svg", gcx, gcy, S, S, gc);
@@ -1788,36 +1771,25 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
             RL_Outline(v, RL_OUTLINES "glyphs/disconnect.svg", gcx, gcy, S, S, gc);
             break;
         }
-        RL_Text(v, x + w / 2, y + th - 30, i == ID_VOTE ? voteLabels[vote] : t.label, RL_S1, inert ? RL_FAINT : RL_TEXT, true, RL_CENTER, 1.6f,
-                RL_MID, w - 20);
-        if (!inert) {
-            Hit(v, x, y, w, th, i);
-        }
+        RL_Text(v, x + w / 2, y + th - 30, t.label, RL_S1, RL_TEXT, true, RL_CENTER, 1.6f, RL_MID, w - 20);
+        Hit(v, x, y, w, th, i);
     }
     {
         const float ry = gy + 2 * th + gap + 22;
-        const bool  hot = Hot(ID_RESUME), mhot = Hot(ID_MAINMENU);
-        const float mw = RL_TextW(v, "MAIN MENU", RL_S2, false, 2.5f) + 24;
+        const bool  hot = Hot(ID_RESUME);
 
         RL_Round(v, x0, ry, gw, rb, 4, RL_Rgb(255, 255, 255, hot ? 26 : 16));
         RL_RoundFrame(v, x0, ry, gw, rb, 4, hot ? 2 : 1, hot ? RL_BRASS : RL_Rgb(255, 255, 255, 50));
         RL_Text(v, x0 + gw / 2, ry + rb / 2, "RESUME", RL_S1, RL_TEXT, true, RL_CENTER, 2, RL_MID);
         Hit(v, x0, ry, gw, rb, ID_RESUME);
-        RL_Text(v, x0 + gw / 2, ry + rb + 30, "MAIN MENU", RL_S2, mhot ? RL_BRASS : RL_MUTED, false, RL_CENTER, 2.5f, RL_MID);
-        Hit(v, x0 + gw / 2 - mw / 2, ry + rb + 14, mw, 32, ID_MAINMENU);
     }
-    // the keys: the tiles three a row (Team & weapon two places), then Resume, then Main menu
-    m_order.push_back(ID_WEAPON);
-    m_order.push_back(ID_WEAPON);
-    for (int i = ID_VOTE; i <= ID_DISCONNECT; i++) {
-        m_order.push_back(i == ID_VOTE && (vote == VOTE_VOTED || vote == VOTE_OFF) ? -1 : i);
+    // the keys: the tiles three a row, then Resume (the whole row)
+    for (int i = ID_MAINMENU; i <= ID_QUIT; i++) {
+        m_order.push_back(i);
     }
     m_order.push_back(ID_RESUME);
     m_order.push_back(ID_RESUME);
     m_order.push_back(ID_RESUME);
-    m_order.push_back(ID_MAINMENU);
-    m_order.push_back(ID_MAINMENU);
-    m_order.push_back(ID_MAINMENU);
     m_cols = 3;
 }
 
@@ -1884,8 +1856,8 @@ void UIReloadedMenu::Choose(int id)
         case ID_WEAPON:
             cmd = com_target_game->integer >= TG_MOHTA ? "popmenu 0;wait 50;pickweapon\n" : "popmenu 0;wait 250;pushmenu_weaponselect\n";
             break;
-        case ID_VOTE:
-            cmd = RL_VoteState() == VOTE_NOW ? "pushvote\n" : RL_VoteState() == VOTE_CALL ? "pushcallvote\n" : NULL;
+        case ID_QUIT:
+            cmd = "quit\n";
             break;
         case ID_OPTIONS:
             cmd = "popmenu 0;wait 250;ui_getplayermodel;pushmenu mpoptions\n";
