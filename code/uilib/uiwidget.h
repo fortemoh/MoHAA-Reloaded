@@ -395,6 +395,7 @@ public:
     void               setAlign(int align);
     int                getAlign(void);
     void               setMaterial(UIReggedMaterial *mat);
+    UIReggedMaterial  *getMaterial(void);
     void               setHoverMaterial(UIReggedMaterial *mat);
     void               setPressedMaterial(UIReggedMaterial *mat);
     class UIPoint2D    getLocalPoint(const UIPoint2D& pos);

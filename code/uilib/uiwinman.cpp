@@ -141,6 +141,8 @@ CLASS_DECLARATION(UIWidget, UIWindowManager, NULL) {
     {NULL, NULL}
 };
 
+const byte *(*ui_cursorPicture)(int *w, int *h, uihandle_t *shader);
+
 UIWindowManager::UIWindowManager()
 {
     m_amidead          = false;
@@ -150,6 +152,9 @@ UIWindowManager::UIWindowManager()
     m_backgroundwidget = NULL;
     m_cursor           = NULL;
     m_showcursor       = true;
+    m_cursorPic        = NULL;
+    m_cursorW          = 0;
+    m_cursorH          = 0;
     m_font             = NULL;
     m_bindactive       = NULL;
     setBorderStyle(border_none);
@@ -255,7 +260,22 @@ void UIWindowManager::UpdateViews(void)
     }
 
     if (m_cursor && m_showcursor && uid.uiHasMouse) {
-        vec4_t col;
+        vec4_t     col;
+        int        w = 0, h = 0;
+        uihandle_t shader = 0;
+        // Added: another picture (ui_cursorPicture), the system's cursor set from it when it changes
+        const byte *pic = ui_cursorPicture ? ui_cursorPicture(&w, &h, &shader) : NULL;
+
+        if (pic != m_cursorPic || w != m_cursorW || h != m_cursorH) {
+            if (pic) {
+                IN_SetCursorFromImage(pic, w, h, NULL);
+                m_cursorPic = pic;
+                m_cursorW   = w;
+                m_cursorH   = h;
+            } else {
+                refreshCursor();
+            }
+        }
 
         set2D();
 
@@ -265,7 +285,11 @@ void UIWindowManager::UpdateViews(void)
             VectorSet4(col, 1, 1, 1, 1);
             uii.Rend_SetColor(col);
 
-            uii.Rend_DrawPicStretched(uid.mouseX, uid.mouseY, 0, 0, 0, 0, 1, 1, m_cursor->GetMaterial());
+            if (pic) {
+                uii.Rend_DrawPicStretched(uid.mouseX, uid.mouseY, w, h, 0, 0, 1, 1, shader);
+            } else {
+                uii.Rend_DrawPicStretched(uid.mouseX, uid.mouseY, 0, 0, 0, 0, 1, 1, m_cursor->GetMaterial());
+            }
         }
 
         m_font->setColor(UWhite);
@@ -979,6 +1003,10 @@ void UIWindowManager::refreshCursor()
 {
     byte *pic;
     int   width, height;
+
+    // Added: the stock picture's (UpdateViews sets another again)
+    m_cursorPic = NULL;
+    m_cursorW = m_cursorH = 0;
 
     // Added in OPM
     //  Load cursor image and use it

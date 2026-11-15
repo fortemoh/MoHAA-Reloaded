@@ -5879,6 +5879,8 @@ static unsigned int  currentLoadTime;
 static char        **loadStrings;
 static unsigned int *loadTimes;
 static char         *loadStringsBuffer;
+// Added: the start of the name of the resource loading (UI_LoadProgress)
+static char          ui_loadWhat[4];
 
 class LoadResourceInfo
 {
@@ -6070,6 +6072,8 @@ void UI_LoadResource(const char *name)
     if (cls.loading == LOAD_PROGRESS_FALSE) {
         return;
     }
+    // Added: what loads (the Reloaded load screen's line)
+    Q_strncpyz(ui_loadWhat, name, sizeof(ui_loadWhat));
 
     if (cls.loading == LOAD_PROGRESS_SAVE) {
         UI_EndLoadResource();
@@ -6081,6 +6085,24 @@ void UI_LoadResource(const char *name)
     }
 
     UI_TestUpdateScreen(33);
+}
+
+/*
+====================
+UI_LoadProgress
+====================
+*/
+float UI_LoadProgress(const char **what)
+{
+    *what = ui_loadWhat;
+    switch (cls.loading) {
+    case LOAD_PROGRESS_LOAD:
+        return totalLoadTime ? (float)currentLoadTime / (float)totalLoadTime : 0.0f;
+    case LOAD_PROGRESS_FALSE:
+        return 1.0f;
+    default:
+        return -1.0f;
+    }
 }
 
 /*
@@ -6235,6 +6257,13 @@ void UI_BeginLoad(const char *pszMapName)
         ui_sCurrentLoadingMenu = "loading_default";
         ui_pLoadingMenu        = menuManager.FindMenu(ui_sCurrentLoadingMenu);
     }
+
+    // Added: the Reloaded load screen, the stock one's picture in it (cl_uimenus.cpp)
+    if (UI_Menus_Loading(ui_pLoadingMenu, pszMapName)) {
+        ui_sCurrentLoadingMenu = "reloaded_loading";
+        ui_pLoadingMenu        = menuManager.FindMenu(ui_sCurrentLoadingMenu);
+    }
+    ui_loadWhat[0] = 0;
 
     UI_ForceMenuOff(true);
     UI_DeactiveFloatingWindows();
