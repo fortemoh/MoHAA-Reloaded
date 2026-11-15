@@ -668,9 +668,29 @@ char *FS_BaseDir_BuildOSPath( const char *base, const char *qpath ) {
 	return ospath;
 }
 
+// Added: the files compiled in, a list ending with a NULL name
+static const builtinFile_t *fs_builtinFiles;
+
+void FS_SetBuiltinFiles( const builtinFile_t *files ) {
+	fs_builtinFiles = files;
+}
+
+// Added: the one compiled in of a name
+static const builtinFile_t *FS_BuiltinFile( const char *qpath ) {
+	const builtinFile_t *f;
+
+	for ( f = fs_builtinFiles; f && f->name; f++ ) {
+		if ( !FS_FilenameCompare( f->name, qpath ) ) {
+			return f;
+		}
+	}
+	return NULL;
+}
+
 #ifndef _WIN32
 struct dirNames_s {
 	qboolean		listed;
+	qboolean		recent;				// Added: listed less than 2 s after a change, for the files compiled in
 	dev_t			dev;
 	ino_t			ino;
 	struct timespec	mtime;
@@ -807,13 +827,15 @@ static qboolean FS_DirMayHave( directory_t *dir, const char *filename ) {
 	names = dir->names;
 
 	if ( !names->listed || names->dev != st.st_dev || names->ino != st.st_ino
-		|| names->mtime.tv_sec != FS_MTIME( st ).tv_sec || names->mtime.tv_nsec != FS_MTIME( st ).tv_nsec ) {
-		names->listed = qfalse;
+		|| names->mtime.tv_sec != FS_MTIME( st ).tv_sec || names->mtime.tv_nsec != FS_MTIME( st ).tv_nsec
+		|| ( names->recent && !FS_BuiltinFile( filename ) ) ) {
 		clock_gettime( CLOCK_REALTIME, &now );
-		if ( now.tv_sec - FS_MTIME( st ).tv_sec < 2 || !FS_ListDirNames( names, ospath ) ) {
+		// Changed: but one is made then for a file compiled in (read as the game
+		// starts, its pid file just made in the home directory), for those only
+		names->recent = now.tv_sec - FS_MTIME( st ).tv_sec < 2 ? qtrue : qfalse;
+		if ( ( names->recent && !FS_BuiltinFile( filename ) ) || !( names->listed = FS_ListDirNames( names, ospath ) ) ) {
 			return qtrue;
 		}
-		names->listed = qtrue;
 		names->dev = st.st_dev;
 		names->ino = st.st_ino;
 		names->mtime = FS_MTIME( st );
@@ -2079,30 +2101,6 @@ Filename are relative to the quake search path
 a null buffer will just return the file length without loading
 ============
 */
-/*
-============
-FS_SetBuiltinFiles
-
-Added: the files compiled in, a list ending with a NULL name
-============
-*/
-static const builtinFile_t *fs_builtinFiles;
-
-void FS_SetBuiltinFiles( const builtinFile_t *files ) {
-	fs_builtinFiles = files;
-}
-
-static const builtinFile_t *FS_BuiltinFile( const char *qpath ) {
-	const builtinFile_t *f;
-
-	for ( f = fs_builtinFiles; f && f->name; f++ ) {
-		if ( !FS_FilenameCompare( f->name, qpath ) ) {
-			return f;
-		}
-	}
-	return NULL;
-}
-
 long FS_ReadFileEx( const char *qpath, void **buffer, qboolean quiet ) {
 	fileHandle_t	h;
 	byte*			buf;
