@@ -786,22 +786,6 @@ static std::shared_ptr<uiPicture_t> Bake_PictureEntry(const char *file)
     return p;
 }
 
-bool UI_PictureSize(const char *file, int *w, int *h)
-{
-    // (kept: the pictures themselves are let go after a bake, UI_BakeRelease)
-    static std::unordered_map<std::string, std::pair<int, int>> sizes;
-    auto                                                        it = sizes.find(file);
-
-    if (it == sizes.end()) {
-        std::shared_ptr<uiPicture_t> p = Bake_PictureEntry(file);
-
-        it = sizes.emplace(file, std::make_pair(p ? p->w : 0, p ? p->h : 0)).first;
-    }
-    *w = it->second.first;
-    *h = it->second.second;
-    return *w && *h;
-}
-
 // a PNG fitted in the canvas (align: 0 left, 1 center, 2 right), its texels
 // averaged over each pixel
 static void Bake_Picture(uiCanvas_t *cv, const char *file, const float *c, int align, qboolean mirror)

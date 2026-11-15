@@ -68,7 +68,5 @@ void UI_BakeRelease(void);
 // is ready when it has run (on the main thread only)
 std::future<void> UI_BakeRun(std::function<void()> job);
 
-// a picture's texels across and down (read once); false: none
-bool UI_PictureSize(const char *file, int *w, int *h);
 // an outline's (an SVG's) size in its own units, its viewBox (read once); false: none
 bool UI_OutlineSize(const char *file, float *w, float *h);
