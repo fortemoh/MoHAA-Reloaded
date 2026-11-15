@@ -1077,8 +1077,9 @@ static void RL_Browser(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
 /*
 ================
 PLAY's profile: the name (APPLY sets it), each side's model in a 3D view
-(the back layer places the views over the columns) and a list to pick it
-from (open: over the view, in the front layer), the pickers on the foot
+(the back layer places the views over the columns) under the side's
+emblem, and a list to pick it from (open: over the view, in the front
+layer), the pickers on the foot
 row's line
 ================
 */
@@ -1087,7 +1088,8 @@ static void RL_Profile(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
     static cvar_t *views[2];
     const float    aw = 110, cw = (w - 2 * RL_PAD - 10) / 2, fy = y + h - RL_FOOT + (RL_FOOT - RL_CTRL) / 2;
     // the views: as tall as the figures fit the columns' width (arms out), on the pickers
-    const float    vh = Q_min(fy - 14 - (y + 196), cw * 2.5f), vy = fy - 14 - vh;
+    // (the emblems 44 across, 26 over the views, 16 under the name's line at least)
+    const float    vh = Q_min(fy - 14 - (y + 148 + 16 + 70), cw * 2.5f), vy = fy - 14 - vh;
 
     if (!views[0]) {
         views[0] = Cvar_Get("ui_reloaded_allies", "", 0);
@@ -1119,7 +1121,7 @@ static void RL_Profile(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         const bool      hot = m->Hot(ID_SELECT + t) || rl_mm.pick == t;
         const rlColor_t edge = hot ? RL_Rgb(255, 255, 255, 70) : RL_Rgb(255, 255, 255, 30);
 
-        RL_Text(v, cx + cw / 2, vy - 20, rl_teams[t].name, 15, RL_MUTED, true, RL_CENTER, 2, RL_MID);
+        RL_TeamIcon(v, t, cx + cw / 2, vy - 48, 44);
         RL_Box(v, cx, fy, cw, fh, RL_Rgb(0, 0, 0, 110));
         RL_BoxPx(RL_P(v, cx), RL_P(v, fy), RL_P(v, cx + cw), RL_P(v, fy) + 1, edge);
         RL_BoxPx(RL_P(v, cx), RL_P(v, fy + fh) - 1, RL_P(v, cx + cw), RL_P(v, fy + fh), edge);
