@@ -1937,16 +1937,15 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
     for (i = 0; i < n; i++) {
         const float alpha = hand == i ? 1.0f : 0.55f;
 
-        Comp_Picture(pics[i], x, top + floorf((ph - phi[i]) * 0.5f * s) / s, pw[i], phi[i], s, qfalse,
-                     UColor(comp_accent[ACC_WEAPON][0], comp_accent[ACC_WEAPON][1], comp_accent[ACC_WEAPON][2], alpha));
-        x += pw[i];
+        // a count left of its picture, so the pictures line up with the weapons above
         if (counts) {
-            x += 4.0f;
             x += Comp_Text(m_countFont, x, top + ph - m_countFont->getHeight((const float *)NULL) * 0.5f, va("%d", counts[i]),
                            UColor(comp_accent[ACC_MAIN][0], comp_accent[ACC_MAIN][1], comp_accent[ACC_MAIN][2], alpha), getVirtualScale());
-            x += 8.0f;
+            x += 4.0f;
         }
-        x += 4.0f;
+        Comp_Picture(pics[i], x, top + floorf((ph - phi[i]) * 0.5f * s) / s, pw[i], phi[i], s, qfalse,
+                     UColor(comp_accent[ACC_WEAPON][0], comp_accent[ACC_WEAPON][1], comp_accent[ACC_WEAPON][2], alpha));
+        x += pw[i] + (counts ? 8.0f : 0.0f) + 4.0f;
     }
     if (hand >= 0) {
         const char *name = CL_ConfigString(CS_WEAPONS + cl.snap.ps.activeItems[ITEM_WEAPON]);
