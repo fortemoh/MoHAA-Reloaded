@@ -268,6 +268,9 @@ static void ZM_Finish(int kind)
     zoomMask_t *m = &zm[kind];
 
     if (m->making) {
+        const int start = Sys_Milliseconds();
+        int       made;
+
         try {
             m->job.get();
         } catch (const std::future_error&) {
@@ -275,11 +278,13 @@ static void ZM_Finish(int kind)
             ZM_Make(m, kind, m->w, m->h);
         }
         m->making = false;
+        made      = Sys_Milliseconds();
         m->shader = re.RegisterTexture2D(zm_names[kind], m->texels.data(), m->qw, m->qh);
         m->refSeq = uii.GetRefSequence();
         m->stamp  = UI_BakeStamp();
         std::vector<byte>().swap(m->texels);
-        Com_DPrintf("HUD extras: %s %dx%d made in %d ms\n", zm_names[kind], m->qw, m->qh, m->madeMs);
+        Com_DPrintf("HUD extras: %s %dx%d made in %d ms, waited for %d, registered in %d\n", zm_names[kind], m->qw, m->qh, m->madeMs,
+                    made - start, Sys_Milliseconds() - made);
     } else if (m->shader && m->stamp != UI_BakeStamp() && m->refSeq == uii.GetRefSequence()) {
         m->shader = re.RegisterShaderNoMip(zm_names[kind]);
         m->stamp  = UI_BakeStamp();
@@ -783,6 +788,7 @@ void UI_Extras_Draw2D(void)
 void UI_Extras_PreBake(qboolean ahead)
 {
     const int  start = Sys_Milliseconds();
+    int        masks;
     const bool hud = UI_CompHud_Active();
     // (the banner shows on the Reloaded scoreboard whatever the HUD)
     const bool board = !Cvar_VariableIntegerValue("ui_classicmenus");
@@ -791,10 +797,11 @@ void UI_Extras_PreBake(qboolean ahead)
         return;
     }
     if (hud) {
-        // the masks made while the map loads, registered at its end
+        // the masks made while the map loads, registered at its end; at the
+        // game's start (a screen size, no map yet) only begun, made meanwhile
         ZM_Begin(ZM_SCOPE);
         ZM_Begin(ZM_BINOCULARS);
-        if (!ahead) {
+        if (!ahead && clc.state >= CA_LOADING) {
             ZM_Finish(ZM_SCOPE);
             ZM_Finish(ZM_BINOCULARS);
         }
@@ -802,6 +809,7 @@ void UI_Extras_PreBake(qboolean ahead)
     if (ahead) {
         return;
     }
+    masks = Sys_Milliseconds();
 
     // the faces and the emblems the prints, the banner and the typing line draw
     {
@@ -825,7 +833,7 @@ void UI_Extras_PreBake(qboolean ahead)
         RL_TeamIcon(v, 1, 0, 0, 38);
         rl_bakeOnly = false;
     }
-    Com_DPrintf("HUD extras: baked in %d ms\n", Sys_Milliseconds() - start);
+    Com_DPrintf("HUD extras: baked in %d ms (the masks registered in %d)\n", Sys_Milliseconds() - start, masks - start);
 }
 
 void UI_Extras_Init(void)
