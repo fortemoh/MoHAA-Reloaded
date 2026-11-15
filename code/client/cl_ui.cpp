@@ -31,6 +31,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cl_ui.h"
 #include "../uilib/uibake.h"
 #include "cl_uicomp.h"
+#include "cl_uimenus.h"
 #include "cl_uigamespy.h"
 
 #include <chrono>
@@ -127,6 +128,8 @@ static intro_stage_t intro_stage;
 static char          server_mapname[64];
 static UIListCtrl   *scoreboardlist;
 static Menu         *scoreboard_menu;
+// Added: the scoreboard is up (the Reloaded scoreboard: the stock list isn't shown)
+static qboolean      scoreboard_up;
 static float         scoreboard_x;
 static float         scoreboard_y;
 static float         scoreboard_w;
@@ -2111,7 +2114,8 @@ void UI_Update(void)
 
     if (currentMenu == menuManager.FindMenu("main")) {
         UI_MainMenuWidgetsUpdate();
-    } else if (currentMenu == menuManager.FindMenu("dm_main")) {
+    } else if (currentMenu && !str::icmp(currentMenu->m_name, "dm_main")) {
+        // (the stock Esc menu's widgets: not the Reloaded one shown for its name)
         UI_MultiplayerMainMenuWidgetsUpdate();
     }
 
@@ -2640,7 +2644,7 @@ void UI_Update(void)
     // show the scoreboard
     //
     if (scoreboard_menu) {
-        if (scoreboardlist && scoreboardlist->IsVisible()) {
+        if (UI_Menus_Scoreboard(scoreboard_menuname.c_str()) ? scoreboard_up : scoreboardlist && scoreboardlist->IsVisible()) {
             scoreboard_menu->ForceShow();
         } else {
             scoreboard_menu->ForceHide();
@@ -2731,7 +2735,14 @@ UI_MultiplayerMainMenuWidgetsUpdate
 void UI_MultiplayerMainMenuWidgetsUpdate(void)
 {
     static const cvar_t *cg_allowvote = Cvar_Get("cg_allowvote", "1", 0);
+    Menu                *menu         = menuManager.CurrentMenu();
 
+    // Added: the vote widgets are the stock Esc menu's; the Reloaded one shown
+    // for its name has none (an event no widget takes isn't freed)
+    if (!menu || str::icmp(menu->m_name, "dm_main")) {
+        UI_UpdateContinueGame();
+        return;
+    }
     if (cg_allowvote->integer) {
         menuManager.PassEventToWidget("cantvote", new Event(EV_Widget_Disable));
 
@@ -2776,7 +2787,8 @@ void UI_ToggleMenu(str name)
     if (menu) {
         UI_ForceMenuOff(false);
 
-        if (menu->m_name != name) {
+        // (the menu shown for the name: another's, cl_uimenus.cpp)
+        if (menu != menuManager.FindMenu(name)) {
             UI_PushMenu(name);
         }
     } else {
@@ -2859,6 +2871,9 @@ void UI_PushMenu(const char *name)
 {
     Menu    *menu  = menuManager.CurrentMenu();
     qboolean bDiff = qfalse;
+
+    // Added: the Reloaded menus told what they are opened as
+    UI_Menus_Pushing(name);
 
     if (menu) {
         bDiff = strcmp(menu->m_name, name) != 0;
@@ -4217,6 +4232,8 @@ void UI_ResolutionChange(void)
 
     // Added: the Competitive HUD baked at the new size
     UI_CompHud_PreBake(qfalse);
+    // Added: the Reloaded menus too
+    UI_Menus_PreBake();
 }
 
 /*
@@ -4663,6 +4680,7 @@ void UI_ShowScoreboard_f(const char *pszMenuName)
         if (scoreboardlist && scoreboardlist->IsVisible()) {
             scoreboardlist->setShow(false);
         }
+        scoreboard_up = qfalse;
     } else {
         if (scoreboard_menuname.length()) {
             scoreboard_menu = menuManager.FindMenu(scoreboard_menuname);
@@ -4676,7 +4694,13 @@ void UI_ShowScoreboard_f(const char *pszMenuName)
             }
         }
 
-        if (scoreboardlist && !scoreboardlist->IsVisible()) {
+        scoreboard_up = qtrue;
+        if (UI_Menus_Scoreboard(scoreboard_menuname.c_str())) {
+            // (the Reloaded scoreboard: the stock list stays hidden)
+            if (scoreboardlist && scoreboardlist->IsVisible()) {
+                scoreboardlist->setShow(false);
+            }
+        } else if (scoreboardlist && !scoreboardlist->IsVisible()) {
             scoreboardlist->setShow(true);
         }
     }
@@ -4689,6 +4713,7 @@ UI_HideScoreboard_f
 */
 void UI_HideScoreboard_f(void)
 {
+    scoreboard_up = qfalse;
     if (scoreboardlist) {
         scoreboardlist->setShow(false);
     }
@@ -5550,6 +5575,7 @@ void CL_InitializeUI(void)
     ui_NumShotsFired       = Cvar_Get("ui_NumShotsFired", "0", 0);
     ui_gmboxspam           = Cvar_Get("ui_gmboxspam", "1", 0);
     UI_CompHud_Init();
+    UI_Menus_Init();
     ui_gotmedal            = Cvar_Get("ui_gotmedal", "0", 0);
     ui_success             = Cvar_Get("ui_success", "0", 0);
     ui_failed              = Cvar_Get("ui_failed", "0", 0);

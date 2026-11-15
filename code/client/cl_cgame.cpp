@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "client.h"
 #include "cl_uicomp.h"
+#include "cl_uimenus.h"
 #include "cl_ui.h"
 #include "cl_uiradar.h"
 #include "../corepp/tiki.h"
@@ -319,6 +320,7 @@ void CL_ConfigstringModified(int index, char* s) {
 		return;		// unchanged
 	}
 	UI_CompHud_ConfigString();
+	UI_Menus_ConfigString();
 
 	len = strlen( s );
 	if ( cl_csAppend->integer && len + 1 + cl.gameState.dataCount <= MAX_GAMESTATE_CHARS ) {
@@ -484,6 +486,9 @@ qboolean CL_GetServerCommand( int serverCommandNumber, qboolean differentServer 
 		Cmd_TokenizeString(s);
 		cmd = Cmd_Argv(0);
 	}
+
+	// Added: the Reloaded scoreboard reads the scores the cgame is given
+	UI_Menus_ServerCommand();
 
 	return CL_ProcessServerCommand(s, cmd, differentServer);
 }
@@ -1007,6 +1012,8 @@ void CL_InitCGame( void ) {
 
 	// Added: the Competitive HUD's radar walks the map now, while it loads
 	UI_CompHud_MapLoaded();
+	// Added: the Reloaded menus' faces and shapes baked with the load
+	UI_Menus_PreBake();
 
 	CL_EndRegistration();
 

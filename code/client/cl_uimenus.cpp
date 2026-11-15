@@ -1,0 +1,2028 @@
+/*
+===========================================================================
+Copyright (C) 2026 the OpenMoHAA team
+
+This file is part of OpenMoHAA source code.
+
+OpenMoHAA source code is free software; you can redistribute it
+and/or modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either version 2 of the License,
+or (at your option) any later version.
+
+OpenMoHAA source code is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with OpenMoHAA source code; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+===========================================================================
+*/
+
+// cl_uimenus.cpp: the Reloaded menus (Added). Team select (FFA's soldier
+// select too), weapon select, the Esc menu and the scoreboard, each a URC
+// menu (ui/reloaded_*.urc) of a ReloadedMenu widget, which lays the screen
+// out and draws it, and the stock 3D player model views it places. They are
+// shown for the stock menus' names (SelectTeam, ObjSelectTeam,
+// SelectFFAModel, SelectPrimaryWeapon[_<nation>], dm_main, DM_Scoreboard,
+// DM_Round_Scoreboard, Obj_Scoreboard: UI_Menus_Alias), so nothing on the
+// server or in the cgame changes; ui_classicmenus 1 shows the stock ones.
+//
+// Sizes are design units: a 1080-line screen (900 below 900 lines, so small
+// screens get bigger type), the width what the screen's shape gives. Type is
+// Oswald baked at the pixel size drawn, outlines (moh-icons, ui/outlines/)
+// filled at the size drawn.
+
+#include "client.h"
+#include "cl_ui.h"
+#include "cl_uimenus.h"
+#include "../uilib/uibake.h"
+#include "../qcommon/localization.h"
+
+#include <algorithm>
+#include <string>
+#include <vector>
+
+#define RL_OUTLINES "ui/outlines/"
+
+static cvar_t *ui_classicmenus;
+static cvar_t *ui_dm_primary;
+static cvar_t *ui_reloaded_nation;
+
+/*
+====================================================================
+
+DATA
+
+What the menus show, read when drawn: the serverinfo, the player
+configstrings (every connected player's name and team) and the latest
+"scores" the server sent (UI_Menus_ServerCommand)
+
+====================================================================
+*/
+
+enum { NAT_US, NAT_UK, NAT_RU, NAT_DE, NAT_IT };
+
+typedef struct {
+    int      kills, deaths;
+    char     time[16], ping[16];
+    qboolean dead;
+    int      order; // its place in the server's list
+} rlScore_t;
+
+// the configstrings' changes (UI_Menus_ConfigString)
+static int rl_csChanges;
+
+void UI_Menus_ConfigString(void)
+{
+    rl_csChanges++;
+}
+
+static struct {
+    int       stamp; // a parse's number, 0 none yet
+    rlScore_t client[MAX_CLIENTS];
+    int       seen[MAX_CLIENTS]; // the stamp a client's row came with
+    int       teamScore[2];      // the headers', -1 none
+    int       requested;         // when a score was last asked for
+} rl_sb;
+
+typedef struct {
+    int  client;
+    char name[MAX_NAME_LENGTH];
+    int  team;
+} rlPlayer_t;
+
+typedef struct {
+    int                     gametype;
+    int                     target;   // TG_MOH, TG_MOHTA, TG_MOHTT
+    int                     dmflags, fraglimit, maxClients;
+    char                    map[MAX_QPATH];
+    std::vector<rlPlayer_t> allies, axis, spectators; // in client order
+    int                     connected;
+    int                     self, selfTeam;
+    int                     teamScore[2]; // -1 unknown
+    bool                    serverScores; // the teams' scores from the server's configstring
+} rlInfo_t;
+
+static int RL_Gametype(void)
+{
+    return atoi(Info_ValueForKey(CL_ConfigString(CS_SERVERINFO), "g_gametype"));
+}
+
+static void RL_Info(rlInfo_t *in)
+{
+    const char *info = CL_ConfigString(CS_SERVERINFO);
+    char       *dollar;
+
+    in->gametype   = atoi(Info_ValueForKey(info, "g_gametype"));
+    in->target     = com_target_game ? com_target_game->integer : TG_MOH;
+    in->dmflags    = atoi(Info_ValueForKey(info, "dmflags"));
+    in->fraglimit  = atoi(Info_ValueForKey(info, "fraglimit"));
+    in->maxClients = atoi(Info_ValueForKey(info, "sv_maxclients"));
+    Q_strncpyz(in->map, Info_ValueForKey(info, "mapname"), sizeof(in->map));
+    dollar = strchr(in->map, '$');
+    if (dollar) {
+        *dollar = 0;
+    }
+    in->allies.clear();
+    in->axis.clear();
+    in->spectators.clear();
+    in->connected = 0;
+    in->self      = cl.snap.valid ? cl.snap.ps.clientNum : clc.clientNum;
+    in->selfTeam  = cl.snap.valid ? cl.snap.ps.stats[STAT_TEAM] : TEAM_NONE;
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        const char *cs = CL_ConfigString(CS_PLAYERS + i);
+        rlPlayer_t  p;
+
+        if (!cs[0]) {
+            continue;
+        }
+        Q_strncpyz(p.name, Info_ValueForKey(cs, "name"), sizeof(p.name));
+        if (!p.name[0]) {
+            continue;
+        }
+        p.client = i;
+        p.team   = atoi(Info_ValueForKey(cs, "team"));
+        in->connected++;
+        if (p.team == TEAM_ALLIES) {
+            in->allies.push_back(p);
+        } else if (p.team == TEAM_AXIS) {
+            in->axis.push_back(p);
+        } else if (p.team == TEAM_SPECTATOR) {
+            in->spectators.push_back(p);
+        }
+    }
+    // the teams' scores: the server's (CS_TEAMSCORES), else the scoreboard's
+    in->serverScores = sscanf(CL_ConfigString(CS_TEAMSCORES), "%d %d", &in->teamScore[0], &in->teamScore[1]) == 2;
+    if (!in->serverScores) {
+        in->teamScore[0] = rl_sb.teamScore[0];
+        in->teamScore[1] = rl_sb.teamScore[1];
+    }
+}
+
+// the scoreboard asked for now and every 2 s while a menu shows it (the
+// HUD's own requests count)
+static void RL_WantScores(void)
+{
+    // (not in a demo: nothing acknowledges the commands there, and 64 unacknowledged drop the client)
+    if (clc.state == CA_ACTIVE && !clc.demoplaying && (!rl_sb.requested || (unsigned)(cls.realtime - rl_sb.requested) >= 2000)) {
+        rl_sb.requested = cls.realtime;
+        CL_AddReliableCommand("score", qfalse);
+    }
+}
+
+/*
+================
+UI_Menus_ServerCommand
+
+"scores" (fgame's DM_Manager::Score, read as the cgame's CG_ParseScores
+reads it): its entries, the team games' a header per team (-1, the team,
+[SH/BT: the players], the score, ...) and a row per player (client, team
+negative when dead, kills, deaths, time, ping); free-for-all's rows
+(client, kills, deaths, time, ping)
+================
+*/
+void UI_Menus_ServerCommand(void)
+{
+    if (strcmp(Cmd_Argv(0), "scores") || !ui_classicmenus || ui_classicmenus->integer) {
+        return;
+    }
+    const int  gametype = RL_Gametype();
+    const bool v15      = Cvar_VariableIntegerValue("com_protocol") >= PROTOCOL_MOHTA_MIN;
+    int        cur      = 2;
+    // (Q_min is a macro: the count read once)
+    const int  count    = atoi(Cmd_Argv(1));
+    const int  n        = Q_min(count, MAX_CLIENTS + 8);
+    int        order    = 0;
+
+    rl_sb.stamp++;
+    rl_sb.teamScore[0] = rl_sb.teamScore[1] = -1;
+    if (gametype > GT_FFA) {
+        if (gametype == GT_TOW && v15) {
+            cur += 10; // the objectives' states
+        }
+        if (gametype == GT_LIBERATION && v15) {
+            cur += 2;
+        }
+        for (int i = 0; i < n; i++) {
+            const int client = atoi(Cmd_Argv(cur + 6 * i));
+            int       team   = atoi(Cmd_Argv(cur + 6 * i + 1));
+            const int dead   = team < 0;
+
+            team = abs(team);
+            if (client == -1) {
+                if (team == TEAM_ALLIES || team == TEAM_AXIS) {
+                    if (v15) {
+                        cur++; // the team's players
+                    }
+                    rl_sb.teamScore[team == TEAM_AXIS] = atoi(Cmd_Argv(cur + 6 * i + 2));
+                }
+                continue;
+            }
+            if (client < 0 || client >= MAX_CLIENTS) {
+                continue;
+            }
+            rlScore_t *r = &rl_sb.client[client];
+
+            r->kills  = atoi(Cmd_Argv(cur + 6 * i + 2));
+            r->deaths = atoi(Cmd_Argv(cur + 6 * i + 3));
+            Q_strncpyz(r->time, Cmd_Argv(cur + 6 * i + 4), sizeof(r->time));
+            Q_strncpyz(r->ping, Cmd_Argv(cur + 6 * i + 5), sizeof(r->ping));
+            r->dead  = dead;
+            r->order = order++;
+            rl_sb.seen[client] = rl_sb.stamp;
+        }
+    } else {
+        for (int i = 0; i < n; i++) {
+            const int client = atoi(Cmd_Argv(cur + 5 * i));
+
+            if (client < 0 || client >= MAX_CLIENTS) {
+                continue;
+            }
+            rlScore_t *r = &rl_sb.client[client];
+
+            r->kills  = atoi(Cmd_Argv(cur + 5 * i + 1));
+            r->deaths = atoi(Cmd_Argv(cur + 5 * i + 2));
+            Q_strncpyz(r->time, Cmd_Argv(cur + 5 * i + 3), sizeof(r->time));
+            Q_strncpyz(r->ping, Cmd_Argv(cur + 5 * i + 4), sizeof(r->ping));
+            r->dead  = qfalse;
+            r->order = order++;
+            rl_sb.seen[client] = rl_sb.stamp;
+        }
+    }
+}
+
+static const rlScore_t *RL_Score(int client)
+{
+    return rl_sb.stamp && rl_sb.seen[client] == rl_sb.stamp ? &rl_sb.client[client] : NULL;
+}
+
+// the map's display name: its loading screen's (a menu named after the
+// map, its first titled label: "V2 Rocket Facility"), else the file's name
+static const char *RL_MapName(const char *map)
+{
+    static char last[MAX_QPATH], name[128];
+    const char *slash;
+
+    if (!strcmp(last, map)) {
+        return name;
+    }
+    Q_strncpyz(last, map, sizeof(last));
+    slash = strrchr(map, '/');
+    Q_strncpyz(name, slash ? slash + 1 : map, sizeof(name));
+    Menu *loading = menuManager.FindMenu(map);
+    UIWidget *c = loading ? loading->GetContainerWidget() : NULL;
+
+    for (UIWidget *w = c ? c->getFirstChild() : NULL; w; w = c->getNextChild(w)) {
+        if (w->isSubclassOf(UILabel) && w->getTitle() && w->getTitle()[0]) {
+            Q_strncpyz(name, Sys_LV_CL_ConvertString(w->getTitle()), sizeof(name));
+            break;
+        }
+    }
+    return name;
+}
+
+static const char *RL_ModeName(int gametype, bool upper)
+{
+    static const char *const names[][2] = {
+        {"Single player",   "SINGLE PLAYER"  },
+        {"Free-for-all",    "FREE-FOR-ALL"   },
+        {"Team deathmatch", "TEAM DEATHMATCH"},
+        {"Round-based",     "ROUND-BASED"    },
+        {"Objective",       "OBJECTIVE"      },
+        {"Tug of war",      "TUG OF WAR"     },
+        {"Liberation",      "LIBERATION"     },
+    };
+
+    return names[gametype >= 0 && gametype < (int)ARRAY_LEN(names) ? gametype : 0][upper];
+}
+
+// the round's or match's time left, "" none (as the HUD's timer); its own buffer
+static const char *RL_TimeLeft(int gametype)
+{
+    static char text[32];
+
+    const int matchEnd = atoi(CL_ConfigString(CS_MATCHEND));
+    const int left     = atoi(CL_ConfigString(CS_WARMUP)) != -1 && matchEnd && gametype != GT_LIBERATION
+                        && matchEnd > cl.serverTime
+                           ? (matchEnd - cl.serverTime) / 1000
+                           : -1;
+
+    text[0] = 0;
+    if (left >= 0) {
+        Com_sprintf(text, sizeof(text), "%d:%02d", left / 60, left % 60);
+    }
+    return text;
+}
+
+/*
+====================================================================
+
+DRAWING
+
+====================================================================
+*/
+
+typedef struct {
+    float r, g, b, a;
+} rlColor_t;
+
+static rlColor_t RL_Rgb(int r, int g, int b, int a = 255)
+{
+    rlColor_t c = {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f};
+    return c;
+}
+
+static rlColor_t RL_Alpha(rlColor_t c, int a)
+{
+    c.a = a / 255.0f;
+    return c;
+}
+
+// the palette (the approved design)
+static const rlColor_t RL_TEXT  = {238 / 255.0f, 234 / 255.0f, 224 / 255.0f, 1};
+static const rlColor_t RL_MUTED = {160 / 255.0f, 156 / 255.0f, 146 / 255.0f, 1};
+static const rlColor_t RL_FAINT = {110 / 255.0f, 107 / 255.0f, 100 / 255.0f, 1};
+static const rlColor_t RL_BRASS = {222 / 255.0f, 178 / 255.0f, 80 / 255.0f, 1};
+
+typedef struct {
+    int         deep[3], base[3], mid[3], light[3], pale[3];
+    const char *name, *icon;
+} rlTeam_t;
+
+static const rlTeam_t rl_teams[2] = {
+    {{18, 30, 43}, {30, 50, 70}, {58, 94, 128}, {150, 192, 228}, {218, 233, 246}, "ALLIES", RL_OUTLINES "team/allies.svg"},
+    {{44, 18, 16}, {70, 32, 28}, {134, 62, 50}, {234, 162, 142}, {248, 218, 208}, "AXIS", RL_OUTLINES "team/axis.svg"  },
+};
+
+static rlColor_t RL_T(const int *c, int a = 255)
+{
+    return RL_Rgb(c[0], c[1], c[2], a);
+}
+
+// the screen in design units
+typedef struct {
+    float s;      // pixels a unit
+    float dw, dh; // the screen's units across and down
+    int   layout; // 0 narrow (under 1500 across), 1 standard, 2 wide (over 2200)
+} rlView_t;
+
+static rlView_t RL_View(void)
+{
+    rlView_t v;
+
+    v.dh     = uid.vidHeight >= 900 ? 1080.0f : 900.0f;
+    v.s      = uid.vidHeight / v.dh;
+    v.dw     = uid.vidWidth / v.s;
+    v.layout = v.dw < 1500.0f ? 0 : v.dw > 2200.0f ? 2 : 1;
+    return v;
+}
+
+// laid out to bake what it draws ahead (UI_Menus_PreBake): nothing drawn
+static bool rl_bakeOnly;
+
+static int RL_P(const rlView_t& v, float d)
+{
+    return (int)floorf(d * v.s + 0.5f);
+}
+
+static void RL_SetColor(rlColor_t c)
+{
+    const vec4_t col = {c.r, c.g, c.b, c.a};
+
+    uii.Rend_SetColor(col);
+}
+
+static void RL_Box(const rlView_t& v, float x, float y, float w, float h, rlColor_t c)
+{
+    const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
+
+    if (x1 <= x0 || y1 <= y0 || c.a <= 0.0f || rl_bakeOnly) {
+        return;
+    }
+    RL_SetColor(c);
+    uii.Rend_DrawBox(x0, y0, x1 - x0, y1 - y0);
+}
+
+// a hairline: a pixel at least
+static void RL_HLine(const rlView_t& v, float x0, float x1, float y, rlColor_t c)
+{
+    const int px = RL_P(v, Q_min(x0, x1)), pw = RL_P(v, Q_max(x0, x1)) - px, py = RL_P(v, y);
+
+    if (rl_bakeOnly) {
+        return;
+    }
+    RL_SetColor(c);
+    uii.Rend_DrawBox(px, py, pw, Q_max(1, RL_P(v, 1.0f)));
+}
+
+static void RL_VLine(const rlView_t& v, float x, float y0, float y1, rlColor_t c)
+{
+    const int px = RL_P(v, x), py = RL_P(v, y0), ph = RL_P(v, y1) - py;
+
+    if (ph <= 0 || rl_bakeOnly) {
+        return;
+    }
+    RL_SetColor(c);
+    uii.Rend_DrawBox(px, py, Q_max(1, RL_P(v, 1.0f)), ph);
+}
+
+// a baked shape (white, tinted) over pixels
+static void RL_Shape(int x, int y, int w, int h, const char *text, rlColor_t c, float s)
+{
+    // (copied: the strings va gives are reused while it bakes, a font page's name)
+    const std::string layer(text);
+    const char       *layers[1] = {layer.c_str()};
+    qhandle_t         shader;
+
+    if (w <= 0 || h <= 0 || c.a <= 0.0f) {
+        return;
+    }
+    shader = UI_BakeShape("rlmenu", layers, 1, w, h, s);
+    if (!shader || rl_bakeOnly) {
+        return;
+    }
+    RL_SetColor(c);
+    uii.Rend_DrawPicStretched(x, y, w, h, 0, 0, 1, 1, shader);
+}
+
+static void RL_Round(const rlView_t& v, float x, float y, float w, float h, float r, rlColor_t c)
+{
+    const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
+
+    if (r * v.s < 1.0f) {
+        RL_Box(v, x, y, w, h, c);
+        return;
+    }
+    RL_Shape(x0, y0, x1 - x0, y1 - y0, va("roundbox %g 1 1 1 1", r), c, v.s);
+}
+
+static void RL_RoundFrame(const rlView_t& v, float x, float y, float w, float h, float r, float width, rlColor_t c)
+{
+    const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
+
+    RL_Shape(x0, y0, x1 - x0, y1 - y0, va("roundframe %g %g 1 1 1 1", r, width), c, v.s);
+}
+
+// a horizontal gradient as strips (a and b at the left and right edges)
+static void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b)
+{
+    const int x0 = RL_P(v, x), x1 = RL_P(v, x + w), y0 = RL_P(v, y), y1 = RL_P(v, y + h);
+    const int n  = Q_max(1, Q_min(64, (x1 - x0) / 8));
+
+    for (int i = 0; i < n; i++) {
+        const int   sx = x0 + (x1 - x0) * i / n, ex = x0 + (x1 - x0) * (i + 1) / n;
+        const float f  = (i + 0.5f) / n;
+        rlColor_t   c;
+
+        // (between premultiplied colors)
+        c.a = a.a + (b.a - a.a) * f;
+        c.r = c.a > 0 ? (a.r * a.a + (b.r * b.a - a.r * a.a) * f) / c.a : 0;
+        c.g = c.a > 0 ? (a.g * a.a + (b.g * b.a - a.g * a.a) * f) / c.a : 0;
+        c.b = c.a > 0 ? (a.b * a.a + (b.b * b.a - a.b * a.a) * f) / c.a : 0;
+        if (c.a <= 0.002f || rl_bakeOnly) {
+            continue;
+        }
+        RL_SetColor(c);
+        uii.Rend_DrawBox(sx, y0, ex - sx, y1 - y0);
+    }
+}
+
+// an outline fitted in a box (its middle at cx cy), tinted; false: no such file
+static bool RL_Outline(const rlView_t& v, const char *name, float cx, float cy, float bw, float bh, rlColor_t c, bool mirror = false)
+{
+    const std::string file(name);
+    float             sw, sh, k;
+    int               pw, ph;
+
+    if (!UI_OutlineSize(file.c_str(), &sw, &sh)) {
+        return false;
+    }
+    k  = Q_min(bw / sw, bh / sh);
+    pw = Q_max(1, (int)floorf(sw * k * v.s + 0.5f));
+    ph = Q_max(1, (int)floorf(sh * k * v.s + 0.5f));
+    RL_Shape((int)floorf(cx * v.s - pw * 0.5f + 0.5f), (int)floorf(cy * v.s - ph * 0.5f + 0.5f), pw, ph,
+             va("svg 1 1 1 1 %s center%s", file.c_str(), mirror ? " mirror" : ""), c, v.s);
+    return true;
+}
+
+static void RL_TeamIcon(const rlView_t& v, int t, float cx, float cy, float d, float alpha = 1.0f)
+{
+    RL_Outline(v, rl_teams[t].icon, cx, cy, d, d, {1, 1, 1, alpha});
+}
+
+/*
+----------------
+Text: Oswald Medium (m) and SemiBold (b), baked at the pixel size drawn
+("oswald-medium-<px>p"); a size is design pixels (the em), 9 pixels at
+least on the screen
+----------------
+*/
+
+enum { RL_LEFT, RL_CENTER, RL_RIGHT };
+enum { RL_TOP, RL_MID, RL_BASE }; // the capitals' top, middle, the baseline at y
+
+typedef struct {
+    fontheader_t *f;
+    float         page; // drawn at it, a texel a pixel
+    int           px;
+} rlFace_t;
+
+static rlFace_t RL_Face(const rlView_t& v, float size, bool bold)
+{
+    rlFace_t face;
+
+    char name[64];
+
+    face.px = Q_max(9, (int)floorf(size * v.s + 0.5f));
+    Com_sprintf(name, sizeof(name), "oswald-%s-%dp", bold ? "semibold" : "medium", face.px);
+    face.f    = UI_BakeFont(name);
+    face.page = face.f ? UI_BakedFontScale(face.f) : 0.0f;
+    return face;
+}
+
+static float RL_Advance(const rlFace_t& face, unsigned char ch)
+{
+    const fontheader_sgl_t *g = face.f->sgl[0];
+    int                     i = g->indirection[ch];
+
+    if (i < 0) {
+        i = g->indirection['?'];
+    }
+    return i < 0 ? 0.0f : g->locations[i].size[0] * 256.0f * face.page;
+}
+
+// pixels across
+static float RL_WidthPx(const rlFace_t& face, const char *text, float trackPx)
+{
+    float w = 0.0f;
+    int   n = 0;
+
+    if (!face.f || face.page <= 0.0f) {
+        return 0.0f;
+    }
+    for (const unsigned char *p = (const unsigned char *)text; *p; p++, n++) {
+        w += RL_Advance(face, *p);
+    }
+    return w + (n > 1 ? trackPx * (n - 1) : 0.0f);
+}
+
+static float RL_TextW(const rlView_t& v, const char *str, float size, bool bold, float track = 0.0f)
+{
+    const std::string text(str); // (a string from va: kept while faces are baked)
+
+    return RL_WidthPx(RL_Face(v, size, bold), text.c_str(), track * v.s) / v.s;
+}
+
+// the text drawn; its width in units. maxw: drawn smaller to fit
+static float RL_Text(
+    const rlView_t& v,
+    float           x,
+    float           y,
+    const char     *str,
+    float           size,
+    rlColor_t       c,
+    bool            bold,
+    int             anchor = RL_LEFT,
+    float           track  = 0.0f,
+    int             valign = RL_TOP,
+    float           maxw   = 0.0f
+)
+{
+    const std::string copy(str); // (a string from va: kept while faces are baked)
+    const char       *text = copy.c_str();
+    rlFace_t          face = RL_Face(v, size, bold);
+    float             w, lineH, capH, base, px, py;
+
+    if (!face.f || face.page <= 0.0f) {
+        return 0.0f;
+    }
+    while (maxw > 0.0f && size > 8.0f && RL_WidthPx(face, text, track * v.s) > maxw * v.s) {
+        size -= 1.0f;
+        face = RL_Face(v, size, bold);
+        if (face.px <= 9) {
+            break;
+        }
+    }
+    w     = RL_WidthPx(face, text, track * v.s);
+    lineH = face.f->sgl[0]->height * face.page;
+    capH  = face.px * 0.81f; // Oswald's capitals
+    base  = floorf(lineH * 0.5f + capH * 0.5f + 0.5f);
+    px    = x * v.s - (anchor == RL_CENTER ? w * 0.5f : anchor == RL_RIGHT ? w : 0.0f);
+    py    = y * v.s - (valign == RL_TOP ? base - capH : valign == RL_MID ? base - capH * 0.5f : base);
+    px    = floorf(px + 0.5f);
+    py    = floorf(py + 0.5f);
+
+    if (!rl_bakeOnly) {
+        const float vs[2] = {face.page, face.page};
+
+        RL_SetColor(c);
+        if (track <= 0.0f) {
+            uii.Rend_DrawString(face.f, text, px / face.page, py / face.page, -1, vs);
+        } else {
+            char one[2] = {0, 0};
+
+            for (const unsigned char *p = (const unsigned char *)text; *p; p++) {
+                one[0] = *p;
+                uii.Rend_DrawString(face.f, one, floorf(px + 0.5f) / face.page, py / face.page, -1, vs);
+                px += RL_Advance(face, *p) + track * v.s;
+            }
+        }
+    }
+    return w / v.s;
+}
+
+// a name cut with "…" to fit
+static std::string RL_Ellipsize(const rlView_t& v, const char *text, float size, bool bold, float maxw)
+{
+    std::string s(text);
+
+    if (RL_TextW(v, text, size, bold) <= maxw) {
+        return s;
+    }
+    while (!s.empty() && RL_TextW(v, (s + "\x85").c_str(), size, bold) > maxw) {
+        s.erase(s.size() - 1);
+    }
+    return s + "\x85";
+}
+
+static std::string RL_Upper(const char *s)
+{
+    std::string u(s);
+
+    for (char& c : u) {
+        c = toupper((unsigned char)c);
+    }
+    return u;
+}
+
+/*
+====================================================================
+
+WEAPONS
+
+The classes primarydmweapon takes, and what each nation gets for them
+(fgame's Player::EquipWeapons)
+
+====================================================================
+*/
+
+enum { WC_RIFLE, WC_SNIPER, WC_SMG, WC_MG, WC_HEAVY, WC_SHOTGUN, WC_LANDMINE, WC_NUM };
+
+static const char *const rl_classCmd[WC_NUM]  = {"rifle", "sniper", "smg", "mg", "heavy", "shotgun", "landmine"};
+static const char *const rl_classCvar[WC_NUM] = {"cg_weapon_rifle",  "cg_weapon_sniper",  "cg_weapon_smg",     "cg_weapon_mg",
+                                                 "cg_weapon_rocket", "cg_weapon_shotgun", "cg_weapon_landmine"};
+
+typedef struct {
+    const char *cls, *name, *svg;
+} rlWeapon_t;
+
+static rlWeapon_t RL_W(const char *cls, const char *name, const char *svg)
+{
+    rlWeapon_t w = {cls, name, svg};
+    return w;
+}
+
+// what a nation gets for a class
+static rlWeapon_t RL_WeaponFor(int nation, int wc, int target, int dmflags)
+{
+    const bool bt = target >= TG_MOHTT, aa = target < TG_MOHTA;
+
+    switch (wc) {
+    case WC_RIFLE:
+        switch (nation) {
+        case NAT_UK:
+            return RL_W("RIFLE", "LEE-ENFIELD", "enfield");
+        case NAT_RU:
+            return RL_W("RIFLE", "MOSIN-NAGANT", "mosin_nagant_rifle");
+        case NAT_DE:
+            return RL_W("RIFLE", "KAR98K", "kar98");
+        case NAT_IT:
+            return RL_W("RIFLE", "CARCANO", "it_w_carcano");
+        default:
+            return RL_W("RIFLE", "M1 GARAND", "m1_garand");
+        }
+    case WC_SNIPER:
+        if (nation == NAT_UK && bt) {
+            return RL_W("SNIPER", "L42A1", "uk_w_l42a1");
+        }
+        if (nation == NAT_RU && !(dmflags & DF_OLD_SNIPER)) {
+            return RL_W("SNIPER", "SVT-40", "svt_rifle");
+        }
+        if (nation == NAT_DE) {
+            if (aa || (dmflags & DF_OLD_SNIPER) || !Q_stricmpn(Cvar_VariableString("dm_playergermanmodel"), "german_panzer", 13)) {
+                return RL_W("SNIPER", "KAR98K SNIPER", "kar98sniper");
+            }
+            return RL_W("SNIPER", "GEWEHR 43", "g43");
+        }
+        if (nation == NAT_IT) {
+            return RL_W("SNIPER", "KAR98K SNIPER", "kar98sniper");
+        }
+        return RL_W("SNIPER", "SPRINGFIELD '03", "springfield");
+    case WC_SMG:
+        switch (nation) {
+        case NAT_UK:
+            return RL_W("SUBMACHINE GUN", "STEN MK II", "sten");
+        case NAT_RU:
+            return RL_W("SUBMACHINE GUN", "PPSH-41", "ppsh_smg");
+        case NAT_DE:
+            return RL_W("SUBMACHINE GUN", "MP40", "mp40");
+        case NAT_IT:
+            return RL_W("SUBMACHINE GUN", "MOSCHETTO", "it_w_moschetto");
+        default:
+            return RL_W("SUBMACHINE GUN", "THOMPSON", "thompsonsmg");
+        }
+    case WC_MG:
+        if (nation == NAT_UK && bt) {
+            return RL_W("MACHINE GUN", "VICKERS-BERTHIER", "uk_w_vickers");
+        }
+        if (nation == NAT_DE) {
+            return RL_W("MACHINE GUN", "STG 44", "mp44");
+        }
+        if (nation == NAT_IT) {
+            return RL_W("MACHINE GUN", "BREDA", "it_w_breda");
+        }
+        return RL_W("MACHINE GUN", "BAR", "bar");
+    case WC_HEAVY:
+        if (nation == NAT_UK && bt) {
+            return RL_W("ANTI-TANK", "PIAT", "uk_w_piat");
+        }
+        if (nation == NAT_DE || nation == NAT_IT) {
+            return RL_W("ANTI-TANK", "PANZERSCHRECK", "panzerschreck");
+        }
+        return RL_W("ANTI-TANK", "BAZOOKA", "bazooka");
+    case WC_SHOTGUN:
+        if (nation == NAT_UK && bt) {
+            return RL_W("SILENCED CARBINE", "DE LISLE", "delisle");
+        }
+        if (nation == NAT_DE && !aa && !(dmflags & DF_DISALLOW_KAR98_MORTAR)) {
+            return RL_W("RIFLE GRENADE", "GEWEHRGRANATE", "kar98_mortar");
+        }
+        return RL_W("SHOTGUN", "TRENCH GUN", "shotgun");
+    default:
+        if (nation == NAT_DE) {
+            return RL_W("MINE SWEEPER", "MINENSUCHGER\xc4T", "gr_w_minedetector");
+        }
+        return RL_W("MINE SWEEPER", "MINE DETECTOR", "us_w_minedetector");
+    }
+}
+
+// the nation the weapon menu was opened for (ui_reloaded_nation)
+static int RL_Nation(void)
+{
+    static const char *const names[] = {"american", "british", "russian", "german", "italian"};
+
+    for (int i = 0; i < (int)ARRAY_LEN(names); i++) {
+        if (!Q_stricmp(ui_reloaded_nation->string, names[i])) {
+            return i;
+        }
+    }
+    return NAT_US;
+}
+
+static int RL_NationTeam(int nation)
+{
+    return nation == NAT_DE || nation == NAT_IT;
+}
+
+/*
+====================================================================
+
+ALIASES
+
+====================================================================
+*/
+
+static const struct {
+    const char *stock, *ours;
+} rl_aliases[] = {
+    {"SelectTeam",                  "reloaded_team"      },
+    {"ObjSelectTeam",               "reloaded_team"      },
+    {"SelectFFAModel",              "reloaded_team"      },
+    {"SelectPrimaryWeapon",         "reloaded_weapon"    },
+    {"SelectPrimaryWeapon_british", "reloaded_weapon"    },
+    {"SelectPrimaryWeapon_russian", "reloaded_weapon"    },
+    {"SelectPrimaryWeapon_german",  "reloaded_weapon"    },
+    {"SelectPrimaryWeapon_italian", "reloaded_weapon"    },
+    {"dm_main",                     "reloaded_esc"       },
+    {"DM_Scoreboard",               "reloaded_scoreboard"},
+    {"DM_Round_Scoreboard",         "reloaded_scoreboard"},
+    {"Obj_Scoreboard",              "reloaded_scoreboard"},
+};
+
+const char *UI_Menus_Alias(const char *name)
+{
+    if (!ui_classicmenus || ui_classicmenus->integer || !name) {
+        return NULL;
+    }
+    // (every menu lookup asks, the HUD's 13 each frame: the stock names start with s, o or d)
+    switch (name[0]) {
+    case 'S':
+    case 's':
+    case 'O':
+    case 'o':
+    case 'D':
+    case 'd':
+        break;
+    default:
+        return NULL;
+    }
+    for (size_t i = 0; i < ARRAY_LEN(rl_aliases); i++) {
+        if (!Q_stricmp(name, rl_aliases[i].stock)) {
+            return rl_aliases[i].ours;
+        }
+    }
+    return NULL;
+}
+
+qboolean UI_Menus_Scoreboard(const char *name)
+{
+    return name && UI_Menus_Alias(name) && menuManager.FindMenuNamed("reloaded_scoreboard") ? qtrue : qfalse;
+}
+
+void UI_GetPlayerModel_f(void);
+
+void UI_Menus_Pushing(const char *name)
+{
+    const char *alias = UI_Menus_Alias(name);
+
+    if (!alias) {
+        return;
+    }
+    if (!strcmp(alias, "reloaded_weapon")) {
+        // the nation: the name's (SH/BT servers send each nation its own), else
+        // the team's (Allied Assault's Americans and Germans)
+        const char *nation = strchr(name, '_');
+
+        if (nation) {
+            Cvar_Set("ui_reloaded_nation", nation + 1);
+        } else if (com_target_game->integer < TG_MOHTA && cl.snap.valid && cl.snap.ps.stats[STAT_TEAM] == TEAM_AXIS) {
+            Cvar_Set("ui_reloaded_nation", "german");
+        } else {
+            Cvar_Set("ui_reloaded_nation", "american");
+        }
+        UI_GetPlayerModel_f(); // (called, not executed: the push's own arguments stay)
+    } else if (!strcmp(alias, "reloaded_team")) {
+        UI_GetPlayerModel_f(); // (called, not executed: the push's own arguments stay)
+    }
+}
+
+void UI_Menus_Init(void)
+{
+    extern const char *(*ui_menuAlias)(const char *name);
+
+    ui_classicmenus    = Cvar_Get("ui_classicmenus", "0", CVAR_ARCHIVE);
+    ui_dm_primary      = Cvar_Get("ui_dm_primary", "", CVAR_ARCHIVE);
+    ui_reloaded_nation = Cvar_Get("ui_reloaded_nation", "american", 0);
+    ui_menuAlias       = UI_Menus_Alias;
+}
+
+/*
+====================================================================
+
+THE WIDGET
+
+ReloadedMenu: "screen team|weapon|esc|scoreboard", "layer back|front".
+The back layer draws what is under the 3D model views (the team screen's
+halves and bars, a dimming) and places the views (the menu's labels named
+modelallies and modelaxis); the front layer draws the rest and takes the
+mouse and the keys. Both lay the screen out alike from the same data
+
+====================================================================
+*/
+
+enum { SCR_TEAM, SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD };
+
+// the vote tile's state, as the stock menu's widgets show it (UI_MultiplayerMainMenuWidgetsUpdate)
+enum { VOTE_CALL, VOTE_NOW, VOTE_VOTED, VOTE_OFF };
+
+static int RL_VoteState(void)
+{
+    if (!Cvar_VariableIntegerValue("cg_allowvote")) {
+        return VOTE_OFF;
+    }
+    if (atoi(CL_ConfigString(CS_VOTE_TIME))) {
+        return cl.snap.ps.voted ? VOTE_VOTED : VOTE_NOW;
+    }
+    return VOTE_CALL;
+}
+
+
+// the front layer's hot item, for the back layer (a frame later)
+static int rl_hot[4] = {-1, -1, -1, -1};
+
+typedef struct {
+    int   x, y, w, h; // pixels
+    int   id;
+} rlHit_t;
+
+class UIReloadedMenu : public UIWidget
+{
+public:
+    CLASS_PROTOTYPE(UIReloadedMenu);
+
+    int                  m_screen, m_back;
+    int                  m_focus;     // the item hot (hovered or moved to), -1 none
+    int                  m_mouse[2];  // where the mouse was
+    int                  m_shown;     // the frame last drawn
+    std::vector<rlHit_t> m_hits;
+    std::vector<int>     m_order;     // the items in order (the arrow keys)
+    int                  m_cols;      // the items a row (left and right)
+
+    int                  m_tick;      // the frame Tick ran
+
+    UIReloadedMenu() : m_screen(SCR_TEAM), m_back(0), m_focus(-1), m_shown(-1), m_cols(1), m_tick(-1)
+    {
+        m_mouse[0] = m_mouse[1] = -1;
+        AllowActivate(true);
+    }
+
+    void SetScreen(Event *ev)
+    {
+        const str s = ev->GetString(1);
+
+        m_screen = !str::icmp(s, "weapon") ? SCR_WEAPON : !str::icmp(s, "esc") ? SCR_ESC : !str::icmp(s, "scoreboard") ? SCR_SCOREBOARD : SCR_TEAM;
+        AllowActivate(m_screen != SCR_SCOREBOARD);
+    }
+    void SetLayer(Event *ev) { m_back = !str::icmp(ev->GetString(1), "back"); }
+    void MouseUp(Event *ev);
+    void Draw(void) override;
+    qboolean KeyEvent(int key, unsigned int time) override;
+    // the draw cache: drawn again from its list while DrawKey stays (the data's
+    // changes, the hot item, the clock's seconds) and the cvars it read
+    bool CacheDraw(void) override { return true; }
+    bool DrawKeyed(void) override { return true; }
+    int  DrawKey(void) override;
+    void Tick(void);
+
+    void Hit(const rlView_t& v, float x, float y, float w, float h, int id);
+    int  HitAt(int x, int y);
+    bool Hot(int id) const { return m_focus == id; }
+    void Choose(int id);
+    void PlaceModel(const char *name, const rlView_t& v, float cx, float footY, float height, bool show);
+
+    void DrawTeam(const rlView_t& v, const rlInfo_t& in);
+    void DrawWeapon(const rlView_t& v, const rlInfo_t& in);
+    void DrawEsc(const rlView_t& v, const rlInfo_t& in);
+    void DrawScoreboard(const rlView_t& v, const rlInfo_t& in);
+};
+
+Event EV_ReloadedMenu_Screen("screen", EV_DEFAULT, "s", "screen", "team, weapon, esc or scoreboard");
+Event EV_ReloadedMenu_Layer("layer", EV_DEFAULT, "s", "layer", "back (under the model views) or front");
+
+CLASS_DECLARATION(UIWidget, UIReloadedMenu, NULL) {
+    {&EV_ReloadedMenu_Screen, &UIReloadedMenu::SetScreen},
+    {&EV_ReloadedMenu_Layer,  &UIReloadedMenu::SetLayer },
+    {&W_LeftMouseUp,          &UIReloadedMenu::MouseUp  },
+    {NULL,                    NULL                      }
+};
+
+void UIReloadedMenu::Hit(const rlView_t& v, float x, float y, float w, float h, int id)
+{
+    rlHit_t hit;
+
+    hit.x  = RL_P(v, x);
+    hit.y  = RL_P(v, y);
+    hit.w  = RL_P(v, x + w) - hit.x;
+    hit.h  = RL_P(v, y + h) - hit.y;
+    hit.id = id;
+    m_hits.push_back(hit);
+}
+
+int UIReloadedMenu::HitAt(int x, int y)
+{
+    // (the last added on top)
+    for (int i = (int)m_hits.size() - 1; i >= 0; i--) {
+        const rlHit_t& h = m_hits[i];
+
+        if (x >= h.x && y >= h.y && x < h.x + h.w && y < h.y + h.h) {
+            return h.id;
+        }
+    }
+    return -1;
+}
+
+void UIReloadedMenu::MouseUp(Event *ev)
+{
+    const UIPoint2D p  = MouseEventToClientPoint(ev);
+    const int       id = HitAt((int)p.x, (int)p.y);
+
+    if (id >= 0 && !m_back) {
+        Choose(id);
+    }
+}
+
+qboolean UIReloadedMenu::KeyEvent(int key, unsigned int time)
+{
+    int at, n = (int)m_order.size();
+
+    if (m_back || m_screen == SCR_SCOREBOARD || !n) {
+        return qfalse;
+    }
+    if (key == K_ENTER || key == K_KP_ENTER || key == K_SPACE) {
+        if (m_focus >= 0) {
+            Choose(m_focus);
+        }
+        return qtrue;
+    }
+    if (key != K_UPARROW && key != K_DOWNARROW && key != K_LEFTARROW && key != K_RIGHTARROW) {
+        return qfalse;
+    }
+    for (at = 0; at < n && m_order[at] != m_focus; at++) {
+    }
+    if (at == n) {
+        // nothing hot yet: the first
+        m_focus = m_order[0];
+        return qtrue;
+    }
+    if (key == K_LEFTARROW || key == K_RIGHTARROW) {
+        const int step = key == K_LEFTARROW ? -1 : 1;
+        // within the row
+        const int row = at / m_cols, col = at % m_cols + step;
+
+        if (m_cols > 1 && col >= 0 && col < m_cols && row * m_cols + col < n) {
+            at = row * m_cols + col;
+        }
+    } else {
+        at += (key == K_UPARROW ? -m_cols : m_cols);
+        if (at >= n) {
+            at = n - 1;
+        }
+        if (at < 0) {
+            at = 0;
+        }
+    }
+    m_focus = m_order[at];
+    uii.Snd_PlaySound("sound/menu/scroll.wav");
+    return qtrue;
+}
+
+void UIReloadedMenu::PlaceModel(const char *name, const rlView_t& v, float cx, float footY, float height, bool show)
+{
+    UIWidget *w = m_parent ? m_parent->FindWidget(name) : NULL;
+
+    if (!w) {
+        return;
+    }
+    if (!show) {
+        if (w->IsVisible()) {
+            w->setShow(false);
+        }
+        return;
+    }
+    // a square view (the model view's field of view is alike both ways),
+    // the figure filling most of its height
+    const float side = height / 0.94f;
+    const int   px   = RL_P(v, side);
+    const int   x    = RL_P(v, cx) - px / 2;
+    const int   y    = RL_P(v, footY + side * 0.03f) - px;
+
+    w->setFrame(UIRect2D(x, y, px, px));
+    if (!w->IsVisible()) {
+        w->setShow(true);
+    }
+}
+
+/*
+================
+Tick
+
+Each frame the menu shows (from DrawKey, its list drawn again, or from
+Draw): the keys to it, what the mouse is over hot, the scoreboard asked for
+================
+*/
+void UIReloadedMenu::Tick(void)
+{
+    if (m_tick == cls.framecount) {
+        return;
+    }
+    // shown again: nothing hot until the mouse moves or a key is pressed
+    if (m_tick != cls.framecount - 1) {
+        m_focus    = -1;
+        m_mouse[0] = uid.mouseX;
+        m_mouse[1] = uid.mouseY;
+        if (!m_back) {
+            rl_hot[m_screen] = -1;
+        }
+    }
+    m_tick = cls.framecount;
+    if (m_back) {
+        m_focus = rl_hot[m_screen];
+        return;
+    }
+    if (m_screen == SCR_SCOREBOARD) {
+        RL_WantScores();
+        return;
+    }
+    // the teams' scores, when the server's configstring hasn't them
+    if (m_screen == SCR_TEAM && !CL_ConfigString(CS_TEAMSCORES)[0] && RL_Gametype() >= GT_TEAM) {
+        RL_WantScores();
+    }
+    // the keys come here while the menu is up
+    if (uWinMan.ActiveControl() != this && menuManager.CurrentMenu() && getParent()
+        && menuManager.CurrentMenu()->GetContainerWidget() == getParent()) {
+        uWinMan.ActivateControl(this);
+    }
+    // the mouse moved: what it is over is hot
+    if (uid.mouseX != m_mouse[0] || uid.mouseY != m_mouse[1]) {
+        const int id = HitAt(uid.mouseX - (int)m_screenframe.pos.x, uid.mouseY - (int)m_screenframe.pos.y);
+
+        m_mouse[0] = uid.mouseX;
+        m_mouse[1] = uid.mouseY;
+        if (id != m_focus && id >= 0) {
+            uii.Snd_PlaySound("sound/menu/scroll.wav");
+        }
+        m_focus = id;
+    }
+    rl_hot[m_screen] = m_focus;
+}
+
+int UIReloadedMenu::DrawKey(void)
+{
+    struct {
+        int cs, scores, seconds, focus, self, team, vote, gametype;
+    } k;
+    int h = 0;
+
+    Tick();
+    memset(&k, 0, sizeof(k));
+    k.cs    = rl_csChanges;
+    k.focus = m_focus;
+    if (cl.snap.valid) {
+        k.self = cl.snap.ps.clientNum;
+        k.team = cl.snap.ps.stats[STAT_TEAM];
+    }
+    if (m_screen == SCR_TEAM || m_screen == SCR_SCOREBOARD) {
+        k.scores = rl_sb.stamp;
+    }
+    if (m_screen == SCR_ESC || m_screen == SCR_SCOREBOARD) {
+        // (the time left's seconds)
+        k.seconds = (atoi(CL_ConfigString(CS_MATCHEND)) - cl.serverTime) / 1000;
+    }
+    if (m_screen == SCR_ESC) {
+        k.vote = RL_VoteState();
+    }
+    for (size_t i = 0; i + 4 <= sizeof(k); i += 4) {
+        int w;
+
+        memcpy(&w, (const byte *)&k + i, 4);
+        h = (h ^ w) * 16777619;
+    }
+    return h;
+}
+
+void UIReloadedMenu::Draw(void)
+{
+    const rlView_t v = RL_View();
+    rlInfo_t       in;
+
+    if (clc.state < CA_PRIMED) {
+        return;
+    }
+    if (!rl_bakeOnly) {
+        Tick();
+    }
+    RL_Info(&in);
+    m_hits.clear();
+    m_order.clear();
+    m_cols = 1;
+    switch (m_screen) {
+    case SCR_TEAM:
+        DrawTeam(v, in);
+        break;
+    case SCR_WEAPON:
+        DrawWeapon(v, in);
+        break;
+    case SCR_ESC:
+        DrawEsc(v, in);
+        break;
+    default:
+        DrawScoreboard(v, in);
+        break;
+    }
+    {
+        const vec4_t white = {1, 1, 1, 1};
+
+        uii.Rend_SetColor(white);
+    }
+}
+
+/*
+================
+Team select (and FFA's soldier select)
+
+Black bars top and bottom (the title, the map and mode; Spectate), the
+screen split blue and red, both live models at the outer edges, and
+toward the middle, on rows shared by both sides: the emblem and name, the
+players and score, then the players, one column first, names as big as
+the room allows, nobody left out. FFA: one merged list in the middle
+================
+*/
+
+enum { ID_ALLIES, ID_AXIS, ID_SPECTATE };
+
+void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
+{
+    const bool  ffa = in.gametype == GT_FFA;
+    const float bh = v.dh >= 1000 ? 100.0f : 84.0f;
+    const float bandTop = bh, bandBot = v.dh - bh, band = bandBot - bandTop;
+    const float cx = v.dw / 2;
+    const float half   = Q_min(v.dw / 2, 960.0f);
+    const bool  narrow = v.layout == 0;
+    const float fh = band * (narrow ? 0.62f : 0.86f);
+    const float fd = half * (narrow ? 0.80f : 0.70f);
+    const float areaW = fd - fh * 0.37f / 2 - 56 - 24;
+    const float nameSize = 60, iconD = 54;
+    const float capH = nameSize * 0.81f;
+    const int   hover = m_focus == ID_ALLIES ? 0 : m_focus == ID_AXIS ? 1 : -1;
+    const std::vector<rlPlayer_t> *sides[2] = {&in.allies, &in.axis};
+    const int   na = (int)in.allies.size(), nx = (int)in.axis.size();
+    float       yName  = bandTop + Q_max(46.0f, band * 0.085f);
+    float       yStats = yName + capH + 34;
+    float       listTop = yStats + 30;
+    const float avail = bandBot - 26 - (listTop + 10);
+    auto        lhFor = [&](int n) { return n == 0 ? 36.0f : Q_max(19.0f, Q_min(36.0f, avail / n)); };
+    float       lh = Q_min(lhFor(na), lhFor(nx));
+    int         cap = Q_max(1, (int)((avail + 0.01f) / lh));
+    int         cols[2] = {Q_max(1, (na + cap - 1) / cap), Q_max(1, (nx + cap - 1) / cap)};
+    float       namePx = Q_max(15.0f, Q_min(26.0f, lh * 0.72f));
+    int         rowsA = na ? Q_min(na, cap) : 1, rowsX = nx ? Q_min(nx, cap) : 1;
+    int         capm = cap, mcols = 1, nm = 0;
+
+    if (ffa) {
+        nm      = Q_max(1, na + nx);
+        lh      = Q_max(18.0f, Q_min(36.0f, avail / nm));
+        capm    = Q_max(1, (int)((avail + 0.01f) / lh));
+        mcols   = (nm + capm - 1) / capm;
+        namePx  = Q_max(15.0f, Q_min(26.0f, lh * 0.72f));
+        rowsA = rowsX = Q_min(nm, capm);
+    }
+    // short lists: the whole block moves down toward the middle
+    {
+        const float bottom  = listTop + 10 + Q_max(rowsA, rowsX) * lh;
+        const float centred = bandTop + (band - (bottom - yName)) / 2 - band * 0.05f;
+        const float shift   = Q_max(0.0f, centred - yName);
+
+        yName += shift;
+        yStats += shift;
+        listTop += shift;
+    }
+
+    if (m_back) {
+        // the game behind, darkened; each half's colour, stronger hovered
+        RL_Box(v, 0, bandTop, v.dw, band, RL_Rgb(0, 0, 0, 115));
+        for (int t = 0; t < 2; t++) {
+            const int       a  = t == hover ? 175 : 120;
+            const rlColor_t mid = RL_T(rl_teams[t].mid, a), deep = RL_T(rl_teams[t].deep, 0);
+
+            if (t == 0) {
+                RL_HGradient(v, 0, bandTop, cx, band, mid, deep);
+            } else {
+                RL_HGradient(v, cx, bandTop, v.dw - cx, band, deep, mid);
+            }
+        }
+        RL_Box(v, 0, 0, v.dw, bh, RL_Rgb(4, 5, 6, 236));
+        RL_Box(v, 0, v.dh - bh, v.dw, bh, RL_Rgb(4, 5, 6, 236));
+        // both models, at the outer edges, standing on the band's floor
+        PlaceModel("modelallies", v, cx - fd, bandBot - 16, fh, true);
+        PlaceModel("modelaxis", v, cx + fd, bandBot - 16, fh, true);
+        return;
+    }
+
+    // the title, the map and mode
+    {
+        const float ty  = bh / 2;
+        std::string sub = RL_Upper(RL_MapName(in.map)) + "  \xb7  " + RL_ModeName(in.gametype, true);
+
+        RL_Text(v, cx, ty - 9, ffa ? "CHOOSE YOUR SOLDIER" : "CHOOSE YOUR SIDE", 34, RL_TEXT, true, RL_CENTER, 0, RL_MID);
+        RL_Text(v, cx, ty + 24, sub.c_str(), 14, RL_MUTED, false, RL_CENTER, 2.4f, RL_MID);
+    }
+    if (!ffa) {
+        RL_VLine(v, cx, bandTop + 40, bandBot - 40, RL_Rgb(255, 255, 255, 34));
+    }
+    // a click on a half joins it
+    Hit(v, 0, bandTop, cx, band, ID_ALLIES);
+    Hit(v, cx, bandTop, v.dw - cx, band, ID_AXIS);
+
+    for (int t = 0; t < 2; t++) {
+        const rlTeam_t&                T     = rl_teams[t];
+        const bool                     hot   = t == hover;
+        const float                    sgn   = t ? 1.0f : -1.0f;
+        const float                    tx    = cx + sgn * 56;
+        const int                      anch  = t ? RL_LEFT : RL_RIGHT;
+        const std::vector<rlPlayer_t>& names = *sides[t];
+        const float                    nw    = RL_TextW(v, T.name, nameSize, true);
+        const int                      n     = (int)names.size();
+        char                           stats[64];
+
+        RL_TeamIcon(v, t, tx + sgn * (nw + 16 + iconD / 2), yName + capH / 2, iconD);
+        RL_Text(v, tx, yName, T.name, nameSize, RL_TEXT, true, anch);
+        if (hot) {
+            const float uw = nw + 16 + iconD;
+
+            RL_Box(v, t ? tx : tx - uw, yName + capH + 14, uw, 4, RL_BRASS);
+        }
+        Com_sprintf(stats, sizeof(stats), "%d PLAYER%s", n, n == 1 ? "" : "S");
+        if (!ffa) {
+            const int sc = in.teamScore[t];
+
+            Q_strcat(stats, sizeof(stats), sc >= 0 ? va("  \xb7  SCORE %d", sc) : "  \xb7  SCORE \x96");
+        }
+        RL_Text(v, tx, yStats, stats, 17, RL_T(T.pale, 230), false, anch, 2, RL_MID);
+        if (ffa) {
+            continue;
+        }
+        // the team's players: all of them, always
+        RL_HLine(v, t ? tx : tx - areaW, t ? tx + areaW : tx, listTop, RL_Rgb(255, 255, 255, 30));
+        {
+            const float top = listTop + 10;
+            const int   c   = cols[t];
+            const float colW = (areaW - 20 * (c - 1)) / c;
+
+            if (!n) {
+                RL_Text(v, tx, top + lh / 2, "No players yet", namePx, RL_FAINT, false, anch, 0, RL_MID);
+                continue;
+            }
+            for (int j = 0; j < n; j++) {
+                const int   col = j / cap, row = j % cap;
+                const float x   = tx + sgn * col * (colW + 20);
+                const bool  me  = names[j].client == in.self;
+                std::string s   = RL_Ellipsize(v, names[j].name, namePx, me, colW);
+
+                RL_Text(v, x, top + row * lh + lh / 2, s.c_str(), namePx, me ? RL_BRASS : hot ? RL_TEXT : RL_Rgb(205, 200, 190),
+                        me, anch, 0, RL_MID);
+            }
+        }
+    }
+    if (ffa) {
+        // one list, centred on the names there, each with its side's emblem
+        std::vector<std::pair<const rlPlayer_t *, int>> merged;
+        const float mw = 2 * (56 + areaW);
+        float       widest = 0;
+
+        for (const rlPlayer_t& p : in.allies) {
+            merged.push_back({&p, 0});
+        }
+        for (const rlPlayer_t& p : in.axis) {
+            merged.push_back({&p, 1});
+        }
+        for (auto& m : merged) {
+            widest = Q_max(widest, RL_TextW(v, m.first->name, namePx, m.first->client == in.self));
+        }
+        const float colW  = Q_min(300.0f, Q_min((mw - 24 * (mcols - 1)) / mcols, widest + namePx * 1.3f + 4));
+        const float block = mcols * colW + (mcols - 1) * 24;
+        const float bx    = cx - block / 2;
+
+        RL_VLine(v, cx, bandTop + 40, listTop - 12, RL_Rgb(255, 255, 255, 34));
+        RL_HLine(v, bx, bx + block, listTop, RL_Rgb(255, 255, 255, 30));
+        if (merged.empty()) {
+            RL_Text(v, cx, listTop + 10 + lh / 2, "No players yet", namePx, RL_FAINT, false, RL_CENTER, 0, RL_MID);
+        }
+        for (int j = 0; j < (int)merged.size(); j++) {
+            const int   col = j / capm, row = j % capm;
+            const float xx  = bx + col * (colW + 24);
+            const float yy  = listTop + 10 + row * lh + lh / 2;
+            const bool  me  = merged[j].first->client == in.self;
+            std::string s   = RL_Ellipsize(v, merged[j].first->name, namePx, me, colW - namePx * 1.35f);
+
+            RL_TeamIcon(v, merged[j].second, xx + namePx * 0.45f, yy, Q_min(24.0f, namePx * 0.9f));
+            RL_Text(v, xx + namePx * 1.3f, yy, s.c_str(), namePx, me ? RL_BRASS : RL_Rgb(215, 211, 201), me, RL_LEFT, 0, RL_MID);
+        }
+    }
+    // Spectate only (no auto-assign: the user's call)
+    {
+        const float bw = 230, bhh = 50, bx = cx - bw / 2, by = v.dh - bh / 2 - bhh / 2;
+        const bool  hot = Hot(ID_SPECTATE);
+
+        RL_Round(v, bx, by, bw, bhh, 4, RL_Rgb(255, 255, 255, hot ? 26 : 14));
+        RL_RoundFrame(v, bx, by, bw, bhh, 4, hot ? 2 : 1, hot ? RL_BRASS : RL_Rgb(255, 255, 255, 46));
+        RL_Text(v, bx + bw / 2, by + bhh / 2, "SPECTATE", 19, RL_TEXT, true, RL_CENTER, 1.5f, RL_MID);
+        Hit(v, bx, by, bw, bhh, ID_SPECTATE);
+    }
+    m_order = {ID_ALLIES, ID_AXIS, ID_SPECTATE};
+    m_cols  = 2;
+}
+
+/*
+================
+Weapon select: one column of wide cards (the class and name on the left,
+the nation's outline on the right), the last pick marked, a banned class
+dimmed in its place; the live model beside
+================
+*/
+
+void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
+{
+    const int   nation = RL_Nation();
+    const int   team   = RL_NationTeam(nation);
+    const rlTeam_t& T  = rl_teams[team];
+    const int   n      = in.target >= TG_MOHTT ? 7 : 6;
+    const float gap = 10, pad = 16, headH = 70, cardW = 720, modelW = 380;
+    const float cardH  = Q_min(112.0f, (v.dh - 150 - headH - 2 * pad - (n - 1) * gap) / n);
+    const float panelW = cardW + 2 * pad;
+    const float panelH = 2 * pad + n * cardH + (n - 1) * gap;
+    const float compW  = panelW + 40 + modelW;
+    const float x0 = (v.dw - compW) / 2, y0 = (v.dh - headH - panelH) / 2;
+    const float py = y0 + headH;
+
+    // (the cvars it draws from: the cache draws again when one changes)
+    UI_DrawDep(ui_reloaded_nation);
+    UI_DrawDep(ui_dm_primary);
+    UI_DrawDep(Cvar_Get("dm_playergermanmodel", "", 0));
+    for (int i = 0; i < WC_NUM; i++) {
+        UI_DrawDep(Cvar_Get(rl_classCvar[i], "1", 0));
+    }
+    if (m_back) {
+        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
+        // the model beside, of the menu's side
+        PlaceModel("modelallies", v, x0 + panelW + 40 + modelW / 2, py + panelH - 4, panelH + 40, team == 0);
+        PlaceModel("modelaxis", v, x0 + panelW + 40 + modelW / 2, py + panelH - 4, panelH + 40, team == 1);
+        return;
+    }
+    RL_TeamIcon(v, team, x0 + 22, y0 + 26, 44);
+    RL_Text(v, x0 + 56, y0 + 26, "SELECT YOUR WEAPON", 36, RL_TEXT, true, RL_LEFT, 0, RL_MID);
+    RL_Round(v, x0, py, panelW, panelH, 6, RL_Rgb(14, 16, 18, 214));
+    for (int i = 0; i < n; i++) {
+        const rlWeapon_t w     = RL_WeaponFor(nation, i, in.target, in.dmflags);
+        // (the cgame's cg_weapon_<class>: 0 banned)
+        const char      *on    = Cvar_VariableString(rl_classCvar[i]);
+        const bool       allowed = !(on[0] == '0' && !on[1]);
+        const bool       hot   = Hot(i) && allowed;
+        const float      x = x0 + pad, y = py + pad + i * (cardH + gap), cw = cardW;
+        float            nw;
+
+        RL_Round(v, x, y, cw, cardH, 4, hot ? RL_T(T.mid, 240) : RL_T(T.base, allowed ? 215 : 120));
+        if (hot) {
+            RL_RoundFrame(v, x, y, cw, cardH, 4, 2, RL_BRASS);
+        }
+        if (allowed) {
+            RL_Text(v, x + 22, y + cardH / 2 - 15, w.cls, 13, hot ? RL_T(T.pale, 210) : RL_Rgb(150, 146, 136), false, RL_LEFT, 1.8f, RL_MID);
+        } else {
+            RL_Text(v, x + 22, y + cardH / 2 - 15, va("%s  \xb7  OFF ON THIS SERVER", w.cls), 13, RL_Rgb(200, 120, 100), false, RL_LEFT,
+                    1.8f, RL_MID);
+        }
+        nw = RL_Text(v, x + 22, y + cardH / 2 + 13, w.name, 26, allowed ? RL_TEXT : RL_FAINT, true, RL_LEFT, 0, RL_MID, 250);
+        if (!Q_stricmp(ui_dm_primary->string, rl_classCmd[i])) {
+            RL_Round(v, x + 22 + nw + 12, y + cardH / 2 + 9, 8, 8, 4, RL_BRASS);
+        }
+        {
+            const float ow = cw * 0.56f, oh = cardH - 28;
+
+            RL_Outline(v, va(RL_OUTLINES "weapons/%s.svg", w.svg), x + cw - 24 - ow / 2, y + cardH / 2, ow, oh,
+                       allowed ? RL_T(hot ? T.pale : T.light, hot ? 255 : 220) : RL_T(T.light, 70));
+        }
+        if (allowed) {
+            Hit(v, x, y, cw, cardH, i);
+            m_order.push_back(i);
+        }
+    }
+}
+
+/*
+================
+The Esc menu: the map, mode and players, the time left; two rows of three
+tiles (Team, Weapon, Call a vote, Options, Spectate, Disconnect), Resume
+under them and a small Main menu link
+================
+*/
+
+enum { ID_TEAM, ID_WEAPON, ID_VOTE, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_RESUME, ID_MAINMENU };
+
+void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
+{
+    const int      team = in.selfTeam == TEAM_AXIS ? 1 : 0;
+    const rlTeam_t& T   = rl_teams[team];
+    const float    gap = 14, tw = v.layout == 0 ? 200.0f : 210.0f, th = 168, gw = 3 * tw + 2 * gap;
+    const float    head = 84, rb = 56;
+    const float    total = head + 2 * th + gap + 22 + rb + 50;
+    const float    x0 = (v.dw - gw) / 2, y0 = (v.dh - total) / 2;
+    const float    gy = y0 + head;
+    const int      vote = RL_VoteState();
+    static const char *const voteLabels[] = {"CALL A VOTE", "VOTE NOW", "VOTED", "VOTING OFF"};
+
+    if (m_back) {
+        return;
+    }
+    RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
+    RL_Text(v, x0, y0 + 2, RL_MapName(in.map), 30, RL_TEXT, true, RL_LEFT, 0, RL_TOP, gw - 140);
+    {
+        char line[128];
+
+        Com_sprintf(line, sizeof(line), "%s  \xb7  %d / %d players", RL_ModeName(in.gametype, false), in.connected, in.maxClients);
+        RL_Text(v, x0, y0 + 60, line, 16, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+    }
+    if (RL_TimeLeft(in.gametype)[0]) {
+        RL_Text(v, x0 + gw, y0 + 60, va("%s LEFT", RL_TimeLeft(in.gametype)), 15, RL_MUTED, false, RL_RIGHT, 2, RL_MID);
+    }
+    for (int i = 0; i < 6; i++) {
+        static const char *const labels[] = {"TEAM", "WEAPON", "", "OPTIONS", "SPECTATE", "DISCONNECT"};
+        const int   col = i % 3, row = i / 3;
+        const float x = x0 + col * (tw + gap), y = gy + row * (th + gap);
+        const bool  inert = i == ID_VOTE && (vote == VOTE_VOTED || vote == VOTE_OFF);
+        const bool  hot   = Hot(i) && !inert;
+        const rlColor_t gc = inert ? RL_FAINT : hot ? RL_TEXT : RL_Rgb(200, 196, 186);
+        const float gcx = x + tw / 2, gcy = y + th * 0.44f, S = th * 0.30f;
+
+        RL_Round(v, x, y, tw, th, 4, hot ? RL_T(T.mid, 150) : RL_Rgb(14, 16, 18, 226));
+        if (hot) {
+            RL_RoundFrame(v, x, y, tw, th, 4, 2, RL_BRASS);
+        }
+        switch (i) {
+        case ID_TEAM:
+            RL_TeamIcon(v, 0, gcx - S * 0.2f, gcy, S * 0.62f);
+            RL_TeamIcon(v, 1, gcx + S * 0.2f, gcy, S * 0.62f);
+            break;
+        case ID_WEAPON:
+            {
+                const int nation = in.target < TG_MOHTA ? (team ? NAT_DE : NAT_US) : RL_Nation();
+
+                RL_Outline(v, va(RL_OUTLINES "weapons/%s.svg", RL_WeaponFor(nation, WC_SMG, in.target, in.dmflags).svg), gcx, gcy, S * 1.5f,
+                           S * 0.8f, gc);
+            }
+            break;
+        case ID_VOTE:
+            RL_Outline(v, RL_OUTLINES "glyphs/vote.svg", gcx, gcy, S, S, gc);
+            break;
+        case ID_OPTIONS:
+            RL_Outline(v, RL_OUTLINES "glyphs/options.svg", gcx, gcy, S, S, gc);
+            break;
+        case ID_SPECTATOR:
+            RL_Outline(v, RL_OUTLINES "glyphs/spectate.svg", gcx, gcy, S, S, gc);
+            break;
+        default:
+            RL_Outline(v, RL_OUTLINES "glyphs/disconnect.svg", gcx, gcy, S, S, gc);
+            break;
+        }
+        RL_Text(v, x + tw / 2, y + th - 30, i == ID_VOTE ? voteLabels[vote] : labels[i], 17, inert ? RL_FAINT : RL_TEXT, hot, RL_CENTER, 1.6f,
+                RL_MID, tw - 20);
+        if (!inert) {
+            Hit(v, x, y, tw, th, i);
+        }
+    }
+    {
+        const float ry = gy + 2 * th + gap + 22;
+        const bool  hot = Hot(ID_RESUME), mhot = Hot(ID_MAINMENU);
+        const float mw = RL_TextW(v, "MAIN MENU", 15, false, 2.5f) + 24;
+
+        RL_Round(v, x0, ry, gw, rb, 4, RL_Rgb(255, 255, 255, hot ? 26 : 16));
+        RL_RoundFrame(v, x0, ry, gw, rb, 4, hot ? 2 : 1, hot ? RL_BRASS : RL_Rgb(255, 255, 255, 50));
+        RL_Text(v, x0 + gw / 2, ry + rb / 2, "RESUME", 21, RL_TEXT, true, RL_CENTER, 2, RL_MID);
+        Hit(v, x0, ry, gw, rb, ID_RESUME);
+        RL_Text(v, x0 + gw / 2, ry + rb + 30, "MAIN MENU", 15, mhot ? RL_BRASS : RL_MUTED, false, RL_CENTER, 2.5f, RL_MID);
+        Hit(v, x0 + gw / 2 - mw / 2, ry + rb + 14, mw, 32, ID_MAINMENU);
+    }
+    // the keys: the tiles three a row, then Resume, then Main menu
+    for (int i = 0; i < 6; i++) {
+        m_order.push_back(i);
+    }
+    m_order.push_back(ID_RESUME);
+    m_order.push_back(ID_RESUME);
+    m_order.push_back(ID_RESUME);
+    m_order.push_back(ID_MAINMENU);
+    m_order.push_back(ID_MAINMENU);
+    m_order.push_back(ID_MAINMENU);
+    m_cols = 3;
+}
+
+/*
+================
+Choose: what an item does (the stock menus' commands)
+================
+*/
+void UIReloadedMenu::Choose(int id)
+{
+    const char *cmd = NULL;
+
+    switch (m_screen) {
+    case SCR_TEAM:
+        cmd = id == ID_ALLIES ? "join_team allies;popmenu 0\n" : id == ID_AXIS ? "join_team axis;popmenu 0\n" : "popmenu 0;wait 250;spectator\n";
+        break;
+    case SCR_WEAPON:
+        if (id >= 0 && id < WC_NUM) {
+            Cvar_Set("ui_dm_primary", rl_classCmd[id]);
+            cmd = va("primarydmweapon %s;popmenu 0\n", rl_classCmd[id]);
+        }
+        break;
+    case SCR_ESC:
+        switch (id) {
+        case ID_TEAM:
+            cmd = "popmenu 0;wait 250;pushmenu_teamselect\n";
+            break;
+        case ID_WEAPON:
+            cmd = com_target_game->integer >= TG_MOHTA ? "popmenu 0;wait 50;pickweapon\n" : "popmenu 0;wait 250;pushmenu_weaponselect\n";
+            break;
+        case ID_VOTE:
+            cmd = RL_VoteState() == VOTE_NOW ? "pushvote\n" : RL_VoteState() == VOTE_CALL ? "pushcallvote\n" : NULL;
+            break;
+        case ID_OPTIONS:
+            cmd = "popmenu 0;wait 250;ui_getplayermodel;pushmenu mpoptions\n";
+            break;
+        case ID_SPECTATOR:
+            cmd = "popmenu 0;wait 250;spectator\n";
+            break;
+        case ID_DISCONNECT:
+            cmd = "disconnect;wait 5;popmenu 0;pushmenu main;pushmenu multiplayer\n";
+            break;
+        case ID_RESUME:
+            cmd = "popmenu 0\n";
+            break;
+        case ID_MAINMENU:
+            cmd = "popmenu 0;wait 250;pushmenu main\n";
+            break;
+        }
+        break;
+    }
+    if (cmd) {
+        const std::string text(cmd);
+
+        uii.Snd_PlaySound("sound/menu/apply.wav");
+        Cbuf_AddText(text.c_str());
+    }
+}
+
+/*
+================
+The scoreboard: CS2's structure in our look. A header band (the map and
+mode, ALLIES 4 : 3 AXIS, the time left), a section per team, the leading
+one first (its band: emblem, name, players, alive in round modes, the
+columns), a row per player (name, K, D, K/D, TIME, PING), the spectators
+under it. Rows from the player configstrings, filled from the latest
+"scores" ("\x96" where it has no row). Rows tighten from 34 to 22, then the
+header slims from 104 to 72, then rows go to 18; past that each team keeps
+its top players and folds the rest into "+ N more". FFA: one table ranked
+by kills, plain rows with the side's emblem
+================
+*/
+
+typedef struct {
+    const rlPlayer_t *p;
+    const rlScore_t  *sc;
+    int               side; // 0 allies, 1 axis
+} rlRow_t;
+
+static void RL_SortRows(std::vector<rlRow_t>& rows)
+{
+    std::stable_sort(rows.begin(), rows.end(), [](const rlRow_t& a, const rlRow_t& b) {
+        // the server's order (kills), then those it hasn't sent
+        if (!!a.sc != !!b.sc) {
+            return a.sc != NULL;
+        }
+        return a.sc && a.sc->order < b.sc->order;
+    });
+}
+
+static const char *RL_KD(const rlScore_t *sc, char *buf, int size)
+{
+    if (!sc) {
+        return "\x96";
+    }
+    Com_sprintf(buf, size, "%.2f", sc->deaths ? (float)sc->kills / sc->deaths : (float)sc->kills);
+    return buf;
+}
+
+static void RL_SbHeader(const rlView_t& v, float x, float y, float w, float h, const rlInfo_t& in, const std::vector<rlRow_t>& ffaRows)
+{
+    const float k = h / 104;
+    const char *left = RL_TimeLeft(in.gametype);
+    const float cx = x + w / 2;
+
+    RL_Round(v, x, y, w, h, 6, RL_Rgb(10, 11, 12, 236));
+    RL_Text(v, x + 28, y + 30 * k, RL_MapName(in.map), 28 * k, RL_TEXT, true, RL_LEFT, 0, RL_MID, w / 2 - 260 * k);
+    RL_Text(v, x + 28, y + 66 * k, RL_ModeName(in.gametype, true), 14 * Q_max(k, 0.85f), RL_MUTED, false, RL_LEFT, 2.4f, RL_MID);
+    if (left[0]) {
+        RL_Text(v, x + w - 28, y + 30 * k, left, 28 * k, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
+        RL_Text(v, x + w - 28, y + 66 * k, "TIME LEFT", 14 * Q_max(k, 0.85f), RL_MUTED, false, RL_RIGHT, 2.4f, RL_MID);
+    }
+    if (in.gametype == GT_FFA) {
+        const rlRow_t *lead = !ffaRows.empty() && ffaRows[0].sc ? &ffaRows[0] : NULL;
+        std::string    line = lead ? "LEADER: " + RL_Upper(lead->p->name) : std::string("NO SCORES YET");
+
+        if (in.fraglimit > 0) {
+            line += va("  \xb7  FRAG LIMIT %d", in.fraglimit);
+        }
+        RL_Text(v, cx, y + 36 * k, lead ? va("%d", lead->sc->kills) : "\x96", 46 * k, RL_TEXT, true, RL_CENTER, 0, RL_MID);
+        RL_Text(v, cx, y + 76 * k, line.c_str(), 13 * Q_max(k, 0.85f), RL_MUTED, false, RL_CENTER, 2, RL_MID, w / 2 - 80);
+        return;
+    }
+    for (int t = 0; t < 2; t++) {
+        const float sgn = t ? 1.0f : -1.0f;
+        const int   s = in.teamScore[t], o = in.teamScore[!t];
+        const float nx = cx + sgn * 120 * k;
+
+        RL_Text(v, cx + sgn * 34 * k, y + h / 2 - 2, s >= 0 ? va("%d", s) : "\x96", 58 * k, s >= o ? RL_TEXT : RL_Rgb(200, 196, 186), true,
+                t ? RL_LEFT : RL_RIGHT, 0, RL_MID);
+        RL_TeamIcon(v, t, nx + sgn * 22 * k, y + h / 2 - 2, 40 * k);
+        RL_Text(v, nx + sgn * 52 * k, y + h / 2 - 2, rl_teams[t].name, 22 * k, RL_T(rl_teams[t].pale), true, t ? RL_LEFT : RL_RIGHT, 2, RL_MID);
+    }
+    RL_Text(v, cx, y + h / 2 - 2, ":", 40 * k, RL_FAINT, true, RL_CENTER, 0, RL_MID);
+    RL_Box(v, x, y + h - 4, w / 2, 4, RL_T(rl_teams[0].mid));
+    RL_Box(v, x + w / 2, y + h - 4, w / 2, 4, RL_T(rl_teams[1].mid));
+}
+
+// the numeric columns, right-aligned, from the right
+static const struct {
+    const char *label;
+    float       w;
+} rl_cols[] = {
+    {"K",    58},
+    {"D",    58},
+    {"K/D",  72},
+    {"TIME", 88},
+    {"PING", 78},
+};
+
+static float RL_ColsW(void)
+{
+    float w = 0;
+
+    for (const auto& c : rl_cols) {
+        w += c.w;
+    }
+    return w;
+}
+
+static void RL_SbLabels(const rlView_t& v, float x, float y, float w, rlColor_t c)
+{
+    float r = x + w - 16;
+
+    for (int i = (int)ARRAY_LEN(rl_cols) - 1; i >= 0; i--) {
+        RL_Text(v, r, y, rl_cols[i].label, 13, c, true, RL_RIGHT, 1.5f, RL_MID);
+        r -= rl_cols[i].w;
+    }
+}
+
+static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, const rlRow_t& r, int i, int rank, bool rounds, int self)
+{
+    const rlTeam_t& T    = rl_teams[r.side];
+    const bool      me   = r.p->client == self;
+    const bool      dead = rounds && r.sc && r.sc->dead;
+    const int       a    = dead ? 110 : 255;
+    const rlColor_t col  = me ? RL_Alpha(RL_BRASS, a) : dead ? RL_Rgb(150, 146, 136, a) : RL_TEXT;
+    const float     fs   = Q_min(19.0f, rh * 0.66f);
+    const float     cy   = y + rh / 2 - 1;
+    float           nx   = x + 14;
+
+    // (square: a rounded row would be baked again at each row height)
+    if (rank > 0) {
+        // FFA: no team colour, the side by its emblem
+        RL_Box(v, x, y, w, rh - 2, me ? RL_Rgb(44, 47, 50, 240) : RL_Rgb(22, 24, 26, 232));
+    } else {
+        RL_Box(v, x, y, w, rh - 2, me ? RL_T(T.base, 235) : RL_T(T.deep, 232));
+    }
+    if (i % 2 == 0) {
+        RL_Box(v, x, y, w, rh - 2, RL_Rgb(255, 255, 255, 9));
+    }
+    if (me) {
+        RL_Box(v, x, y, 4, rh - 2, RL_BRASS);
+    }
+    if (rank > 0) {
+        RL_Text(v, x + 14, cy, va("%d", rank), fs * 0.9f, rank == 1 ? RL_BRASS : RL_MUTED, true, RL_LEFT, 0, RL_MID);
+        RL_TeamIcon(v, r.side, x + 50, cy, Q_min(18.0f, rh * 0.55f));
+        nx = x + 66;
+    }
+    {
+        const float nameW = x + w - 16 - RL_ColsW() - 14 - nx;
+        std::string name  = RL_Ellipsize(v, r.p->name, fs, me, nameW);
+
+        RL_Text(v, nx, cy, name.c_str(), fs, col, me, RL_LEFT, 0, RL_MID);
+    }
+    {
+        const char *vals[5];
+        float       rx = x + w - 16;
+        char        k[16], d[16], ping[16], kd[16];
+
+        Com_sprintf(k, sizeof(k), "%d", r.sc ? r.sc->kills : 0);
+        Com_sprintf(d, sizeof(d), "%d", r.sc ? r.sc->deaths : 0);
+        Q_strncpyz(ping, r.sc ? (!Q_stricmp(r.sc->ping, "bot") ? "BOT" : r.sc->ping) : "\x96", sizeof(ping));
+        vals[0] = r.sc ? k : "\x96";
+        vals[1] = r.sc ? d : "\x96";
+        vals[2] = RL_KD(r.sc, kd, sizeof(kd));
+        vals[3] = r.sc ? r.sc->time : "\x96";
+        vals[4] = ping;
+        for (int c = 4; c >= 0; c--) {
+            rlColor_t vc = col;
+
+            if (c == 2 && r.sc && !dead && !me) {
+                const float kd = r.sc->deaths ? (float)r.sc->kills / r.sc->deaths : (float)r.sc->kills;
+
+                vc = kd >= 1.0f ? RL_Rgb(150, 205, 140) : RL_Rgb(220, 140, 120);
+            }
+            if (c >= 3 && !me) {
+                vc = RL_Alpha(RL_MUTED, a);
+            }
+            RL_Text(v, rx, cy, vals[c], fs * (c >= 3 ? 0.88f : 0.95f), vc, c == 0, RL_RIGHT, 0, RL_MID);
+            rx -= rl_cols[c].w;
+        }
+    }
+}
+
+// a team's section: its band, then its players; over most, its lowest-ranked fold into "+ N more"; its height
+static float RL_SbTeam(const rlView_t& v, float x, float y, float w, int t, const std::vector<rlRow_t>& rows, bool rounds, float rh, int most, int self)
+{
+    const rlTeam_t& T  = rl_teams[t];
+    const float     bh = 46;
+    const int       n  = (int)rows.size();
+    const int       shown = most >= 0 && n > most ? Q_max(0, most - 1) : n;
+    char            info[64];
+    int             alive = 0;
+
+    for (const rlRow_t& r : rows) {
+        alive += !(r.sc && r.sc->dead);
+    }
+    // the band: a gradient from the team's mid to its base
+    RL_HGradient(v, x, y, w, bh, RL_T(T.mid, 235), RL_T(T.base, 235));
+    RL_TeamIcon(v, t, x + 28, y + bh / 2, 30);
+    RL_Text(v, x + 52, y + bh / 2, T.name, 22, RL_TEXT, true, RL_LEFT, 2, RL_MID);
+    Com_sprintf(info, sizeof(info), "%d PLAYER%s", n, n == 1 ? "" : "S");
+    if (rounds) {
+        Q_strcat(info, sizeof(info), va("  \xb7  %d ALIVE", alive));
+    }
+    {
+        const float iw = RL_TextW(v, T.name, 22, true, 2);
+
+        if (x + 52 + iw + 16 + RL_TextW(v, info, 14, false, 2) <= x + w - 16 - RL_ColsW() - 12) {
+            RL_Text(v, x + 52 + iw + 16, y + bh / 2, info, 14, RL_T(T.pale, 220), false, RL_LEFT, 2, RL_MID);
+        }
+    }
+    RL_SbLabels(v, x, y + bh / 2, w, RL_T(T.pale, 200));
+    for (int i = 0; i < shown; i++) {
+        RL_SbRow(v, x, y + bh + 4 + i * rh, w, rh, rows[i], i, 0, rounds, self);
+    }
+    if (shown < n) {
+        RL_Text(v, x + 14, y + bh + 4 + shown * rh + rh / 2 - 1, va("+ %d more", n - shown), Q_min(19.0f, rh * 0.66f), RL_FAINT, false, RL_LEFT, 0,
+                RL_MID);
+        return bh + 4 + (shown + 1) * rh;
+    }
+    return bh + 4 + n * rh;
+}
+
+// the spectators' names wrapped to the board's width: every one, on as many lines as it takes
+static std::vector<std::string> RL_SpecLines(const rlView_t& v, float w, const std::vector<rlPlayer_t>& names)
+{
+    std::vector<std::string> lines;
+    const float              lead = RL_TextW(v, "SPECTATING", 13, true, 2.5f) + 20;
+    std::string              cur;
+    float                    cw = lead;
+
+    for (const rlPlayer_t& p : names) {
+        const float nw = RL_TextW(v, va("%s  \xb7  ", p.name), 16, false);
+
+        if (!cur.empty() && cw + nw > w - 8) {
+            lines.push_back(cur);
+            cur.clear();
+            cw = lead;
+        }
+        if (!cur.empty()) {
+            cur += "  \xb7  ";
+        }
+        cur += p.name;
+        cw += nw;
+    }
+    if (!cur.empty()) {
+        lines.push_back(cur);
+    }
+    return lines;
+}
+
+void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
+{
+    const bool  rounds = in.gametype == GT_TEAM_ROUNDS || in.gametype == GT_OBJECTIVE;
+    const float topMin = v.dh >= 1000 ? 48.0f : 28.0f, botMax = v.dh - (v.dh >= 1000 ? 48.0f : 24.0f);
+    const float w = Q_min(1180.0f, v.dw - 64), x = (v.dw - w) / 2;
+    const float band = 50, gapT = 18;
+    std::vector<rlRow_t>     teams[2], ffaRows;
+    std::vector<std::string> spec = RL_SpecLines(v, w, in.spectators);
+    const float specH  = 26 + (spec.empty() ? 0.0f : 18.0f + 24.0f * spec.size());
+    float       hdrH   = 104;
+    const float availAll = botMax - topMin - hdrH - 14 - specH;
+
+    if (m_back) {
+        return;
+    }
+    RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 90));
+    for (int t = 0; t < 2; t++) {
+        for (const rlPlayer_t& p : t ? in.axis : in.allies) {
+            rlRow_t r = {&p, RL_Score(p.client), t};
+
+            (in.gametype == GT_FFA ? ffaRows : teams[t]).push_back(r);
+        }
+    }
+    RL_SortRows(teams[0]);
+    RL_SortRows(teams[1]);
+    RL_SortRows(ffaRows);
+
+    auto spectators = [&](float y) {
+        if (spec.empty()) {
+            return;
+        }
+        const float lead = RL_TextW(v, "SPECTATING", 13, true, 2.5f) + 20;
+
+        RL_Text(v, x + 4, y, "SPECTATING", 13, RL_FAINT, true, RL_LEFT, 2.5f, RL_MID);
+        for (size_t k = 0; k < spec.size(); k++) {
+            RL_Text(v, x + 4 + lead, y + k * 24, spec[k].c_str(), 16, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+        }
+    };
+
+    if (in.gametype == GT_FFA) {
+        const int n = Q_max(1, (int)ffaRows.size());
+        float     avail = availAll - 44;
+
+        if (avail / n < 22) {
+            hdrH = 72;
+            avail += 32;
+        }
+        const float rh    = Q_max(18.0f, Q_min(34.0f, avail / n));
+        const int   cap   = Q_max(1, (int)(avail / rh));
+        const int   shown = (int)ffaRows.size() <= cap ? (int)ffaRows.size() : cap - 1;
+        const int   per   = shown + (shown < (int)ffaRows.size() ? 1 : 0);
+        const float used  = hdrH + 14 + 44 + per * rh + specH;
+        const float top   = Q_max(topMin, (v.dh - used) / 2);
+        const float y0    = top + hdrH + 14;
+
+        RL_SbHeader(v, x, top, w, hdrH, in, ffaRows);
+        RL_Round(v, x, y0, w, 40, 4, RL_Rgb(30, 33, 36, 235));
+        RL_Text(v, x + 14, y0 + 20, "#", 13, RL_MUTED, true, RL_LEFT, 1.5f, RL_MID);
+        RL_Text(v, x + 66, y0 + 20, "PLAYER", 13, RL_MUTED, true, RL_LEFT, 1.5f, RL_MID);
+        RL_SbLabels(v, x, y0 + 20, w, RL_MUTED);
+        for (int j = 0; j < shown; j++) {
+            RL_SbRow(v, x, y0 + 44 + j * rh, w, rh, ffaRows[j], j, j + 1, false, in.self);
+        }
+        if (shown < (int)ffaRows.size()) {
+            RL_Text(v, x + 14, y0 + 44 + shown * rh + rh / 2 - 1, va("+ %d more", (int)ffaRows.size() - shown), Q_min(19.0f, rh * 0.66f), RL_FAINT,
+                    false, RL_LEFT, 0, RL_MID);
+        }
+        spectators(y0 + 44 + per * rh + 22);
+        return;
+    }
+    // stacked, the leading team first
+    {
+        const int first = in.teamScore[1] > in.teamScore[0] ? 1 : 0;
+        const int order[2] = {first, !first};
+        const int n1 = Q_max(1, (int)teams[order[0]].size()), n2 = Q_max(1, (int)teams[order[1]].size());
+        const float base = availAll - 2 * band - gapT;
+        float       avail = base;
+        int         caps[2] = {-1, -1};
+
+        if (avail / (n1 + n2) < 22) {
+            hdrH  = 72;
+            avail = base + 32;
+        }
+        const float rh  = Q_max(18.0f, Q_min(34.0f, avail / (n1 + n2)));
+        const int   cap = Q_max(2, (int)(avail / rh));
+
+        if (n1 + n2 > cap) {
+            // the rows shared out: each team up to half, the rest to whichever needs it
+            const int h = cap / 2;
+            int       m1 = Q_min(n1, h), m2 = Q_min(n2, cap - h), left = cap - m1 - m2;
+
+            m1 += Q_min(left, n1 - m1);
+            left = cap - m1 - m2;
+            m2 += Q_min(left, n2 - m2);
+            caps[0] = m1;
+            caps[1] = m2;
+        }
+        const int   rowsUsed = (caps[0] >= 0 ? caps[0] : n1) + (caps[1] >= 0 ? caps[1] : n2);
+        const float used     = hdrH + 14 + 2 * band + gapT + rowsUsed * rh + specH;
+        const float top      = Q_max(topMin, (v.dh - used) / 2);
+        float       y        = top + hdrH + 14;
+
+        RL_SbHeader(v, x, top, w, hdrH, in, ffaRows);
+        for (int k = 0; k < 2; k++) {
+            y += RL_SbTeam(v, x, y, w, order[k], teams[order[k]], rounds, rh, caps[k], in.self) + gapT;
+        }
+        spectators(y + 4);
+    }
+}
+
+/*
+================
+UI_Menus_PreBake
+
+At a map's load (and at a new screen size): each menu laid out with the
+data as it is, drawing nothing, so the faces (on the other threads) and
+shapes it draws are baked then, not when it opens
+================
+*/
+void UI_Menus_PreBake(void)
+{
+    static const char *const menus[] = {"reloaded_team", "reloaded_weapon", "reloaded_esc", "reloaded_scoreboard"};
+
+    if (!ui_classicmenus || ui_classicmenus->integer || clc.state < CA_PRIMED || !uii.IsRendererLoaded()) {
+        return;
+    }
+    UI_BakeBatch(true);
+    rl_bakeOnly = true;
+    for (const char *name : menus) {
+        Menu     *m = menuManager.FindMenu(name);
+        UIWidget *c = m ? m->GetContainerWidget() : NULL;
+
+        for (UIWidget *w = c ? c->getFirstChild() : NULL; w; w = c->getNextChild(w)) {
+            if (w->isSubclassOf(UIReloadedMenu)) {
+                static_cast<UIReloadedMenu *>(w)->Draw();
+            }
+        }
+    }
+    rl_bakeOnly = false;
+    UI_BakeBatch(false);
+}
