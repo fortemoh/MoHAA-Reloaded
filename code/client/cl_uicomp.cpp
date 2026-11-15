@@ -1191,13 +1191,75 @@ void UI_CompHud_Frame(void)
     }
 }
 
-// the HUD's menus, faces and pictures compiled in (cmake/utils/embed_files.cmake)
+// the HUD's menus, faces, pictures, outlines and shader script compiled in (cmake/utils/embed_files.cmake)
 extern "C" const builtinFile_t builtin_files[];
 
-void UI_CompHud_Init(void)
+void UI_CompHud_Files(void)
 {
     // (a file on disk or in a pak of the name is read instead)
     FS_SetBuiltinFiles(builtin_files);
+}
+
+/*
+================
+UI_CompHud_HeadIcons
+
+The pictures of the team icons above team mates' heads (scripts/
+reloaded_hud.shader, cgame's with cg_hudstyle 1): the HUD's team outlines
+baked at 128 px into TGAs, given to the filesystem with the files compiled
+in. The discs fill as much of the picture as the game's 32 px allies.tga
+(28 px) and axis.tga (30 px) do; the renderer mipmaps them
+================
+*/
+static std::vector<builtinFile_t> comp_files;
+static std::vector<byte>          comp_headIcons[2];
+
+void UI_CompHud_HeadIcons(void)
+{
+    static const char *const icons[2][2] = {
+        {"textures/hud/reloaded_allies.tga", "in 0.0625 0.0625 0.9375 0.9375 svg 1 1 1 1 ui/outlines/team/allies.svg center"   },
+        {"textures/hud/reloaded_axis.tga",   "in 0.03125 0.03125 0.96875 0.96875 svg 1 1 1 1 ui/outlines/team/axis.svg center"},
+    };
+    const int         size = 128;
+    std::vector<byte> rgba(size * size * 4);
+
+    if (!comp_files.empty()) {
+        return;
+    }
+    for (const builtinFile_t *f = builtin_files; f->name; f++) {
+        comp_files.push_back(*f);
+    }
+    for (int i = 0; i < 2; i++) {
+        std::vector<byte>& tga = comp_headIcons[i];
+
+        UI_BakeTexels(&icons[i][1], 1, size, size, 1.0f, rgba.data());
+        // uncompressed, 32 bits, 8 of alpha, the rows from the bottom up
+        tga.assign(18, 0);
+        tga[2]  = 2;
+        tga[12] = size & 255;
+        tga[13] = size >> 8;
+        tga[14] = size & 255;
+        tga[15] = size >> 8;
+        tga[16] = 32;
+        tga[17] = 8;
+        for (int y = size - 1; y >= 0; y--) {
+            for (int x = 0; x < size; x++) {
+                const byte *p = &rgba[(y * size + x) * 4];
+
+                tga.push_back(p[2]);
+                tga.push_back(p[1]);
+                tga.push_back(p[0]);
+                tga.push_back(p[3]);
+            }
+        }
+        comp_files.push_back({icons[i][0], tga.data(), (int)tga.size()});
+    }
+    comp_files.push_back({NULL, NULL, 0});
+    FS_SetBuiltinFiles(comp_files.data());
+}
+
+void UI_CompHud_Init(void)
+{
     cg_hudstyle = Cvar_Get("cg_hudstyle", "0", CVAR_ARCHIVE);
     for (size_t i = 0; i < ARRAY_LEN(comp_toggles); i++) {
         Cvar_Get(comp_toggles[i], "1", CVAR_ARCHIVE);
@@ -1553,6 +1615,10 @@ static str Comp_Grey(const char *layer, float k)
     v = (0.299f * c[0] + 0.587f * c[1] + 0.114f * c[2]) * k;
     out += va(" %g %g %g %g", v, v, v, c[3]);
     out += p + n;
+    // (an outline's parts greyed each by its own brightness, as a shape's layers are)
+    if (!strcmp(kind, "svg")) {
+        out += " grey";
+    }
     return out;
 }
 

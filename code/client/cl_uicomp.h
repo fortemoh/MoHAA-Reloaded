@@ -25,6 +25,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #pragma once
 
+void     UI_CompHud_Files(void);          // the files compiled in, before the renderer starts (its shader script)
+void     UI_CompHud_HeadIcons(void);      // the head icons' pictures, made once the UI can bake
 void     UI_CompHud_Init(void);
 qboolean UI_CompHud_Active(void);         // cg_hudstyle 1
 void     UI_CompHud_Frame(void);          // the ui_hud_* cvars, before the menus draw

@@ -5575,6 +5575,8 @@ void CL_InitializeUI(void)
     CL_FillUIDef();
     CL_FillUIImports();
     UI_InitExports();
+    // Added: the head icons' pictures (the outlines baked)
+    UI_CompHud_HeadIcons();
     uie.Init();
 
     UI_LoadInventory_f();

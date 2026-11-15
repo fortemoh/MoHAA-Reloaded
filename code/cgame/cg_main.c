@@ -821,7 +821,9 @@ static void CG_PrecacheMatch(void)
     };
     static const char *sprites[] = {
         "textures/hud/allies_headicon.spr", "textures/hud/axis_headicon.spr", "textures/hud/talking_headicon.spr",
-        "textures/hud/inmenu_headicon.spr"
+        "textures/hud/inmenu_headicon.spr",
+        // Added: the Competitive HUD's (CG_TeamHeadIcon)
+        "textures/hud/reloaded_allies_headicon.spr", "textures/hud/reloaded_axis_headicon.spr"
     };
     char  level[MAX_QPATH];
     char  script[MAX_QPATH];

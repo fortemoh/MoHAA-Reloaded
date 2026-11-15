@@ -50,6 +50,28 @@ const char *CG_GetPlayerLocalModelTiki(const char *modelName)
 
 /*
 ===============
+CG_TeamHeadIcon
+
+Added: a team's icon above a team mate's head: with the Competitive HUD
+(cg_hudstyle 1) its team icons' (scripts/reloaded_hud.shader, the client's
+outlines baked), else the game's
+===============
+*/
+static const char *CG_TeamHeadIcon(qboolean allies)
+{
+    static cvar_t *hudstyle;
+
+    if (!hudstyle) {
+        hudstyle = cgi.Cvar_Get("cg_hudstyle", "0", CVAR_ARCHIVE);
+    }
+    if (hudstyle->integer == 1) {
+        return allies ? "textures/hud/reloaded_allies_headicon.spr" : "textures/hud/reloaded_axis_headicon.spr";
+    }
+    return allies ? "textures/hud/allies_headicon.spr" : "textures/hud/axis_headicon.spr";
+}
+
+/*
+===============
 CG_PlayerTeamIcon
 ===============
 */
@@ -113,10 +135,8 @@ void CG_PlayerTeamIcon(refEntity_t *pModel, entityState_t *pPlayerState)
             if (bInArtillery) {
                 iconEnt.hModel = cgi.R_RegisterModel("textures/hud/inmenu_artilleryicon.spr");
                 bSpecialIcon   = qtrue;
-            } else if ((pPlayerState->eFlags & 0x80) != 0) {
-                iconEnt.hModel = cgi.R_RegisterModel("textures/hud/allies_headicon.spr");
             } else {
-                iconEnt.hModel = cgi.R_RegisterModel("textures/hud/axis_headicon.spr");
+                iconEnt.hModel = cgi.R_RegisterModel(CG_TeamHeadIcon((pPlayerState->eFlags & 0x80) != 0));
             }
         }
 
@@ -193,11 +213,7 @@ void CG_PlayerTeamIcon(refEntity_t *pModel, entityState_t *pPlayerState)
             cgi.R_AddRefSpriteToScene(&iconEnt);
 
             if (bSpecialIcon && bInTeam && fAlpha > 0.0f) {
-                if (pPlayerState->eFlags & EF_ALLIES) {
-                    iconEnt.hModel = cgi.R_RegisterModel("textures/hud/allies_headicon.spr");
-                } else {
-                    iconEnt.hModel = cgi.R_RegisterModel("textures/hud/axis_headicon.spr");
-                }
+                iconEnt.hModel = cgi.R_RegisterModel(CG_TeamHeadIcon((pPlayerState->eFlags & EF_ALLIES) != 0));
                 VectorMA(iconEnt.origin, 4.0f, cg.refdef.viewaxis[0], iconEnt.origin);
                 iconEnt.scale         = iconEnt.scale - 0.1;
                 iconEnt.shaderRGBA[3] = (int)(fAlpha * 255.0f);

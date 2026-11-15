@@ -75,9 +75,7 @@ rect 372 24 56 56
 bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_allies
-shape circle 0.102 0.118 0.231 1
-shape poly 1 1 1 1 0.5 0 0.61226 0.34549 0.97553 0.34549 0.68164 0.55902 0.79389 0.90451 0.5 0.69098 0.20611 0.90451 0.31836 0.55902 0.02447 0.34549 0.38774 0.34549
-shape circle 0.871 0 0 1 0.30902
+shape svg 1 1 1 1 ui/outlines/team/allies.svg center
 }
 
 resource
@@ -88,9 +86,7 @@ rect 372 24 56 56
 bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_axis
-shape circle 0.663 0.012 0.012 1
-shape poly 1 1 1 1 0.28979 0.1 0.71021 0.1 0.61763 0.38237 0.9 0.28979 0.9 0.71021 0.61763 0.61763 0.71021 0.9 0.28979 0.9 0.38237 0.61763 0.1 0.71021 0.1 0.28979 0.38237 0.38237
-shape poly 0 0 0 1 0.345 0.14 0.655 0.14 0.555 0.445 0.86 0.345 0.86 0.655 0.555 0.555 0.655 0.86 0.345 0.86 0.445 0.555 0.14 0.655 0.14 0.345 0.445 0.445
+shape svg 1 1 1 1 ui/outlines/team/axis.svg center
 }
 
 resource
