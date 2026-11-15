@@ -315,7 +315,7 @@ pub struct Crosshair {
 pub struct CrossLayout {
     /// the arms and the dot, joined into boxes that don't overlap
     pub boxes: Vec<CrossBox>,
-    /// the outline, drawn first, joined the same way
+    /// the outline, drawn first, joined the same way, less the pieces
     pub outline: Vec<CrossBox>,
     /// the square around the crosshair's middle that holds it all: its width (and height), and its top left corner
     /// (the same both ways)
@@ -347,7 +347,7 @@ pub fn crosshair_boxes(c: &Crosshair) -> CrossLayout {
     if t > 0 && c.dot {
         pieces.push(b(-before, -before, t, t));
     }
-    // a pixel above (over the corners) and left of every piece; full: below and right too
+    // a pixel above (over the corners) and left of every piece; full: below and right too; nowhere under a piece
     let mode = c.outline.clamp(0, 2);
     let mut strips = Vec::new();
     for p in pieces.iter().filter(|_| mode != 0) {
@@ -359,34 +359,53 @@ pub fn crosshair_boxes(c: &Crosshair) -> CrossLayout {
     // the middle is -odd / 2 both ways: the farthest edge from it, twice, is the square's width
     let edges = pieces.iter().chain(&strips).flat_map(|r| [r.x, r.x + r.w, r.y, r.y + r.h]);
     let extent = edges.map(|e| (2 * e + odd).abs()).max().unwrap_or(0);
-    let (boxes, outline) = (crosshair_union(&pieces), crosshair_union(&strips));
+    let (boxes, outline) = (crosshair_union(&pieces, &[]), crosshair_union(&strips, &pieces));
     CrossLayout { boxes, outline, extent, start: -(extent + odd) / 2 }
 }
 
-/// The pixels of boxes as boxes that don't overlap, as CG_CrosshairUnion joins them (at most 64), so that a see-through
-/// crosshair blends each pixel once: the bands between the boxes' top and bottom edges, the boxes across each band
-/// joined, a box going on down into the next band when it has the same span there
-fn crosshair_union(boxes: &[CrossBox]) -> Vec<CrossBox> {
-    let mut edges: Vec<i32> = boxes.iter().flat_map(|r| [r.y, r.y + r.h]).collect();
+/// The pixels of boxes less those of others, as boxes that don't overlap, as CG_CrosshairUnion joins them (at most
+/// 64): in each band between the boxes' top and bottom edges, the first boxes' spans less the others', a box going on
+/// down into the next band when it has the same span there. A see-through crosshair blends each pixel once, and the
+/// outline nowhere under a piece
+fn crosshair_union(boxes: &[CrossBox], minus: &[CrossBox]) -> Vec<CrossBox> {
+    // the boxes' spans across the band y0 to y1, sorted and joined where they touch
+    fn spans(boxes: &[CrossBox], y0: i32, y1: i32) -> Vec<(i32, i32)> {
+        let mut all: Vec<(i32, i32)> =
+            boxes.iter().filter(|r| r.y <= y0 && r.y + r.h >= y1 && r.w > 0).map(|r| (r.x, r.x + r.w)).collect();
+        all.sort_by_key(|s| s.0);
+        let mut joined: Vec<(i32, i32)> = Vec::new();
+        for (x0, x1) in all {
+            match joined.last_mut() {
+                Some(last) if x0 <= last.1 => last.1 = last.1.max(x1),
+                _ => joined.push((x0, x1)),
+            }
+        }
+        joined
+    }
+    let mut edges: Vec<i32> = boxes.iter().chain(minus).flat_map(|r| [r.y, r.y + r.h]).collect();
     edges.sort();
     let mut out: Vec<CrossBox> = Vec::new();
     for band in edges.windows(2).filter(|e| e[0] != e[1]) {
         let (y0, y1, above) = (band[0], band[1], out.len());
-        let mut spans: Vec<(i32, i32)> =
-            boxes.iter().filter(|r| r.y <= y0 && r.y + r.h >= y1 && r.w > 0).map(|r| (r.x, r.x + r.w)).collect();
-        spans.sort_by_key(|s| s.0);
-        let mut i = 0;
-        while i < spans.len() {
-            let (x0, mut x1) = spans[i];
-            i += 1;
-            while i < spans.len() && spans[i].0 <= x1 {
-                x1 = x1.max(spans[i].1);
-                i += 1;
-            }
-            if let Some(r) = out[..above].iter_mut().find(|r| r.x == x0 && r.w == x1 - x0 && r.y + r.h == y0) {
-                r.h += y1 - y0;
-            } else if out.len() < 64 {
-                out.push(CrossBox { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+        let cuts = spans(minus, y0, y1);
+        for (s0, s1) in spans(boxes, y0, y1) {
+            // the span up to each cut, then on from its end
+            let mut x0 = s0;
+            for j in 0..=cuts.len() {
+                if x0 >= s1 {
+                    break;
+                }
+                let x1 = cuts.get(j).map_or(s1, |c| c.0.max(x0).min(s1));
+                if x1 > x0 {
+                    if let Some(r) = out[..above].iter_mut().find(|r| r.x == x0 && r.w == x1 - x0 && r.y + r.h == y0) {
+                        r.h += y1 - y0;
+                    } else if out.len() < 64 {
+                        out.push(CrossBox { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+                    }
+                }
+                if let Some(c) = cuts.get(j) {
+                    x0 = x0.max(c.1);
+                }
             }
         }
     }
@@ -894,13 +913,19 @@ mod tests {
         assert_eq!(screen(&c.boxes), want);
         assert_eq!((c.extent, c.start), (23, -12));
 
-        // length 1, gap 2, thickness 8, half outline, as in a CS2 screenshot; the outline above and left of each piece
+        // length 1, gap 2, thickness 8, half outline, as in a CS2 screenshot; the outline above and left of each piece,
+        // nowhere under one: the game's boxes
         let c = crosshair_boxes(&shape(1.0, 2.0, 8.0, 2, false, false));
         let want = pixels(&[(957, 957, 536, 543), (962, 962, 536, 543), (956, 963, 537, 537), (956, 963, 542, 542)]);
         assert_eq!(screen(&c.boxes), want);
-        let strips = [(956, 957, 535, 535), (956, 956, 536, 543), (961, 962, 535, 535), (961, 961, 536, 543)];
-        let strips = strips.into_iter().chain([(955, 963, 541, 541), (955, 955, 542, 542), (955, 963, 536, 536)]);
-        assert_eq!(screen(&c.outline), pixels(&strips.chain([(955, 955, 537, 537)]).collect::<Vec<_>>()));
+        let outline = [
+            (956, 535, 2, 1), (961, 535, 2, 1), (955, 536, 2, 1), (958, 536, 4, 1), (963, 536, 1, 1),
+            (955, 537, 1, 1), (956, 538, 1, 3), (961, 538, 1, 3), (955, 541, 2, 1), (958, 541, 4, 1),
+            (963, 541, 1, 1), (955, 542, 1, 1), (956, 543, 1, 1), (961, 543, 1, 1),
+        ];
+        let on_screen = |r: &CrossBox| (960 + r.x, 540 + r.y, r.w, r.h);
+        assert_eq!(c.outline.iter().map(on_screen).collect::<Vec<_>>(), outline);
+        assert!(screen(&c.outline).is_disjoint(&want));
 
         // gap 0: the arms meet; the dot over them, each pixel once; T-style: no top arm
         let c = crosshair_boxes(&shape(5.0, 0.0, 2.0, 0, true, true));
