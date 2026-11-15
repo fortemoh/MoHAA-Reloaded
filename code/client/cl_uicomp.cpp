@@ -82,7 +82,8 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_allies", "ui_hud_ammo", "ui_hud_ammo_on", "ui_hud_arc0_alpha", "ui_hud_arc0_angle", "ui_hud_arc1_alpha",
     "ui_hud_arc1_angle", "ui_hud_arc2_alpha", "ui_hud_arc2_angle", "ui_hud_axis", "ui_hud_badge_on", "ui_hud_banner1",
     "ui_hud_banner1_on", "ui_hud_banner2", "ui_hud_banner2_on", "ui_hud_charge", "ui_hud_charge_on", "ui_hud_clip",
-    "ui_hud_compass_on", "ui_hud_corners", "ui_hud_dmg_alpha", "ui_hud_dmg_angle", "ui_hud_follow",
+    "ui_hud_compass_on", "ui_hud_corners", "ui_hud_count_allies", "ui_hud_count_axis", "ui_hud_count_on",
+    "ui_hud_dmg_alpha", "ui_hud_dmg_angle", "ui_hud_follow",
     "ui_hud_follow_col", "ui_hud_follow_on", "ui_hud_health", "ui_hud_health_col", "ui_hud_health_frac",
     "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col", "ui_hud_hurt_on", "ui_hud_killer", "ui_hud_killer_col",
     "ui_hud_killer_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
@@ -1057,8 +1058,22 @@ void UI_CompHud_Frame(void)
         if (!(atoi(CL_ConfigString(CS_WARMUP)) != -1 && matchEnd && gametype != GT_LIBERATION && matchEnd > cl.serverTime)) {
             banner1 = Comp_Int("cg_hud_timer") ? Sys_LV_CL_ConvertString(Comp_Cvar("ui_timemessage")->string) : "";
         }
-        Comp_Set("ui_hud_cards_allies", rounds ? comp.cards[0] : "");
-        Comp_Set("ui_hud_cards_axis", rounds ? comp.cards[1] : "");
+        // the players' cards, or (cg_hud_alivecount, CS2's) how many of each
+        // team are alive in their place: no cards then (ui_hud_cards_on
+        // says whether either shows)
+        const qboolean count = rounds && Comp_Int("cg_hud_alivecount");
+
+        Comp_Set("ui_hud_cards_allies", rounds && !count ? comp.cards[0] : "");
+        Comp_Set("ui_hud_cards_axis", rounds && !count ? comp.cards[1] : "");
+        Comp_Set("ui_hud_count_on", count ? "1" : "0");
+        for (i = 0; i < 2; i++) {
+            int alive = 0;
+
+            for (const char *c = comp.cards[i]; *c; c++) {
+                alive += *c != 'd';
+            }
+            Comp_SetI(i ? "ui_hud_count_axis" : "ui_hud_count_allies", alive);
+        }
     }
     // the banners, the time message's first
     Comp_Set("ui_hud_banner1", banner1[0] ? banner1 : spec);
@@ -1310,6 +1325,8 @@ void UI_CompHud_Init(void)
     Cvar_Get("cg_hud_accent", "f6f67a", CVAR_ARCHIVE);
     // the bottom's health and ammo: 0 along the middle, 1 CS:GO's corners, 2 CS2's
     Cvar_Get("cg_hud_layout", "1", CVAR_ARCHIVE);
+    // the top's teams, beside the score: 0 a card per player, 1 how many are alive (CS2's)
+    Cvar_Get("cg_hud_alivecount", "0", CVAR_ARCHIVE);
     // what the menus read, made now, empty (ui_hud_never stays so: the never
     // shown widgets, the teams' icons and the cards' shapes): a widget
     // reading a cvar that isn't there draws every frame (the draw cache
