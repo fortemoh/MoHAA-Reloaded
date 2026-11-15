@@ -22,7 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 // cl_uimenus.h: the Reloaded menus (Added): team select, weapon select, the
 // Esc menu, the scoreboard and the load screen (ui/reloaded_*.urc), shown in
-// place of the stock menus unless ui_classicmenus is 1
+// place of the stock menus unless ui_classicmenus is 1, and the cursor
 
 #pragma once
 

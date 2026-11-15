@@ -28,7 +28,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // shown for the stock menus' names (SelectTeam, ObjSelectTeam,
 // SelectFFAModel, SelectPrimaryWeapon[_<nation>], dm_main, DM_Scoreboard,
 // DM_Round_Scoreboard, Obj_Scoreboard: UI_Menus_Alias), so nothing on the
-// server or in the cgame changes; ui_classicmenus 1 shows the stock ones.
+// server or in the cgame changes; ui_classicmenus 1 shows the stock ones
+// (and the stock cursor: the Reloaded one is RL_Cursor's).
 //
 // Sizes are design units: a 1080-line screen (900 below 900 lines, so small
 // screens get bigger type), the width what the screen's shape gives. Type is
@@ -1142,6 +1143,58 @@ qboolean UI_Menus_Pushing(const char *name)
     return qtrue;
 }
 
+/*
+====================================================================
+
+THE CURSOR
+
+A brass dart (ui/outlines/glyphs/cursor.svg, in its colours: the tip of
+its dark edge, the top-left, the hot spot) 22 units high, baked at its
+size for the UI's draw and the system's cursor (a window's) when the size
+changes, registered again after a map's load or a renderer's restart; the
+stock picture with ui_classicmenus 1
+
+====================================================================
+*/
+
+#define RL_CURSOR RL_OUTLINES "glyphs/cursor.svg"
+
+static struct {
+    int               w, h;   // its size, 0 not baked
+    std::vector<byte> texels;
+    uihandle_t        shader;
+    int               stamp;  // UI_BakeStamp when registered
+} rl_cur;
+
+static const byte *RL_Cursor(int *w, int *h, uihandle_t *shader)
+{
+    static const char *const layer = "svg 1 1 1 1 " RL_CURSOR " left";
+    const int                ph    = Q_max(12, RL_P(RL_View(), 22.0f));
+    float                    sw, sh;
+
+    if (ui_classicmenus->integer) {
+        return NULL;
+    }
+    if (ph != rl_cur.h) {
+        if (!UI_OutlineSize(RL_CURSOR, &sw, &sh)) {
+            return NULL;
+        }
+        rl_cur.h = ph;
+        rl_cur.w = (int)ceilf(ph * sw / sh);
+        rl_cur.texels.resize(rl_cur.w * rl_cur.h * 4);
+        UI_BakeTexels(&layer, 1, rl_cur.w, rl_cur.h, 1.0f, rl_cur.texels.data());
+        rl_cur.stamp = UI_BakeStamp() + 1;
+    }
+    if (rl_cur.stamp != UI_BakeStamp()) {
+        rl_cur.shader = uii.Rend_RegisterImage2D("*rl_cursor", rl_cur.texels.data(), rl_cur.w, rl_cur.h);
+        rl_cur.stamp  = UI_BakeStamp();
+    }
+    *w      = rl_cur.w;
+    *h      = rl_cur.h;
+    *shader = rl_cur.shader;
+    return rl_cur.texels.data();
+}
+
 void UI_Menus_Init(void)
 {
     extern const char *(*ui_menuAlias)(const char *name);
@@ -1151,6 +1204,7 @@ void UI_Menus_Init(void)
     ui_reloaded_nation = Cvar_Get("ui_reloaded_nation", "american", 0);
     ui_reloaded_figure = Cvar_Get("ui_reloaded_figure", "", 0);
     ui_menuAlias       = UI_Menus_Alias;
+    ui_cursorPicture   = RL_Cursor;
 }
 
 /*
