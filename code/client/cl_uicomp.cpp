@@ -1874,10 +1874,11 @@ void UIHudCards::Draw(void)
 ================
 UIHudWeapons
 
-The weapons carried, up from the widget's bottom right: the sidearm, the
-primary, the grenades (frags then smokes, each with how many), each with
-room for its name under it so that a switch moves nothing (CS:GO's); the
-one in hand bright and named. countfont: the grenades' counts'
+The weapons carried at the widget's bottom right, CS:GO's order from the
+top: the primary, the sidearm, the grenades (frags then smokes, each with
+how many), each with room for its name under it so that a switch moves
+nothing (CS:GO's); the one in hand bright and named. countfont: the
+grenades' counts'
 ================
 */
 class UIHudWeapons : public UIWidget
@@ -1979,16 +1980,7 @@ void UIHudWeapons::Draw(void)
             primarySlot = i + 1;
         }
     }
-    if (comp.sidearm[0] && Comp_Weapon(comp.sidearm)) {
-        const char *pic = Comp_Weapon(comp.sidearm)->pic;
-
-        Item(right, &bottom, &pic, NULL, 1, handSlot == 1 ? 0 : -1, 110.0f, 30.0f);
-    }
-    if (primarySlot && Comp_Weapon(comp.primary)) {
-        const char *pic = Comp_Weapon(comp.primary)->pic;
-
-        Item(right, &bottom, &pic, NULL, 1, handSlot == primarySlot ? 0 : -1, 160.0f, 34.0f);
-    }
+    // laid out from the bottom up: the grenades, the sidearm, the primary
     if (Comp_Int("cg_hud_grenades") && (comp.frags > 0 || comp.smokes > 0)) {
         const char *pics[2];
         int         counts[2], n = 0, hand = -1;
@@ -2003,6 +1995,16 @@ void UIHudWeapons::Draw(void)
             }
         }
         Item(right, &bottom, pics, counts, n, hand, 200.0f, 38.0f);
+    }
+    if (comp.sidearm[0] && Comp_Weapon(comp.sidearm)) {
+        const char *pic = Comp_Weapon(comp.sidearm)->pic;
+
+        Item(right, &bottom, &pic, NULL, 1, handSlot == 1 ? 0 : -1, 110.0f, 30.0f);
+    }
+    if (primarySlot && Comp_Weapon(comp.primary)) {
+        const char *pic = Comp_Weapon(comp.primary)->pic;
+
+        Item(right, &bottom, &pic, NULL, 1, handSlot == primarySlot ? 0 : -1, 160.0f, 34.0f);
     }
 }
 
