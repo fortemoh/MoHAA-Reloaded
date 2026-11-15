@@ -546,6 +546,7 @@ extern "C" {
     extern cvar_t *cg_viewmodel_offset_y;
     extern cvar_t *cg_viewmodel_offset_z;
     extern cvar_t *cg_viewmodel_presetpos;
+    extern cvar_t *cg_viewmodel_yaw;
     extern cvar_t *cg_righthand;
     extern cvar_t *voiceChat;
     extern cvar_t *cg_shadowscount;

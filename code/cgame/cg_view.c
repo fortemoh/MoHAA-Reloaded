@@ -233,8 +233,9 @@ viewmodel_offset_x/y/z and viewmodel_presetpos: cg_viewmodel_offset_x moves
 it right, _y forward and _z up from where the game puts it, in units along
 the view, within limits that keep it on screen. A preset
 (cg_viewmodel_presetpos 1-3) sets the three; offsets set by hand that are no
-preset's make it 0 (custom). Called once a frame: it only compares
-modification counts until a setting changes
+preset's make it 0 (custom). cg_viewmodel_yaw turns it left or right around
+the hand that holds it, in degrees (CS2 has none: no preset sets it). Called
+once a frame: it only compares modification counts until a setting changes
 ===============
 */
 typedef struct {
@@ -248,29 +249,34 @@ static const vmPreset_t vmPresets[] = {
     {0,    0,    0   }, // 3 Classic: the game's own position
 };
 
-static const float vmOffsetLimits[3][2] = {
-    {-2.5f, 2.5f}, // x: left, right
-    {-2.0f, 2.0f}, // y: back, forward
-    {-2.0f, 1.0f}, // z: down, up (higher, the weapons' ends come into view)
+#define VM_SETTINGS 4 // offsets x, y, z, then yaw
+#define VM_YAW      3
+#define VM_PRESET   VM_SETTINGS
+
+static const float vmLimits[VM_SETTINGS][2] = {
+    {-2.5f, 2.5f},   // x: left, right
+    {-2.0f, 2.0f},   // y: back, forward
+    {-2.0f, 1.0f},   // z: down, up (higher, the weapons' ends come into view)
+    {-15.0f, 15.0f}, // yaw: the muzzle out, to the middle
 };
 
-static vec3_t vmOffset; // right, forward, up
-static int    vmModCount[4] = {-1, -1, -1, -1};
-static int    vmPresetInit;
+static float vmValues[VM_SETTINGS]; // right, forward, up, yaw
+static int   vmModCount[VM_SETTINGS + 1] = {-1, -1, -1, -1, -1};
+static int   vmPresetInit;
 
 void CG_ViewModelSettings(void)
 {
-    cvar_t  *axes[3] = {cg_viewmodel_offset_x, cg_viewmodel_offset_y, cg_viewmodel_offset_z};
-    qboolean changed = qfalse;
+    cvar_t *settings[VM_SETTINGS] = {cg_viewmodel_offset_x, cg_viewmodel_offset_y, cg_viewmodel_offset_z, cg_viewmodel_yaw};
+    qboolean offsetChanged = qfalse;
     int      preset;
     int      i;
 
     preset = cg_viewmodel_presetpos->integer;
     if (!vmPresetInit) {
         // the offsets of the config stand: the preset is only checked against them
-        vmPresetInit  = 1;
-        vmModCount[3] = cg_viewmodel_presetpos->modificationCount;
-    } else if (cg_viewmodel_presetpos->modificationCount != vmModCount[3]) {
+        vmPresetInit          = 1;
+        vmModCount[VM_PRESET] = cg_viewmodel_presetpos->modificationCount;
+    } else if (cg_viewmodel_presetpos->modificationCount != vmModCount[VM_PRESET]) {
         if (preset > 0 && preset < (int)ARRAY_LEN(vmPresets)) {
             cgi.Cvar_Set("cg_viewmodel_offset_x", va("%g", vmPresets[preset].x));
             cgi.Cvar_Set("cg_viewmodel_offset_y", va("%g", vmPresets[preset].y));
@@ -280,35 +286,92 @@ void CG_ViewModelSettings(void)
             cgi.Cvar_Set("cg_viewmodel_presetpos", "0");
             preset = 0;
         }
-        vmModCount[3] = cg_viewmodel_presetpos->modificationCount;
+        vmModCount[VM_PRESET] = cg_viewmodel_presetpos->modificationCount;
     }
 
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < VM_SETTINGS; i++) {
         float v;
 
-        if (axes[i]->modificationCount == vmModCount[i]) {
+        if (settings[i]->modificationCount == vmModCount[i]) {
             continue;
         }
 
-        v = axes[i]->value;
-        if (!(v >= vmOffsetLimits[i][0] && v <= vmOffsetLimits[i][1])) {
+        v = settings[i]->value;
+        if (!(v >= vmLimits[i][0] && v <= vmLimits[i][1])) {
             // out of range (or not a number): the nearest limit
-            v = v > vmOffsetLimits[i][1] ? vmOffsetLimits[i][1] : v < vmOffsetLimits[i][0] ? vmOffsetLimits[i][0] : 0;
-            cgi.Cvar_Set(axes[i]->name, va("%g", v));
+            v = v > vmLimits[i][1] ? vmLimits[i][1] : v < vmLimits[i][0] ? vmLimits[i][0] : 0;
+            cgi.Cvar_Set(settings[i]->name, va("%g", v));
         }
 
-        vmOffset[i]   = v;
-        vmModCount[i] = axes[i]->modificationCount;
-        changed       = qtrue;
+        vmValues[i]   = v;
+        vmModCount[i] = settings[i]->modificationCount;
+        if (i < 3) {
+            offsetChanged = qtrue;
+        }
     }
 
-    if (changed && preset != 0) {
+    if (offsetChanged && preset != 0) {
         const vmPreset_t *p = &vmPresets[preset > 0 && preset < (int)ARRAY_LEN(vmPresets) ? preset : 0];
 
-        if (p == vmPresets || vmOffset[0] != p->x || vmOffset[1] != p->y || vmOffset[2] != p->z) {
+        if (p == vmPresets || vmValues[0] != p->x || vmValues[1] != p->y || vmValues[2] != p->z) {
             // set by hand (or the config's preset is none): custom
             cgi.Cvar_Set("cg_viewmodel_presetpos", "0");
-            vmModCount[3] = cg_viewmodel_presetpos->modificationCount;
+            vmModCount[VM_PRESET] = cg_viewmodel_presetpos->modificationCount;
+        }
+    }
+}
+
+/*
+===============
+CG_TurnViewModel
+
+Turns the first-person model left or right by cg_viewmodel_yaw degrees
+(positive: the muzzle to the middle of the screen), around the view's up
+axis through the hand that holds the weapon (tag_weapon_right), so the
+weapon turns where it is. A model without the tag isn't turned
+===============
+*/
+static void CG_TurnViewModel(refEntity_t *pREnt)
+{
+    orientation_t oHand;
+    vec3_t        vForward, vLeft, vUp;
+    vec3_t        vPivot, v;
+    float         fSin, fCos, f, l;
+    int           iTag;
+    int           i;
+
+    iTag = pREnt->tiki ? cgi.Tag_NumForName(pREnt->tiki, "tag_weapon_right") : -1;
+    if (iTag < 0) {
+        return;
+    }
+
+    oHand = cgi.TIKI_Orientation(pREnt, iTag);
+    VectorCopy(pREnt->origin, vPivot);
+    for (i = 0; i < 3; i++) {
+        VectorMA(vPivot, oHand.origin[i], pREnt->axis[i], vPivot);
+    }
+
+    AngleVectorsLeft(cg.refdefViewAngles, vForward, vLeft, vUp);
+    fSin = sin(DEG2RAD(vmValues[VM_YAW]));
+    fCos = cos(DEG2RAD(vmValues[VM_YAW]));
+
+    // the origin around the pivot, then each axis: forward turns to the left
+    for (i = -1; i < 3; i++) {
+        float *p = i < 0 ? pREnt->origin : pREnt->axis[i];
+
+        if (i < 0) {
+            VectorSubtract(p, vPivot, v);
+        } else {
+            VectorCopy(p, v);
+        }
+        f = DotProduct(v, vForward);
+        l = DotProduct(v, vLeft);
+        VectorMA(v, f * fCos - l * fSin - f, vForward, v);
+        VectorMA(v, f * fSin + l * fCos - l, vLeft, v);
+        if (i < 0) {
+            VectorAdd(vPivot, v, p);
+        } else {
+            VectorCopy(v, p);
         }
     }
 }
@@ -584,14 +647,19 @@ void CG_OffsetFirstPersonView(refEntity_t *pREnt, qboolean bUseWorldPosition)
         VectorMA(pREnt->origin, vDelta[1], mat[1], pREnt->origin);
         VectorMA(pREnt->origin, vDelta[2], mat[2], pREnt->origin);
 
-        if (vmOffset[0] || vmOffset[1] || vmOffset[2]) {
+        if (vmValues[0] || vmValues[1] || vmValues[2]) {
             // the player's own position (CG_ViewModelSettings), along the view
             vec3_t vForward, vRight, vUp;
 
             AngleVectors(cg.refdefViewAngles, vForward, vRight, vUp);
-            VectorMA(pREnt->origin, vmOffset[0], vRight, pREnt->origin);
-            VectorMA(pREnt->origin, vmOffset[1], vForward, pREnt->origin);
-            VectorMA(pREnt->origin, vmOffset[2], vUp, pREnt->origin);
+            VectorMA(pREnt->origin, vmValues[0], vRight, pREnt->origin);
+            VectorMA(pREnt->origin, vmValues[1], vForward, pREnt->origin);
+            VectorMA(pREnt->origin, vmValues[2], vUp, pREnt->origin);
+        }
+
+        if (vmValues[VM_YAW]) {
+            // and its turn
+            CG_TurnViewModel(pREnt);
         }
     }
 

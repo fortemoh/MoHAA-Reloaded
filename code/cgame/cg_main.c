@@ -116,6 +116,7 @@ cvar_t *cg_viewmodel_offset_x;
 cvar_t *cg_viewmodel_offset_y;
 cvar_t *cg_viewmodel_offset_z;
 cvar_t *cg_viewmodel_presetpos;
+cvar_t *cg_viewmodel_yaw;
 cvar_t *cg_righthand;
 cvar_t *voiceChat;
 cvar_t *cg_shadowscount;
@@ -222,6 +223,8 @@ void CG_RegisterCvars(void)
     cg_viewmodel_offset_y         = cgi.Cvar_Get("cg_viewmodel_offset_y", "0", CVAR_ARCHIVE);
     cg_viewmodel_offset_z         = cgi.Cvar_Get("cg_viewmodel_offset_z", "0", CVAR_ARCHIVE);
     cg_viewmodel_presetpos        = cgi.Cvar_Get("cg_viewmodel_presetpos", "3", CVAR_ARCHIVE);
+    // and turned left or right around the hand, in degrees (CS2 has none)
+    cg_viewmodel_yaw              = cgi.Cvar_Get("cg_viewmodel_yaw", "0", CVAR_ARCHIVE);
     // 0: the first-person weapon in the left hand (mirrored, CG_MirrorViewModel)
     cg_righthand                  = cgi.Cvar_Get("cg_righthand", "1", CVAR_ARCHIVE);
     voiceChat                     = cgi.Cvar_Get("cg_voicechat", "1", 0);
