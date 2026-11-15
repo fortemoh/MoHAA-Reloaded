@@ -573,6 +573,18 @@ int UIFont::getMaxWidthIndex(const char *text, int maxlen)
     return UI_FontStringMaxWidth(m_font, text, maxlen);
 }
 
+float UIFont::FitScale(const char *text, float width)
+{
+    float w;
+
+    m_fit = 1.0f;
+    if (width <= 0.0f || !*text) {
+        return 1.0f;
+    }
+    w = getWidth(text, -1);
+    return w > width ? Q_max(0.5f, width / w) : 1.0f;
+}
+
 float UIFont::getWidth(const char *text, int maxlen)
 {
     CheckRefreshFont();

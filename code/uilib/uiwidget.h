@@ -105,6 +105,8 @@ typedef enum {
 // drawn that changes by itself (not to be kept)
 void UI_DrawDep(cvar_t *cvar);
 void UI_DrawLive(void);
+// ... a hash of what a widget draws from (DrawKey), h the hash so far
+int UI_DrawHash(int h, const void *data, size_t size);
 
 class UIWidget : public USignal
 {

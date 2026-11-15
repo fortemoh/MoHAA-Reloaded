@@ -1841,12 +1841,14 @@ void UIWidget::BakeShapes(void)
                     name[k++] = *p;
                 }
                 name[k] = 0;
-                if (uii.Cvar_Find(name)) {
-                    UI_DrawDep(uii.Cvar_Find(name));
+                cvar_t *v = uii.Cvar_Find(name);
+
+                if (v) {
+                    UI_DrawDep(v);
+                    resolved[i] += v->latchedString && *v->latchedString ? v->latchedString : v->string;
                 } else {
                     UI_DrawLive();
                 }
-                resolved[i] += uii.Cvar_GetString(name, "");
             } else {
                 resolved[i] += *p++;
             }
@@ -2481,6 +2483,14 @@ void UI_DrawLive(void)
     ui_drawLive++;
 }
 
+int UI_DrawHash(int h, const void *data, size_t size)
+{
+    for (size_t i = 0; i < size; i++) {
+        h = (h ^ ((const byte *)data)[i]) * 16777619;
+    }
+    return h;
+}
+
 void UIWidget::AddDrawDep(cvar_t *cvar)
 {
     for (auto& d : m_drawDeps) {
@@ -2505,7 +2515,6 @@ int UIWidget::DrawState(void)
         const void *material;
         int         key;
     } st;
-    int h = 0;
 
     memset(&st, 0, sizeof(st));
     st.visible = m_visible;
@@ -2521,14 +2530,7 @@ int UIWidget::DrawState(void)
     }
     st.material = m_material;
     st.key      = DrawKey();
-    // (a word at a time)
-    for (size_t i = 0; i + 4 <= sizeof(st); i += 4) {
-        int w;
-
-        memcpy(&w, (const byte *)&st + i, 4);
-        h = (h ^ w) * 16777619;
-    }
-    return h;
+    return UI_DrawHash(0, &st, sizeof(st));
 }
 
 bool UIWidget::CacheDraw(void)

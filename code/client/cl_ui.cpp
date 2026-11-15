@@ -1264,25 +1264,19 @@ shown in place of the stock HUD's
 */
 static void UI_CompHuds(bool show, bool messages = false)
 {
-    static const char *const names[] = {
-        "hud_comp_topleft", "hud_comp_topleft_compass", "hud_comp_score",   "hud_comp_killfeed", "hud_comp_chat",
-        "hud_comp_strip",   "hud_comp_weapons",         "hud_comp_damage",  "hud_comp_banners",  "hud_comp_bars",
-        "hud_comp_killer",  "hud_comp_target",          "hud_comp_vote",
-    };
-
-    static Menu     *menus[ARRAY_LEN(names)];
-    static UIWidget *containers[ARRAY_LEN(names)]; // (asked if shown every frame: the widget, not through the menu)
+    static Menu     *menus[UI_COMPHUD_MENUS];
+    static UIWidget *containers[UI_COMPHUD_MENUS]; // (asked if shown every frame: the widget, not through the menu)
     static int       generation = -1;
 
     // found again when the menus change
     if (generation != menuManager.Generation()) {
         generation = menuManager.Generation();
-        for (size_t i = 0; i < ARRAY_LEN(names); i++) {
-            menus[i]      = menuManager.FindMenu(names[i]);
+        for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
+            menus[i]      = menuManager.FindMenu(ui_compHudMenus[i]);
             containers[i] = menus[i] ? menus[i]->GetContainerWidget() : NULL;
         }
     }
-    for (size_t i = 0; i < ARRAY_LEN(names); i++) {
+    for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
         Menu      *hud = menus[i];
         // (messages only: the menus with the game messages, the chat, the kills and the vote)
         const bool on  = show || (messages && (i == 1 || i == 3 || i == 4 || i == 12));

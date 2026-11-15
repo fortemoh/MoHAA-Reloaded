@@ -283,19 +283,6 @@ const char *UILabel::CurrentText(void)
     return label.length() ? label.c_str() : m_title.length() ? m_title.c_str() : "";
 }
 
-// Added: how much smaller its text is drawn to fit (fitwidth)
-float UILabel::TextFit(const char *text)
-{
-    float w;
-
-    if (m_fitWidth <= 0.0f || !m_font || !*text) {
-        return 1.0f;
-    }
-    m_font->setFit(1.0f);
-    w = m_font->getWidth(text, -1);
-    return w > m_fitWidth ? Q_max(0.5f, m_fitWidth / w) : 1.0f;
-}
-
 // Added: its text's box (empty: none at its top left; no text at all: its
 // rect), design units
 UIRect2D UILabel::ContentBox(void)
@@ -314,7 +301,7 @@ UIRect2D UILabel::ContentBox(void)
     if (!*text || !m_font) {
         return UIRect2D(r.pos.x, r.pos.y, 0.0f, 0.0f);
     }
-    fit = TextFit(text);
+    fit = m_font->FitScale(text, m_fitWidth);
     for (const char *p = text, *e; *p; p = *e ? e + 1 : e) {
         char line[1024];
 
@@ -374,7 +361,7 @@ void UILabel::Draw(void)
 
         m_font->setColor(UColor(nr, ng, nb, m_foreground_color.a * m_local_alpha));
         // Added: a long text smaller to fit (fitwidth)
-        m_font->setFit(TextFit(string));
+        m_font->setFit(m_font->FitScale(string, m_fitWidth));
 
         if (m_bOutlinedText) {
             // print the text

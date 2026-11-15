@@ -59,5 +59,5 @@ bool UI_BakeAhead(int on = -1);
 // the shapes made ahead and not baked, and the pictures read: let go
 void UI_BakeRelease(void);
 
-// a picture's texels across and down; false: none
+// a picture's texels across and down (read once); false: none
 bool UI_PictureSize(const char *file, int *w, int *h);

@@ -57,7 +57,6 @@ class UILabel : public UIWidget
     int                     m_iLastEnterTime;
     int                     m_iLastDrawTime;
     const char *LinkedText(void);
-    float       TextFit(const char *text);
 
 public:
     const char *CurrentText(void);

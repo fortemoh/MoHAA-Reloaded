@@ -776,10 +776,17 @@ static std::shared_ptr<uiPicture_t> Bake_PictureEntry(const char *file)
 
 bool UI_PictureSize(const char *file, int *w, int *h)
 {
-    std::shared_ptr<uiPicture_t> p = Bake_PictureEntry(file);
+    // (kept: the pictures themselves are let go after a bake, UI_BakeRelease)
+    static std::unordered_map<std::string, std::pair<int, int>> sizes;
+    auto                                                        it = sizes.find(file);
 
-    *w = p ? p->w : 0;
-    *h = p ? p->h : 0;
+    if (it == sizes.end()) {
+        std::shared_ptr<uiPicture_t> p = Bake_PictureEntry(file);
+
+        it = sizes.emplace(file, std::make_pair(p ? p->w : 0, p ? p->h : 0)).first;
+    }
+    *w = it->second.first;
+    *h = it->second.second;
     return *w && *h;
 }
 

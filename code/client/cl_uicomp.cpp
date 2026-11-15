@@ -48,6 +48,12 @@ extern int            g_radarClientNum;
 
 static cvar_t *cg_hudstyle;
 
+const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
+    "hud_comp_topleft", "hud_comp_topleft_compass", "hud_comp_score",   "hud_comp_killfeed", "hud_comp_chat",
+    "hud_comp_strip",   "hud_comp_weapons",         "hud_comp_damage",  "hud_comp_banners",  "hud_comp_bars",
+    "hud_comp_killer",  "hud_comp_target",          "hud_comp_vote",
+};
+
 // the elements one can turn off (as cgame's Competitive HUD); the menus' enabledcvar
 static const char *const comp_toggles[] = {
     "cg_hud_radar", "cg_hud_killfeed", "cg_hud_chat", "cg_hud_messages", "cg_hud_health", "cg_hud_ammo",
@@ -70,7 +76,7 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_target", "ui_hud_target_col",
     "ui_hud_target_hp", "ui_hud_target_hpcol", "ui_hud_target_on", "ui_hud_timer", "ui_hud_vote_on",
     "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_vs_on",
-    "ui_hud_weapons_on", "ui_hud_cards_allies", "ui_hud_cards_axis",
+    "ui_hud_weapons_on", "ui_hud_cards_allies", "ui_hud_cards_axis", "ui_hud_never",
 };
 
 // the accent (cg_hud_accent, the HUD's pale yellow by default) and its
@@ -127,7 +133,6 @@ static struct {
     int      sbScore[2];        // the scoreboard's teams' scores, -1 unknown
     int      scoreTime;         // the last silent score request
     qboolean wantScores, wasPlaying;
-    int      lastTeam;
     char     cards[2][MAX_CLIENTS + 1]; // a card each: b alive with a bar, a alive, d dead
 
     // the weapons carried (names as the server's configstrings have them)
@@ -722,7 +727,7 @@ static void Comp_Roster(int gametype)
 
 // the weapons carried: the primary's and the sidearm's names (as seen in
 // hand or picked up), the grenades, the grenade's charge
-static void Comp_Weapons(const char *inHand, qboolean following)
+static void Comp_Weapons(const char *inHand)
 {
     const playerState_t *ps       = &cl.snap.ps;
     const int            owned    = ps->stats[STAT_WEAPONS] & 0x3F;
@@ -952,10 +957,9 @@ void UI_CompHud_Frame(void)
     // (copied: va's buffer is used again below)
     Q_strncpyz(spec, Comp_Int("cg_hud_spectator") ? Comp_SpectatorText() : "", sizeof(spec));
     Comp_Roster(gametype);
-    Comp_Weapons(weapon, following);
+    Comp_Weapons(weapon);
 
     // the strip: health, badge, ammo, weapons (not while free spectating)
-    Comp_Set("ui_hud_strip", !spectating || following ? "1" : "0");
     {
         const qboolean icon = teams && (!spectating || following) && Comp_Int("cg_hud_badge") && Comp_Int("cg_hud_teamicon");
 
@@ -1202,11 +1206,11 @@ void UI_CompHud_Init(void)
     Cvar_Get("cg_hud_scale", "1", CVAR_ARCHIVE);
     // the accent: "f6f67a", "#f6f67a" or "R G B" (0 to 1)
     Cvar_Get("cg_hud_accent", "f6f67a", CVAR_ARCHIVE);
-    // the menus' never shown widgets (the teams' icons, the cards' shapes)
-    Cvar_Get("ui_hud_never", "0", 0);
-    // what the menus read, made now, empty: a widget reading a cvar that
-    // isn't there draws every frame (the draw cache can't tell when it comes),
-    // and some are set only now and then (a vote's, the compass's, a charge)
+    // what the menus read, made now, empty (ui_hud_never stays so: the never
+    // shown widgets, the teams' icons and the cards' shapes): a widget
+    // reading a cvar that isn't there draws every frame (the draw cache
+    // can't tell when it comes), and some are set only now and then (a
+    // vote's, the compass's, a charge)
     for (size_t i = 0; i < ARRAY_LEN(comp_menuCvars); i++) {
         Cvar_Get(comp_menuCvars[i], "", 0);
     }
@@ -1226,24 +1230,6 @@ WIDGETS
 
 ====================================================================
 */
-
-// a picture's texels across and down (read once: the PNG's header)
-static void Comp_PictureSize(const char *pic, int *w, int *h)
-{
-    static std::vector<std::pair<str, std::pair<int, int>>> sizes;
-
-    for (auto& e : sizes) {
-        if (e.first == pic) {
-            *w = e.second.first;
-            *h = e.second.second;
-            return;
-        }
-    }
-    if (!UI_PictureSize(va(COMP_PICTURES "%s.png", pic), w, h)) {
-        *w = *h = 1;
-    }
-    sizes.push_back({str(pic), {*w, *h}});
-}
 
 // a picture baked at pw x ph pixels
 static qhandle_t Comp_PictureShader(const char *pic, int pw, int ph, float s, qboolean mirror)
@@ -1272,26 +1258,20 @@ static void Comp_Fit(const char *pic, float boxW, float boxH, float s, float *w,
     int         sw, sh;
     float       fit;
 
-    Comp_PictureSize(pic, &sw, &sh);
+    if (!UI_PictureSize(va(COMP_PICTURES "%s.png", pic), &sw, &sh)) {
+        sw = sh = 1;
+    }
     fit = Q_min(boxW / sw, boxH / sh);
     *w  = floorf(fit * sw * s + 0.5f) / s;
     *h  = floorf(fit * sh * s + 0.5f) / s;
 }
 
-// how much smaller text is drawn to fit a width (to half its size; 0: any)
-static float Comp_Fit(UIFont *font, const char *text, float fit)
-{
-    float w;
-
-    font->setFit(1.0f);
-    w = font->getWidth(text, -1);
-    return fit > 0.0f && w > fit ? Q_max(0.5f, fit / w) : 1.0f;
-}
-
-// a text's width, smaller to fit
+// a text's width, smaller to fit a width
 static float Comp_TextW(UIFont *font, const char *text, float fit = 0.0f)
 {
-    return font->getWidth(text, -1) * Comp_Fit(font, text, fit);
+    const float k = font->FitScale(text, fit);
+
+    return font->getWidth(text, -1) * k;
 }
 
 // text with its capitals' middle on cy (the baked faces' lines are centered
@@ -1300,7 +1280,7 @@ static float Comp_Text(UIFont *font, float x, float cy, const char *text, const 
 {
     float w;
 
-    font->setFit(Comp_Fit(font, text, fit));
+    font->setFit(font->FitScale(text, fit));
     font->setColor(c);
     font->Print(x, cy - font->getHeight((const float *)NULL) * 0.5f, text, -1, scale);
     w = font->getWidth(text, -1);
@@ -1311,15 +1291,6 @@ static float Comp_Text(UIFont *font, float x, float cy, const char *text, const 
 static float Comp_Fade(int time, int life, int fade)
 {
     return Com_Clamp(0.0f, 1.0f, (float)(life - (cls.realtime - time)) / fade);
-}
-
-// what a widget draws from, for the draw cache (DrawKey)
-static int Comp_Hash(int h, const void *data, size_t size)
-{
-    for (size_t i = 0; i < size; i++) {
-        h = (h ^ ((const byte *)data)[i]) * 16777619;
-    }
-    return h;
 }
 
 /*
@@ -1382,7 +1353,7 @@ bool UIHudFeed::Lines(int *key)
 
         if (cls.realtime - time < life) {
             steady = steady && cls.realtime - time < life - fade;
-            h      = Comp_Hash(h, &time, sizeof(time));
+            h      = UI_DrawHash(h, &time, sizeof(time));
         }
     }
     if (key) {
@@ -1723,11 +1694,11 @@ public:
         const int            v[7] = {comp.frags, comp.smokes, comp.nation, ps->stats[STAT_WEAPONS], ps->stats[STAT_EQUIPPED_WEAPON],
                                      Comp_Int("cg_hud_grenades"), comp_accentStamp};
         const char          *hand = CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON]);
-        int                  h    = Comp_Hash(0, v, sizeof(v));
+        int                  h    = UI_DrawHash(0, v, sizeof(v));
 
-        h = Comp_Hash(h, comp.primary, strlen(comp.primary));
-        h = Comp_Hash(h, comp.sidearm, strlen(comp.sidearm));
-        return Comp_Hash(h, hand, strlen(hand));
+        h = UI_DrawHash(h, comp.primary, strlen(comp.primary));
+        h = UI_DrawHash(h, comp.sidearm, strlen(comp.sidearm));
+        return UI_DrawHash(h, hand, strlen(hand));
     }
 };
 
@@ -2280,12 +2251,6 @@ own, made while the rest loads, so the bake at the load's end finds them made
 */
 void UI_CompHud_PreBake(qboolean ahead)
 {
-    // (in this order: the atlas is filled in it)
-    static const char *const menus[] = {
-        "hud_comp_topleft", "hud_comp_topleft_compass", "hud_comp_score",   "hud_comp_killfeed", "hud_comp_chat",
-        "hud_comp_strip",   "hud_comp_weapons",         "hud_comp_damage",  "hud_comp_banners",  "hud_comp_bars",
-        "hud_comp_killer",  "hud_comp_target",          "hud_comp_vote",
-    };
     const float s = UI_DesignScale(1920.0f, 1080.0f), k = 248.0f / 220.0f;
     const int   start = Sys_Milliseconds();
     UIWidget   *icons[2] = {NULL, NULL};
@@ -2297,8 +2262,8 @@ void UI_CompHud_PreBake(qboolean ahead)
         return;
     }
     UI_BakeAhead(ahead);
-    for (i = 0; i < ARRAY_LEN(menus); i++) {
-        Menu *m = menuManager.FindMenu(menus[i]);
+    for (i = 0; i < UI_COMPHUD_MENUS; i++) {
+        Menu *m = menuManager.FindMenu(ui_compHudMenus[i]);
 
         if (m && m->GetContainerWidget()) {
             Comp_PreBakeWidget(m->GetContainerWidget());
@@ -2383,7 +2348,7 @@ void UIHudRadar::Draw(void)
     const float s = m_vVirtualScale[0], r = m_frame.size.width * 0.5f, k = m_frame.size.width / s / 220.0f;
     const float upp = RM_RANGE / r; // world units a pixel
     vec3_t      angles, eye;
-    float       fx, fy, sn, cn;
+    float       sn, cn;
     const char *map = (Comp_ConfigStrings(), cs.map);
 
     if (!cl.snap.valid) {
@@ -2397,10 +2362,8 @@ void UIHudRadar::Draw(void)
     auto place = [&](float wx, float wy, float *x, float *y) {
         const float dx = wx - eye[0], dy = wy - eye[1];
 
-        fx = (dx * sn - dy * cn) / upp;
-        fy = -(dx * cn + dy * sn) / upp;
-        *x = fx;
-        *y = fy;
+        *x = (dx * sn - dy * cn) / upp;
+        *y = -(dx * cn + dy * sn) / upp;
     };
 
     // the map: walked once a map (at its load: UI_CompHud_MapLoaded), drawn
@@ -2454,7 +2417,6 @@ void UIHudRadar::Draw(void)
             re.DrawPolygon2D(pts, 48, rm.shader);
         }
     }
-    (void)place;
 
     // the objectives: a diamond, white for the current one
     for (int i = 0; i < MAX_OBJECTIVES; i++) {

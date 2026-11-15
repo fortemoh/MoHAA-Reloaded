@@ -74,6 +74,8 @@ public:
     void setColor(UColor col);
     // Added: drawn and measured this much smaller (a long text in a width, UILabel's fitwidth)
     void setFit(float fit) { m_fit = fit; }
+    // ... how much smaller a text is drawn to fit a width (to half its size; 0: any width), the fit left at 1
+    float FitScale(const char *text, float width);
     float m_fit;
     void setAlpha(float alpha);
     void setFont(const char *fontname);
