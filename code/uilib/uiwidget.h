@@ -513,6 +513,7 @@ extern Event EV_Layout_BGColor;
 extern Event EV_Layout_FGColor;
 extern Event EV_Layout_Borderstyle;
 extern Event EV_Layout_BorderColor;
+extern Event EV_Layout_AlphaCvar; // Added
 extern Event EV_Layout_Shader;
 extern Event EV_Layout_TileShader;
 extern Event EV_Layout_HoverShader;

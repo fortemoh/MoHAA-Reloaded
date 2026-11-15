@@ -21,12 +21,31 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 // cl_uiextras.h: the Competitive HUD's extras (Added, cg_hudstyle 1): the
-// zoom overlays
+// zoom overlays, the centre and location prints, the chat's typing line and
+// the round's end banner
 
 #pragma once
 
+void UI_Extras_Init(void);
 // the zoom overlay drawn (the cgame's: 0 a scope, 1 the Kar98's, 2 the spy
 // camera's, 3 the binoculars'), faded by alpha; qfalse: the stock one is drawn
 qboolean UI_DrawZoomOverlay(int type, float alpha);
+// a centre print (x, y -2) or a location print (640 x 480 units, -1 centred)
+// drawn at alpha; qfalse: the stock one is drawn
+qboolean UI_Extras_Print(const char *text, float alpha, int x, int y);
+// the round's end banner over the game and the chat's typing line (View3D's 2D)
+void UI_Extras_Draw2D(void);
+// the chat's typing line is up (the chat shows its lines while it is)
+qboolean UI_Extras_Typing(void);
 // what is baked (a map's load, a new screen size); ahead: the overlays' masks begun on other threads
 void UI_Extras_PreBake(qboolean ahead);
+
+#ifdef __cplusplus
+#    include "cl_uidraw.h"
+
+// the round's end banner on the Reloaded scoreboard: its height in v's units
+// (0: none), drawn with its top at y; its key (the draw cache's)
+float UI_Extras_BannerHeight(const rlView_t& v);
+void  UI_Extras_DrawBanner(const rlView_t& v, float y);
+int   UI_Extras_BannerKey(void);
+#endif

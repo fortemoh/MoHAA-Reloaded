@@ -38,6 +38,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cl_ui.h"
 #include "cl_uimenus.h"
 #include "cl_uidraw.h"
+#include "cl_uiextras.h"
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
 
@@ -1141,7 +1142,7 @@ void UIReloadedMenu::Tick(void)
 int UIReloadedMenu::DrawKey(void)
 {
     struct {
-        int cs, scores, seconds, focus, self, team, vote, gametype;
+        int cs, scores, seconds, focus, self, team, vote, gametype, banner;
     } k;
     int h = 0;
 
@@ -1162,6 +1163,10 @@ int UIReloadedMenu::DrawKey(void)
     }
     if (m_screen == SCR_ESC) {
         k.vote = RL_VoteState();
+    }
+    if (m_screen == SCR_SCOREBOARD) {
+        // (the round's end banner over the header)
+        k.banner = UI_Extras_BannerKey();
     }
     for (size_t i = 0; i + 4 <= sizeof(k); i += 4) {
         int w;
@@ -1969,12 +1974,14 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
         spectators(y0 + 44 + per * rh + 22);
         return;
     }
-    // stacked, the leading team first
+    // stacked, the leading team first; over it the round's end banner while
+    // it shows (cl_uiextras.cpp), the board moved down for it
     {
         const int first = in.teamScore[1] > in.teamScore[0] ? 1 : 0;
         const int order[2] = {first, !first};
         const int n1 = Q_max(1, (int)teams[order[0]].size()), n2 = Q_max(1, (int)teams[order[1]].size());
-        const float base = availAll - 2 * band - gapT;
+        const float banner = UI_Extras_BannerHeight(v), over = banner > 0.0f ? banner + 16.0f : 0.0f;
+        const float base = availAll - 2 * band - gapT - over;
         float       avail = base;
         int         caps[2] = {-1, -1};
 
@@ -1997,11 +2004,14 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
             caps[1] = m2;
         }
         const int   rowsUsed = (caps[0] >= 0 ? caps[0] : n1) + (caps[1] >= 0 ? caps[1] : n2);
-        const float used     = hdrH + 14 + 2 * band + gapT + rowsUsed * rh + specH;
+        const float used     = over + hdrH + 14 + 2 * band + gapT + rowsUsed * rh + specH;
         const float top      = Q_max(topMin, (v.dh - used) / 2);
-        float       y        = top + hdrH + 14;
+        float       y        = top + over + hdrH + 14;
 
-        RL_SbHeader(v, x, top, w, hdrH, in, ffaRows);
+        if (banner > 0.0f) {
+            UI_Extras_DrawBanner(v, top);
+        }
+        RL_SbHeader(v, x, top + over, w, hdrH, in, ffaRows);
         for (int k = 0; k < 2; k++) {
             y += RL_SbTeam(v, x, y, w, order[k], teams[order[k]], rounds, rh, caps[k], in.self) + gapT;
         }

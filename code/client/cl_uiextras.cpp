@@ -28,14 +28,29 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //   binoculars (two circles, a soft rim, a small range scale). A mask, the
 //   screen's top left quarter at its pixels, is made once a screen size (on
 //   the bake threads, while a map loads) and drawn four times mirrored; the
-//   black around it and the lines are boxes.
+//   black around it and the lines are boxes;
+// - the centre and location prints: a dark box with accent edges above and
+//   below, Oswald, as wide as the text;
+// - the chat's typing line: a slim bar over the HUD's chat, "ALL:", "TEAM:"
+//   or "TO <name>:" and the line typed (the DM console still takes the keys;
+//   its window isn't drawn);
+// - the round's end banner (the server's g_scoreboardpicover): the winners'
+//   emblem, "ALLIES WIN THE ROUND", the teams' score. On the Reloaded
+//   scoreboard (with either HUD) it sits above its header (cl_uimenus.cpp).
+//
+// Sizes are design units (cl_uidraw.h): the prints and the banner the
+// menus' (1080 lines), the typing line the HUD's (cg_hud_scale). Text is
+// Oswald baked at the pixel size drawn, baked ahead with the map's load.
 
 #include "client.h"
 #include "cl_ui.h"
 #include "cl_uicomp.h"
 #include "cl_uiextras.h"
 #include "../uilib/uibake.h"
+#include "../qcommon/localization.h"
 
+#include <algorithm>
+#include <string>
 #include <vector>
 
 /*
@@ -382,21 +397,432 @@ qboolean UI_DrawZoomOverlay(int type, float alpha)
 /*
 ====================================================================
 
-BAKED AHEAD
+COLORS AND TEXT
 
 ====================================================================
 */
 
-void UI_Extras_PreBake(qboolean ahead)
+// the design's dark box, its pale text
+static const rlColor_t EX_FILL = {14 / 255.0f, 16 / 255.0f, 20 / 255.0f, 200 / 255.0f};
+static const rlColor_t EX_TEXT = {245 / 255.0f, 245 / 255.0f, 245 / 255.0f, 1};
+// the team line's blue, a private line's violet
+static const rlColor_t EX_TEAM    = {150 / 255.0f, 186 / 255.0f, 222 / 255.0f, 1};
+static const rlColor_t EX_PRIVATE = {200 / 255.0f, 170 / 255.0f, 230 / 255.0f, 1};
+
+// the accent's pale shade (cg_hud_accent's, ui_hud_acc_line: the design's
+// pale yellow), read again when it changes
+static rlColor_t EX_Accent(void)
 {
-    if (!UI_CompHud_Active() || !uii.IsRendererLoaded()) {
+    static cvar_t   *cv;
+    static int       read = -1;
+    static rlColor_t c = {238 / 255.0f, 240 / 255.0f, 168 / 255.0f, 1};
+
+    if (!cv) {
+        cv = Cvar_Get("ui_hud_acc_line", "0.933 0.941 0.659", 0);
+    }
+    if (cv->modificationCount != read) {
+        float r, g, b;
+
+        read = cv->modificationCount;
+        if (sscanf(cv->string, "%f %f %f", &r, &g, &b) == 3) {
+            c.r = r;
+            c.g = g;
+            c.b = b;
+        }
+    }
+    return c;
+}
+
+static rlColor_t EX_Fade(rlColor_t c, float alpha)
+{
+    c.a *= alpha;
+    return c;
+}
+
+// a box with the accent's edges above and below (2 units)
+static void EX_EdgedBox(const rlView_t& v, float x, float y, float w, float h, float alpha)
+{
+    const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
+    const int e  = Q_max(1, RL_P(v, 2.0f));
+
+    RL_BoxPx(x0, y0 + e, x1, y1 - e, EX_Fade(EX_FILL, alpha));
+    RL_BoxPx(x0, y0, x1, y0 + e, EX_Fade(EX_Accent(), alpha));
+    RL_BoxPx(x0, y1 - e, x1, y1, EX_Fade(EX_Accent(), alpha));
+}
+
+/*
+====================================================================
+
+THE ROUND'S END BANNER
+
+The server names the winners' picture in g_scoreboardpicover (the cgame's
+cg_scoreboardpicover) from a round's end to the next round (cleared at the
+level's restart): the emblem, "<TEAM> WIN THE ROUND" (THE MATCH at the
+intermission and in team deathmatch, where a win ends the match) and the
+teams' score, Allies' first as everywhere else, under it
+
+====================================================================
+*/
+
+static const float EX_BANNER_Y = 254.0f; // its top over the game (its middle at 300)
+
+// the winners (0 Allies, 1 Axis), -1 none
+static int EX_Winner(void)
+{
+    static cvar_t *cv;
+    static int     read = -1, winner = -1;
+
+    if (!cv) {
+        cv = Cvar_Get("cg_scoreboardpicover", "", 0);
+    }
+    if (cv->modificationCount != read) {
+        read   = cv->modificationCount;
+        winner = strstr(cv->string, "allieswin") ? 0 : strstr(cv->string, "axiswin") ? 1 : -1;
+    }
+    return winner;
+}
+
+static bool EX_MatchWon(void)
+{
+    // (the intermission: the scores shown and the players frozen; the scores
+    // alone are the round's end)
+    const int both = PMF_INTERMISSION | PMF_FROZEN;
+
+    return (cl.snap.valid && (cl.snap.ps.pm_flags & both) == both)
+        || atoi(Info_ValueForKey(CL_ConfigString(CS_SERVERINFO), "g_gametype")) == GT_TEAM;
+}
+
+// the score line ("" none)
+static const char *EX_Score(void)
+{
+    int allies, axis;
+
+    if (sscanf(CL_ConfigString(CS_TEAMSCORES), "%d %d", &allies, &axis) != 2) {
+        return "";
+    }
+    return va("%d  -  %d", allies, axis);
+}
+
+static const char *EX_BannerText(int winner, bool match)
+{
+    return winner ? (match ? "AXIS WIN THE MATCH" : "AXIS WIN THE ROUND") : (match ? "ALLIES WIN THE MATCH" : "ALLIES WIN THE ROUND");
+}
+
+float UI_Extras_BannerHeight(const rlView_t& v)
+{
+    if (EX_Winner() < 0) {
+        return 0.0f;
+    }
+    return EX_Score()[0] ? 92.0f : 56.0f;
+}
+
+int UI_Extras_BannerKey(void)
+{
+    const int winner = EX_Winner();
+
+    // (the accent's changes with it)
+    return winner < 0 ? 0 : (winner + 1) | (EX_MatchWon() ? 4 : 0) | (Cvar_Get("ui_hud_acc_line", "", 0)->modificationCount << 3);
+}
+
+// drawn with its top at y, across the middle (as wide as its line, the
+// emblem in front)
+static void EX_Banner(const rlView_t& v, int winner, float y, float alpha)
+{
+    const std::string score = EX_Score();
+    const char       *text  = EX_BannerText(winner, EX_MatchWon());
+    const float       icon = 38.0f, tw = RL_TextW(v, text, 34, true);
+    const float       bw = tw + icon + 14 + 48, bh = score.empty() ? 56.0f : 92.0f;
+    const float       x  = floorf((v.dw - bw) * 0.5f);
+
+    EX_EdgedBox(v, x, y, bw, bh, alpha);
+    RL_TeamIcon(v, winner, x + 24 + icon * 0.5f, y + 28, icon, alpha);
+    RL_Text(v, x + 24 + icon + 14, y + 28, text, 34, EX_Fade(EX_TEXT, alpha), true, RL_LEFT, 0, RL_MID);
+    if (!score.empty()) {
+        RL_Text(v, v.dw * 0.5f, y + 70, score.c_str(), 24, EX_Fade(EX_Accent(), alpha), false, RL_CENTER, 0, RL_MID);
+    }
+}
+
+void UI_Extras_DrawBanner(const rlView_t& v, float y)
+{
+    const int winner = EX_Winner();
+
+    if (winner >= 0) {
+        EX_Banner(v, winner, y, 1.0f);
+    }
+}
+
+/*
+====================================================================
+
+CENTRE AND LOCATION PRINTS
+
+A dark box, the accent's edges above and below, Oswald Medium (24 units, a
+line 32 apart), as wide as the widest line. A centre print's middle 300
+units down (under the round's banner while it shows); a location print
+where the stock one is: its text from x (centred at -1), its bottom y up
+from the bottom (in 640 x 480 units; the middle at -1). A picture ("@")
+stays stock; the centre print of the round's winners isn't drawn while the
+banner says it
+
+====================================================================
+*/
+
+static std::vector<std::string> EX_Lines(const char *text)
+{
+    std::vector<std::string> lines;
+    const char              *p = text;
+
+    while (*p) {
+        const char *e = strchr(p, '\n');
+        std::string l(p, e ? e - p : strlen(p));
+
+        while (!l.empty() && (l.back() == ' ' || l.back() == '\r' || l.back() == '\t')) {
+            l.pop_back();
+        }
+        if (!l.empty() && l.find_first_not_of(" \t") != std::string::npos) {
+            lines.push_back(l.substr(l.find_first_not_of(" \t")));
+        }
+        if (!e) {
+            break;
+        }
+        p = e + 1;
+    }
+    return lines;
+}
+
+// the round's winners told by the server's centre print ("Allies win!")
+static bool EX_SaysWinners(const std::vector<std::string>& lines, int winner)
+{
+    const char *say = winner ? "Axis win!" : "Allies win!";
+
+    return lines.size() == 1 && (!Q_stricmp(lines[0].c_str(), say) || !Q_stricmp(lines[0].c_str(), Sys_LV_CL_ConvertString(say)));
+}
+
+static bool EX_BannerOverGame(void);
+
+qboolean UI_Extras_Print(const char *text, float alpha, int x, int y)
+{
+    const rlView_t                 v = RL_View();
+    const std::vector<std::string> lines = EX_Lines(text);
+    const float                    size = 24.0f, step = 32.0f;
+    float                          tw = 0.0f, bw, bh, bx, by;
+
+    if (!UI_CompHud_Active()) {
+        return qfalse;
+    }
+    if (lines.empty() || alpha <= 0.0f) {
+        return qtrue;
+    }
+    if (x == -2 && EX_Winner() >= 0 && EX_SaysWinners(lines, EX_Winner())) {
+        return qtrue;
+    }
+    for (const std::string& l : lines) {
+        tw = Q_max(tw, RL_TextW(v, l.c_str(), size, false));
+    }
+    bw = tw + 48.0f;
+    bh = 24.0f + step * lines.size();
+    if (x == -2) {
+        // a centre print: under the banner while it shows
+        bx = (v.dw - bw) * 0.5f;
+        by = 300.0f - bh * 0.5f;
+        if (EX_BannerOverGame()) {
+            by = Q_max(by, EX_BANNER_Y + UI_Extras_BannerHeight(v) + 12.0f);
+        }
+    } else {
+        bx = x == -1 ? (v.dw - bw) * 0.5f : x / 640.0f * v.dw - 24.0f;
+        // (the stock text's middle, about 14 units over its bottom)
+        by = y == -1 ? (v.dh - bh) * 0.5f : (480 - y) / 480.0f * v.dh - 14.0f - bh * 0.5f;
+        bx = Com_Clamp(0.0f, Q_max(0.0f, v.dw - bw), bx);
+        by = Com_Clamp(0.0f, Q_max(0.0f, v.dh - bh), by);
+    }
+    bx = floorf(bx);
+    by = floorf(by);
+    EX_EdgedBox(v, bx, by, bw, bh, alpha);
+    for (size_t i = 0; i < lines.size(); i++) {
+        RL_Text(v, bx + bw * 0.5f, by + 28.0f + step * i, lines[i].c_str(), size, EX_Fade(EX_TEXT, alpha), false, RL_CENTER, 0, RL_MID);
+    }
+    return qtrue;
+}
+
+/*
+====================================================================
+
+THE CHAT'S TYPING LINE
+
+The DM console takes the keys as before (its modes, its history, its
+commands); its window isn't drawn (ui_hud_dmconsole 0: its alphacvar).
+A bar 520 x 32 of the HUD's units, 32 over the chat's menu (as it is
+placed), its edge on the left and its label in the mode's color: ALL: the
+accent, TEAM: the Allies' blue, TO <name>: (a private line) violet. The
+line from the caret back as much as fits, the caret a 2 unit bar
+
+====================================================================
+*/
+
+static bool ex_typing;
+
+qboolean UI_Extras_Typing(void)
+{
+    return ex_typing ? qtrue : qfalse;
+}
+
+static void EX_TypingLine(void)
+{
+    const float s = UI_DesignScale(1920.0f, 1080.0f);
+    const char *line;
+    int         mode, caret;
+    Menu       *menu;
+    UIWidget   *chat;
+    float       left, top;
+    rlView_t    v;
+    rlColor_t   col;
+    std::string label;
+
+    ex_typing = UI_CompHud_Active() && UI_DMConsoleState(&mode, &line, &caret);
+    if (!ex_typing) {
         return;
     }
-    // the masks made while the map loads, registered at its end
-    ZM_Begin(ZM_SCOPE);
-    ZM_Begin(ZM_BINOCULARS);
-    if (!ahead) {
-        ZM_Finish(ZM_SCOPE);
-        ZM_Finish(ZM_BINOCULARS);
+    // over the chat's menu, as it is placed (its own file may move it)
+    menu = menuManager.FindMenu("hud_comp_chat");
+    chat = menu ? menu->GetContainerWidget() : NULL;
+    left = chat ? chat->getFrame().pos.x : 0.0f;
+    top  = chat ? chat->getFrame().pos.y : uid.vidHeight - 256.0f * s;
+
+    v.s      = s;
+    v.dw     = uid.vidWidth / s;
+    v.dh     = uid.vidHeight / s;
+    v.layout = 1;
+
+    if (mode == 100) {
+        label = "ALL:";
+        col   = EX_Accent();
+    } else if (mode == 200) {
+        label = "TEAM:";
+        col   = EX_TEAM;
+    } else {
+        const char *cs = mode >= 1 && mode <= MAX_CLIENTS ? CL_ConfigString(CS_PLAYERS + mode - 1) : "";
+        const char *name = cs[0] ? Info_ValueForKey(cs, "name") : "";
+
+        label = name[0] ? std::string("TO ") + name + ":" : va("TO #%d:", mode);
+        col   = EX_PRIVATE;
     }
+
+    {
+        const int   x0 = (int)floorf(left + 25.0f * s + 0.5f), x1 = (int)floorf(left + 545.0f * s + 0.5f);
+        const int   y1 = (int)floorf(top - 32.0f * s + 0.5f), y0 = y1 - Q_max(12, (int)floorf(32.0f * s + 0.5f));
+        const int   edge = Q_max(1, (int)floorf(3.0f * s + 0.5f)), bar = Q_max(1, (int)floorf(2.0f * s + 0.5f));
+        const float mid = (y0 + y1) * 0.5f / s;
+        const float lx  = x0 / s + 12.0f;
+        const float tx  = lx + RL_TextW(v, label.c_str(), 17, true) + 8.0f;
+        const float room = x1 / s - 12.0f - tx;
+        rlFace_t    face = RL_Face(v, 17, false);
+        size_t      first = 0, last;
+        float       cw;
+
+        RL_BoxPx(x0, y0, x1, y1, EX_FILL);
+        RL_BoxPx(x0, y0, x0 + edge, y1, col);
+        RL_Text(v, lx, mid, label.c_str(), 17, col, true, RL_LEFT, 0, RL_MID);
+        if (!face.f || face.page <= 0.0f) {
+            return;
+        }
+        // as much as fits, from the caret back (then on past it)
+        caret = Q_min((int)strlen(line), Q_max(0, caret));
+        cw    = 0.0f;
+        first = caret;
+        while (first > 0 && cw + RL_Advance(face, (byte)line[first - 1]) <= room * s) {
+            cw += RL_Advance(face, (byte)line[--first]);
+        }
+        last = caret;
+        while (line[last] && cw + RL_Advance(face, (byte)line[last]) <= room * s) {
+            cw += RL_Advance(face, (byte)line[last++]);
+        }
+        {
+            const std::string shown(line + first, last - first), before(line + first, caret - first);
+            const float       cx = tx + RL_WidthPx(face, before.c_str(), 0.0f) / s;
+            const int         px = (int)floorf(cx * s + 0.5f) + Q_max(1, bar / 2);
+
+            if (!shown.empty()) {
+                RL_Text(v, tx, mid, shown.c_str(), 17, EX_TEXT, false, RL_LEFT, 0, RL_MID);
+            }
+            RL_BoxPx(px, y0 + (int)floorf(7.0f * s + 0.5f), px + bar, y1 - (int)floorf(7.0f * s + 0.5f), EX_TEXT);
+        }
+    }
+}
+
+/*
+====================================================================
+
+EACH FRAME, BAKED AHEAD
+
+====================================================================
+*/
+
+// the banner over the game: not under a scoreboard (the Reloaded one shows it above its header)
+static bool EX_BannerOverGame(void)
+{
+    return EX_Winner() >= 0 && !UI_ScoreboardShown();
+}
+
+void UI_Extras_Draw2D(void)
+{
+    if (!UI_CompHud_Active()) {
+        ex_typing = false;
+        return;
+    }
+    if (EX_BannerOverGame()) {
+        EX_Banner(RL_View(), EX_Winner(), EX_BANNER_Y, 1.0f);
+    }
+    EX_TypingLine();
+}
+
+void UI_Extras_PreBake(qboolean ahead)
+{
+    const bool hud = UI_CompHud_Active();
+    // (the banner shows on the Reloaded scoreboard whatever the HUD)
+    const bool board = !Cvar_VariableIntegerValue("ui_classicmenus");
+
+    if ((!hud && !board) || !uii.IsRendererLoaded()) {
+        return;
+    }
+    if (hud) {
+        // the masks made while the map loads, registered at its end
+        ZM_Begin(ZM_SCOPE);
+        ZM_Begin(ZM_BINOCULARS);
+        if (!ahead) {
+            ZM_Finish(ZM_SCOPE);
+            ZM_Finish(ZM_BINOCULARS);
+        }
+    }
+    if (ahead) {
+        return;
+    }
+
+    // the faces and the emblems the prints, the banner and the typing line draw
+    {
+        const rlView_t v = RL_View();
+        const float    s = UI_DesignScale(1920.0f, 1080.0f);
+        rlView_t       hv = v;
+
+        hv.s  = s;
+        hv.dw = uid.vidWidth / s;
+        hv.dh = uid.vidHeight / s;
+        UI_BakeBatch(true);
+        RL_Face(v, 24, false);
+        RL_Face(v, 34, true);
+        if (hud) {
+            RL_Face(hv, 17, false);
+            RL_Face(hv, 17, true);
+        }
+        UI_BakeBatch(false);
+        rl_bakeOnly = true;
+        RL_TeamIcon(v, 0, 0, 0, 38);
+        RL_TeamIcon(v, 1, 0, 0, 38);
+        rl_bakeOnly = false;
+    }
+}
+
+void UI_Extras_Init(void)
+{
+    // the DM console's window drawn (0 with cg_hudstyle 1: the typing line instead)
+    Cvar_Get("ui_hud_dmconsole", "1", 0);
 }

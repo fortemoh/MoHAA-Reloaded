@@ -1188,6 +1188,10 @@ UIFloatingDMConsole *getNewDMConsole()
     console->setConsoleHandler(DMConsoleCommandHandler);
     console->setConsoleBackground(UBlack, 0.8f);
     console->setShow(false);
+    // Added: faded by ui_hud_dmconsole (0 with cg_hudstyle 1: not drawn, the chat's typing line instead)
+    event = new Event(EV_Layout_AlphaCvar);
+    event->AddString("ui_hud_dmconsole");
+    console->ProcessEvent(event);
     console->Connect(&s_dmconsolehider, UIFloatingWindow::W_ClosePressed, UIFloatingWindow::W_ClosePressed);
     console->Connect(&s_dmconsolehider, W_Destroyed, W_Destroyed);
 
@@ -1649,6 +1653,8 @@ void UI_OpenDMConsole(int iMode)
         return;
     }
 
+    // Added: with cg_hudstyle 1 its window isn't drawn (the chat's typing line instead)
+    Cvar_Set("ui_hud_dmconsole", UI_CompHud_Active() ? "0" : "1");
     UI_SetDMConsoleMode(iMode);
     dm_console->setShow(true);
     uWinMan.ActivateControl(dm_console);
@@ -1666,6 +1672,29 @@ void UI_CloseDMConsole(void)
         dm_console->setShow(false);
     }
     UI_FocusMenuIfExists();
+}
+
+/*
+====================
+UI_DMConsoleState
+====================
+*/
+qboolean UI_DMConsoleState(int *mode, const char **line, int *caret)
+{
+    UIDMConsole *console;
+
+    if (!dm_console || !dm_console->getShow() || !(console = dm_console->getConsole())) {
+        return qfalse;
+    }
+    // (UIDMConsole::Draw's check: its window isn't drawn)
+    if (!console->IsThisOrChildActive()) {
+        UI_CloseDMConsole();
+        return qfalse;
+    }
+    *mode  = console->GetMessageMode();
+    *line  = console->getCurrentLine().c_str();
+    *caret = (int)console->getCaret();
+    return qtrue;
 }
 
 /*
@@ -4711,6 +4740,19 @@ void UI_ShowScoreboard_f(const char *pszMenuName)
 
 /*
 ====================
+UI_ScoreboardShown
+====================
+*/
+qboolean UI_ScoreboardShown(void)
+{
+    if (UI_Menus_Scoreboard(scoreboard_menuname.c_str())) {
+        return scoreboard_up && scoreboard_menu ? qtrue : qfalse;
+    }
+    return scoreboardlist && scoreboardlist->IsVisible() ? qtrue : qfalse;
+}
+
+/*
+====================
 UI_HideScoreboard_f
 ====================
 */
@@ -5579,6 +5621,7 @@ void CL_InitializeUI(void)
     ui_gmboxspam           = Cvar_Get("ui_gmboxspam", "1", 0);
     UI_CompHud_Init();
     UI_Menus_Init();
+    UI_Extras_Init();
     ui_gotmedal            = Cvar_Get("ui_gotmedal", "0", 0);
     ui_success             = Cvar_Get("ui_success", "0", 0);
     ui_failed              = Cvar_Get("ui_failed", "0", 0);

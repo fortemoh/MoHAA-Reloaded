@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "client.h"
 #include "cl_ui.h"
 #include "cl_uicomp.h"
+#include "cl_uiextras.h"
 #include "cl_uiradar.h"
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
@@ -1416,15 +1417,18 @@ CLASS_DECLARATION(UIWidget, UIHudFeed, NULL) {
 
 bool UIHudFeed::Lines(int *key)
 {
-    const int life = m_kind ? 8000 : 6000, fade = m_kind ? 2000 : 1500;
-    const int count = m_kind == 0 ? comp.numKills : m_kind == 1 ? comp.numChat : comp.numMsgs;
-    bool      steady = true;
-    int       h = 0;
+    const int  life = m_kind ? 8000 : 6000, fade = m_kind ? 2000 : 1500;
+    const int  count = m_kind == 0 ? comp.numKills : m_kind == 1 ? comp.numChat : comp.numMsgs;
+    const bool all = m_kind == 1 && UI_Extras_Typing(); // (the chat's lines, all of them, while one is typed)
+    bool       steady = true;
+    int        h = all ? 1 : 0;
 
     for (int i = 0; i < count; i++) {
         const int time = m_kind == 0 ? comp.kills[i].time : m_kind == 1 ? comp.chat[i].time : comp.msgs[i].time;
 
-        if (cls.realtime - time < life) {
+        if (all) {
+            h = UI_DrawHash(h, &time, sizeof(time));
+        } else if (cls.realtime - time < life) {
             steady = steady && cls.realtime - time < life - fade;
             h      = UI_DrawHash(h, &time, sizeof(time));
         }
@@ -1542,8 +1546,10 @@ void UIHudFeed::Draw(void)
         DrawKills(w, h, s);
         return;
     }
-    // the newest lines that fit, wrapped
-    for (i = count - 1; i >= 0 && cls.realtime - lines[i].time < 8000; i--) {
+    // the newest lines that fit, wrapped (Added: all of them while a line is typed: the chat's history)
+    const bool all = m_kind == 1 && UI_Extras_Typing();
+
+    for (i = count - 1; i >= 0 && (all || cls.realtime - lines[i].time < 8000); i--) {
         UIFont          *font = lines[i].bold && m_bold ? m_bold : m_font;
         std::vector<str> wrapped;
         const char      *p = lines[i].text;
@@ -1577,7 +1583,7 @@ void UIHudFeed::Draw(void)
     y = m_kind == 1 ? h - rows.size() * lineH : 0.0f;
     for (size_t r = 0; r < rows.size(); r++) {
         const compLine_t *l = &lines[rowLine[r]];
-        const UColor      c(l->color[0], l->color[1], l->color[2], Comp_Fade(l->time, 8000, 2000));
+        const UColor      c(l->color[0], l->color[1], l->color[2], all ? 1.0f : Comp_Fade(l->time, 8000, 2000));
 
         Comp_Text(l->bold && m_bold ? m_bold : m_font, 0.0f, y + lineH * 0.5f, rows[r], c, getVirtualScale());
         y += lineH;

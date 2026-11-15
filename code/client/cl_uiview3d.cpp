@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include "cl_ui.h"
+#include "cl_uiextras.h"
 #include "../qcommon/localization.h"
 
 #include "../server/server.h"
@@ -592,6 +593,8 @@ void View3D::Draw2D(void)
         } else {
             CenterPrint();
         }
+        // Added: the Competitive HUD's round banner and chat typing line (cg_hudstyle 1)
+        UI_Extras_Draw2D();
 
         if (!cls.no_menus) {
             DrawSoundOverlay();
@@ -631,7 +634,9 @@ void View3D::CenterPrint(void)
 
     alpha = Q_clamp_float(alpha, 0, 1);
 
-    if (!m_print_mat) {
+    if (!m_print_mat && UI_Extras_Print(p, alpha, -2, -2)) {
+        // Added: the Competitive HUD's (cg_hudstyle 1)
+    } else if (!m_print_mat) {
         UIRect2D frame;
         m_font->setColor(UColor(0, 0, 0, alpha));
 
@@ -699,6 +704,12 @@ void View3D::LocationPrint(void)
     }
 
     alpha = Q_clamp_float(alpha, 0, 1);
+
+    if (UI_Extras_Print(p, alpha, m_x_coord, m_y_coord)) {
+        // Added: the Competitive HUD's (cg_hudstyle 1)
+        m_printfadetime = Q_max(0.0f, m_printfadetime - cls.frametime);
+        return;
+    }
 
     x = m_x_coord / 640.f * m_screenframe.size.width;
     y = (480 - m_font->getHeight(getHighResScale()) - m_y_coord) / 480.f * m_screenframe.size.height;
