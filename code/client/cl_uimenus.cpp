@@ -1242,7 +1242,7 @@ public:
     void DrawScoreboard(const rlView_t& v, const rlInfo_t& in);
 };
 
-Event EV_ReloadedMenu_Screen("screen", EV_DEFAULT, "s", "screen", "team, weapon, esc or scoreboard");
+Event EV_ReloadedMenu_Screen("screen", EV_DEFAULT, "s", "screen", "weapon, esc or scoreboard");
 Event EV_ReloadedMenu_Layer("layer", EV_DEFAULT, "s", "layer", "back (under the model views) or front");
 
 CLASS_DECLARATION(UIWidget, UIReloadedMenu, NULL) {

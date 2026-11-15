@@ -2132,7 +2132,7 @@ void UI_Update(void)
         }
     }
 
-    // Added: no HUD under the Reloaded team, weapon and Esc menus (cl_uimenus.cpp), the
+    // Added: no HUD under the Reloaded weapon and Esc menus (cl_uimenus.cpp), the
     // cgame's own told through ui_menucover (the stock HUD's spectator keys and vote, the crosshair)
     const qboolean covered = UI_Menus_Covering();
     {

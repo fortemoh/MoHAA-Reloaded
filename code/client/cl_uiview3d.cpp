@@ -589,7 +589,7 @@ void View3D::Draw2D(void)
             cge->CG_Draw2D();
         }
 
-        // Changed: no prints under the Reloaded team, weapon and Esc menus (no HUD there)
+        // Changed: no prints under the Reloaded weapon and Esc menus (no HUD there)
         if (UI_Menus_Covering()) {
             // (nothing)
         } else if (m_locationprint) {

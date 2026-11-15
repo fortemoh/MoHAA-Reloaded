@@ -1501,7 +1501,7 @@ CG_Draw2D
 */
 void CG_Draw2D(void)
 {
-    // Added: no HUD under the Reloaded team, weapon and Esc menus (the client's
+    // Added: no HUD under the Reloaded weapon and Esc menus (the client's
     // ui_menucover); a scope's mask stays, being the view
     static cvar_t *ui_menucover = cgi.Cvar_Get("ui_menucover", "0", 0);
 

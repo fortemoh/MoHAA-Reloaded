@@ -36,7 +36,7 @@ qboolean    UI_Menus_Pushing(const char *name);
 void        UI_Menus_ServerCommand(void);
 // the scoreboard of this (stock) name is the Reloaded one: the stock list isn't shown
 qboolean    UI_Menus_Scoreboard(const char *name);
-// the menu up is the Reloaded team, weapon or Esc menu: no HUD under it (the scoreboard keeps it)
+// the menu up is the Reloaded weapon or Esc menu: no HUD under it (the scoreboard keeps it)
 qboolean    UI_Menus_Covering(void);
 // a configstring changed
 void        UI_Menus_ConfigString(void);
