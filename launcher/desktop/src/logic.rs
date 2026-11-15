@@ -310,48 +310,87 @@ pub struct Crosshair {
     pub t: bool,
 }
 
-/// The crosshair as cg_drawtools.cpp's CG_UpdateCrosshair lays it out at 1080 lines, in HUD pixels
+/// The crosshair as cg_drawtools.cpp's CG_UpdateCrosshair lays it out at 1080 lines (CS2's static cross), in HUD
+/// pixels from the screen's middle pixel
 pub struct CrossLayout {
-    /// the arms (left, right, bottom, top unless T-style) and the dot, around a center square of the thickness whose
-    /// top left corner is (0, 0)
+    /// the arms and the dot, joined into boxes that don't overlap
     pub boxes: Vec<CrossBox>,
-    /// the outline's strips, drawn first
+    /// the outline, drawn first, joined the same way
     pub outline: Vec<CrossBox>,
-    pub thickness: i32,
-    /// the width (and height) the arms and their outline span
+    /// the square around the crosshair's middle that holds it all: its width (and height), and its top left corner
+    /// (the same both ways)
     pub extent: i32,
+    pub start: i32,
 }
 
 pub fn crosshair_boxes(c: &Crosshair) -> CrossLayout {
-    fn pixels(value: f64, minimum: f64, maximum: f64) -> i32 {
-        let v = if value >= minimum { value.min(maximum) } else { minimum }; // NaN too
-        (v + 0.5) as i32
+    // in whole pixels as the game computes them, at 1080 lines: half away from zero, at least 1 above 0, else 0
+    fn pixels(value: f64) -> i32 {
+        let v = value as f32;
+        if !(v > 0.0) {
+            return 0; // NaN too
+        }
+        ((v.min(4096.0) * 1080.0 / 1080.0 + 0.5) as i32).max(1)
     }
     let b = |x, y, w, h| CrossBox { x, y, w, h };
-    let l = pixels(c.length, 0.0, 128.0);
-    let t = pixels(c.thickness, 1.0, 16.0);
-    let s = (pixels(c.gap, 0.0, 64.0) - t / 2).max(0);
-    let mut boxes = Vec::new();
-    if l > 0 {
-        boxes.extend([b(-s - l, 0, l, t), b(t + s, 0, l, t), b(0, t + s, t, l)]);
+    let (l, t, g) = (pixels(c.length), pixels(c.thickness), pixels(c.gap));
+    // a line t thick has (t + 1) / 2 pixels before the middle one; the gap counts from it, a pixel less after it
+    // when t is odd
+    let (before, odd) = ((t + 1) / 2, t & 1);
+    let mut pieces = Vec::new();
+    if t > 0 && l > 0 {
+        pieces.extend([b(-g - l, -before, l, t), b(g - odd, -before, l, t), b(-before, g - odd, t, l)]);
         if !c.t {
-            boxes.push(b(0, -s - l, t, l));
+            pieces.push(b(-before, -g - l, t, l));
         }
     }
-    if c.dot {
-        boxes.push(b(0, 0, t, t));
+    if t > 0 && c.dot {
+        pieces.push(b(-before, -before, t, t));
     }
-    // a pixel above (over the corners) and left of every box; full: below and right too
+    // a pixel above (over the corners) and left of every piece; full: below and right too
     let mode = c.outline.clamp(0, 2);
-    let mut outline = Vec::new();
-    for r in boxes.iter().filter(|_| mode != 0) {
-        outline.extend([b(r.x - 1, r.y - 1, r.w + if mode == 1 { 2 } else { 1 }, 1), b(r.x - 1, r.y, 1, r.h)]);
+    let mut strips = Vec::new();
+    for p in pieces.iter().filter(|_| mode != 0) {
+        strips.extend([b(p.x - 1, p.y - 1, p.w + if mode == 1 { 2 } else { 1 }, 1), b(p.x - 1, p.y, 1, p.h)]);
         if mode == 1 {
-            outline.extend([b(r.x - 1, r.y + r.h, r.w + 2, 1), b(r.x + r.w, r.y, 1, r.h)]);
+            strips.extend([b(p.x - 1, p.y + p.h, p.w + 2, 1), b(p.x + p.w, p.y, 1, p.h)]);
         }
     }
-    let extent = 2 * (s + l) + t + if mode != 0 { 2 } else { 0 };
-    CrossLayout { boxes, outline, thickness: t, extent }
+    // the middle is -odd / 2 both ways: the farthest edge from it, twice, is the square's width
+    let edges = pieces.iter().chain(&strips).flat_map(|r| [r.x, r.x + r.w, r.y, r.y + r.h]);
+    let extent = edges.map(|e| (2 * e + odd).abs()).max().unwrap_or(0);
+    let (boxes, outline) = (crosshair_union(&pieces), crosshair_union(&strips));
+    CrossLayout { boxes, outline, extent, start: -(extent + odd) / 2 }
+}
+
+/// The pixels of boxes as boxes that don't overlap, as CG_CrosshairUnion joins them (at most 64), so that a see-through
+/// crosshair blends each pixel once: the bands between the boxes' top and bottom edges, the boxes across each band
+/// joined, a box going on down into the next band when it has the same span there
+fn crosshair_union(boxes: &[CrossBox]) -> Vec<CrossBox> {
+    let mut edges: Vec<i32> = boxes.iter().flat_map(|r| [r.y, r.y + r.h]).collect();
+    edges.sort();
+    let mut out: Vec<CrossBox> = Vec::new();
+    for band in edges.windows(2).filter(|e| e[0] != e[1]) {
+        let (y0, y1, above) = (band[0], band[1], out.len());
+        let mut spans: Vec<(i32, i32)> =
+            boxes.iter().filter(|r| r.y <= y0 && r.y + r.h >= y1 && r.w > 0).map(|r| (r.x, r.x + r.w)).collect();
+        spans.sort_by_key(|s| s.0);
+        let mut i = 0;
+        while i < spans.len() {
+            let (x0, mut x1) = spans[i];
+            i += 1;
+            while i < spans.len() && spans[i].0 <= x1 {
+                x1 = x1.max(spans[i].1);
+                i += 1;
+            }
+            if let Some(r) = out[..above].iter_mut().find(|r| r.x == x0 && r.w == x1 - x0 && r.y + r.h == y0) {
+                r.h += y1 - y0;
+            } else if out.len() < 64 {
+                out.push(CrossBox { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+            }
+        }
+    }
+    out
 }
 
 /// The characters of CS2's crosshair codes, a digit of base 57 each
@@ -716,6 +755,7 @@ pub fn plain_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     #[test]
     fn parses_configs() {
@@ -814,46 +854,68 @@ mod tests {
         );
     }
 
-    /// CG_UpdateCrosshair's rules at 1080 lines: space = max(gap - thickness / 2, 0); arms left, right, bottom, top
-    /// (none at length 0, no top for T-style), then the dot; outline strips above and left of each box, full: below
-    /// and right too
+    /// CG_UpdateCrosshair's layout (CS2's static cross) as the pixels it fills at 1920x1080, the middle one 960, 540
     #[test]
     fn crosshair() {
-        let b = |x, y, w, h| CrossBox { x, y, w, h };
         let shape = |length, gap, thickness, outline, dot, t| Crosshair { length, gap, thickness, outline, dot, t };
+        // the screen's pixels the boxes fill, each once
+        let screen = |boxes: &[CrossBox]| {
+            let mut filled = BTreeSet::new();
+            for r in boxes {
+                for (x, y) in (r.x..r.x + r.w).flat_map(|x| (r.y..r.y + r.h).map(move |y| (x, y))) {
+                    assert!(filled.insert((960 + x, 540 + y)), "{x}, {y} twice");
+                }
+            }
+            filled
+        };
+        // columns x0 to x1 by rows y0 to y1
+        let pixels = |rects: &[(i32, i32, i32, i32)]| -> BTreeSet<(i32, i32)> {
+            let rect = |&(x0, x1, y0, y1): &(i32, i32, i32, i32)| {
+                (x0..=x1).flat_map(move |x| (y0..=y1).map(move |y| (x, y)))
+            };
+            rects.iter().flat_map(rect).collect()
+        };
 
-        // the default, as before: space 4 - 1
+        // the default, as before: arms at x 948-955 and 964-971 (rows 539-540), y 528-535 and 544-551 (columns 959-960)
         let c = crosshair_boxes(&shape(8.0, 4.0, 2.0, 0, false, false));
-        assert_eq!(c.boxes, [b(-11, 0, 8, 2), b(5, 0, 8, 2), b(0, 5, 2, 8), b(0, -11, 2, 8)]);
+        let arms = pixels(&[(948, 955, 539, 540), (964, 971, 539, 540), (959, 960, 528, 535), (959, 960, 544, 551)]);
+        assert_eq!(screen(&c.boxes), arms);
         assert!(c.outline.is_empty());
-        assert_eq!((c.thickness, c.extent), (2, 24));
+        assert_eq!((c.extent, c.start), (24, -12));
+        // full outline: a pixel round each piece, not scaled
+        let c = crosshair_boxes(&shape(8.0, 4.0, 2.0, 1, false, false));
+        let around = pixels(&[(947, 956, 538, 541), (963, 972, 538, 541), (958, 961, 527, 536), (958, 961, 543, 552)]);
+        assert_eq!(screen(&c.outline), &around - &arms);
+        assert_eq!((c.extent, c.start), (26, -13));
 
-        // gap 0: the arms touch the center square; T-style: no top arm; the dot last
-        let c = crosshair_boxes(&shape(5.0, 0.0, 3.0, 0, true, true));
-        assert_eq!(c.boxes, [b(-5, 0, 5, 3), b(3, 0, 5, 3), b(0, 3, 3, 5), b(0, 0, 3, 3)]);
-        assert_eq!(c.extent, 13);
+        // thickness 1: the line on the pixel before the middle, the gap a pixel less after it
+        let c = crosshair_boxes(&shape(8.0, 4.0, 1.0, 0, false, false));
+        let want = pixels(&[(948, 955, 539, 539), (963, 970, 539, 539), (959, 959, 528, 535), (959, 959, 543, 550)]);
+        assert_eq!(screen(&c.boxes), want);
+        assert_eq!((c.extent, c.start), (23, -12));
 
-        // length 0: no arms, the dot alone
+        // length 1, gap 2, thickness 8, half outline, as in a CS2 screenshot; the outline above and left of each piece
+        let c = crosshair_boxes(&shape(1.0, 2.0, 8.0, 2, false, false));
+        let want = pixels(&[(957, 957, 536, 543), (962, 962, 536, 543), (956, 963, 537, 537), (956, 963, 542, 542)]);
+        assert_eq!(screen(&c.boxes), want);
+        let strips = [(956, 957, 535, 535), (956, 956, 536, 543), (961, 962, 535, 535), (961, 961, 536, 543)];
+        let strips = strips.into_iter().chain([(955, 963, 541, 541), (955, 955, 542, 542), (955, 963, 536, 536)]);
+        assert_eq!(screen(&c.outline), pixels(&strips.chain([(955, 955, 537, 537)]).collect::<Vec<_>>()));
+
+        // gap 0: the arms meet; the dot over them, each pixel once; T-style: no top arm
+        let c = crosshair_boxes(&shape(5.0, 0.0, 2.0, 0, true, true));
+        assert_eq!(screen(&c.boxes), pixels(&[(955, 964, 539, 540), (959, 960, 541, 544)]));
+        // length 0: the dot alone, the middle t by t; thickness 0: nothing
         let c = crosshair_boxes(&shape(0.0, 4.0, 4.0, 0, true, false));
-        assert_eq!((c.boxes, c.extent), (vec![b(0, 0, 4, 4)], 8));
-        assert!(crosshair_boxes(&shape(0.0, 4.0, 4.0, 1, false, false)).boxes.is_empty());
+        assert_eq!(screen(&c.boxes), pixels(&[(958, 961, 538, 541)]));
+        assert!(crosshair_boxes(&shape(8.0, 4.0, 0.0, 1, true, false)).boxes.is_empty());
 
-        // full outline: four strips a box; half: above (one pixel over the left corner) and left only
-        let c = crosshair_boxes(&shape(8.0, 4.0, 2.0, 1, true, false));
-        assert_eq!((c.outline.len(), c.extent), (20, 26));
-        assert_eq!(c.outline[4..8], [b(4, -1, 10, 1), b(4, 0, 1, 2), b(4, 2, 10, 1), b(13, 0, 1, 2)]);
-        let c = crosshair_boxes(&shape(8.0, 4.0, 2.0, 2, true, false));
-        assert_eq!(c.outline.len(), 10);
-        assert_eq!(c.outline[2..4], [b(4, -1, 9, 1), b(4, 0, 1, 2)]);
-        assert_eq!(c.outline[8..], [b(-1, -1, 3, 1), b(-1, 0, 1, 2)]);
-
-        // clamped: length 0 to 128, gap 0 to 64, thickness 1 to 16, outline 0 to 2; rounded to whole pixels
-        let c = crosshair_boxes(&shape(999.0, -5.0, 0.0, 7, false, false));
-        assert_eq!((c.boxes[1], c.thickness, c.outline.len()), (b(1, 0, 128, 1), 1, 8));
-        let c = crosshair_boxes(&shape(f64::NAN, 1000.0, 99.0, -1, false, false));
-        assert_eq!((c.boxes.len(), c.thickness, c.extent, c.outline.len()), (0, 16, 2 * 56 + 16, 0));
-        let c = crosshair_boxes(&shape(7.4, 3.5, 2.5, 0, false, false));
-        assert_eq!((c.boxes[1], c.thickness), (b(3 + 3, 0, 7, 3), 3));
+        // half away from zero, at least 1 above 0, 4096 at most; a negative gap (or NaN) draws as 0; outline 0 to 2
+        let c = crosshair_boxes(&shape(0.2, -3.0, 2.5, 7, false, false));
+        assert_eq!(screen(&c.boxes), pixels(&[(959, 959, 538, 540), (958, 960, 539, 539)]));
+        assert!(!c.outline.is_empty());
+        let c = crosshair_boxes(&shape(5000.0, f64::NAN, 1.0, -1, false, false));
+        assert_eq!((c.boxes[1], c.outline.len()), (CrossBox { x: -4096, y: -1, w: 8191, h: 1 }, 0));
     }
 
     /// The game's own test codes (code/client/tests/test_crosshair.c)

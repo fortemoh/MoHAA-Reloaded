@@ -360,7 +360,7 @@ fn show_crosshair(ui: &LauncherWindow, st: &State) {
     let flag = |name| whole(e.get(name)) != 0;
     ui.set_length(int(e.get("cg_crosshair_length")).clamp(0, 128));
     ui.set_gap(int(e.get("cg_crosshair_gap")).clamp(0, 64));
-    ui.set_thickness(int(e.get("cg_crosshair_thickness")).clamp(1, 16));
+    ui.set_thickness(int(e.get("cg_crosshair_thickness")).clamp(0, 16));
     let outline = whole(e.get("cg_crosshair_outline")).clamp(0, 2);
     let (dot, t) = (flag("cg_crosshair_dot"), flag("cg_crosshair_t"));
     ui.set_outline_index(outline);
@@ -404,14 +404,14 @@ fn show_crosshair(ui: &LauncherWindow, st: &State) {
             zoom = zoom.floor();
         }
     }
-    // the center square's top left corner, the same both ways
-    let corner = ((size - layout.thickness as f32 * zoom) / 2.0).floor();
+    // the top left corner of the square that holds the crosshair, the same both ways
+    let corner = ((size - layout.extent as f32 * zoom) / 2.0).floor();
     let boxes = |list: &[CrossBox]| {
         let boxes: Vec<PreviewBox> = list
             .iter()
             .map(|b| PreviewBox {
-                x: (corner + b.x as f32 * zoom).round(),
-                y: (corner + b.y as f32 * zoom).round(),
+                x: (corner + (b.x - layout.start) as f32 * zoom).round(),
+                y: (corner + (b.y - layout.start) as f32 * zoom).round(),
                 width: (b.w as f32 * zoom).round().max(1.0),
                 height: (b.h as f32 * zoom).round().max(1.0),
             })
@@ -917,7 +917,7 @@ fn main() -> Result<(), slint::PlatformError> {
     };
     ui.on_length_edited(crosshair_edit("cg_crosshair_length", 0, 128));
     ui.on_gap_edited(crosshair_edit("cg_crosshair_gap", 0, 64));
-    ui.on_thickness_edited(crosshair_edit("cg_crosshair_thickness", 1, 16));
+    ui.on_thickness_edited(crosshair_edit("cg_crosshair_thickness", 0, 16));
     ui.on_alpha_edited(crosshair_edit("cg_crosshair_alpha", 0, 255));
     ui.on_outline_selected(crosshair_edit("cg_crosshair_outline", 0, 2));
     let crosshair_toggle = |cvar: &'static str| {

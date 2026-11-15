@@ -671,7 +671,7 @@ export component LauncherWindow inherits Window {
                                 }
                                 SpinBox {
                                     height: Theme.field;
-                                    minimum: 1;
+                                    minimum: 0;
                                     maximum: 16;
                                     value <=> root.thickness;
                                     edited(value) => { root.thickness-edited(value); }
