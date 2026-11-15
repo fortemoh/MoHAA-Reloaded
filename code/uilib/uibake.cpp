@@ -70,8 +70,8 @@ typedef struct {
 
 typedef struct {
     uiFace_t *face;
-    float     px; // design pixels
-    qboolean  shadow, slant;
+    float     px; // design pixels (absolute: screen pixels)
+    qboolean  shadow, slant, absolute;
 } uiFontSpec_t;
 
 typedef struct {
@@ -235,7 +235,7 @@ static uiFace_t *Bake_Face(const char *file)
     return f->data ? f : NULL;
 }
 
-// "<file>-<px>[s][i]"
+// "<file>-<px>[s][i][p]"
 static qboolean Bake_ParseFont(const char *name, uiFontSpec_t *spec)
 {
     const char *dash = strrchr(name, '-');
@@ -251,6 +251,8 @@ static qboolean Bake_ParseFont(const char *name, uiFontSpec_t *spec)
     }
     spec->shadow = strchr(end, 's') ? qtrue : qfalse;
     spec->slant  = strchr(end, 'i') ? qtrue : qfalse;
+    // (p: px screen pixels, whatever the design's scale: the menus' type, sized to the screen themselves)
+    spec->absolute = strchr(end, 'p') ? qtrue : qfalse;
     Q_strncpyz(file, name, dash - name + 1);
     spec->face = Bake_Face(file);
     return spec->face ? qtrue : qfalse;
@@ -381,7 +383,10 @@ static std::vector<uiPendingPage_t> bake_pages;
 
 static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
 {
-    const float       s      = UI_DesignScale(1920.0f, 1080.0f);
+    const float       ds     = UI_DesignScale(1920.0f, 1080.0f);
+    // an absolute face's page: as wide as 256 units of px / 24 pixels (a page
+    // for any size, the glyphs a texel a pixel drawn at its page scale)
+    const float       s      = spec->absolute ? Q_max(1.0f, floorf(spec->px / 24.0f)) : ds;
     const float       slant  = spec->slant ? SLANT : 0.0f;
     const qboolean    shadow = spec->shadow;
     const int         pageW  = Q_max(32, (int)(256.0f * s + 0.001f));
@@ -392,7 +397,7 @@ static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
     int               x = 0, y = 0, pageH, c;
     std::vector<byte> page;
 
-    Bake_Metrics(face, spec->px * s, &m);
+    Bake_Metrics(face, spec->absolute ? spec->px : spec->px * s, &m);
     memset(sgl, 0, sizeof(*sgl));
     for (c = 0; c < 256; c++) {
         int adv, lsb, glyph = c < 32 ? 0 : stbtt_FindGlyphIndex(&face->info, Bake_Unicode(c));
@@ -423,7 +428,7 @@ static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
         }
     }
     f->pageScale     = pageW / 256.0f;
-    sgl->height      = m.lineH / s;
+    sgl->height      = spec->absolute ? m.lineH / f->pageScale : m.lineH / s;
     sgl->aspectRatio = 1.0f;
     sgl->trhandle    = -1;
     Q_strncpyz(sgl->name, f->name.c_str(), sizeof(sgl->name));
@@ -449,7 +454,7 @@ static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
 
                 for (int col = 0; col < w; col++, out += 4) {
                     const float a     = mask[row * w + col] / 255.0f;
-                    const float sh    = shadow ? Bake_ShadowAt(mask.data(), w, m.lineH, col, row, s) : 0.0f;
+                    const float sh    = shadow ? Bake_ShadowAt(mask.data(), w, m.lineH, col, row, spec->absolute ? 1.0f : s) : 0.0f;
                     const float alpha = a + sh * (1.0f - a);
 
                     out[0] = out[1] = out[2] = (byte)(alpha > 0.0f ? a / alpha * 255.0f + 0.5f : 255.0f);
@@ -1252,6 +1257,7 @@ fractions of the box. The shapes:
   circle COLOR [R [X Y]]        (R: of half the box, 1 by default; X Y its middle)
   ring W COLOR                  (W thick, inside the circle's edge)
   frame W COLOR                 (W thick, inside the box's edge)
+  roundframe R W COLOR          (W thick, inside the edge of the box rounded R)
   roundbox R COLOR [W H ANGLE]  (the box, or W x H in its middle turned ANGLE)
   poly COLOR x y x y ...
   crescent COLOR X0 Y0 RF T0 T1 T2 T3  (Omaha's damage crescent: the box's
@@ -1372,6 +1378,8 @@ static void Bake_Layer(uiCanvas_t *cv, const char *text)
     // the rest: COLOR after the kind, or after the kind's one number
     if (t[0] == "ring" || t[0] == "frame" || t[0] == "roundbox") {
         a = 6;
+    } else if (t[0] == "roundframe") {
+        a = 7;
     }
     for (int k = 0; k < 4; k++) {
         c[k] = num(a - 4 + k);
@@ -1394,6 +1402,12 @@ static void Bake_Layer(uiCanvas_t *cv, const char *text)
 
         Bake_RoundBox(cx, cy, w, h, 0.0f, 0.0f, qfalse);
         Bake_RoundBox(cx, cy, w - p * 2.0f, h - p * 2.0f, 0.0f, 0.0f, qtrue);
+    } else if (t[0] == "roundframe") {
+        // (its width on whole pixels, at least one)
+        const float p = Q_max(1.0f, floorf(num(2) * cv->scale + 0.5f)), rr = num(1) * cv->scale;
+
+        Bake_RoundBox(cx, cy, w, h, rr, 0.0f, qfalse);
+        Bake_RoundBox(cx, cy, w - p * 2.0f, h - p * 2.0f, Q_max(0.0f, rr - p), 0.0f, qtrue);
     } else if (t[0] == "roundbox") {
         if (n > a + 2) {
             Bake_RoundBox(cx, cy, num(a) * cv->scale, num(a + 1) * cv->scale, num(1) * cv->scale, num(a + 2), qfalse);
@@ -1532,7 +1546,7 @@ static void Bake_ShapeTexels(const std::vector<std::string>& layers, int w, int 
 static void Bake_Prepare(const char *text)
 {
     static const char *const kinds[] = {
-        "fill", "vgradient", "hgradient", "circle", "ring", "frame", "roundbox", "poly", "crescent", "text", "picture", "svg"
+        "fill", "vgradient", "hgradient", "circle", "ring", "frame", "roundframe", "roundbox", "poly", "crescent", "text", "picture", "svg"
     };
     std::vector<std::string> t;
     uiFontSpec_t             spec;
