@@ -358,6 +358,7 @@ public:
     void               Enable(void);
     void               Disable(void);
     bool               isEnabled(void);
+    bool               EnabledByCvars(void); // Added: isEnabled's enabledcvar terms
     bool               IsDying(void);
     class UIWidget    *FindResponder(const UIPoint2D& pos);
     void               setFont(const char *name);

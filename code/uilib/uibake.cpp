@@ -377,11 +377,29 @@ float UI_BakedFontScale(const fontheader_t *font)
 
 fontheader_t *UI_BakeFont(const char *name)
 {
+    // the last names asked for, as given (the UI makes fonts every frame:
+    // View3D's sound and subtitle overlays theirs), before the map
+    static struct {
+        char           name[MAX_QPATH];
+        uiBakedFont_t *f;
+    } last[4];
+    static int     lastNext;
     uiBakedFont_t *f = NULL;
     uiFontSpec_t   spec;
-    std::string    key(name);
+    auto           recent = [name](uiBakedFont_t *found) {
+        Q_strncpyz(last[lastNext & 3].name, name, sizeof(last[0].name));
+        last[lastNext & 3].f = found;
+        lastNext++;
+    };
 
-    // (by name: the UI makes fonts every frame, View3D's for one)
+    for (const auto& l : last) {
+        if (l.name[0] && !strcmp(l.name, name) && (!l.f || l.f->seq == UI_FontStamp())) {
+            return l.f ? &l.f->header : NULL;
+        }
+    }
+
+    std::string key(name);
+
     for (char& c : key) {
         c = tolower((unsigned char)c);
     }
@@ -389,9 +407,11 @@ fontheader_t *UI_BakeFont(const char *name)
     if (it != bake_fontNames.end()) {
         f = it->second;
         if (!f) {
+            recent(NULL);
             return NULL;
         }
         if (f->seq == UI_FontStamp()) {
+            recent(f);
             return &f->header;
         }
     }

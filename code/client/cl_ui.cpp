@@ -1270,14 +1270,16 @@ static void UI_CompHuds(bool show, bool messages = false)
         "hud_comp_killer",  "hud_comp_target",          "hud_comp_vote",
     };
 
-    static Menu *menus[ARRAY_LEN(names)];
-    static int   generation = -1;
+    static Menu     *menus[ARRAY_LEN(names)];
+    static UIWidget *containers[ARRAY_LEN(names)]; // (asked if shown every frame: the widget, not through the menu)
+    static int       generation = -1;
 
     // found again when the menus change
     if (generation != menuManager.Generation()) {
         generation = menuManager.Generation();
         for (size_t i = 0; i < ARRAY_LEN(names); i++) {
-            menus[i] = menuManager.FindMenu(names[i]);
+            menus[i]      = menuManager.FindMenu(names[i]);
+            containers[i] = menus[i] ? menus[i]->GetContainerWidget() : NULL;
         }
     }
     for (size_t i = 0; i < ARRAY_LEN(names); i++) {
@@ -1285,7 +1287,7 @@ static void UI_CompHuds(bool show, bool messages = false)
         // (messages only: the menus with the game messages, the chat, the kills and the vote)
         const bool on  = show || (messages && (i == 1 || i == 3 || i == 4 || i == 12));
 
-        if (hud && on != !!hud->isVisible()) {
+        if (hud && containers[i] && on != containers[i]->IsVisible()) {
             if (on) {
                 hud->ForceShow();
             } else {

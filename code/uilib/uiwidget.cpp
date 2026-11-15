@@ -2133,10 +2133,15 @@ void UIWidget::Disable(void)
 
 bool UIWidget::isEnabled(void)
 {
+    // (small, to be inlined: every frame's Display asks every widget)
     if (!m_enabledCvar.length() || !m_enabled) {
         return m_enabled;
     }
+    return EnabledByCvars();
+}
 
+bool UIWidget::EnabledByCvars(void)
+{
     // Added: the terms split once (a&b&!c, each must hold; !a, added in
     // 2.30: true if the cvar is 0), each cvar found once
     if (m_numEnabled < 0) {
