@@ -39,6 +39,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <vector>
 
 #define COMP_PICTURES "ui/competitive/"
+#define COMP_OUTLINES "ui/outlines/weapons/"
 
 // the stock radar's teammates (cl_uiradar.cpp)
 extern radarClient_t *g_radarClients;
@@ -160,51 +161,51 @@ enum { NAT_ANY, NAT_US, NAT_UK, NAT_RU, NAT_DE, NAT_IT };
 
 typedef struct {
     const char *name; // the weapon's configstring
-    const char *pic;  // COMP_PICTURES<pic>.png
+    const char *pic;  // COMP_OUTLINES<pic>.svg
     int         kind, nation;
 } compWeapon_t;
 
 static const compWeapon_t comp_weapons[] = {
-    {"M1 Garand",              "m1_garand_filled",            WK_PRIMARY, NAT_US },
-    {"Thompson",               "thompsonsmg_filled",          WK_PRIMARY, NAT_US },
-    {"BAR",                    "bar_filled",                  WK_PRIMARY, NAT_ANY},
-    {"Springfield '03 Sniper", "springfield_filled",          WK_PRIMARY, NAT_ANY},
-    {"Shotgun",                "shotgun_filled",              WK_PRIMARY, NAT_ANY},
-    {"Bazooka",                "bazooka_filled",              WK_PRIMARY, NAT_ANY},
-    {"Colt 45",                "colt45_filled",               WK_SIDEARM, NAT_US },
-    {"Hi-Standard Silenced",   "silencedpistol_filled",       WK_SIDEARM, NAT_ANY},
-    {"Frag Grenade",           "m2frag_grenade_filled",       WK_FRAG,    NAT_US },
-    {"M18 Smoke Grenade",      "m18_smoke_grenade_filled",    WK_SMOKE,   NAT_ANY},
-    {"Lee-Enfield",            "enfield_filled",              WK_PRIMARY, NAT_UK },
-    {"Sten Mark II",           "sten_filled",                 WK_PRIMARY, NAT_UK },
-    {"Enfield L42A1",          "uk_w_l42a1_filled",           WK_PRIMARY, NAT_UK },
-    {"DeLisle",                "delisle_filled",              WK_PRIMARY, NAT_UK },
-    {"Vickers-Berthier",       "uk_w_vickers_filled",         WK_PRIMARY, NAT_UK },
-    {"PIAT",                   "uk_w_piat_filled",            WK_PRIMARY, NAT_UK },
-    {"Webley Revolver",        "webley_revolver_filled",      WK_SIDEARM, NAT_UK },
-    {"Mills Grenade",          "mills_grenade_filled",        WK_FRAG,    NAT_UK },
-    {"Mosin Nagant Rifle",     "mosin_nagant_rifle_filled",   WK_PRIMARY, NAT_RU },
-    {"PPSH SMG",               "ppsh_smg_filled",             WK_PRIMARY, NAT_RU },
-    {"SVT 40",                 "svt_rifle_filled",            WK_PRIMARY, NAT_RU },
-    {"Nagant Revolver",        "nagant_revolver_filled",      WK_SIDEARM, NAT_RU },
-    {"Russian F1 Grenade",     "russian_f1_grenade_filled",   WK_FRAG,    NAT_RU },
-    {"RDG-1 Smoke Grenade",    "rdg-1_smoke_grenade_filled",  WK_SMOKE,   NAT_RU },
-    {"Mauser KAR 98K",         "kar98_filled",                WK_PRIMARY, NAT_DE },
-    {"KAR98 - Sniper",         "kar98sniper_filled",          WK_PRIMARY, NAT_ANY},
-    {"G 43",                   "g43_filled",                  WK_PRIMARY, NAT_DE },
-    {"MP40",                   "mp40_filled",                 WK_PRIMARY, NAT_DE },
-    {"StG 44",                 "mp44_filled",                 WK_PRIMARY, NAT_DE },
-    {"Panzerschreck",          "panzerschreck_filled",        WK_PRIMARY, NAT_ANY},
-    {"Gewehrgranate",          "kar98_mortar_filled",         WK_PRIMARY, NAT_DE },
-    {"Walther P38",            "p38_filled",                  WK_SIDEARM, NAT_DE },
-    {"Stielhandgranate",       "steilhandgranate_filled",     WK_FRAG,    NAT_DE },
-    {"Nebelhandgranate",       "nebelhandgranate_filled",     WK_SMOKE,   NAT_DE },
-    {"Carcano",                "it_w_carcano_filled",         WK_PRIMARY, NAT_IT },
-    {"Moschetto",              "it_w_moschetto_filled",       WK_PRIMARY, NAT_IT },
-    {"Breda",                  "it_w_breda_filled",           WK_PRIMARY, NAT_IT },
-    {"Beretta",                "it_w_beretta_filled",         WK_SIDEARM, NAT_IT },
-    {"Bomba A Mano",           "it_w_bomba_filled",           WK_FRAG,    NAT_IT },
-    {"Bomba A Mano Breda",     "it_w_bombabreda_filled",      WK_SMOKE,   NAT_IT },
+    {"M1 Garand",              "m1_garand",            WK_PRIMARY, NAT_US },
+    {"Thompson",               "thompsonsmg",          WK_PRIMARY, NAT_US },
+    {"BAR",                    "bar",                  WK_PRIMARY, NAT_ANY},
+    {"Springfield '03 Sniper", "springfield",          WK_PRIMARY, NAT_ANY},
+    {"Shotgun",                "shotgun",              WK_PRIMARY, NAT_ANY},
+    {"Bazooka",                "bazooka",              WK_PRIMARY, NAT_ANY},
+    {"Colt 45",                "colt45",               WK_SIDEARM, NAT_US },
+    {"Hi-Standard Silenced",   "silencedpistol",       WK_SIDEARM, NAT_ANY},
+    {"Frag Grenade",           "m2frag_grenade",       WK_FRAG,    NAT_US },
+    {"M18 Smoke Grenade",      "m18_smoke_grenade",    WK_SMOKE,   NAT_ANY},
+    {"Lee-Enfield",            "enfield",              WK_PRIMARY, NAT_UK },
+    {"Sten Mark II",           "sten",                 WK_PRIMARY, NAT_UK },
+    {"Enfield L42A1",          "uk_w_l42a1",           WK_PRIMARY, NAT_UK },
+    {"DeLisle",                "delisle",              WK_PRIMARY, NAT_UK },
+    {"Vickers-Berthier",       "uk_w_vickers",         WK_PRIMARY, NAT_UK },
+    {"PIAT",                   "uk_w_piat",            WK_PRIMARY, NAT_UK },
+    {"Webley Revolver",        "webley_revolver",      WK_SIDEARM, NAT_UK },
+    {"Mills Grenade",          "mills_grenade",        WK_FRAG,    NAT_UK },
+    {"Mosin Nagant Rifle",     "mosin_nagant_rifle",   WK_PRIMARY, NAT_RU },
+    {"PPSH SMG",               "ppsh_smg",             WK_PRIMARY, NAT_RU },
+    {"SVT 40",                 "svt_rifle",            WK_PRIMARY, NAT_RU },
+    {"Nagant Revolver",        "nagant_revolver",      WK_SIDEARM, NAT_RU },
+    {"Russian F1 Grenade",     "russian_f1_grenade",   WK_FRAG,    NAT_RU },
+    {"RDG-1 Smoke Grenade",    "rdg-1_smoke_grenade",  WK_SMOKE,   NAT_RU },
+    {"Mauser KAR 98K",         "kar98",                WK_PRIMARY, NAT_DE },
+    {"KAR98 - Sniper",         "kar98sniper",          WK_PRIMARY, NAT_ANY},
+    {"G 43",                   "g43",                  WK_PRIMARY, NAT_DE },
+    {"MP40",                   "mp40",                 WK_PRIMARY, NAT_DE },
+    {"StG 44",                 "mp44",                 WK_PRIMARY, NAT_DE },
+    {"Panzerschreck",          "panzerschreck",        WK_PRIMARY, NAT_ANY},
+    {"Gewehrgranate",          "kar98_mortar",         WK_PRIMARY, NAT_DE },
+    {"Walther P38",            "p38",                  WK_SIDEARM, NAT_DE },
+    {"Stielhandgranate",       "steilhandgranate",     WK_FRAG,    NAT_DE },
+    {"Nebelhandgranate",       "nebelhandgranate",     WK_SMOKE,   NAT_DE },
+    {"Carcano",                "it_w_carcano",         WK_PRIMARY, NAT_IT },
+    {"Moschetto",              "it_w_moschetto",       WK_PRIMARY, NAT_IT },
+    {"Breda",                  "it_w_breda",           WK_PRIMARY, NAT_IT },
+    {"Beretta",                "it_w_beretta",         WK_SIDEARM, NAT_IT },
+    {"Bomba A Mano",           "it_w_bomba",           WK_FRAG,    NAT_IT },
+    {"Bomba A Mano Breda",     "it_w_bombabreda",      WK_SMOKE,   NAT_IT },
 };
 
 // a nation's sidearm, frag and smoke (by NAT_*)
@@ -284,14 +285,14 @@ typedef struct {
 } compKillPic_t;
 
 static const compKillPic_t comp_killPics[] = {
-    {"rifle",   "m1_garand_filled",      "kar98_filled",            90.0f,  16.2f, 90.5f,  16.3f},
-    {"pistol",  "colt45_filled",         "p38_filled",              33.9f,  21.9f, 33.9f,  22.2f},
-    {"sniper",  "springfield_filled",    "kar98sniper_filled",      89.9f,  17.5f, 90.5f,  17.6f},
-    {"smg",     "thompsonsmg_filled",    "mp40_filled",             75.1f,  24.2f, 74.8f,  26.0f},
-    {"mg",      "bar_filled",            "mp44_filled",             95.5f,  15.3f, 70.9f,  26.0f},
-    {"shotgun", "shotgun_filled",        "shotgun_filled",          85.0f,  15.9f, 85.0f,  15.9f},
-    {"grenade", "m2frag_grenade_filled", "steilhandgranate_filled", 12.5f,  22.0f, 5.6f,   26.0f},
-    {"rocket",  "bazooka_filled",        "panzerschreck_filled",    110.6f, 20.0f, 113.5f, 26.0f},
+    {"rifle",   "m1_garand",      "kar98",            90.0f,  16.2f, 90.5f,  16.3f},
+    {"pistol",  "colt45",         "p38",              33.9f,  21.9f, 33.9f,  22.2f},
+    {"sniper",  "springfield",    "kar98sniper",      89.9f,  17.5f, 90.5f,  17.6f},
+    {"smg",     "thompsonsmg",    "mp40",             75.1f,  24.2f, 74.8f,  26.0f},
+    {"mg",      "bar",            "mp44",             95.5f,  15.3f, 70.9f,  26.0f},
+    {"shotgun", "shotgun",        "shotgun",          85.0f,  15.9f, 85.0f,  15.9f},
+    {"grenade", "m2frag_grenade", "steilhandgranate", 12.5f,  22.0f, 5.6f,   26.0f},
+    {"rocket",  "bazooka",        "panzerschreck",    110.6f, 20.0f, 113.5f, 26.0f},
     {"bash",    "glove_50",              "glove_50",                20.0f,  20.0f, 20.0f,  20.0f},
     {"none",    "skull_50",              "skull_50",                20.0f,  20.0f, 20.0f,  20.0f},
 };
@@ -1231,13 +1232,24 @@ WIDGETS
 ====================================================================
 */
 
+// a weapon's outline (COMP_OUTLINES<pic>.svg), not one of the kill feed's
+// pictures (the glove, the headshot and the skull: COMP_PICTURES<pic>.png)
+static qboolean Comp_Outline(const char *pic)
+{
+    return strcmp(pic, "glove_50") && strcmp(pic, "headshot_50") && strcmp(pic, "skull_50") ? qtrue : qfalse;
+}
+
 // a picture baked at pw x ph pixels
 static qhandle_t Comp_PictureShader(const char *pic, int pw, int ph, float s, qboolean mirror)
 {
     char        layer[MAX_QPATH * 2];
     const char *layers[1] = {layer};
 
-    Com_sprintf(layer, sizeof(layer), "picture 1 1 1 1 " COMP_PICTURES "%s.png center%s", pic, mirror ? " mirror" : "");
+    if (Comp_Outline(pic)) {
+        Com_sprintf(layer, sizeof(layer), "svg 1 1 1 1 " COMP_OUTLINES "%s.svg center%s", pic, mirror ? " mirror" : "");
+    } else {
+        Com_sprintf(layer, sizeof(layer), "picture 1 1 1 1 " COMP_PICTURES "%s.png center%s", pic, mirror ? " mirror" : "");
+    }
     return UI_BakeShape("comp", layers, 1, pw, ph, s);
 }
 
@@ -1255,11 +1267,10 @@ static void Comp_Picture(const char *pic, float x, float y, float w, float h, fl
 // a weapon's picture fitted in a box of design pixels: its size there
 static void Comp_Fit(const char *pic, float boxW, float boxH, float s, float *w, float *h)
 {
-    int         sw, sh;
-    float       fit;
+    float sw, sh, fit;
 
-    if (!UI_PictureSize(va(COMP_PICTURES "%s.png", pic), &sw, &sh)) {
-        sw = sh = 1;
+    if (!UI_OutlineSize(va(COMP_OUTLINES "%s.svg", pic), &sw, &sh)) {
+        sw = sh = 1.0f;
     }
     fit = Q_min(boxW / sw, boxH / sh);
     *w  = floorf(fit * sw * s + 0.5f) / s;
@@ -1436,8 +1447,8 @@ void UIHudFeed::DrawKills(float w, float h, float s)
         if (k->killer[0]) {
             x += Comp_Text(m_font, x, mid, k->killer, kc, getVirtualScale(), 150.0f) + gap;
         }
-        // the pictures point left: the feed's at the victim
-        Comp_Picture(k->pic, x, mid - k->picH * 0.5f, k->picW, k->picH, s, strcmp(k->pic, "skull_50") && strcmp(k->pic, "glove_50"), white);
+        // the outlines point left: the feed's at the victim
+        Comp_Picture(k->pic, x, mid - k->picH * 0.5f, k->picW, k->picH, s, Comp_Outline(k->pic), white);
         x += k->picW + gap;
         if (mark) {
             Comp_Picture("skull_50", x, mid - 9.0f, 18.0f, 18.0f, s, qfalse, white);
@@ -2271,7 +2282,7 @@ void UI_CompHud_PreBake(qboolean ahead)
     }
     for (i = 0; i < ARRAY_LEN(comp_killPics); i++) {
         const compKillPic_t *p = &comp_killPics[i];
-        const qboolean       mirror = strcmp(p->allies, "skull_50") && strcmp(p->allies, "glove_50");
+        const qboolean       mirror = Comp_Outline(p->allies);
 
         Comp_PictureShader(p->allies, (int)(p->aw * s + 0.5f), (int)(p->ah * s + 0.5f), s, mirror);
         Comp_PictureShader(p->axis, (int)(p->xw * s + 0.5f), (int)(p->xh * s + 0.5f), s, mirror);
