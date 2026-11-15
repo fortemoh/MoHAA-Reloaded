@@ -37,6 +37,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "client.h"
 #include "cl_ui.h"
 #include "cl_uimenus.h"
+#include "cl_uidraw.h"
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
 
@@ -44,7 +45,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <string>
 #include <vector>
 
-#define RL_OUTLINES "ui/outlines/"
 // the model views' modelscale (ui/reloaded_team.urc, reloaded_weapon.urc)
 #define RL_MODELSCALE 1.12f
 
@@ -326,37 +326,17 @@ DRAWING
 ====================================================================
 */
 
-typedef struct {
-    float r, g, b, a;
-} rlColor_t;
-
-static rlColor_t RL_Rgb(int r, int g, int b, int a = 255)
+rlColor_t RL_Rgb(int r, int g, int b, int a)
 {
     rlColor_t c = {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f};
     return c;
 }
 
-static rlColor_t RL_Alpha(rlColor_t c, int a)
+rlColor_t RL_Alpha(rlColor_t c, int a)
 {
     c.a = a / 255.0f;
     return c;
 }
-
-// the palette (the approved design)
-static const rlColor_t RL_TEXT  = {238 / 255.0f, 234 / 255.0f, 224 / 255.0f, 1};
-static const rlColor_t RL_MUTED = {160 / 255.0f, 156 / 255.0f, 146 / 255.0f, 1};
-static const rlColor_t RL_FAINT = {110 / 255.0f, 107 / 255.0f, 100 / 255.0f, 1};
-static const rlColor_t RL_BRASS = {222 / 255.0f, 178 / 255.0f, 80 / 255.0f, 1};
-
-typedef struct {
-    int         deep[3], base[3], mid[3], light[3], pale[3];
-    const char *name, *icon;
-} rlTeam_t;
-
-static const rlTeam_t rl_teams[2] = {
-    {{18, 30, 43}, {30, 50, 70}, {58, 94, 128}, {150, 192, 228}, {218, 233, 246}, "ALLIES", RL_OUTLINES "team/allies.svg"},
-    {{44, 18, 16}, {70, 32, 28}, {134, 62, 50}, {234, 162, 142}, {248, 218, 208}, "AXIS", RL_OUTLINES "team/axis.svg"  },
-};
 
 // top drawn over bottom, as one color (two flat layers blended make one)
 static rlColor_t RL_Over(rlColor_t top, rlColor_t bottom)
@@ -370,19 +350,12 @@ static rlColor_t RL_Over(rlColor_t top, rlColor_t bottom)
     return c;
 }
 
-static rlColor_t RL_T(const int *c, int a = 255)
+rlColor_t RL_T(const int *c, int a)
 {
     return RL_Rgb(c[0], c[1], c[2], a);
 }
 
-// the screen in design units
-typedef struct {
-    float s;      // pixels a unit
-    float dw, dh; // the screen's units across and down
-    int   layout; // 0 narrow (under 1500 across), 1 standard, 2 wide (over 2200)
-} rlView_t;
-
-static rlView_t RL_View(void)
+rlView_t RL_View(void)
 {
     rlView_t v;
 
@@ -394,21 +367,21 @@ static rlView_t RL_View(void)
 }
 
 // laid out to bake what it draws ahead (UI_Menus_PreBake): nothing drawn
-static bool rl_bakeOnly;
+bool rl_bakeOnly;
 
-static int RL_P(const rlView_t& v, float d)
+int RL_P(const rlView_t& v, float d)
 {
     return (int)floorf(d * v.s + 0.5f);
 }
 
-static void RL_SetColor(rlColor_t c)
+void RL_SetColor(rlColor_t c)
 {
     const vec4_t col = {c.r, c.g, c.b, c.a};
 
     uii.Rend_SetColor(col);
 }
 
-static void RL_Box(const rlView_t& v, float x, float y, float w, float h, rlColor_t c)
+void RL_Box(const rlView_t& v, float x, float y, float w, float h, rlColor_t c)
 {
     const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
 
@@ -420,7 +393,7 @@ static void RL_Box(const rlView_t& v, float x, float y, float w, float h, rlColo
 }
 
 // a box in pixels (x1, y1 past its edge)
-static void RL_BoxPx(int x0, int y0, int x1, int y1, rlColor_t c)
+void RL_BoxPx(int x0, int y0, int x1, int y1, rlColor_t c)
 {
     if (x1 <= x0 || y1 <= y0 || c.a <= 0.0f || rl_bakeOnly) {
         return;
@@ -453,7 +426,7 @@ static void RL_VLine(const rlView_t& v, float x, float y0, float y1, rlColor_t c
 }
 
 // a baked shape (white, tinted) over pixels
-static void RL_Shape(int x, int y, int w, int h, const char *text, rlColor_t c, float s)
+void RL_Shape(int x, int y, int w, int h, const char *text, rlColor_t c, float s)
 {
     // (copied: the strings va gives are reused while it bakes, a font page's name)
     const std::string layer(text);
@@ -525,7 +498,7 @@ static void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, 
 }
 
 // an outline fitted in a box (its middle at cx cy), tinted; false: no such file
-static bool RL_Outline(const rlView_t& v, const char *name, float cx, float cy, float bw, float bh, rlColor_t c, bool mirror = false)
+bool RL_Outline(const rlView_t& v, const char *name, float cx, float cy, float bw, float bh, rlColor_t c, bool mirror)
 {
     const std::string file(name);
     float             sw, sh, k;
@@ -542,7 +515,7 @@ static bool RL_Outline(const rlView_t& v, const char *name, float cx, float cy, 
     return true;
 }
 
-static void RL_TeamIcon(const rlView_t& v, int t, float cx, float cy, float d, float alpha = 1.0f)
+void RL_TeamIcon(const rlView_t& v, int t, float cx, float cy, float d, float alpha)
 {
     RL_Outline(v, rl_teams[t].icon, cx, cy, d, d, {1, 1, 1, alpha});
 }
@@ -555,16 +528,7 @@ least on the screen
 ----------------
 */
 
-enum { RL_LEFT, RL_CENTER, RL_RIGHT };
-enum { RL_TOP, RL_MID, RL_BASE }; // the capitals' top, middle, the baseline at y
-
-typedef struct {
-    fontheader_t *f;
-    float         page; // drawn at it, a texel a pixel
-    int           px;
-} rlFace_t;
-
-static rlFace_t RL_Face(const rlView_t& v, float size, bool bold)
+rlFace_t RL_Face(const rlView_t& v, float size, bool bold)
 {
     rlFace_t face;
 
@@ -577,7 +541,7 @@ static rlFace_t RL_Face(const rlView_t& v, float size, bool bold)
     return face;
 }
 
-static float RL_Advance(const rlFace_t& face, unsigned char ch)
+float RL_Advance(const rlFace_t& face, unsigned char ch)
 {
     const fontheader_sgl_t *g = face.f->sgl[0];
     int                     i = g->indirection[ch];
@@ -589,7 +553,7 @@ static float RL_Advance(const rlFace_t& face, unsigned char ch)
 }
 
 // pixels across
-static float RL_WidthPx(const rlFace_t& face, const char *text, float trackPx)
+float RL_WidthPx(const rlFace_t& face, const char *text, float trackPx)
 {
     float w = 0.0f;
     int   n = 0;
@@ -603,7 +567,7 @@ static float RL_WidthPx(const rlFace_t& face, const char *text, float trackPx)
     return w + (n > 1 ? trackPx * (n - 1) : 0.0f);
 }
 
-static float RL_TextW(const rlView_t& v, const char *str, float size, bool bold, float track = 0.0f)
+float RL_TextW(const rlView_t& v, const char *str, float size, bool bold, float track)
 {
     const std::string text(str); // (a string from va: kept while faces are baked)
 
@@ -611,7 +575,7 @@ static float RL_TextW(const rlView_t& v, const char *str, float size, bool bold,
 }
 
 // the text drawn; its width in units. maxw: drawn smaller to fit
-static float RL_Text(
+float RL_Text(
     const rlView_t& v,
     float           x,
     float           y,
@@ -619,10 +583,10 @@ static float RL_Text(
     float           size,
     rlColor_t       c,
     bool            bold,
-    int             anchor = RL_LEFT,
-    float           track  = 0.0f,
-    int             valign = RL_TOP,
-    float           maxw   = 0.0f
+    int             anchor,
+    float           track,
+    int             valign,
+    float           maxw
 )
 {
     const std::string copy(str); // (a string from va: kept while faces are baked)
@@ -682,7 +646,7 @@ static std::string RL_Ellipsize(const rlView_t& v, const char *text, float size,
     return s + "\x85";
 }
 
-static std::string RL_Upper(const char *s)
+std::string RL_Upper(const char *s)
 {
     std::string u(s);
 
