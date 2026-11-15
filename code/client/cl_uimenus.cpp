@@ -1556,7 +1556,12 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
     {
         char line[128];
 
-        Com_sprintf(line, sizeof(line), "%s  \xb7  %d / %d players", RL_ModeName(in.gametype, false), in.connected, in.maxClients);
+        // (bots take slots past sv_maxclients, which the client isn't told: then no limit shown)
+        if (in.connected <= in.maxClients) {
+            Com_sprintf(line, sizeof(line), "%s  \xb7  %d / %d players", RL_ModeName(in.gametype, false), in.connected, in.maxClients);
+        } else {
+            Com_sprintf(line, sizeof(line), "%s  \xb7  %d players", RL_ModeName(in.gametype, false), in.connected);
+        }
         RL_Text(v, x0, y0 + 60, line, 16, RL_MUTED, false, RL_LEFT, 0, RL_MID);
     }
     if (RL_TimeLeft(in.gametype)[0]) {
