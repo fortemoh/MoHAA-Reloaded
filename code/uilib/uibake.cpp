@@ -200,6 +200,11 @@ template <typename F> static std::future<decltype(std::declval<F>()())> Bake_Run
     return task->get_future();
 }
 
+std::future<void> UI_BakeRun(std::function<void()> job)
+{
+    return Bake_Run(job);
+}
+
 /*
 ====================================================================
 

@@ -25,6 +25,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #pragma once
 
+#include <functional>
+#include <future>
+
 // a face: "<file>-<px>[s][i][p]", fonts/<file>.ttf at px pixels of a 1080-line
 // screen (UI_DesignScale; p: px pixels of the screen), s a drop shadow, i
 // slanted; NULL when not a face
@@ -61,6 +64,9 @@ void UI_BakeBatch(bool begin);
 bool UI_BakeAhead(int on = -1);
 // the shapes made ahead and not baked, and the pictures read: let go
 void UI_BakeRelease(void);
+// a job on the bake threads (it reads only what it was given); its future
+// is ready when it has run (on the main thread only)
+std::future<void> UI_BakeRun(std::function<void()> job);
 
 // a picture's texels across and down (read once); false: none
 bool UI_PictureSize(const char *file, int *w, int *h);
