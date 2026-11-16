@@ -597,7 +597,7 @@ void View3D::Draw2D(void)
         } else {
             CenterPrint();
         }
-        // Added: the Competitive HUD's round banner and chat typing line (cg_hudstyle 1)
+        // Added: the Competitive HUD's round banner and chat typing line
         UI_Extras_Draw2D();
 
         if (!cls.no_menus) {
@@ -638,29 +638,9 @@ void View3D::CenterPrint(void)
 
     alpha = Q_clamp_float(alpha, 0, 1);
 
-    if (!m_print_mat && UI_Extras_Print(p, alpha, -2, -2)) {
-        // Added: the Competitive HUD's (cg_hudstyle 1)
-    } else if (!m_print_mat) {
-        UIRect2D frame;
-        m_font->setColor(UColor(0, 0, 0, alpha));
-
-        frame = getClientFrame();
-
-        m_font->PrintJustified(
-            UIRect2D(frame.pos.x + 1, frame.pos.y + 1, frame.size.width, frame.size.height),
-            m_iFontAlignmentHorizontal,
-            m_iFontAlignmentVertical,
-            p,
-            getVirtualScale()
-        );
-
-        m_font->setColor(UColor(1, 1, 1, alpha));
-
-        frame = getClientFrame();
-
-        m_font->PrintJustified(frame, m_iFontAlignmentHorizontal, m_iFontAlignmentVertical, p, getVirtualScale());
-
-        m_font->setColor(UBlack);
+    if (!m_print_mat) {
+        // Changed: the Competitive HUD's boxed print
+        UI_Extras_Print(p, alpha, -2, -2);
     } else if ((mat = m_print_mat->GetMaterial())) {
         vec4_t col {alpha, alpha, alpha, alpha};
 
@@ -683,20 +663,13 @@ void View3D::CenterPrint(void)
 
 void View3D::LocationPrint(void)
 {
-    fonthorzjustify_t horiz;
-    fontvertjustify_t vert;
-    int               x, y;
-    const char       *p;
-    float             alpha;
-    UIRect2D          frame;
+    const char *p;
+    float       alpha;
 
     if (!m_printfadetime) {
         m_locationprint = false;
         return;
     }
-
-    horiz = FONT_JUSTHORZ_LEFT;
-    vert  = FONT_JUSTVERT_TOP;
 
     p = Sys_LV_CL_ConvertString(m_printstring);
     if (m_printfadetime > 3250) {
@@ -709,52 +682,9 @@ void View3D::LocationPrint(void)
 
     alpha = Q_clamp_float(alpha, 0, 1);
 
-    if (UI_Extras_Print(p, alpha, m_x_coord, m_y_coord)) {
-        // Added: the Competitive HUD's (cg_hudstyle 1)
-        m_printfadetime = Q_max(0.0f, m_printfadetime - cls.frametime);
-        return;
-    }
-
-    x = m_x_coord / 640.f * m_screenframe.size.width;
-    y = (480 - m_font->getHeight(getHighResScale()) - m_y_coord) / 480.f * m_screenframe.size.height;
-
-    if (m_x_coord == -1) {
-        horiz = FONT_JUSTHORZ_CENTER;
-        x     = 0;
-    }
-    if (m_y_coord == -1) {
-        vert = FONT_JUSTVERT_CENTER;
-        y    = 0;
-    }
-
-    m_font->setColor(UColor(0, 0, 0, alpha));
-    frame = getClientFrame();
-
-    m_font->PrintJustified(
-        UIRect2D(frame.pos.x + x + 1, frame.pos.y + y + 1, frame.size.width, frame.size.height),
-        horiz,
-        vert,
-        p,
-        getVirtualScale()
-    );
-
-    m_font->setColor(UColor(1, 1, 1, alpha));
-    frame = getClientFrame();
-
-    m_font->PrintJustified(
-        UIRect2D(frame.pos.x + x, frame.pos.y + y, frame.size.width, frame.size.height),
-        horiz,
-        vert,
-        p,
-        getVirtualScale()
-    );
-
-    m_font->setColor(UBlack);
-    m_printfadetime -= cls.frametime;
-
-    if (m_printfadetime < 0) {
-        m_printfadetime = 0;
-    }
+    // Changed: the Competitive HUD's boxed print
+    UI_Extras_Print(p, alpha, m_x_coord, m_y_coord);
+    m_printfadetime = Q_max(0.0f, m_printfadetime - cls.frametime);
 }
 
 void View3D::DrawLetterbox(void)

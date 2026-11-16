@@ -20,7 +20,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
-// cl_uiextras.cpp: the Competitive HUD's extras (Added, cg_hudstyle 1).
+// cl_uiextras.cpp: the Competitive HUD's extras (Added).
 // Drawn in place of the stock ones, nothing of them while they don't show:
 //
 // - the zoom overlays: the scopes (a circle, its edge darkening into black,
@@ -391,19 +391,19 @@ static void ZM_Finish(int kind)
 ================
 UI_DrawZoomOverlay
 
-The cgame's zoom overlay (its fade kept), with cg_hudstyle 1 or 2: the
-mask and its lines as ZM_Layout worked them out
+The cgame's zoom overlay (its fade kept): the mask and its lines as
+ZM_Layout worked them out
 ================
 */
-qboolean UI_DrawZoomOverlay(int type, float alpha)
+void UI_DrawZoomOverlay(int type, float alpha)
 {
     const int   kind = type == 3 ? ZM_BINOCULARS : ZM_SCOPE;
     const int   kar = type == 1;
     zoomMask_t *m = &zm[kind];
     vec4_t      color = {1, 1, 1, alpha};
 
-    if (!UI_CompHud_Active() || alpha <= 0.0f) {
-        return qfalse;
+    if (alpha <= 0.0f) {
+        return;
     }
     // (made now only if not begun ahead)
     if (m->w != uid.vidWidth || m->h != uid.vidHeight || (!m->making && (!m->shader || m->refSeq != uii.GetRefSequence()))) {
@@ -411,7 +411,7 @@ qboolean UI_DrawZoomOverlay(int type, float alpha)
     }
     ZM_Finish(kind);
     if (!m->shader) {
-        return qfalse;
+        return;
     }
 
     re.SetColor(color);
@@ -423,7 +423,6 @@ qboolean UI_DrawZoomOverlay(int type, float alpha)
     color[3] = m->lineAlpha * alpha;
     re.DrawBoxes((const float (*)[4])m->lines[kar], m->numLines[kar], color);
     re.SetColor(NULL);
-    return qtrue;
 }
 
 /*
@@ -632,21 +631,18 @@ static bool EX_SaysWinners(const std::vector<std::string>& lines, int winner)
 
 static bool EX_BannerOverGame(void);
 
-qboolean UI_Extras_Print(const char *text, float alpha, int x, int y)
+void UI_Extras_Print(const char *text, float alpha, int x, int y)
 {
     const rlView_t                 v = RL_View();
     const std::vector<std::string> lines = EX_Lines(text);
     const float                    size = 24.0f, step = 32.0f;
     float                          tw = 0.0f, bw, bh, bx, by;
 
-    if (!UI_CompHud_Active()) {
-        return qfalse;
-    }
     if (lines.empty() || alpha <= 0.0f) {
-        return qtrue;
+        return;
     }
     if (x == -2 && EX_Winner() >= 0 && EX_SaysWinners(lines, EX_Winner())) {
-        return qtrue;
+        return;
     }
     for (const std::string& l : lines) {
         tw = Q_max(tw, RL_TextW(v, l.c_str(), size, false));
@@ -673,7 +669,6 @@ qboolean UI_Extras_Print(const char *text, float alpha, int x, int y)
     for (size_t i = 0; i < lines.size(); i++) {
         RL_Text(v, bx + bw * 0.5f, by + 28.0f + step * i, lines[i].c_str(), size, EX_Fade(EX_TEXT, alpha), false, RL_CENTER, 0, RL_MID);
     }
-    return qtrue;
 }
 
 /*
@@ -710,7 +705,7 @@ static void EX_TypingLine(void)
     rlColor_t   col;
     std::string label;
 
-    ex_typing = UI_CompHud_Active() && UI_DMConsoleState(&mode, &line, &caret);
+    ex_typing = UI_DMConsoleState(&mode, &line, &caret);
     if (!ex_typing) {
         return;
     }
@@ -867,13 +862,10 @@ static void IM_Make(const char *title, const char *const *lines, int count, floa
     im.w      = ceilf(Q_max(240.0f, IM_TEXT + tw + IM_RIGHT));
 }
 
-qboolean UI_DrawInstaMessage(const char *title, const char *const *lines, int count)
+void UI_DrawInstaMessage(const char *title, const char *const *lines, int count)
 {
     const float s = UI_DesignScale(1920.0f, 1080.0f);
 
-    if (!UI_CompHud_Active()) {
-        return qfalse;
-    }
     if (lines != im.lines || s != im.s) {
         IM_Make(title, lines, count, s);
     }
@@ -902,7 +894,6 @@ qboolean UI_DrawInstaMessage(const char *title, const char *const *lines, int co
         RL_Text(v, tx, cy, "0", IM_SIZE, RL_MUTED, true, RL_LEFT, 0, RL_MID);
         RL_Text(v, tx + IM_NUMBER, cy, im.cancel.c_str(), IM_SIZE, RL_MUTED, false, RL_LEFT, 0, RL_MID);
     }
-    return qtrue;
 }
 
 /*
@@ -921,10 +912,6 @@ static bool EX_BannerOverGame(void)
 
 void UI_Extras_Draw2D(void)
 {
-    if (!UI_CompHud_Active()) {
-        ex_typing = false;
-        return;
-    }
     if (EX_BannerOverGame()) {
         EX_Banner(RL_View(), EX_Winner(), EX_BANNER_Y, 1.0f);
     }
@@ -933,24 +920,19 @@ void UI_Extras_Draw2D(void)
 
 void UI_Extras_PreBake(qboolean ahead)
 {
-    const int  start = Sys_Milliseconds();
-    int        masks;
-    const bool hud = UI_CompHud_Active();
-    // (the banner shows on the Reloaded scoreboard whatever the HUD)
-    const bool board = !Cvar_VariableIntegerValue("ui_classicmenus");
+    const int start = Sys_Milliseconds();
+    int       masks;
 
-    if ((!hud && !board) || !uii.IsRendererLoaded()) {
+    if (!uii.IsRendererLoaded()) {
         return;
     }
-    if (hud) {
-        // the masks made while the map loads, registered at its end; at the
-        // game's start (a screen size, no map yet) only begun, made meanwhile
-        ZM_Begin(ZM_SCOPE);
-        ZM_Begin(ZM_BINOCULARS);
-        if (!ahead && clc.state >= CA_LOADING) {
-            ZM_Finish(ZM_SCOPE);
-            ZM_Finish(ZM_BINOCULARS);
-        }
+    // the masks made while the map loads, registered at its end; at the
+    // game's start (a screen size, no map yet) only begun, made meanwhile
+    ZM_Begin(ZM_SCOPE);
+    ZM_Begin(ZM_BINOCULARS);
+    if (!ahead && clc.state >= CA_LOADING) {
+        ZM_Finish(ZM_SCOPE);
+        ZM_Finish(ZM_BINOCULARS);
     }
     if (ahead) {
         return;
@@ -969,11 +951,9 @@ void UI_Extras_PreBake(qboolean ahead)
         UI_BakeBatch(true);
         RL_Face(v, 24, false);
         RL_Face(v, 34, true);
-        if (hud) {
-            RL_Face(hv, 15, true); // (the quick messages' title)
-            RL_Face(hv, 17, false);
-            RL_Face(hv, 17, true);
-        }
+        RL_Face(hv, 15, true); // (the quick messages' title)
+        RL_Face(hv, 17, false);
+        RL_Face(hv, 17, true);
         UI_BakeBatch(false);
         rl_bakeOnly = true;
         RL_TeamIcon(v, 0, 0, 0, 38);
@@ -985,6 +965,6 @@ void UI_Extras_PreBake(qboolean ahead)
 
 void UI_Extras_Init(void)
 {
-    // the DM console's window drawn (0 with cg_hudstyle 1: the typing line instead)
-    Cvar_Get("ui_hud_dmconsole", "1", 0);
+    // the DM console's window not drawn (its alphacvar): the typing line instead
+    Cvar_Get("ui_hud_dmconsole", "0", 0);
 }

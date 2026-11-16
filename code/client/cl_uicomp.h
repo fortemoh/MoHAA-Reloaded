@@ -21,7 +21,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 // cl_uicomp.h: the Competitive HUD's data and widgets (Added, cg_hudstyle 1
-// CS:GO's, 2 CS2's, ui/hud_comp_*.urc)
+// CS:GO's, 2 CS2's, ui/hud_comp_*.urc): the game's HUD
 
 #pragma once
 
@@ -30,7 +30,6 @@ void     UI_CompHud_HeadIcons(void);      // the head icons' pictures, made once
 // a file made while the game runs read as one compiled in (name and data kept until the client quits); qfalse: no room
 qboolean UI_CompHud_AddFile(const char *name, const void *data, int size);
 void     UI_CompHud_Init(void);
-qboolean UI_CompHud_Active(void);         // cg_hudstyle 1 or 2
 void     UI_CompHud_Frame(void);          // the ui_hud_* cvars, before the menus draw
 void     UI_CompHud_Print(const char *msg); // a console line: the chat, the game messages, the kills
 void     UI_CompHud_Clear(void);          // a new map or server

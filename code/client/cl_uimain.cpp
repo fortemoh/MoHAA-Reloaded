@@ -2288,7 +2288,8 @@ static const char *const rl_oKhzValues[]   = {"22", "44", "48", NULL};
 static const char *const rl_oWeapon[]      = {"OFF", "WEAPON", "WEAPON & HANDS", NULL};
 static const char *const rl_oMoveRates[]   = {"STOCK", "100", "125", NULL};
 static const char *const rl_oMoveValues[]  = {"0", "100", "125", NULL};
-static const char *const rl_oHudStyles[]   = {"STOCK", "CS:GO", "CS2", NULL};
+static const char *const rl_oHudStyles[]   = {"CS:GO", "CS2", NULL};
+static const char *const rl_oHudValues[]   = {"1", "2", NULL};
 static const char *const rl_oAccents[]     = {"f6f67a", "deb250", "78c8f0", "96dc8c", "f0f0f0", NULL};
 static const char *const rl_oPresets[]     = {"CUSTOM", "DESKTOP", "COUCH", "CLASSIC", NULL};
 // (the launcher's)
@@ -2363,7 +2364,7 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Record Every Match", "A demo of each match you play.", "cl_autoRecordDemo", "0", 0),
     O_SLIDER("Video Export FPS", "A demo's video, frames a second.", "cl_aviFrameRate", "25", 10, 120, 1, 0),
     O_SECTION(OT_HUD, "HUD", 0),
-    O_SEG("HUD Style", "Stock, or the CS:GO or CS2 look.", "cg_hudstyle", "1", rl_oHudStyles, NULL, 0),
+    O_SEG("HUD Style", "The CS:GO or CS2 look.", "cg_hudstyle", "1", rl_oHudStyles, rl_oHudValues, 0),
     O_SLIDER("HUD Scale", "Bigger or smaller, the whole HUD.", "cg_hud_scale", "1", 0.25f, 2, 0.05f, 0),
     O_SWATCH("Accent Colour", "The HUD's highlight.", "cg_hud_accent", "f6f67a", rl_oAccents),
     O_SLIDER("Low Health", "Health turns red below this.", "cg_hud_lowhealth", "0.4", 0, 1, 0.05f, OF_PCT),

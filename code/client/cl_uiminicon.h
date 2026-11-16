@@ -22,6 +22,13 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #pragma once
 
+typedef enum {
+    box_moving_out,
+    box_moving_in,
+    box_out,
+    box_in
+} boxstate_t;
+
 class FakkMiniconsole : public UIWidget
 {
 protected:

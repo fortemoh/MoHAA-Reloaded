@@ -69,8 +69,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "uiwinman.h"
 #include "../client/cl_uilangame.h"
 #include "../client/cl_uiserverlist.h"
-#include "../client/cl_uidmbox.h"
-#include "../client/cl_uigmbox.h"
 #include "../client/cl_uiminicon.h"
 #include "../client/cl_uifilepicker.h"
 #include "../client/cl_uimaprunner.h"

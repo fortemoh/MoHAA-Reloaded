@@ -20,7 +20,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
-// cl_uicomp.cpp: the Competitive HUD (Added, cg_hudstyle 1), Project: Omaha's
+// cl_uicomp.cpp: the Competitive HUD (Added, cg_hudstyle 1 or 2), Project: Omaha's
 // design drawn by URC menus (ui/hud_comp_*.urc). What the menus show is
 // published here as cvars (ui_hud_*) their labels link to; what changes in
 // number or width has a widget: the kill feed, the chat and the game
@@ -1268,7 +1268,7 @@ void UI_CompHud_Files(void)
 UI_CompHud_HeadIcons
 
 The pictures of the team icons above team mates' heads (scripts/
-reloaded_hud.shader, cgame's with cg_hudstyle 1): the HUD's team outlines
+reloaded_hud.shader, cgame's): the HUD's team outlines
 baked at 128 px into TGAs, given to the filesystem with the files compiled
 in. The discs fill as much of the picture as the game's 32 px allies.tga
 (28 px) and axis.tga (30 px) do; the renderer mipmaps them
@@ -1358,8 +1358,10 @@ void UI_CompHud_HeadIcons(void)
 
 void UI_CompHud_Init(void)
 {
-    // the HUD: 0 the stock one, 1 this one as CS:GO's (the default), 2 as CS2's
+    // the HUD: 1 as CS:GO's (the default), 2 as CS2's (an old config's 0, the
+    // stock HUD's, made 1)
     cg_hudstyle = Cvar_Get("cg_hudstyle", "1", CVAR_ARCHIVE);
+    Cvar_CheckRange(cg_hudstyle, 1, 2, qtrue);
     for (size_t i = 0; i < ARRAY_LEN(comp_toggles); i++) {
         Cvar_Get(comp_toggles[i], "1", CVAR_ARCHIVE);
     }
@@ -1381,11 +1383,6 @@ void UI_CompHud_Init(void)
     Comp_Accent();
     Comp_Layout();
     UI_CompHud_Clear();
-}
-
-qboolean UI_CompHud_Active(void)
-{
-    return cg_hudstyle && cg_hudstyle->integer > 0;
 }
 
 /*
@@ -2499,7 +2496,7 @@ void UI_CompHud_PreBake(qboolean ahead)
     int         d;
     size_t      i;
 
-    if (!UI_CompHud_Active() || !uii.IsRendererLoaded()) {
+    if (!uii.IsRendererLoaded()) {
         return;
     }
     UI_BakeAhead(ahead);
@@ -2561,7 +2558,7 @@ void UI_CompHud_MapLoaded(void)
 
     UI_CompHud_PreBake(qfalse);
     UI_BakeRelease();
-    if (!UI_CompHud_Active() || !Comp_Int("cg_hud_radar") || !strcmp(map, rm.map)) {
+    if (!Comp_Int("cg_hud_radar") || !strcmp(map, rm.map)) {
         return;
     }
     if (rm.worker.joinable()) {

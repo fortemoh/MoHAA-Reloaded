@@ -147,7 +147,7 @@ void     UI_ToggleConsole(void);
 void     UI_OpenDMConsole(int iMode);
 void     UI_CloseDMConsole(void);
 // Added: the DM console open: its mode (100 all, 200 team, else a client's
-// number + 1), its line and caret (cg_hudstyle 1 draws them as the chat's
+// number + 1), its line and caret (the Competitive HUD draws them as the chat's
 // typing line); closed when it isn't the active control (its window isn't drawn)
 qboolean UI_DMConsoleState(int *mode, const char **line, int *caret);
 // Added: a scoreboard is shown

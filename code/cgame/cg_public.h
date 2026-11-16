@@ -466,21 +466,20 @@ functions exported to the main executable
         // R_DrawBox for count boxes (x, y, width, height) in one draw, in the color given (the crosshair)
         void (*R_DrawBoxes)(const float (*boxes)[4], int count, const float *color);
 
-        // Added: the zoom overlay drawn by the client (the Competitive HUD's,
-        // cg_hudstyle 1): type 0 a scope, 1 the Kar98's, 2 the spy camera's,
-        // 3 the binoculars'; faded by alpha. qfalse: the stock one is to be drawn
-        qboolean (*UI_DrawZoomOverlay)(int type, float alpha);
+        // Added: the zoom overlay drawn by the client (the Competitive HUD's):
+        // type 0 a scope, 1 the Kar98's, 2 the spy camera's, 3 the binoculars';
+        // faded by alpha
+        void (*UI_DrawZoomOverlay)(int type, float alpha);
 
         // Added: the objectives' box's left edge in pixels (the stock 25; beside
         // the Competitive HUD's radar, UI_GetObjectivesTop then level with its top)
         float (*UI_GetObjectivesLeft)(void);
 
         // Added: the quick messages' menu drawn by the client (the Competitive
-        // HUD's, cg_hudstyle 1 or 2): its title (NULL: the groups'), its count
-        // lines (the localization's keys, "" not shown, numbered from 1).
-        // Static texts: the client keeps what it made of them while they're
-        // the same. qfalse: the stock one is to be drawn
-        qboolean (*UI_DrawInstaMessage)(const char *title, const char *const *lines, int count);
+        // HUD's): its title (NULL: the groups'), its count lines (the
+        // localization's keys, "" not shown, numbered from 1). Static texts:
+        // the client keeps what it made of them while they're the same
+        void (*UI_DrawInstaMessage)(const char *title, const char *const *lines, int count);
 
         // Added: a mission's objectives drawn by the client while TAB is held
         // (shown; the Reloaded menus' card), called each frame. qfalse: the

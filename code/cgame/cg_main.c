@@ -128,7 +128,6 @@ cvar_t *cg_righthand;
 cvar_t *voiceChat;
 cvar_t *cg_shadowscount;
 cvar_t *cg_shadowdebug;
-cvar_t *ui_timemessage;
 
 //
 // Added in OPM
@@ -246,7 +245,6 @@ void CG_RegisterCvars(void)
     cg_righthand                  = cgi.Cvar_Get("cg_righthand", "1", CVAR_ARCHIVE);
     voiceChat                     = cgi.Cvar_Get("cg_voicechat", "1", 0);
 
-    ui_timemessage = cgi.Cvar_Get("ui_timemessage", "", 0);
 
     // see if we are also running the server on this machine
     temp            = cgi.Cvar_Get("sv_running", "0", 0);
@@ -849,12 +847,10 @@ player models and the precache scripts, 2 the map's models, 4 cgame's own.
 static void CG_PrecacheMatch(void)
 {
     static const char *shaders[] = {
-        "blastmark", "textures/hud/allies", "textures/hud/axis", "textures/hud/radar_allies.tga",
-        "textures/hud/radar_axis.tga", "gfx/2d/net.tga"
+        "blastmark", "textures/hud/radar_allies.tga", "textures/hud/radar_axis.tga", "gfx/2d/net.tga"
     };
     static const char *sprites[] = {
-        "textures/hud/allies_headicon.spr", "textures/hud/axis_headicon.spr", "textures/hud/talking_headicon.spr",
-        "textures/hud/inmenu_headicon.spr",
+        "textures/hud/talking_headicon.spr", "textures/hud/inmenu_headicon.spr",
         // Added: the Competitive HUD's (CG_TeamHeadIcon)
         "textures/hud/reloaded_allies_headicon.spr", "textures/hud/reloaded_axis_headicon.spr"
     };
@@ -944,12 +940,7 @@ void CG_PrepRefresh(void)
     cgs.media.levelExitShader          = cgi.R_RegisterShaderNoMip("textures/menu/exit");
     cgs.media.pausedShader             = cgi.R_RegisterShaderNoMip("textures/menu/paused");
     cgs.media.backTileShader           = cgi.R_RegisterShader("gfx/2d/backtile");
-    cgs.media.zoomOverlayShader        = cgi.R_RegisterShaderNoMip("textures/hud/zoomoverlay");
-    cgs.media.kar98TopOverlayShader    = cgi.R_RegisterShaderNoMip("textures/hud/kartop.tga");
-    cgs.media.kar98BottomOverlayShader = cgi.R_RegisterShaderNoMip("textures/hud/karbottom.tga");
-    cgs.media.binocularsOverlayShader  = cgi.R_RegisterShaderNoMip("textures/hud/binocularsoverlay");
     cgs.media.hudDrawFont              = cgi.R_LoadFont("verdana-14");
-    cgs.media.attackerFont             = cgi.R_LoadFont("facfont-20");
     cgs.media.objectiveFont            = cgi.R_LoadFont("facfont-20"); // was courier-16 before 2.0
     cgs.media.objectivesBackShader     = cgi.R_RegisterShaderNoMip("textures/hud/objectives_backdrop");
     cgs.media.checkedBoxShader         = cgi.R_RegisterShaderNoMip("textures/objectives/filledbox");

@@ -62,8 +62,6 @@ static const char *whiteListedCommands[] = {
     "pushmenu_weaponselect",
     "popmenu",
     "globalwidgetcommand", // used for mods adding custom HUDs
-    "ui_addhud",
-    "ui_removehud",
     "echo", // to print stuff client-side
 
     //

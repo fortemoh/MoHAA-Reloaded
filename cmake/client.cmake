@@ -26,10 +26,8 @@ set(CLIENT_SOURCES
     ${SOURCE_DIR}/client/cl_scrn.cpp
     ${SOURCE_DIR}/client/cl_ui.cpp
     ${SOURCE_DIR}/client/cl_uibind.cpp
-    ${SOURCE_DIR}/client/cl_uidmbox.cpp
     ${SOURCE_DIR}/client/cl_uifilepicker.cpp
     ${SOURCE_DIR}/client/cl_uigamespy.cpp
-    ${SOURCE_DIR}/client/cl_uigmbox.cpp
     ${SOURCE_DIR}/client/cl_uilangame.cpp
     ${SOURCE_DIR}/client/cl_uiloadsave.cpp
     ${SOURCE_DIR}/client/cl_uimaprotationsetup.cpp

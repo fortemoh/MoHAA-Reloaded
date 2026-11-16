@@ -395,12 +395,7 @@ extern "C" {
         qhandle_t     wakeMarkShader;
         qhandle_t     pausedShader;
         qhandle_t     levelExitShader;
-        qhandle_t     zoomOverlayShader;
-        qhandle_t     kar98TopOverlayShader;
-        qhandle_t     kar98BottomOverlayShader;
-        qhandle_t     binocularsOverlayShader;
         fontheader_t *hudDrawFont;
-        fontheader_t *attackerFont;
         fontheader_t *objectiveFont;
         qhandle_t     objectivesBackShader;
         qhandle_t     checkedBoxShader;
@@ -558,7 +553,6 @@ extern "C" {
     extern cvar_t *voiceChat;
     extern cvar_t *cg_shadowscount;
     extern cvar_t *cg_shadowdebug;
-    extern cvar_t *ui_timemessage;
 
     //
     // Added in OPM
@@ -680,9 +674,6 @@ extern "C" {
     //
     void CG_AdjustFrom640(float *x, float *y, float *w, float *h);
     void CG_TileClear(void);
-    void CG_DrawOverlayTopBottom(qhandle_t handleTop, qhandle_t handleBottom, float fAlpha);
-    void CG_DrawOverlayMiddle(qhandle_t handle, float fAlpha);
-    void CG_DrawOverlayFullScreen(qhandle_t handle, float fAlpha);
     void CG_DrawZoomOverlay();
     void CG_HudDrawShader(int iInfo);
     void CG_HudDrawFont(int iInfo);

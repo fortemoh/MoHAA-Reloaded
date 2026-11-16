@@ -20,22 +20,21 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
-// cl_uiextras.h: the Competitive HUD's extras (Added, cg_hudstyle 1): the
-// zoom overlays, the centre and location prints, the chat's typing line, the
+// cl_uiextras.h: the Competitive HUD's extras (Added): the zoom overlays, the centre and location prints, the chat's typing line, the
 // round's end banner and the quick messages' menu
 
 #pragma once
 
 void UI_Extras_Init(void);
 // the zoom overlay drawn (the cgame's: 0 a scope, 1 the Kar98's, 2 the spy
-// camera's, 3 the binoculars'), faded by alpha; qfalse: the stock one is drawn
-qboolean UI_DrawZoomOverlay(int type, float alpha);
+// camera's, 3 the binoculars'), faded by alpha
+void UI_DrawZoomOverlay(int type, float alpha);
 // the quick messages' menu (the cgame's: its title, NULL the groups', its
-// lines, the localization's keys); qfalse: the stock one is drawn
-qboolean UI_DrawInstaMessage(const char *title, const char *const *lines, int count);
+// lines, the localization's keys)
+void UI_DrawInstaMessage(const char *title, const char *const *lines, int count);
 // a centre print (x, y -2) or a location print (640 x 480 units, -1 centred)
-// drawn at alpha; qfalse: the stock one is drawn
-qboolean UI_Extras_Print(const char *text, float alpha, int x, int y);
+// drawn at alpha
+void UI_Extras_Print(const char *text, float alpha, int x, int y);
 // the round's end banner over the game and the chat's typing line (View3D's 2D)
 void UI_Extras_Draw2D(void);
 // the chat's typing line is up (the chat shows its lines while it is)

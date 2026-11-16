@@ -52,22 +52,13 @@ const char *CG_GetPlayerLocalModelTiki(const char *modelName)
 ===============
 CG_TeamHeadIcon
 
-Added: a team's icon above a team mate's head: with the Competitive HUD
-(cg_hudstyle 1 or 2) its team icons' (scripts/reloaded_hud.shader, the client's
-outlines baked), else the game's
+Added: a team's icon above a team mate's head: the Competitive HUD's team
+icons' (scripts/reloaded_hud.shader, the client's outlines baked)
 ===============
 */
 static const char *CG_TeamHeadIcon(qboolean allies)
 {
-    static cvar_t *hudstyle;
-
-    if (!hudstyle) {
-        hudstyle = cgi.Cvar_Get("cg_hudstyle", "1", CVAR_ARCHIVE);
-    }
-    if (hudstyle->integer > 0) {
-        return allies ? "textures/hud/reloaded_allies_headicon.spr" : "textures/hud/reloaded_axis_headicon.spr";
-    }
-    return allies ? "textures/hud/allies_headicon.spr" : "textures/hud/axis_headicon.spr";
+    return allies ? "textures/hud/reloaded_allies_headicon.spr" : "textures/hud/reloaded_axis_headicon.spr";
 }
 
 /*
