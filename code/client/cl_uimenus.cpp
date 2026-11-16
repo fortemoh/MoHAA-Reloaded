@@ -1680,8 +1680,9 @@ Event EV_ReloadedMenu_Layer("layer", EV_DEFAULT, "s", "layer", "back (under the 
 CLASS_DECLARATION(UIWidget, UIReloadedMenu, NULL) {
     {&EV_ReloadedMenu_Screen, &UIReloadedMenu::SetScreen},
     {&EV_ReloadedMenu_Layer,  &UIReloadedMenu::SetLayer },
-    {&W_LeftMouseUp,          &UIReloadedMenu::MouseUp  },
-    {NULL,                    NULL                      }
+    {&W_LeftMouseUp,          &UIReloadedMenu::MouseUp     },
+    {&W_AnyMouseDown,         &UIReloadedMenu::MouseButtons},
+    {NULL,                    NULL                         }
 };
 
 void UIReloadedMenu::SetScreen(Event *ev)
@@ -1736,6 +1737,14 @@ void UIReloadedMenu::MouseUp(Event *ev)
         ChooseMain(id);
     } else if (id >= 0) {
         Choose(id);
+    }
+}
+
+// the mouse's buttons as they changed (the buttons down): the main menu's KEYS take one as a key
+void UIReloadedMenu::MouseButtons(Event *ev)
+{
+    if (!m_back && m_screen == SCR_MAIN) {
+        MainButtons(ev->GetInteger(3));
     }
 }
 
