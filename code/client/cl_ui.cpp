@@ -83,15 +83,9 @@ cvar_t        *ui_debugload;
 cvar_t        *sound_overlay;
 
 static char          server_mapname[64];
-static UIListCtrl   *scoreboardlist;
 static Menu         *scoreboard_menu;
 // Added: the scoreboard is up (the Reloaded scoreboard: the stock list isn't shown)
 static qboolean      scoreboard_up;
-static float         scoreboard_x;
-static float         scoreboard_y;
-static float         scoreboard_w;
-static float         scoreboard_h;
-static qboolean      scoreboard_header;
 
 unsigned char        UIListCtrlItem[8];
 
@@ -1962,7 +1956,7 @@ void UI_Update(void)
     // show the scoreboard
     //
     if (scoreboard_menu) {
-        if (UI_Menus_Scoreboard(scoreboard_menuname.c_str()) ? scoreboard_up : scoreboardlist && scoreboardlist->IsVisible()) {
+        if (UI_Menus_Scoreboard(scoreboard_menuname.c_str()) && scoreboard_up) {
             scoreboard_menu->ForceShow();
         } else {
             scoreboard_menu->ForceHide();
@@ -3242,12 +3236,6 @@ void UI_ResolutionChange(void)
         developer_console->setFrame(frame);
     }
 
-    if (scoreboardlist) {
-        delete scoreboardlist;
-        scoreboardlist = NULL;
-        UI_CreateScoreboard();
-    }
-
     uie.ResolutionChange();
     menuManager.RealignMenus();
 
@@ -3632,9 +3620,6 @@ void UI_ShowScoreboard_f(const char *pszMenuName)
             }
         }
 
-        if (scoreboardlist && scoreboardlist->IsVisible()) {
-            scoreboardlist->setShow(false);
-        }
         scoreboard_up = qfalse;
     } else {
         if (scoreboard_menuname.length()) {
@@ -3650,14 +3635,6 @@ void UI_ShowScoreboard_f(const char *pszMenuName)
         }
 
         scoreboard_up = qtrue;
-        if (UI_Menus_Scoreboard(scoreboard_menuname.c_str())) {
-            // (the Reloaded scoreboard: the stock list stays hidden)
-            if (scoreboardlist && scoreboardlist->IsVisible()) {
-                scoreboardlist->setShow(false);
-            }
-        } else if (scoreboardlist && !scoreboardlist->IsVisible()) {
-            scoreboardlist->setShow(true);
-        }
     }
 }
 
@@ -3668,10 +3645,7 @@ UI_ScoreboardShown
 */
 qboolean UI_ScoreboardShown(void)
 {
-    if (UI_Menus_Scoreboard(scoreboard_menuname.c_str())) {
-        return scoreboard_up && scoreboard_menu ? qtrue : qfalse;
-    }
-    return scoreboardlist && scoreboardlist->IsVisible() ? qtrue : qfalse;
+    return UI_Menus_Scoreboard(scoreboard_menuname.c_str()) && scoreboard_up && scoreboard_menu ? qtrue : qfalse;
 }
 
 /*
@@ -3682,9 +3656,6 @@ UI_HideScoreboard_f
 void UI_HideScoreboard_f(void)
 {
     scoreboard_up = qfalse;
-    if (scoreboardlist) {
-        scoreboardlist->setShow(false);
-    }
 
     if (scoreboard_menuname.length()) {
         // Fixed in 2.30 (scoreboard_menu check)
@@ -3692,132 +3663,6 @@ void UI_HideScoreboard_f(void)
             scoreboard_menu->ForceHide();
         }
     }
-}
-
-class ScoreboardListItem : public UIListCtrlItem
-{
-    str      strings[8];
-    qboolean bColorSet;
-    UColor   backColor;
-    UColor   textColor;
-    qboolean bTitleItem;
-
-public:
-    ScoreboardListItem();
-
-    void SetListItemStrings(
-        const char *string1,
-        const char *string2,
-        const char *string3,
-        const char *string4,
-        const char *string5,
-        const char *string6,
-        const char *string7,
-        const char *string8
-    );
-    virtual griditemtype_t getListItemType(int which) const;
-    virtual str            getListItemString(int i) const;
-    virtual int            getListItemValue(int which) const;
-    virtual void           DrawListItem(int iColumn, const UIRect2D& drawRect, bool bSelected, UIFont *pFont);
-    void                   SetColors(const UColor& newTextColor, const UColor& newBackColor);
-    void                   ClearColors(void);
-    void                   SetTitleItem(qboolean bSet);
-    virtual qboolean       IsHeaderEntry(void) const;
-};
-
-ScoreboardListItem::ScoreboardListItem()
-{
-    bColorSet  = false;
-    bTitleItem = false;
-}
-
-void ScoreboardListItem::DrawListItem(int iColumn, const UIRect2D& drawRect, bool bSelected, UIFont *pFont)
-{
-    DrawBox(drawRect, backColor, 1.0);
-    pFont->setColor(textColor);
-    pFont->Print(
-        (drawRect.pos.x + 1) / uid.scaleRes[0],
-        drawRect.pos.y / uid.scaleRes[1],
-        Sys_LV_CL_ConvertString(getListItemString(iColumn)),
-        -1,
-        uid.scaleRes
-    );
-
-    if (bTitleItem) {
-        UIRect2D lineRect;
-        UColor   lineColor = backColor;
-
-        lineRect = drawRect;
-        lineRect.pos.y += lineRect.size.height - 2.0;
-        lineRect.size.height = 2.0;
-
-        DrawBox(lineRect, lineColor, 1.0);
-    }
-}
-
-void ScoreboardListItem::SetColors(const UColor& newTextColor, const UColor& newBackColor)
-{
-    textColor = newTextColor;
-    backColor = newBackColor;
-    bColorSet = true;
-}
-
-void ScoreboardListItem::ClearColors(void)
-{
-    bColorSet = false;
-}
-
-/*
-====================
-UI_CreateScoreboard
-====================
-*/
-void UI_CreateScoreboard(void)
-{
-    int         i;
-    int         iColumnWidth;
-    float       w, h, x, y;
-    float       fColumnScale;
-    float       fR, fG, fB, fA;
-    float       fFontR, fFontG, fFontB, fFontA;
-    const char *pszColumnName;
-
-    if (!cge) {
-        return;
-    }
-
-    scoreboardlist = new UIListCtrl;
-    cge->CG_GetScoreBoardPosition(&x, &y, &w, &h);
-    scoreboard_x = x;
-    scoreboard_y = y;
-    scoreboard_w = w;
-    scoreboard_h = h;
-
-    SCR_AdjustFrom640(&x, &y, &w, &h);
-    fColumnScale = uid.vidWidth / 640.0;
-    cge->CG_GetScoreBoardColor(&fR, &fG, &fB, &fA);
-    cge->CG_GetScoreBoardFontColor(&fFontR, &fFontG, &fFontB, &fFontA);
-
-    scoreboardlist->InitFrame(NULL, x, y, w, h, -1, "verdana-12");
-    scoreboardlist->setBackgroundColor(UColor(fR, fG, fB, fA), true);
-    scoreboardlist->setForegroundColor(UColor(fFontR, fFontG, fFontB, fFontA));
-
-    for (i = 0; i < 8; i++) {
-        pszColumnName = cge->CG_GetColumnName(i, &iColumnWidth);
-        if (!pszColumnName) {
-            break;
-        }
-
-        scoreboardlist->AddColumn(pszColumnName, i, iColumnWidth * fColumnScale + 0.5, false, false);
-    }
-
-    scoreboard_header = cge->CG_GetScoreBoardDrawHeader();
-    scoreboardlist->setShow(false);
-    scoreboardlist->AllowActivate(false);
-    scoreboardlist->setAlwaysOnBottom(true);
-    scoreboardlist->SetUseScrollBar(false);
-    scoreboardlist->SetDrawHeader(scoreboard_header);
-    scoreboardlist->setHeaderFont("facfont-20");
 }
 
 /*
@@ -3840,81 +3685,7 @@ void UI_SetScoreBoardItem(
     qboolean     bIsHeader
 )
 {
-    int                 i;
-    float               x, y, w, h;
-    ScoreboardListItem *pItem;
-
-    if (iItemNumber >= 64) {
-        return;
-    }
-
-    if (scoreboardlist) {
-        cge->CG_GetScoreBoardPosition(&x, &y, &w, &h);
-
-        // Recreate the scoreboard if it has different rect
-        if (scoreboard_x != x || scoreboard_y != y || scoreboard_w != w || scoreboard_h != h
-            || scoreboard_header != cge->CG_GetScoreBoardDrawHeader()) {
-            delete scoreboardlist;
-            scoreboardlist = NULL;
-            UI_CreateScoreboard();
-        }
-    } else {
-        UI_CreateScoreboard();
-    }
-
-    if (scoreboardlist) {
-        if (iItemNumber + 1 > scoreboardlist->getNumItems()) {
-            pItem = new ScoreboardListItem;
-            scoreboardlist->AddItem(pItem);
-        } else {
-            pItem = (ScoreboardListItem *)scoreboardlist->GetItem(iItemNumber + 1);
-        }
-
-        if (pItem) {
-            if (!pszData1) {
-                pszData1 = "";
-            }
-            if (!pszData2) {
-                pszData2 = "";
-            }
-            if (!pszData3) {
-                pszData3 = "";
-            }
-            if (!pszData4) {
-                pszData4 = "";
-            }
-            if (!pszData5) {
-                pszData5 = "";
-            }
-            if (!pszData6) {
-                pszData6 = "";
-            }
-            if (!pszData7) {
-                pszData7 = "";
-            }
-            if (!pszData8) {
-                pszData8 = "";
-            }
-
-            pItem->SetListItemStrings(pszData1, pszData2, pszData3, pszData4, pszData5, pszData6, pszData7, pszData8);
-
-            if (pTextColor && pBackColor) {
-                UColor textColor, backColor;
-
-                textColor = UColor(pTextColor[0], pTextColor[1], pTextColor[2], pTextColor[3]);
-                backColor = UColor(pBackColor[0], pBackColor[1], pBackColor[2], pBackColor[3]);
-                pItem->SetColors(textColor, backColor);
-            } else {
-                pItem->ClearColors();
-            }
-
-            for (i = 0; i < 8; i++) {
-                pItem->getListItemString(i);
-            }
-
-            pItem->SetTitleItem(bIsHeader);
-        }
-    }
+    // nothing: the stock scoreboard list is gone (kept for the cgame, cgi.UI_SetScoreBoardItem)
 }
 
 /*
@@ -3924,9 +3695,7 @@ UI_DeleteScoreBoardItems
 */
 void UI_DeleteScoreBoardItems(int iMaxIndex)
 {
-    while (iMaxIndex + 1 <= scoreboardlist->getNumItems()) {
-        scoreboardlist->DeleteItem(scoreboardlist->getNumItems());
-    }
+    // nothing: as UI_SetScoreBoardItem
 }
 
 /*
@@ -4101,12 +3870,6 @@ void CL_ShutdownUI(void)
         mini_console = NULL;
     }
 
-    // delete informations hud
-    if (scoreboardlist) {
-        delete scoreboardlist;
-        scoreboardlist = NULL;
-    }
-
     // clear inventory
     client_inv.Clear();
 
@@ -4253,7 +4016,6 @@ void CL_InitializeUI(void)
     uie.Init();
 
     UI_LoadInventory_f();
-    UI_CreateScoreboard();
 
     // New since mohta
     // Version number
@@ -5016,50 +4778,4 @@ void TestListItem::DrawListItem(int iColumn, const UIRect2D& drawRect, bool bSel
 qboolean TestListItem::IsHeaderEntry(void) const
 {
     return qfalse;
-}
-
-void ScoreboardListItem::SetListItemStrings(
-    const char *string1,
-    const char *string2,
-    const char *string3,
-    const char *string4,
-    const char *string5,
-    const char *string6,
-    const char *string7,
-    const char *string8
-)
-{
-    strings[0] = string1;
-    strings[1] = string2;
-    strings[2] = string3;
-    strings[3] = string4;
-    strings[4] = string5;
-    strings[5] = string6;
-    strings[6] = string7;
-    strings[7] = string8;
-}
-
-griditemtype_t ScoreboardListItem::getListItemType(int i) const
-{
-    return bColorSet != 0 ? TYPE_OWNERDRAW : TYPE_STRING;
-}
-
-str ScoreboardListItem::getListItemString(int i) const
-{
-    return strings[i];
-}
-
-int ScoreboardListItem::getListItemValue(int i) const
-{
-    return atoi(strings[i]);
-}
-
-void ScoreboardListItem::SetTitleItem(qboolean bSet)
-{
-    bTitleItem = bSet;
-}
-
-qboolean ScoreboardListItem::IsHeaderEntry(void) const
-{
-    return bTitleItem;
 }

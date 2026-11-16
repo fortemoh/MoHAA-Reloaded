@@ -73,7 +73,6 @@ void     UI_ForceMenu(const char *name);
 qboolean UI_BindActive(void);
 void     UI_ActivateView3D(void);
 void     UI_MenuEscape(const char *name);
-void     UI_CreateScoreboard(void);
 qboolean UI_MenuActive(void);
 qboolean UI_MenuUp(void);
 void     UI_FocusMenuIfExists(void);
