@@ -982,6 +982,8 @@ void UI_CompHud_Frame(void)
         if (cg_hudstyle->modificationCount != read) {
             read = cg_hudstyle->modificationCount;
             Comp_Layout();
+            // (the zoom overlays' masks begun, unless made: turned on mid-match)
+            UI_Extras_PreBake(qtrue);
         }
     }
     cge->CG_EyeAngles(&angles);
