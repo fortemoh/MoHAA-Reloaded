@@ -40,8 +40,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //   scoreboard (with either HUD) it sits above its header (cl_uimenus.cpp);
 // - the quick messages' menu (the V key's): the group's name, its lines
 //   numbered in the accent, in a dark box on the left;
-// - the status icons (the cgame's): PAUSED, EXIT, CONNECTION INTERRUPTED
-//   and SLOW SERVER, an icon and the name in a dark box.
+// - the status icons (the cgame's): PAUSED, CONNECTION INTERRUPTED and SLOW
+//   SERVER, an icon and the name in a dark box.
 //
 // Sizes are design units (cl_uidraw.h): the prints and the banner the
 // menus' (1080 lines), the typing line and the quick messages the HUD's
@@ -490,13 +490,11 @@ STATUS ICONS
 
 The cgame's (CG_DrawIcons, CG_DrawDisconnect: when, and their blinking):
 a dark box, its left edge and its icon in the state's colour, the name in
-capitals. PAUSED (the Pause key in a mission) and EXIT (a map's
-trigger_exit: none of the three games' maps has one) in the middle at
-three quarters of the screen's height (0.45 over a faded screen);
-CONNECTION INTERRUPTED (nothing from the server for the commands' backup)
-at the bottom's middle, SLOW SERVER (developer) over it. The icons are
-Phosphor's, filled (MIT, ui/outlines/glyphs/PHOSPHOR-LICENSE.txt). The
-HUD's units
+capitals. PAUSED (the Pause key in a mission) in the middle at three
+quarters of the screen's height (0.45 over a faded screen); CONNECTION
+INTERRUPTED (nothing from the server for the commands' backup) at the
+bottom's middle, SLOW SERVER (developer) over it. The icons are Phosphor's,
+filled (MIT, ui/outlines/glyphs/PHOSPHOR-LICENSE.txt). The HUD's units
 
 ====================================================================
 */
@@ -506,7 +504,6 @@ static const struct {
     rlColor_t   color; // 0 alpha: the accent's
 } ex_icons[UI_ICON_NUM] = {
     {RL_OUTLINES "glyphs/pause.svg",     "PAUSED",                 {0, 0, 0, 0}                                 },
-    {RL_OUTLINES "glyphs/door-open.svg", "EXIT",                   {0, 0, 0, 0}                                 },
     {RL_OUTLINES "glyphs/plugs.svg",     "CONNECTION INTERRUPTED", {226 / 255.0f, 104 / 255.0f, 88 / 255.0f, 1} },
     {RL_OUTLINES "glyphs/hourglass.svg", "SLOW SERVER",            {232 / 255.0f, 170 / 255.0f, 72 / 255.0f, 1}},
 };
@@ -538,7 +535,7 @@ void UI_DrawStatusIcon(int icon, qboolean raised)
     c = ex_icons[icon].color.a > 0 ? ex_icons[icon].color : EX_Accent();
     w = 14.0f + EX_ICON_SIZE + 10.0f + RL_TextW(v, ex_icons[icon].name, EX_ICON_TEXT, true, 1.6f) + 18.0f;
     x = floorf((v.dw - w) * 0.5f);
-    if (icon == UI_ICON_PAUSED || icon == UI_ICON_EXIT) {
+    if (icon == UI_ICON_PAUSED) {
         y = v.dh * (raised ? 0.45f : 0.75f) - EX_ICON_H * 0.5f;
     } else {
         y = v.dh - 24.0f - EX_ICON_H - (icon == UI_ICON_SLOWSERVER ? EX_ICON_H + 8.0f : 0.0f);

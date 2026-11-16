@@ -297,23 +297,11 @@ void CG_DrawLagometer(void)
 
 static void CG_DrawPauseIcon()
 {
-    int icon;
-
-    if (paused->integer) {
-        icon = UI_ICON_PAUSED;
-    } else {
-        if (cg.predicted_player_state.pm_flags & PMF_LEVELEXIT) {
-            // blink it
-            if ((cg.time >> 9) & 1) {
-                return;
-            }
-            icon = UI_ICON_EXIT;
-        } else {
-            return;
-        }
+    if (!paused->integer) {
+        return;
     }
     // Changed: the client's, in the HUD's style (higher over a faded screen)
-    cgi.UI_DrawStatusIcon(icon, cg.snap && cg.snap->ps.blend[3] > 0 ? qtrue : qfalse);
+    cgi.UI_DrawStatusIcon(UI_ICON_PAUSED, cg.snap && cg.snap->ps.blend[3] > 0 ? qtrue : qfalse);
 }
 
 static void CG_DrawServerLag()

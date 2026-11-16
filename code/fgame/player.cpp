@@ -7705,20 +7705,6 @@ void Player::UpdateReverb(void)
 void Player::UpdateMisc(void)
 {
     //
-    // clear out the level exit flag
-    //
-    client->ps.pm_flags &= ~PMF_LEVELEXIT;
-
-    //
-    // see if our camera is the level exit camera
-    //
-    if (camera && camera->IsLevelExit()) {
-        client->ps.pm_flags |= PMF_LEVELEXIT;
-    } else if (level.near_exit) {
-        client->ps.pm_flags |= PMF_LEVELEXIT;
-    }
-
-    //
     // do anything special for respawns
     //
     if (client->ps.pm_flags & PMF_RESPAWNED) {

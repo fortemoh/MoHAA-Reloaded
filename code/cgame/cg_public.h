@@ -89,7 +89,6 @@ functions imported from the main executable
 // Added: the status icons the client draws for the cgame (cgi.UI_DrawStatusIcon)
 enum {
     UI_ICON_PAUSED,      // the game paused (the Pause key)
-    UI_ICON_EXIT,        // near a level's exit (a trigger_exit)
     UI_ICON_NOSNAPSHOTS, // nothing from the server for the commands' backup
     UI_ICON_SLOWSERVER,  // the server behind (developer)
     UI_ICON_NUM
@@ -490,7 +489,7 @@ functions exported to the main executable
         void (*UI_DrawObjectives)(qboolean shown);
 
         // Added: a status icon (UI_ICON_*) drawn by the client in the HUD's
-        // style; PAUSED and EXIT raised over a faded screen
+        // style; PAUSED raised over a faded screen
         void (*UI_DrawStatusIcon)(int icon, qboolean raised);
 
     } clientGameImport_t;

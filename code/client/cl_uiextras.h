@@ -29,7 +29,7 @@ void UI_Extras_Init(void);
 // the zoom overlay drawn (the cgame's: 0 a scope, 1 the Kar98's, 2 the spy
 // camera's, 3 the binoculars'), faded by alpha
 void UI_DrawZoomOverlay(int type, float alpha);
-// a status icon (the cgame's: UI_ICON_*), PAUSED and EXIT raised over a faded screen
+// a status icon (the cgame's: UI_ICON_*), PAUSED raised over a faded screen
 void UI_DrawStatusIcon(int icon, qboolean raised);
 // the quick messages' menu (the cgame's: its title, NULL the groups', its
 // lines, the localization's keys)
