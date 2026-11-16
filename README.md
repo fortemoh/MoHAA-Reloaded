@@ -1,15 +1,8 @@
 # MoHAA Reloaded
 
 <p align="center">
-  <img src="icons/mohreloaded-banner.png" alt="MoHAA Reloaded" width="800">
+  <img src="https://github.com/fortemoh/moh-icons/raw/main/logo/lockup/mohaa-lockup-garamond-reloaded.svg" alt="Medal of Honor Reloaded, with the Allied Assault, Spearhead and Breakthrough icons" width="800">
 </p>
-
-<p align="center">
-  <img src="icons/mohaa.svg" width="96" alt="Medal of Honor: Allied Assault">&nbsp;&nbsp;&nbsp;
-  <img src="icons/mohaa-spearhead.svg" width="96" alt="Spearhead">&nbsp;&nbsp;&nbsp;
-  <img src="icons/mohaa-breakthrough.svg" width="96" alt="Breakthrough">
-</p>
-<p align="center"><b>Allied Assault</b> · <b>Spearhead</b> · <b>Breakthrough</b></p>
 
 **MoHAA Reloaded** brings [OpenMoHAA](https://github.com/openmoh/openmohaa) natively to modern hardware, with renderers of its own instead of OpenGL. It plays Medal of Honor: Allied Assault, Spearhead and Breakthrough with your retail game data, on existing MOHAA and OpenMoHAA servers.
 
