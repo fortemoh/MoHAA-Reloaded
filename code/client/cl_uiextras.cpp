@@ -24,11 +24,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // Drawn in place of the stock ones, nothing of them while they don't show:
 //
 // - the zoom overlays: the scopes (a circle, its edge darkening into black,
-//   thin lines: a cross, the Kar98's without its upper half) and the
+//   thin lines: a cross, the Kar98's a post up to the middle) and the
 //   binoculars (two circles, a soft rim, a small range scale). A mask, the
 //   screen's top left quarter at its pixels, is made once a screen size (on
-//   the bake threads, while a map loads) and drawn four times mirrored; the
-//   black around it and the lines are boxes;
+//   the bake threads, while a map loads or as the HUD is turned on), with
+//   what is drawn; drawn four times mirrored, the black around it and the
+//   lines are boxes;
 // - the centre and location prints: a dark box with accent edges above and
 //   below, Oswald, as wide as the text;
 // - the chat's typing line: a slim bar over the HUD's chat, "ALL:", "TEAM:"
@@ -75,6 +76,11 @@ typedef struct {
     int               stamp;          // UI_BakeStamp then: its shader looked up again after a map's load
     int               madeMs;         // how long it took to make (developer)
     qhandle_t         shader;
+    // what is drawn, worked out with the mask: its four draws (x, y, w, h,
+    // s0, t0, s1, t1), the black round it, the lines (the scope's [1] the
+    // Kar98's) and their alpha
+    float             quads[4][8], black[4][4], lines[2][24][4], lineAlpha;
+    int               numBlack, numLines[2];
 } zoomMask_t;
 
 static zoomMask_t zm[ZM_NUM];
@@ -229,6 +235,92 @@ static void ZM_Binoculars(zoomMask_t *m, int w, int h)
     }
 }
 
+static void ZM_Box(float (*boxes)[4], int *n, int x, int y, int w, int h)
+{
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    boxes[*n][0] = x;
+    boxes[*n][1] = y;
+    boxes[*n][2] = w;
+    boxes[*n][3] = h;
+    (*n)++;
+}
+
+/*
+================
+ZM_Layout
+
+What is drawn with a mask, worked out with it: the mask four times
+(mirrored right and down: an odd size's middle column and row once), the
+black round it, and the lines as boxes on whole pixels, the crosshair's
+way. The scope's a pixel at 1080 lines (85 % black): a cross, and the
+Kar98's, the line open 0.047 of the height either side of the middle, a
+post twice as thick from below up to the middle. The binoculars' two
+(90 %): a line 0.5 of the unit across, ticks every 0.05 up from it (the
+middle and the ends twice as tall), and down from its middle a line 0.1
+long crossed every 0.025
+================
+*/
+static void ZM_Layout(zoomMask_t *m, int kind, int w, int h)
+{
+    const int   xm = (w + 1) / 2, ym = (h + 1) / 2, rw = m->qw - (w & 1), bh = m->qh - (h & 1);
+    const float s1 = (float)rw / m->qw, t1 = (float)bh / m->qh;
+    const float quads[4][8] = {
+        {(float)m->xl, (float)m->yt, (float)m->qw, (float)m->qh, 0, 0, 1, 1},
+        {(float)xm, (float)m->yt, (float)rw, (float)m->qh, s1, 0, 0, 1},
+        {(float)m->xl, (float)ym, (float)m->qw, (float)bh, 0, t1, 1, 0},
+        {(float)xm, (float)ym, (float)rw, (float)bh, s1, t1, 0, 0},
+    };
+
+    memcpy(m->quads, quads, sizeof(quads));
+    m->numBlack = m->numLines[0] = m->numLines[1] = 0;
+    ZM_Box(m->black, &m->numBlack, 0, 0, m->xl, h);
+    ZM_Box(m->black, &m->numBlack, w - m->xl, 0, m->xl, h);
+    ZM_Box(m->black, &m->numBlack, m->xl, 0, w - 2 * m->xl, m->yt);
+    ZM_Box(m->black, &m->numBlack, m->xl, h - m->yt, w - 2 * m->xl, m->yt);
+
+    if (kind == ZM_SCOPE) {
+        const int   t  = Q_max(1, (int)floorf(h / 1080.0f + 0.5f));
+        const float R  = 0.46f * h;
+        const int   x0 = (int)floorf(w * 0.5f - R), x1 = (int)ceilf(w * 0.5f + R);
+        const int   y0 = (int)floorf(h * 0.5f - R), y1 = (int)ceilf(h * 0.5f + R);
+        const int   lx = (w - t) / 2, ly = (h - t) / 2;
+        const int   g = (w - 2 * (int)floorf(0.047f * h + 0.5f)) / 2;
+
+        // (the vertical line in two, the crossing drawn once)
+        ZM_Box(m->lines[0], &m->numLines[0], x0, ly, x1 - x0, t);
+        ZM_Box(m->lines[0], &m->numLines[0], lx, y0, t, ly - y0);
+        ZM_Box(m->lines[0], &m->numLines[0], lx, ly + t, t, y1 - ly - t);
+        ZM_Box(m->lines[1], &m->numLines[1], x0, ly, g - x0, t);
+        ZM_Box(m->lines[1], &m->numLines[1], w - g, ly, x1 - (w - g), t);
+        ZM_Box(m->lines[1], &m->numLines[1], (w - 2 * t) / 2, h / 2, 2 * t, y1 - h / 2);
+        m->lineAlpha = 0.85f;
+    } else {
+        const float u  = ZM_BinocularUnit(w, h);
+        const int   t  = Q_max(1, (int)floorf(2.0f * h / 1080.0f + 0.5f));
+        const int   lx = (w - t) / 2, ly = (h - t) / 2;
+        const int   half = (int)floorf(0.25f * u + 0.5f);
+        const int   tick = Q_max(t, (int)floorf(0.015f * u + 0.5f)), big = Q_max(t, (int)floorf(0.03f * u + 0.5f));
+        const int   down = (int)floorf(0.1f * u + 0.5f), cross = Q_max(1, (int)floorf(0.008f * u + 0.5f));
+
+        ZM_Box(m->lines[0], &m->numLines[0], lx - half, ly, 2 * half + t, t);
+        for (int i = -5; i <= 5; i++) {
+            const int x = lx + (int)floorf(i * 0.05f * u + 0.5f), th = i % 5 ? tick : big;
+
+            ZM_Box(m->lines[0], &m->numLines[0], x, ly - th, t, th);
+        }
+        ZM_Box(m->lines[0], &m->numLines[0], lx, ly + t, t, down - t);
+        for (int j = 1; j <= 4; j++) {
+            const int y = ly + (int)floorf(j * 0.025f * u + 0.5f);
+
+            ZM_Box(m->lines[0], &m->numLines[0], lx - cross, y, cross, t);
+            ZM_Box(m->lines[0], &m->numLines[0], lx + t, y, cross, t);
+        }
+        m->lineAlpha = 230.0f / 255.0f;
+    }
+}
+
 static void ZM_Make(zoomMask_t *m, int kind, int w, int h)
 {
     const int start = Sys_Milliseconds();
@@ -238,6 +330,7 @@ static void ZM_Make(zoomMask_t *m, int kind, int w, int h)
     } else {
         ZM_Binoculars(m, w, h);
     }
+    ZM_Layout(m, kind, w, h);
     m->madeMs = Sys_Milliseconds() - start;
 }
 
@@ -291,46 +384,26 @@ static void ZM_Finish(int kind)
     }
 }
 
-static void ZM_Box(float (*boxes)[4], int *n, int x, int y, int w, int h)
-{
-    if (w <= 0 || h <= 0) {
-        return;
-    }
-    boxes[*n][0] = x;
-    boxes[*n][1] = y;
-    boxes[*n][2] = w;
-    boxes[*n][3] = h;
-    (*n)++;
-}
-
 /*
 ================
 UI_DrawZoomOverlay
 
-The cgame's zoom overlay (its fade kept), with cg_hudstyle 1: the mask
-four times (mirrored right and down: an odd size's middle column and row
-once), black boxes round it, then the lines as boxes on whole pixels, the
-crosshair's way: the scopes' a pixel at 1080 lines (85 % black), the
-binoculars' two (90 %): a line 0.5 of the unit across, ticks every 0.05 up
-from it (the middle and the ends twice as tall), and down from its middle a
-line 0.1 long crossed every 0.025
+The cgame's zoom overlay (its fade kept), with cg_hudstyle 1 or 2: the
+mask and its lines as ZM_Layout worked them out
 ================
 */
 qboolean UI_DrawZoomOverlay(int type, float alpha)
 {
     const int   kind = type == 3 ? ZM_BINOCULARS : ZM_SCOPE;
+    const int   kar = type == 1;
     zoomMask_t *m = &zm[kind];
-    const int   w = uid.vidWidth, h = uid.vidHeight;
-    const int   xm = (w + 1) / 2, ym = (h + 1) / 2;
-    float       boxes[24][4];
     vec4_t      color = {1, 1, 1, alpha};
-    int         n = 0;
 
     if (!UI_CompHud_Active() || alpha <= 0.0f) {
         return qfalse;
     }
-    // (made now only if the load didn't: a new size, the HUD turned on)
-    if (m->w != w || m->h != h || (!m->making && (!m->shader || m->refSeq != uii.GetRefSequence()))) {
+    // (made now only if not begun ahead)
+    if (m->w != uid.vidWidth || m->h != uid.vidHeight || (!m->making && (!m->shader || m->refSeq != uii.GetRefSequence()))) {
         ZM_Begin(kind);
     }
     ZM_Finish(kind);
@@ -338,68 +411,14 @@ qboolean UI_DrawZoomOverlay(int type, float alpha)
         return qfalse;
     }
 
-    {
-        const int   rw = m->qw - (w & 1), bh = m->qh - (h & 1);
-        const float s1 = (float)rw / m->qw, t1 = (float)bh / m->qh;
-
-        re.SetColor(color);
-        re.DrawStretchPic(m->xl, m->yt, m->qw, m->qh, 0, 0, 1, 1, m->shader);
-        re.DrawStretchPic(xm, m->yt, rw, m->qh, s1, 0, 0, 1, m->shader);
-        re.DrawStretchPic(m->xl, ym, m->qw, bh, 0, t1, 1, 0, m->shader);
-        re.DrawStretchPic(xm, ym, rw, bh, s1, t1, 0, 0, m->shader);
+    re.SetColor(color);
+    for (const float *q : m->quads) {
+        re.DrawStretchPic(q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7], m->shader);
     }
-
-    // the black round it
-    ZM_Box(boxes, &n, 0, 0, m->xl, h);
-    ZM_Box(boxes, &n, w - m->xl, 0, m->xl, h);
-    ZM_Box(boxes, &n, m->xl, 0, w - 2 * m->xl, m->yt);
-    ZM_Box(boxes, &n, m->xl, h - m->yt, w - 2 * m->xl, m->yt);
     color[0] = color[1] = color[2] = 0.0f;
-    if (n) {
-        re.DrawBoxes((const float (*)[4])boxes, n, color);
-    }
-
-    n = 0;
-    if (kind == ZM_SCOPE) {
-        const int   t  = Q_max(1, (int)floorf(h / 1080.0f + 0.5f));
-        const float R  = 0.46f * h;
-        const int   x0 = (int)floorf(w * 0.5f - R), x1 = (int)ceilf(w * 0.5f + R);
-        const int   y0 = (int)floorf(h * 0.5f - R), y1 = (int)ceilf(h * 0.5f + R);
-        const int   lx = (w - t) / 2, ly = (h - t) / 2;
-
-        ZM_Box(boxes, &n, x0, ly, x1 - x0, t);
-        // (the vertical line in two, the crossing drawn once; the Kar98's without its upper half)
-        if (type != 1) {
-            ZM_Box(boxes, &n, lx, y0, t, ly - y0);
-        }
-        ZM_Box(boxes, &n, lx, ly + t, t, y1 - ly - t);
-        color[3] = 0.85f * alpha;
-    } else {
-        const float u  = ZM_BinocularUnit(w, h);
-        const int   t  = Q_max(1, (int)floorf(2.0f * h / 1080.0f + 0.5f));
-        const int   lx = (w - t) / 2, ly = (h - t) / 2;
-        const int   half = (int)floorf(0.25f * u + 0.5f);
-        const int   tick = Q_max(t, (int)floorf(0.015f * u + 0.5f)), big = Q_max(t, (int)floorf(0.03f * u + 0.5f));
-        const int   down = (int)floorf(0.1f * u + 0.5f), cross = Q_max(1, (int)floorf(0.008f * u + 0.5f));
-
-        ZM_Box(boxes, &n, lx - half, ly, 2 * half + t, t);
-        for (int i = -5; i <= 5; i++) {
-            const int x = lx + (int)floorf(i * 0.05f * u + 0.5f), th = i % 5 ? tick : big;
-
-            ZM_Box(boxes, &n, x, ly - th, t, th);
-        }
-        ZM_Box(boxes, &n, lx, ly + t, t, down - t);
-        for (int j = 1; j <= 4; j++) {
-            const int y = ly + (int)floorf(j * 0.025f * u + 0.5f);
-
-            ZM_Box(boxes, &n, lx - cross, y, cross, t);
-            ZM_Box(boxes, &n, lx + t, y, cross, t);
-        }
-        color[3] = 230.0f / 255.0f * alpha;
-    }
-    if (n) {
-        re.DrawBoxes((const float (*)[4])boxes, n, color);
-    }
+    re.DrawBoxes((const float (*)[4])m->black, m->numBlack, color);
+    color[3] = m->lineAlpha * alpha;
+    re.DrawBoxes((const float (*)[4])m->lines[kar], m->numLines[kar], color);
     re.SetColor(NULL);
     return qtrue;
 }
