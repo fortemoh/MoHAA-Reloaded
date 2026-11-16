@@ -140,3 +140,5 @@ byte       *RL_MenuPhoto(class Menu *stock, int *width, int *height);
 // a photo (RGBA, shown photo wide a unit high) as a screen-shaped texture rows
 // texels high, blurred, its light times dim, darker to the corners, registered as name
 qhandle_t   RL_Blur(const char *name, const byte *pic, int pw, int ph, int rows, float dim, float photo = 4.0f / 3.0f);
+// the browser joins this server (its address, name and map's file): the connecting screen shows them
+void        RL_Joining(const char *addr, const char *name, const char *map);

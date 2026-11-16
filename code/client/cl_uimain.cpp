@@ -49,6 +49,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <map>
 #include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 // the palette's panels (Omaha's surfaces, ours)
@@ -145,6 +146,7 @@ typedef struct {
     int          queryPort;
     std::string  addr; // ip:port, connected to
     std::string  name, map, mode;
+    std::string  file; // the map's ("dm/mohdm6"; map: its name)
     int          players, maxPlayers, ping;
     int          tab;
     bool         otherVersion; // can't be joined
@@ -199,13 +201,13 @@ static int RL_SvInt(GServer s, const char *key, int def)
     return ServerGetIntValue(s, (char *)key, def);
 }
 
-// a map's display name: its loading screen's (the dm and obj maps' are named with their folder)
-static const std::string& RL_SvMapName(const char *map)
+// a map's file and display name: its loading screen's (the dm and obj maps' are named with their folder)
+static const std::pair<std::string, std::string>& RL_SvMap(const char *map)
 {
-    static std::map<std::string, std::string> names;
-    auto                                       it = names.find(map);
+    static std::map<std::string, std::pair<std::string, std::string>> maps;
+    auto                                                              it = maps.find(map);
 
-    if (it == names.end()) {
+    if (it == maps.end()) {
         std::string file = map;
 
         if (!strchr(map, '/')) {
@@ -216,7 +218,7 @@ static const std::string& RL_SvMapName(const char *map)
                 }
             }
         }
-        it = names.emplace(map, RL_MapName(file.c_str())).first;
+        it = maps.emplace(map, std::make_pair(file, std::string(RL_MapName(file.c_str())))).first;
     }
     return it->second;
 }
@@ -282,7 +284,7 @@ static void RL_SvCallback(GServerList list, int msg, void *instance, void *param
     // (without the spaces round it some names have)
     row->name.erase(0, row->name.find_first_not_of(' '));
     row->name.erase(row->name.find_last_not_of(' ') + 1);
-    row->map        = RL_SvMapName(RL_SvString(s, "mapname"));
+    std::tie(row->file, row->map) = RL_SvMap(RL_SvString(s, "mapname"));
     row->mode       = RL_SvString(s, "gametype");
     row->players    = RL_SvInt(s, "numplayers", 0);
     row->maxPlayers = RL_SvInt(s, "maxplayers", 0);
@@ -460,6 +462,7 @@ static void RL_SvJoin(void)
     RL_SvHalt();
     // (back here should the server drop the player)
     UI_SetReturnMenuToCurrent();
+    RL_Joining(r.addr.c_str(), r.name.c_str(), r.file.c_str());
     Cbuf_AddText(va("connect %s\n", r.addr.c_str()));
 }
 

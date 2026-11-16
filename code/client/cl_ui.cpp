@@ -2225,7 +2225,8 @@ void UI_Update(void)
         }
 
         if (clc.connectStartTime >= cls.realtime - 1000 * cl_connect_timeout->integer) {
-            if (currentMenu != ui_pConnectingMenu) {
+            // Changed: the menu looked up now (the Reloaded load screen or the stock one: ui_classicmenus)
+            if (currentMenu != menuManager.FindMenu("connecting")) {
                 UI_ForceMenuOff(true);
                 UI_DeactiveFloatingWindows();
                 UI_ForceMenu("connecting");
