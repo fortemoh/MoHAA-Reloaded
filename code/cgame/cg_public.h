@@ -475,6 +475,13 @@ functions exported to the main executable
         // the Competitive HUD's radar, UI_GetObjectivesTop then level with its top)
         float (*UI_GetObjectivesLeft)(void);
 
+        // Added: the quick messages' menu drawn by the client (the Competitive
+        // HUD's, cg_hudstyle 1 or 2): its title (NULL: the groups'), its count
+        // lines (the localization's keys, "" not shown, numbered from 1).
+        // Static texts: the client keeps what it made of them while they're
+        // the same. qfalse: the stock one is to be drawn
+        qboolean (*UI_DrawInstaMessage)(const char *title, const char *const *lines, int count);
+
     } clientGameImport_t;
 
     /*

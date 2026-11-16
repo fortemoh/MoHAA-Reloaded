@@ -36,11 +36,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //   its window isn't drawn);
 // - the round's end banner (the server's g_scoreboardpicover): the winners'
 //   emblem, "ALLIES WIN THE ROUND", the teams' score. On the Reloaded
-//   scoreboard (with either HUD) it sits above its header (cl_uimenus.cpp).
+//   scoreboard (with either HUD) it sits above its header (cl_uimenus.cpp);
+// - the quick messages' menu (the V key's): the group's name, its lines
+//   numbered in the accent, in a dark box on the left.
 //
 // Sizes are design units (cl_uidraw.h): the prints and the banner the
-// menus' (1080 lines), the typing line the HUD's (cg_hud_scale). Text is
-// Oswald baked at the pixel size drawn, baked ahead with the map's load.
+// menus' (1080 lines), the typing line and the quick messages the HUD's
+// (cg_hud_scale). Text is Oswald baked at the pixel size drawn, baked ahead
+// with the map's load.
 
 #include "client.h"
 #include "cl_ui.h"
@@ -762,6 +765,130 @@ static void EX_TypingLine(void)
 /*
 ====================================================================
 
+THE QUICK MESSAGES' MENU
+
+The V key's (the cgame's keys and commands as before): the title, the
+lines numbered in the accent, "0 Cancel" muted, in the dark box with the
+accent's edge on its left. Left as the radar and the chat, its top 425 of
+the HUD's units down: under the game messages, over the chat (up from it as
+much as it must, smaller if it can't fit under the messages' first line
+and over the chat: a large cg_hud_scale). Its texts translated, measured
+and placed once a page and a HUD scale
+
+====================================================================
+*/
+
+#define IM_LEFT    25.0f
+#define IM_TOP     425.0f // under the game messages (hud_comp_topleft_compass: 289 to 409)
+#define IM_HIGHEST 321.0f // ... at least under their first line
+#define IM_LOWEST  330.0f // up from the bottom: over the chat (CS:GO's corners: 312 up)
+#define IM_EDGE    3.0f
+#define IM_TEXT    19.0f // the numbers' left from the box's
+#define IM_NUMBER  22.0f // the lines' from the numbers'
+#define IM_RIGHT   22.0f
+#define IM_HEAD    45.0f // the title's band, the rule under it
+#define IM_STEP    26.0f
+#define IM_SIZE    17.0f // the lines' (the title 2 smaller)
+
+static struct {
+    const char *const *lines; // the page (the cgame's static texts)
+    float              s;     // ... at the HUD's scale
+    rlView_t           v;     // the HUD's, smaller to fit
+    std::string        head, cancel, text[9];
+    int                count;      // up to the last line shown
+    float              x, y, w, h; // the box (v's units)
+} im;
+
+// a key's text in the game's language, a lone "&" spaced (1.11's "Statements&Responses")
+static std::string IM_Text(const char *key)
+{
+    std::string t = Sys_LV_CL_ConvertString(key);
+
+    for (size_t i = t.find('&'); i != std::string::npos; i = t.find('&', i + 2)) {
+        if (i > 0 && t[i - 1] != ' ') {
+            t.insert(i++, " ");
+        }
+        if (i + 1 < t.size() && t[i + 1] != ' ') {
+            t.insert(i + 1, " ");
+        }
+    }
+    return t;
+}
+
+static void IM_Make(const char *title, const char *const *lines, int count, float s)
+{
+    const float dh = uid.vidHeight / s; // the HUD's units down
+    float       k, tw;
+
+    im.lines = lines;
+    im.s     = s;
+    im.head  = RL_Upper(title ? IM_Text(title).c_str() : "Quick Messages");
+    im.count = 0;
+    for (int i = 0; i < Q_min(count, (int)ARRAY_LEN(im.text)); i++) {
+        im.text[i] = lines[i] && lines[i][0] ? IM_Text(lines[i]) : "";
+        if (!im.text[i].empty()) {
+            im.count = i + 1;
+        }
+    }
+
+    im.h = IM_HEAD + 8.0f + IM_STEP * (im.count + 1) + 12.0f;
+    k    = Com_Clamp(0.5f, 1.0f, (dh - IM_LOWEST - IM_HIGHEST) / im.h);
+    im.v.s      = s * k;
+    im.v.dw     = uid.vidWidth / im.v.s;
+    im.v.dh     = uid.vidHeight / im.v.s;
+    im.v.layout = 1;
+    im.x        = IM_LEFT / k;
+    im.y        = Q_max(IM_HIGHEST, Q_min(IM_TOP, dh - IM_LOWEST - im.h * k)) / k;
+
+    tw = RL_TextW(im.v, im.head.c_str(), IM_SIZE - 2.0f, true, 1.2f);
+    for (int i = 0; i < im.count; i++) {
+        tw = Q_max(tw, IM_NUMBER + RL_TextW(im.v, im.text[i].c_str(), IM_SIZE, false));
+    }
+    im.cancel = Sys_LV_CL_ConvertString("Cancel");
+    im.w      = ceilf(Q_max(240.0f, IM_TEXT + tw + IM_RIGHT));
+}
+
+qboolean UI_DrawInstaMessage(const char *title, const char *const *lines, int count)
+{
+    const float s = UI_DesignScale(1920.0f, 1080.0f);
+
+    if (!UI_CompHud_Active()) {
+        return qfalse;
+    }
+    if (lines != im.lines || s != im.s) {
+        IM_Make(title, lines, count, s);
+    }
+
+    {
+        const rlView_t& v  = im.v;
+        const rlColor_t ac = EX_Accent();
+        const int       x0 = RL_P(v, im.x), y0 = RL_P(v, im.y), x1 = RL_P(v, im.x + im.w), y1 = RL_P(v, im.y + im.h);
+        const int       rule = RL_P(v, im.y + IM_HEAD);
+        const float     tx = im.x + IM_TEXT;
+        float           cy = im.y + IM_HEAD + 8.0f + IM_STEP * 0.5f;
+
+        RL_BoxPx(x0 + Q_max(1, RL_P(v, IM_EDGE)), y0, x1, y1, EX_FILL);
+        RL_BoxPx(x0, y0, x0 + Q_max(1, RL_P(v, IM_EDGE)), y1, ac);
+        RL_BoxPx(RL_P(v, tx), rule, x1 - RL_P(v, IM_RIGHT), rule + Q_max(1, RL_P(v, 1.0f)), RL_Rgb(255, 255, 255, 38));
+        RL_Text(v, tx, im.y + 12.0f + (IM_HEAD - 12.0f) * 0.5f, im.head.c_str(), IM_SIZE - 2.0f, EX_TEXT, true, RL_LEFT, 1.2f, RL_MID);
+        for (int i = 0; i < im.count; i++, cy += IM_STEP) {
+            const char number[2] = {(char)('1' + i), 0};
+
+            if (!im.text[i].empty()) {
+                RL_Text(v, tx, cy, number, IM_SIZE, ac, true, RL_LEFT, 0, RL_MID);
+                RL_Text(v, tx + IM_NUMBER, cy, im.text[i].c_str(), IM_SIZE, EX_TEXT, false, RL_LEFT, 0, RL_MID);
+            }
+        }
+        cy += 6.0f;
+        RL_Text(v, tx, cy, "0", IM_SIZE, RL_MUTED, true, RL_LEFT, 0, RL_MID);
+        RL_Text(v, tx + IM_NUMBER, cy, im.cancel.c_str(), IM_SIZE, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+    }
+    return qtrue;
+}
+
+/*
+====================================================================
+
 EACH FRAME, BAKED AHEAD
 
 ====================================================================
@@ -824,6 +951,7 @@ void UI_Extras_PreBake(qboolean ahead)
         RL_Face(v, 24, false);
         RL_Face(v, 34, true);
         if (hud) {
+            RL_Face(hv, 15, true); // (the quick messages' title)
             RL_Face(hv, 17, false);
             RL_Face(hv, 17, true);
         }

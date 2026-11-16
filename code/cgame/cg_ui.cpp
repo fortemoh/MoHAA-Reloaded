@@ -214,7 +214,9 @@ qboolean CG_CheckCaptureKey(int key, qboolean down, unsigned int time)
     }
 
     if (cg.iInstaMessageMenu == -1) {
-        if (key > '6') {
+        // Changed: a group there is (1.11 has five, the stock took a sixth)
+        if (key - '0'
+            > (int)(cg_protocol >= PROTOCOL_MOHTA_MIN ? ARRAY_LEN(pInstantMsgEng) : ARRAY_LEN(pInstantMsgEng_ver6))) {
             cg.iInstaMessageMenu = 0;
         } else {
             cg.iInstaMessageMenu = key - '0';

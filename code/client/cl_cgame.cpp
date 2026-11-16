@@ -871,6 +871,7 @@ void CL_InitCGameDLL( clientGameImport_t *cgi, clientGameExport_t **cge ) {
 	cgi->R_DrawBoxes				= re.DrawBoxes;
 	cgi->UI_DrawZoomOverlay			= UI_DrawZoomOverlay;
 	cgi->UI_GetObjectivesLeft		= UI_GetObjectivesLeft;
+	cgi->UI_DrawInstaMessage		= UI_DrawInstaMessage;
 	// FIXME
 	//cgi->pUnknownVar				= NULL;
 
