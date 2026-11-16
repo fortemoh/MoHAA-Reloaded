@@ -67,6 +67,7 @@ set(CLIENT_SOURCES
     ${SOURCE_DIR}/client/omaha/snd_stream_async.cpp
     ${SOURCE_DIR}/client/snd_stream_memory.cpp
     ${SOURCE_DIR}/client/usignal.cpp
+    ${SOURCE_DIR}/fgame/bg_voteoptions.cpp
     ${SOURCE_DIR}/sdl/sdl_input.c
     ${SOURCE_DIR}/sdl/sdl_mouse.c
     ${CLIENT_PLATFORM_SOURCES}

@@ -590,21 +590,28 @@ void CG_RefreshHudDrawElements()
 
 void CG_HudDrawElements()
 {
-    int    i;
-    float  fX, fY;
-    float  fWidth, fHeight;
-    vec2_t virtualScale;
+    static cvar_t *cg_hudstyle = cgi.Cvar_Get("cg_hudstyle", "1", CVAR_ARCHIVE);
+    static cvar_t *cg_hud_score = cgi.Cvar_Get("cg_hud_score", "1", CVAR_ARCHIVE);
+    int            i;
+    float          fX, fY;
+    float          fWidth, fHeight;
+    vec2_t         virtualScale;
+    qboolean       jail;
 
     if (!cg_huddraw_force->integer && !cg_hud->integer) {
         return;
     }
+    // Added: Liberation's jail (global/lib_dm.scr's 101-105, its lock 105) the
+    // Competitive HUD's top bar shows (the client's cl_uicomp.cpp): not drawn here
+    jail = cgs.gametype == GT_LIBERATION && cg_hudstyle->integer > 0 && cg_hud_score->integer
+        && !Q_stricmp(cgi.HudDrawElements[105].shaderName, "textures/hud/lock_icon");
 
     virtualScale[0] = cgs.glconfig.vidWidth / 640.0;
     virtualScale[1] = cgs.glconfig.vidHeight / 480.0;
 
     for (i = 0; i < MAX_HUDDRAW_ELEMENTS; i++) {
         if ((!cgi.HudDrawElements[i].hShader && !cgi.HudDrawElements[i].string[0])
-            || !cgi.HudDrawElements[i].vColor[3]) {
+            || !cgi.HudDrawElements[i].vColor[3] || (jail && i >= 101 && i <= 105)) {
             // skip invisible elements
             continue;
         }

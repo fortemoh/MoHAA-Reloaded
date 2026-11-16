@@ -39,6 +39,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #    define VO_Cvar_Set(name, value)        cgi.Cvar_Set(name, value)
 #    define VO_Cvar_Get(name, value, flags) cgi.Cvar_Get(name, value, flags)
 #    define VO_LV_ConvertString(s)          cgi.LV_ConvertString(s)
+#elif defined(APP_MODULE)
+// Added: the client's (the Reloaded Esc menu's vote page, cl_uimain.cpp), the options the server sends read
+#    include "../qcommon/qcommon.h"
+#    define VO_FS_FreeFile                  FS_FreeFile
+#    define VO_FS_ReadFile(a, b)            FS_ReadFile(a, b)
 #else
 #    pragma error("VoteOptions can must be used with fgame or cgame")
 #endif
@@ -345,7 +350,7 @@ bool VoteOptions::GetVoteOptionSub(int index, int listIndex, str *outCommand) co
     }
 
     itemIndex = 1;
-    for (item = option->m_pListItem; itemIndex < listIndex && option != NULL; item = item->m_pNext) {
+    for (item = option->m_pListItem; itemIndex < listIndex && item != NULL; item = item->m_pNext) {
         itemIndex++;
     }
 
@@ -406,7 +411,7 @@ bool VoteOptions::GetVoteOptionSubName(int index, int listIndex, str *outName) c
     }
 
     itemIndex = 1;
-    for (item = option->m_pListItem; itemIndex < listIndex && option != NULL; item = item->m_pNext) {
+    for (item = option->m_pListItem; itemIndex < listIndex && item != NULL; item = item->m_pNext) {
         itemIndex++;
     }
 

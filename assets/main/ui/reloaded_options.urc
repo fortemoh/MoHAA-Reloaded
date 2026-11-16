@@ -1,4 +1,5 @@
-// The Reloaded Options over the game (cl_uimain.cpp), shown over the Esc menu by its OPTIONS: the main menu's page, no photos, the game under it
+// The Reloaded Options over the game (cl_uimain.cpp), shown over the Esc menu by its OPTIONS (or the vote's page, by its
+// VOTE): the main menu's page, no photos, the game under it
 menu "reloaded_options" 640 480 NONE 0
 align left top
 fgcolor 1.00 1.00 1.00 1.00

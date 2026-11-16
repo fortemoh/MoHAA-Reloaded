@@ -3007,6 +3007,11 @@ void UI_ForceMenu(const char *name)
     Menu    *menu  = menuManager.CurrentMenu();
     qboolean bDiff = qfalse;
 
+    // Added: the Reloaded menus told what they are forced as (the cgame's vote menus: their page)
+    if (!UI_Menus_Pushing(name)) {
+        return;
+    }
+
     if (menu) {
         bDiff = strcmp(menu->m_name, name) != 0;
     }

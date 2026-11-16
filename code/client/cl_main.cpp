@@ -4551,6 +4551,9 @@ void CL_SaveShot_f( void ) {
 
 	strcat( expanded, "\n" );
 
+	// Added: the Reloaded load screen of a level (its autosave's) without its CONTINUE
+	UI_Menus_SaveShot();
+
 	// hide menus
 	cls.no_menus = qtrue;
 	UpdateStereoSide( STEREO_CENTER );
