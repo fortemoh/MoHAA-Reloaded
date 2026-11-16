@@ -83,7 +83,8 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_charge_on", "ui_hud_clip", "ui_hud_compass_on", "ui_hud_corners", "ui_hud_count_allies",
     "ui_hud_count_axis", "ui_hud_count_on", "ui_hud_dmg_alpha", "ui_hud_dmg_angle", "ui_hud_follow",
     "ui_hud_follow_col", "ui_hud_follow_on", "ui_hud_health", "ui_hud_health_col", "ui_hud_health_frac",
-    "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col", "ui_hud_hurt_on", "ui_hud_killer", "ui_hud_killer_col",
+    "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col", "ui_hud_hurt_on", "ui_hud_jail_allies", "ui_hud_jail_axis",
+    "ui_hud_jail_on", "ui_hud_killer", "ui_hud_killer_col",
     "ui_hud_killer_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
     "ui_hud_north", "ui_hud_obj0", "ui_hud_obj0_on", "ui_hud_obj1", "ui_hud_obj1_on", "ui_hud_obj2", "ui_hud_obj2_on",
     "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
@@ -1070,6 +1071,22 @@ void UI_CompHud_Frame(void)
                 alive += *c != 'd';
             }
             Comp_SetI(i ? "ui_hud_count_axis" : "ui_hud_count_allies", alive);
+        }
+        // Liberation's jail: how many of each team are locked up or dead, of
+        // how many, in the count tiles' places (the map script's huddraw text,
+        // global/lib_dm.scr's: "jailed(all)", Axis 101, Allies 102, its lock
+        // 105; the cgame doesn't draw them then: CG_HudDrawElements)
+        {
+            const hdelement_t *e = cls.HudDrawElements;
+            int                j[4];
+            const qboolean     jail = gametype == GT_LIBERATION && !Q_stricmp(e[105].shaderName, "textures/hud/lock_icon")
+                               && sscanf(e[102].string, "%d(%d)", &j[0], &j[1]) == 2 && sscanf(e[101].string, "%d(%d)", &j[2], &j[3]) == 2;
+
+            Comp_Set("ui_hud_jail_on", jail ? "1" : "0");
+            if (jail) {
+                Comp_Set("ui_hud_jail_allies", va("%d/%d", j[0], j[1]));
+                Comp_Set("ui_hud_jail_axis", va("%d/%d", j[2], j[3]));
+            }
         }
     }
     }

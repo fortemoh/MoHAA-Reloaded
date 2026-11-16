@@ -54,6 +54,8 @@ qboolean    UI_Menus_DrawObjectives(qboolean shown);
 // (reloaded_loading, a mission's level reloaded_mission; the pictures the
 // stock load screen's, stock); NULL: the stock one
 const char *UI_Menus_Loading(class Menu *stock, const char *map);
+// a saved game's shot is taken of the next frame (saveshot): the mission's load screen without its CONTINUE
+void        UI_Menus_SaveShot(void);
 // a connect begins (CL_Connect, its address resolved): the connect's box
 // asks the server for its name and map, unless the browser's row gave them (cl_uimain.cpp)
 void        UI_Menus_Connect(const char *server, const netadr_t *adr);

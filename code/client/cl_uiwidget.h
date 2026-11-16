@@ -113,6 +113,16 @@ public:
 // Options over the Esc menu clicked off its page, at x y (a ReloadedMenu's, all of them the screen's): the Esc menu's
 // item there chosen, Options closed first (cl_uimenus.cpp); false: none there
 bool        RL_EscClick(int x, int y);
+// the page over the Esc menu (ui/reloaded_options.urc: the main menu's page beside the Esc menu's rail): Options, or
+// VOTE's (Spearhead's and Breakthrough's matches; cl_uimain.cpp)
+enum { RL_OVER_OPTIONS, RL_OVER_VOTE };
+// that page shown (over the Esc menu up, else the Esc menu opened, the page shown over it from its Tick: RL_OverTick);
+// the one shown, -1 none
+void        RL_OverShow(int page);
+void        RL_OverTick(void);
+int         RL_OverPage(void);
+// a part of the server's votes (its command vo0, vo1 or vo2: part 0, 1 or 2; read as the cgame reads them)
+void        RL_VoteRead(int part, const char *text);
 // the main menu shown next on a page (the Esc menu's LOAD, MAIN MENU in a mission, DISCONNECT; F3 and F4; cl_uimain.cpp);
 // KEYS: Options' KEYS tab (in a game the Options over the Esc menu's, the main menu's page kept unless it is up)
 enum { RL_SHOW_PLAY, RL_SHOW_MISSIONS, RL_SHOW_SAVES, RL_SHOW_KEYS };
@@ -128,6 +138,9 @@ void        RL_Rail(UIReloadedMenu *m, const rlView_t& v, const rlRailItem_t *it
                     const std::string *head = NULL);
 // the Esc menu's caption in a mission ("MISSION 2  ·  SCUTTLING THE U-529  ·  MEDIUM")
 std::string RL_MissionLine(const char *map);
+// a Spearhead or Breakthrough level's painting (its load screen's, else its mission's; the missions' crop),
+// registered, the shape its aspect; 0 none (Allied Assault's: the end screen's own)
+qhandle_t   RL_LevelPainting(const char *map, float *aspect);
 // the main menu's slanted button (primary: brass; off: dimmed), kl kr its edges' lean
 void        RL_Button(const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, float kl, float kr, bool hot,
                       bool off = false);

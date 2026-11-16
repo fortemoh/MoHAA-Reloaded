@@ -44,6 +44,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../gamespy/goaceng.h"
 #include "../gamespy/sv_gamespy.h"
 #include "../cgame/cg_viewmodel.h"
+#include "../fgame/bg_voteoptions.h"
 #include "../qcommon/localization.h"
 
 #include <algorithm>
@@ -74,16 +75,17 @@ static const rlColor_t RL_SEL   = {222 / 255.0f, 178 / 255.0f, 80 / 255.0f, 44 /
 #define RL_RAILX  54.0f
 #define RL_LABELX 72.0f
 
-enum { PAGE_PLAY, PAGE_CAMPAIGN, PAGE_HOST, PAGE_OPTIONS };
+enum { PAGE_PLAY, PAGE_CAMPAIGN, PAGE_HOST, PAGE_OPTIONS, PAGE_VOTE }; // (the vote's only over the Esc menu)
 enum { CT_MISSIONS, CT_SAVES }; // Campaign's tabs
 enum { HF_TIME, HF_FRAG, HF_PLAYERS, HF_BOTS, HF_NAME, HF_NUM }; // Host's fields
-// the field typed in: the browser's search, the name, Options' search, a crosshair code, a slider's value, Host's (F_HOST + its)
-enum { F_NONE, F_SEARCH, F_NAME, F_OSEARCH, F_CODE, F_VALUE, F_HOST };
+// the field typed in: the browser's search, the name, Options' search, a crosshair code, a slider's value, a vote's
+// number or text, Host's (F_HOST + its)
+enum { F_NONE, F_SEARCH, F_NAME, F_OSEARCH, F_CODE, F_VALUE, F_VOTE, F_HOST };
 enum { OT_INPUT, OT_KEYS, OT_VIDEO, OT_AUDIO, OT_GAMEPLAY, OT_HUD, OT_NUM }; // Options' tabs
 
-// the browser's gametype tabs (Omaha's) and sortable columns
-enum { TAB_ALL, TAB_FFA, TAB_TDM, TAB_OBJ, TAB_ROUNDS, TAB_OTHER, TAB_NUM };
-static const char *const rl_tabs[TAB_NUM] = {"ALL", "FFA", "TDM", "OBJECTIVE", "ROUNDS", "OTHER"};
+// the browser's gametype tabs (Omaha's; round-based, Tug of War and Liberation under OTHER) and sortable columns
+enum { TAB_ALL, TAB_FFA, TAB_TDM, TAB_OBJ, TAB_OTHER, TAB_NUM };
+static const char *const rl_tabs[TAB_NUM] = {"ALL", "FFA", "TDM", "OBJ", "OTHER"};
 enum { COL_NAME, COL_MAP, COL_PLAYERS, COL_MODE, COL_PING, COL_NUM };
 static const char *const rl_colNames[COL_NUM] = {"SERVER NAME", "MAP", "PLAYERS", "GAMETYPE", "PING"};
 
@@ -123,6 +125,11 @@ enum {
     ID_CLOAD,
     ID_KEYMOVE, // (what the confirmation asks: a key another command has, moved)
     ID_BACK,    // Options over the game: back to the Esc menu
+    ID_VTAB,    // the vote page's (its head's tab, YES, NO, CALL VOTE, the field)
+    ID_VYES,
+    ID_VNO,
+    ID_VCALL,
+    ID_VFIELD,
     ID_ROW  = 1000, // + the row shown
     ID_FAV  = ID_ROW + 1000,
     ID_PICK = ID_FAV + 1000, // + the model
@@ -130,6 +137,8 @@ enum {
     ID_SAVE = ID_MAP + 1000,  // + the saved game shown
     ID_OPT  = ID_SAVE + 1000, // + Options' setting * 16 + its control's part
     ID_KEY  = ID_OPT + 2000,  // + the action * 2 + its box (KEYS)
+    ID_VOPT = ID_KEY + 1000,  // + the vote shown
+    ID_VCHOICE = ID_VOPT + 1000, // + its choice (a list's place, a player's client)
 };
 
 /*
@@ -236,8 +245,6 @@ static int RL_SvTab(GServer s)
         return TAB_FFA;
     case GT_TEAM:
         return TAB_TDM;
-    case GT_TEAM_ROUNDS:
-        return TAB_ROUNDS;
     case GT_OBJECTIVE:
         return TAB_OBJ;
     case -1:
@@ -249,7 +256,7 @@ static int RL_SvTab(GServer s)
 
     std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) { return (char)tolower(c); });
     return mode.find("free-for") != std::string::npos || mode == "ffa" ? TAB_FFA
-         : mode.find("round") != std::string::npos                     ? TAB_ROUNDS
+         : mode.find("round") != std::string::npos                     ? TAB_OTHER
          : mode.find("obj") != std::string::npos                       ? TAB_OBJ
          : mode.find("team") != std::string::npos                      ? TAB_TDM
                                                                        : TAB_OTHER;
@@ -938,6 +945,7 @@ typedef struct {
     std::string name; // its files' (loadgame's)
     std::string comment, map;
     int         time;
+    bool        autosave;
 } rlSave_t;
 
 static struct {
@@ -1006,13 +1014,13 @@ static bool RL_MissionOpen(int k)
     return rl_camp.open[k]->integer != 0;
 }
 
-// a mission's picture, the part shown, RGBA, opaque; NULL none; freed with uii.Rend_FreeRawImage
-static byte *RL_MissionPhoto(int k, int *w, int *h)
+// a picture of textures/mohmenu/ (photo), the part of it a mission's shows (m's crop), RGBA, opaque; NULL none;
+// freed with uii.Rend_FreeRawImage
+static byte *RL_MissionPhoto(const rlMission_t& m, const char *photo, int *w, int *h)
 {
-    const rlMission_t& m = RL_GAME.missions[k];
-    byte              *pic;
+    byte *pic;
 
-    if (!uii.Rend_LoadRawImage(va("textures/mohmenu/%s.tga", m.photo), &pic, w, h)) {
+    if (!uii.Rend_LoadRawImage(va("textures/mohmenu/%s.tga", photo), &pic, w, h)) {
         return NULL;
     }
     {
@@ -1046,7 +1054,7 @@ static void RL_MissionShot(int k)
 {
     const bool grey = !RL_MissionOpen(k);
     int        w, h;
-    byte      *pic = RL_MissionPhoto(k, &w, &h);
+    byte      *pic = RL_MissionPhoto(RL_GAME.missions[k], RL_GAME.missions[k].photo, &w, &h);
 
     for (int i = 0; pic && grey && i < w * h; i++) {
         byte *p = pic + i * 4;
@@ -1054,6 +1062,32 @@ static void RL_MissionShot(int k)
         p[0] = p[1] = p[2] = (byte)((p[0] * 77 + p[1] * 150 + p[2] * 29) >> 8);
     }
     RL_ShotKeep(RL_MissionKey(k), pic, w, h);
+}
+
+qhandle_t RL_LevelPainting(const char *map, float *aspect)
+{
+    const int         k   = RL_MissionOf(map);
+    const std::string key = std::string("level/") + map;
+    qhandle_t         shot;
+
+    if (k < 0 || RL_GAME.first == 0) {
+        return 0;
+    }
+    shot = RL_Shot(key);
+    if (shot < 0) {
+        // (its own painting, else its mission's)
+        const rlMission_t& m = RL_GAME.missions[k];
+        int                w, h;
+        byte              *pic = RL_MissionPhoto(m, va("loadscreens/%s_1", map), &w, &h);
+
+        if (!pic) {
+            pic = RL_MissionPhoto(m, m.photo, &w, &h);
+        }
+        RL_ShotKeep(key, pic, w, h);
+        shot = RL_Shot(key);
+    }
+    *aspect = RL_GAME.missions[k].aspect;
+    return shot;
 }
 
 // a saved game's shot (256 x 256, the screen squeezed); none when too dark
@@ -1105,6 +1139,7 @@ static void RL_CampScan(void)
     std::vector<rlSave_t> old;
     int                   n;
     char                **files = FS_ListFiles(folder, "ssv", qfalse, &n);
+    const std::string     starting = std::string(" - ") + Sys_LV_CL_ConvertString("Starting");
 
     old.swap(rl_camp.saves);
     for (int i = 0; i < n; i++) {
@@ -1126,10 +1161,15 @@ static void RL_CampScan(void)
         }
         COM_StripExtension(files[i], name, sizeof(name));
         save.comment[sizeof(save.comment) - 1] = save.mapName[sizeof(save.mapName) - 1] = 0;
-        s.name    = name;
-        s.comment = save.comment;
-        s.map     = save.mapName;
-        s.time    = save.time;
+        s.name     = name;
+        s.comment  = save.comment;
+        s.map      = save.mapName;
+        s.time     = save.time;
+        // (an autosave's comment is the level's name and "Starting"; a briefing film's level has the map's)
+        s.autosave = s.comment.size() > starting.size() && !s.comment.compare(s.comment.size() - starting.size(), starting.size(), starting);
+        if (s.autosave && !Q_stricmpn(save.mapName, RL_GAME.briefing, strlen(RL_GAME.briefing)) && RL_MissionOf(save.mapName) >= 0) {
+            s.comment = std::string(RL_GAME.missions[RL_MissionOf(save.mapName)].name) + " - Briefing";
+        }
         rl_camp.saves.push_back(s);
     }
     FS_FreeFileList(files);
@@ -1444,21 +1484,27 @@ static void RL_Label(const rlView_t& v, float x, float y, const char *label)
 
 // a list's row (Host's maps, the saved games) across a panel's left part w
 // wide: picked brass-marked (else hot), a 16:9 photo, the title over its caption
-static void RL_ListRow(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, qhandle_t shot, float aspect,
-                       const char *title, const char *caption, bool sel, int id)
+// a list's row's mark: picked brass-marked, else hot (and its hit)
+static void RL_RowMark(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, bool sel, int id)
 {
-    const float th = h - 16, tw = floorf(th * 16 / 9 + 0.5f), tx = x + RL_PAD + tw + 16, room = x + w - RL_PAD - tx;
-
     if (sel) {
         RL_Box(v, x + 2, y, w - 3, h, RL_SEL);
         RL_Box(v, x + 2, y, 3, h, RL_BRASS);
     } else if (m->Hot(id)) {
         RL_Box(v, x + 2, y, w - 3, h, RL_Rgb(255, 255, 255, 14));
     }
+    m->Hit(v, x + 2, y, w - 3, h, id);
+}
+
+static void RL_ListRow(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, qhandle_t shot, float aspect,
+                       const char *title, const char *caption, bool sel, int id)
+{
+    const float th = h - 16, tw = floorf(th * 16 / 9 + 0.5f), tx = x + RL_PAD + tw + 16, room = x + w - RL_PAD - tx;
+
+    RL_RowMark(m, v, x, y, w, h, sel, id);
     RL_Photo(v, shot, x + RL_PAD, y + 8, tw, th, aspect);
     RL_Text(v, tx, y + h / 2 - 11, RL_Ellipsize(v, title, 19, sel, room).c_str(), 19, RL_TEXT, sel, RL_LEFT, 0, RL_MID);
     RL_Text(v, tx, y + h / 2 + 15, caption, 14, RL_MUTED, false, RL_LEFT, 0.6f, RL_MID, room);
-    m->Hit(v, x + 2, y, w - 3, h, id);
 }
 
 // the scroll bar of a list over y h, its right edge at x: shown of total, from at
@@ -1530,8 +1576,10 @@ static void RL_BgMake(int slot, int photo)
     rl_bg.made[slot]   = photo;
     rl_bg.shader[slot] = 0;
     if (photo >= RL_BGPHOTOS) {
-        pic    = RL_MissionPhoto(photo - RL_BGPHOTOS, &pw, &ph);
-        aspect = RL_GAME.missions[photo - RL_BGPHOTOS].aspect;
+        const rlMission_t& m = RL_GAME.missions[photo - RL_BGPHOTOS];
+
+        pic    = RL_MissionPhoto(m, m.photo, &pw, &ph);
+        aspect = m.aspect;
     } else if (photo >= 0 && !uii.Rend_LoadRawImage(va("textures/mohmenu/%s.tga", rl_photos[photo]), &pic, &pw, &ph)) {
         pic = NULL;
     }
@@ -1680,15 +1728,18 @@ void RL_Rail(UIReloadedMenu *m, const rlView_t& v, const rlRailItem_t *items, in
         RL_Text(v, RL_LABELX, y + 44, head[1].c_str(), 15, RL_MUTED, false, RL_LEFT, 2.4f, RL_MID, room);
         RL_Text(v, RL_LABELX, y + 72, head[2].c_str(), 15, RL_MUTED, false, RL_LEFT, 2.4f, RL_MID, room);
     }
+    // (78 apart, 64 high; closer where the foot leaves them too little room: the Esc menu's six at 900 lines)
+    const float limit = qy - (nf - 1) * 52 - 32, step = 380 + (n - 1) * 78.0f + 64 <= limit ? 78.0f : (limit - 366) / n, ih = step - 14;
+
     for (int i = 0; i < n; i++) {
-        const float y = 380 + i * 78;
+        const float y = 380 + i * step;
         const bool  lit = items[i].id == on, hot = m->Hot(items[i].id);
 
         if (lit || hot) {
-            RL_Skew(v, RL_RAILX, y, 300, 64, 0, 14, lit ? RL_BRASS : RL_Rgb(255, 255, 255, 18));
+            RL_Skew(v, RL_RAILX, y, 300, ih, 0, 14, lit ? RL_BRASS : RL_Rgb(255, 255, 255, 18));
         }
-        RL_Text(v, RL_LABELX, y + 32, items[i].label, 28, lit ? RL_INK : hot ? RL_TEXT : RL_SOFT, true, RL_LEFT, 3, RL_MID);
-        m->Hit(v, RL_RAILX, y, 300, 64, items[i].id);
+        RL_Text(v, RL_LABELX, y + ih / 2, items[i].label, 28, lit ? RL_INK : hot ? RL_TEXT : RL_SOFT, true, RL_LEFT, 3, RL_MID);
+        m->Hit(v, RL_RAILX, y, 300, ih, items[i].id);
     }
     for (int i = 0; i < nf; i++) {
         // (the last at the foot, muted; those over it red)
@@ -2116,13 +2167,11 @@ static void RL_CampSaves(UIReloadedMenu *m, const rlView_t& v, float x, float y,
     } else if (n > rl_camp.fit) {
         RL_ScrollBar(v, x + lw, ly, foot - ly, rl_camp.top, rl_camp.fit, n);
     }
-    // the one picked: its mission, its kind (an autosave's comment is the level's name and "Starting"), when
+    // the one picked: its mission, its kind, when
     if (s) {
-        const std::string autosave = std::string(" - ") + Sys_LV_CL_ConvertString("Starting");
-        const bool        isAuto   = s->comment.size() > autosave.size() && !s->comment.compare(s->comment.size() - autosave.size(), autosave.size(), autosave);
         const std::string rows[3][2] = {
             {"MISSION", RL_SaveMission(*s)},
-            {"KIND", s->name == "quick" ? "Quick save" : isAuto ? "Autosave" : "Saved by you"},
+            {"KIND", s->name == "quick" ? "Quick save" : s->autosave ? "Autosave" : "Saved by you"},
             {"SAVED", RL_When(s->time, true)},
         };
         float           aspect, fy = py + ph + RL_PAD + 14;
@@ -3428,6 +3477,351 @@ static void RL_OptChoose(int id)
     }
 }
 
+/*
+================
+VOTE: Spearhead's and Breakthrough's votes (their stock Esc menu's CALL
+VOTE and VOTE, the cgame's vote menus), the page over the Esc menu
+Options' is. The vote running, if one is: what for, its time left, how it
+stands, YES and NO (as F1 and F2) until the player has voted. The
+server's votes down the left (its callvote.cfg, sent when asked: gvo),
+the one picked's choices on the right (a list's, the players for a
+player's, a field for a number or a text); CALL VOTE (or a choice
+clicked twice) calls it as the cgame's menus do, back in the game. The
+stock vote menus' pushes show it (cl_uimenus.cpp)
+================
+*/
+
+typedef struct {
+    std::string              name;
+    voteoptiontype_t         type;
+    std::vector<std::string> choices; // a list's
+} rlVote_t;
+
+static struct {
+    std::vector<rlVote_t> votes;   // the server's
+    std::string           text;    // as its parts come
+    bool                  got;     // for the level (cl.serverId) of
+    int                   level;
+    int                   askedAt;
+    int                   pick;    // the vote picked, -1 none
+    int                   choice;  // its choice: a list's place, a player's client; -1 none
+    std::string           entry;   // a number's, a text's
+    int                   top, ctop, fit, cfit; // the lists' first shown, how many show
+    int                   split;   // the columns' edge (pixels in the menu)
+    int                   clickAt;
+} rl_vote = {{}, "", false, 0, 0, -1, -1, "", 0, 0, 1, 1, 0, 0};
+
+static int  rl_over;        // the page over the Esc menu (RL_OVER_*)
+static bool rl_overPending; // asked for before the Esc menu was up: shown once it is (RL_OverTick)
+
+void RL_VoteRead(int part, const char *text)
+{
+    if (!part) {
+        rl_vote.text.clear();
+    }
+    if (rl_vote.text.size() >= MAX_VOTEOPTIONS_BUFFER_LENGTH) {
+        return;
+    }
+    rl_vote.text += text;
+    if (part < 2) {
+        return;
+    }
+    rl_vote.text += "\n";
+    // (none: asked too soon, asked again in a while)
+    if (rl_vote.text != "\n") {
+        VoteOptions      options;
+        str              name, command;
+        voteoptiontype_t type;
+
+        std::replace(rl_vote.text.begin(), rl_vote.text.end(), '\x01', '"');
+        options.SetupVoteOptions("ServerVoteOptions", rl_vote.text.length(), rl_vote.text.c_str());
+        rl_vote.votes.clear();
+        for (int i = 1; options.GetVoteOptionMainName(i, &name) && options.GetVoteOptionsMain(i, &command, &type); i++) {
+            rlVote_t vote = {name.c_str(), type, {}};
+
+            for (int k = 1; type == VOTE_OPTION_LIST && options.GetVoteOptionSubName(i, k, &name); k++) {
+                vote.choices.push_back(name.c_str());
+            }
+            rl_vote.votes.push_back(vote);
+        }
+        rl_vote.got    = true;
+        rl_vote.level  = cl.serverId;
+        rl_vote.pick   = rl_vote.choice = -1;
+        rl_vote.top    = rl_vote.ctop = 0;
+        RL_Changed();
+    }
+    rl_vote.text.clear();
+}
+
+// the players a player's vote offers (the cgame's list: in client order, not the player himself for clientnotself)
+static std::vector<std::pair<int, std::string>> RL_VotePlayers(voteoptiontype_t type)
+{
+    std::vector<std::pair<int, std::string>> out;
+    const int                                self = cl.snap.valid ? cl.snap.ps.clientNum : clc.clientNum;
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        const char *name = Info_ValueForKey(CL_ConfigString(CS_PLAYERS + i), "name");
+
+        if (name[0] && (type != VOTE_OPTION_CLIENT_NOT_SELF || i != self)) {
+            out.emplace_back(i, name);
+        }
+    }
+    return out;
+}
+
+// the vote picked, NULL none (none while one runs or voting is off)
+static const rlVote_t *RL_VotePicked(void)
+{
+    if (!rl_vote.got || rl_vote.level != cl.serverId || rl_vote.pick < 0 || rl_vote.pick >= (int)rl_vote.votes.size()
+        || atoi(CL_ConfigString(CS_VOTE_TIME)) || !Cvar_VariableIntegerValue("cg_allowvote")) {
+        return NULL;
+    }
+    return &rl_vote.votes[rl_vote.pick];
+}
+
+// the vote picked can be called (its choice picked or typed)
+static bool RL_VoteReady(void)
+{
+    const rlVote_t *vote = RL_VotePicked();
+
+    if (!vote) {
+        return false;
+    }
+    switch (vote->type) {
+    case VOTE_NO_CHOICES:
+        return true;
+    case VOTE_OPTION_LIST:
+        return rl_vote.choice >= 0 && rl_vote.choice < (int)vote->choices.size();
+    case VOTE_OPTION_CLIENT:
+    case VOTE_OPTION_CLIENT_NOT_SELF:
+        return rl_vote.choice >= 0 && rl_vote.choice < MAX_CLIENTS && *Info_ValueForKey(CL_ConfigString(CS_PLAYERS + rl_vote.choice), "name");
+    default:
+        return !rl_vote.entry.empty() && rl_vote.entry != "-" && rl_vote.entry != ".";
+    }
+}
+
+// the vote picked called (the server says what came of it), back in the game
+static void RL_VoteCall(void)
+{
+    const rlVote_t *vote = RL_VotePicked();
+    const int       n    = rl_vote.pick + 1;
+
+    if (!RL_VoteReady()) {
+        return;
+    }
+    Cbuf_AddText("popmenu 0\npopmenu 0\n");
+    Cbuf_AddText(vote->type == VOTE_NO_CHOICES                                  ? va("callvote %d\n", n)
+                 : vote->type == VOTE_OPTION_LIST || vote->type >= VOTE_OPTION_CLIENT ? va("callvote %d %d\n", n, rl_vote.choice + (vote->type == VOTE_OPTION_LIST))
+                                                                                    : va("callvote %d \"%s\"\n", n, rl_vote.entry.c_str()));
+}
+
+// the vote page's state drawn (the vote running: its time's seconds, how it stands, voted)
+static int RL_VoteKey(void)
+{
+    const int at = atoi(CL_ConfigString(CS_VOTE_TIME));
+
+    return at ? (cl.serverTime - at) / 1000 * 2 + cl.snap.ps.voted : -1;
+}
+
+static void RL_VoteChoose(int id)
+{
+    RL_Changed();
+    rl_mm.edit = id == ID_VFIELD && RL_VotePicked() ? F_VOTE : F_NONE;
+    if (id == ID_BACK) {
+        Cbuf_AddText("popmenu 0\n");
+    } else if (id == ID_VYES || id == ID_VNO) {
+        Cbuf_AddText(id == ID_VYES ? "popmenu 0\npopmenu 0\nvote y\n" : "popmenu 0\npopmenu 0\nvote n\n");
+    } else if (id == ID_VCALL) {
+        RL_VoteCall();
+    } else if (id >= ID_VCHOICE) {
+        // a choice picked; clicked again (a double click), called
+        const bool again = rl_vote.choice == id - ID_VCHOICE && cls.realtime - rl_vote.clickAt < 400;
+
+        rl_vote.choice  = id - ID_VCHOICE;
+        rl_vote.clickAt = cls.realtime;
+        if (again) {
+            RL_VoteCall();
+        }
+    } else if (id >= ID_VOPT && id - ID_VOPT != rl_vote.pick) {
+        // another vote: its choices from the top, a number's or a text's field typed in
+        rl_vote.pick   = id - ID_VOPT;
+        rl_vote.choice = -1;
+        rl_vote.ctop   = 0;
+        rl_vote.entry.clear();
+        if (RL_VotePicked() && RL_VotePicked()->type >= VOTE_OPTION_TEXT && RL_VotePicked()->type <= VOTE_OPTION_FLOAT) {
+            rl_mm.edit = F_VOTE;
+        }
+    }
+}
+
+// a row of the vote page's lists: its text, a caption on its right (NULL none); off: faint, not hit
+static void RL_VoteRow(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, const char *text, const char *caption,
+                       bool sel, bool off, int id)
+{
+    const float cw = caption ? RL_TextW(v, caption, 13, true, 1.6f) + 16 : 0.0f;
+
+    if (!off) {
+        RL_RowMark(m, v, x, y, w, h, sel, id);
+    }
+    RL_Text(v, x + RL_PAD + 8, y + h / 2, text, 18, off ? RL_FAINT : sel ? RL_TEXT : RL_SOFT, sel, RL_LEFT, 0, RL_MID, w - 2 * RL_PAD - 8 - cw);
+    if (caption) {
+        RL_Text(v, x + w - RL_PAD, y + h / 2, caption, 13, RL_MUTED, true, RL_RIGHT, 1.6f, RL_MID);
+    }
+}
+
+static void RL_Vote(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h)
+{
+    static const char *const tab = "VOTE";
+    const int                at  = atoi(CL_ConfigString(CS_VOTE_TIME));
+    const bool               on  = Cvar_VariableIntegerValue("cg_allowvote") != 0;
+    const bool               got = rl_vote.got && rl_vote.level == cl.serverId;
+    const rlVote_t          *pick = RL_VotePicked();
+    const float              foot = y + h - RL_FOOT, lw = floorf(w * 0.40f + 0.5f), rh = 44;
+    float                    top = y + 48;
+    const char              *say = "";
+
+    if (m->m_back) {
+        RL_Panel(v, x, y, w, h, RL_PANEL);
+        return;
+    }
+    RL_Head(v, x, y, w, 48);
+    RL_Tabs(m, v, x + 4, y, &tab, 1, 0, ID_VTAB, 17, 22);
+    // the vote running: what for, its time left, how it stands; YES and NO until voted
+    if (at) {
+        const float cx = x + RL_PAD, cy = top + RL_PAD, cw = w - 2 * RL_PAD, ch = 132, bx = cx + cw - 24 - 150;
+        const int   left = Q_max(0, (30000 - (cl.serverTime - at)) / 1000 + 1);
+        const float lx   = RL_Text(v, cx + 24, cy + 30, "VOTE IN PROGRESS", 14, RL_BRASS, true, RL_LEFT, 1.6f, RL_MID);
+
+        RL_Box(v, cx, cy, cw, ch, RL_SEL);
+        RL_Box(v, cx, cy, 3, ch, RL_BRASS);
+        RL_Text(v, cx + 24 + lx + 16, cy + 30, va("%d S LEFT", left), 14, RL_MUTED, true, RL_LEFT, 1.6f, RL_MID);
+        RL_Text(v, cx + 24, cy + 68, CL_ConfigString(CS_VOTE_STRING), 26, RL_TEXT, true, RL_LEFT, 0, RL_MID, cw - 24 - 360);
+        RL_Text(v, cx + 24, cy + 104,
+                va("YES  %s      NO  %s      UNDECIDED  %s", CL_ConfigString(CS_VOTE_YES), CL_ConfigString(CS_VOTE_NO), CL_ConfigString(CS_VOTE_UNDECIDED)),
+                15, RL_SOFT, true, RL_LEFT, 1.6f, RL_MID);
+        if (cl.snap.ps.voted) {
+            RL_Text(v, cx + cw - 24, cy + ch / 2, "YOUR VOTE IS IN", 15, RL_BRASS, true, RL_RIGHT, 2, RL_MID);
+        } else {
+            RL_Button(v, bx - 8 - 150, cy + (ch - RL_CTRL) / 2, 150, RL_CTRL, "NO", false, 0, 12, m->Hot(ID_VNO));
+            m->Hit(v, bx - 8 - 150, cy + (ch - RL_CTRL) / 2, 150, RL_CTRL, ID_VNO);
+            RL_Button(v, bx, cy + (ch - RL_CTRL) / 2, 150, RL_CTRL, "YES", true, 12, 0, m->Hot(ID_VYES));
+            m->Hit(v, bx, cy + (ch - RL_CTRL) / 2, 150, RL_CTRL, ID_VYES);
+        }
+        top = cy + ch + RL_PAD;
+        RL_Box(v, x, top, w, 1, RL_LINE);
+        say = "ONE VOTE AT A TIME";
+    }
+    if (!on || !got) {
+        RL_Text(v, x + RL_PAD + 8, top + 40, !on ? "Voting is off on this server." : "Asking the server for its votes\x85", 17, RL_MUTED, false, RL_LEFT, 0,
+                RL_MID);
+    } else {
+        // the server's votes on the left, the one picked's choices on the right
+        const float ly = top + 56, rx = x + lw;
+        const int   n  = (int)rl_vote.votes.size();
+
+        RL_Box(v, rx, top + 1, 1, foot - top - 1, RL_LINE);
+        RL_Label(v, x + RL_PAD + 8, top + 28, "THE SERVER'S VOTES");
+        rl_vote.fit   = Q_max(1, (int)((foot - ly) / rh));
+        rl_vote.top   = Q_max(0, Q_min(rl_vote.top, n - rl_vote.fit));
+        rl_vote.split = RL_P(v, rx);
+        for (int i = 0; i < rl_vote.fit && rl_vote.top + i < n; i++) {
+            const rlVote_t& o = rl_vote.votes[rl_vote.top + i];
+            // (what is picked for it, but a list's: its choices)
+            const char     *caption = o.type >= VOTE_OPTION_CLIENT ? "A PLAYER"
+                                    : o.type == VOTE_OPTION_TEXT   ? "A TEXT"
+                                    : o.type == VOTE_OPTION_INTEGER || o.type == VOTE_OPTION_FLOAT ? "A NUMBER"
+                                                                                                    : NULL;
+
+            RL_VoteRow(m, v, x, ly + i * rh, lw, rh, o.name.c_str(), caption, rl_vote.pick == rl_vote.top + i && !at, at != 0, ID_VOPT + rl_vote.top + i);
+        }
+        if (n > rl_vote.fit) {
+            RL_ScrollBar(v, rx, ly, foot - ly, rl_vote.top, rl_vote.fit, n);
+        }
+        if (pick) {
+            const float rw = w - lw;
+            const bool  typed = pick->type >= VOTE_OPTION_TEXT && pick->type <= VOTE_OPTION_FLOAT;
+
+            RL_Label(v, rx + RL_PAD + 8, top + 28, RL_Upper(pick->name.c_str()).c_str());
+            if (pick->type == VOTE_NO_CHOICES) {
+                RL_Text(v, rx + RL_PAD + 8, ly + rh / 2, "Nothing to choose: CALL VOTE calls it.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+            } else if (typed) {
+                const float fw = Q_min(360.0f, rw - 2 * RL_PAD - 16);
+
+                RL_Field(v, rx + RL_PAD + 8, ly + 2, fw, 40, 0, 12, rl_vote.entry, pick->type == VOTE_OPTION_TEXT ? "Type it\x85" : "Type a number\x85",
+                         rl_mm.edit == F_VOTE, m->Hot(ID_VFIELD));
+                m->Hit(v, rx + RL_PAD + 8, ly + 2, fw, 40, ID_VFIELD);
+            } else {
+                // a list's choices, or the players
+                const auto players = pick->type == VOTE_OPTION_LIST ? std::vector<std::pair<int, std::string>>() : RL_VotePlayers(pick->type);
+                const int  cn      = pick->type == VOTE_OPTION_LIST ? (int)pick->choices.size() : (int)players.size();
+
+                rl_vote.cfit = Q_max(1, (int)((foot - ly) / rh));
+                rl_vote.ctop = Q_max(0, Q_min(rl_vote.ctop, cn - rl_vote.cfit));
+                for (int i = 0; i < rl_vote.cfit && rl_vote.ctop + i < cn; i++) {
+                    const int k = rl_vote.ctop + i, c = pick->type == VOTE_OPTION_LIST ? k : players[k].first;
+
+                    RL_VoteRow(m, v, rx - 1, ly + i * rh, rw + 1, rh, pick->type == VOTE_OPTION_LIST ? pick->choices[k].c_str() : players[k].second.c_str(),
+                               NULL, rl_vote.choice == c, false, ID_VCHOICE + c);
+                }
+                if (!cn) {
+                    RL_Text(v, rx + RL_PAD + 8, ly + rh / 2, "No one to choose.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+                } else if (cn > rl_vote.cfit) {
+                    RL_ScrollBar(v, x + w, ly, foot - ly, rl_vote.ctop, rl_vote.cfit, cn);
+                }
+            }
+        } else if (!at) {
+            RL_Text(v, rx + RL_PAD + 8, ly + rh / 2, "Pick a vote on the left.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+        }
+    }
+    // the foot row: BACK, CALL VOTE
+    {
+        const float by    = RL_FootRow(v, x, foot, w);
+        const bool  ready = RL_VoteReady();
+
+        RL_Button(v, x + RL_PAD, by, 150, RL_CTRL, "BACK", false, 0, 12, m->Hot(ID_BACK));
+        m->Hit(v, x + RL_PAD, by, 150, RL_CTRL, ID_BACK);
+        RL_Text(v, x + w / 2, foot + RL_FOOT / 2, say, 15, RL_BRASS, true, RL_CENTER, 2, RL_MID, w - 2 * (RL_PAD + 190 + 16));
+        RL_Button(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "CALL VOTE", true, 12, 0, m->Hot(ID_VCALL) && ready, !ready);
+        m->Hit(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, ID_VCALL);
+    }
+}
+
+void RL_OverShow(int page)
+{
+    Menu *const over = menuManager.FindMenu("reloaded_options");
+
+    if (!over || (over->isVisible() && rl_over == page)) {
+        return;
+    }
+    rl_over    = page;
+    rl_mm.edit = F_NONE;
+    RL_Changed();
+    if (over->isVisible()) {
+        return;
+    }
+    // (over the Esc menu; else that opened first, the page once the push's lock is gone)
+    if (menuManager.CurrentMenu() == menuManager.FindMenu("dm_main")) {
+        menuManager.ShowMenu("reloaded_options");
+    } else {
+        UI_PushMenu("dm_main");
+        rl_overPending = menuManager.CurrentMenu() == menuManager.FindMenu("dm_main");
+    }
+}
+
+void RL_OverTick(void)
+{
+    if (rl_overPending && menuManager.ShowMenu("reloaded_options")) {
+        rl_overPending = false;
+    }
+}
+
+int RL_OverPage(void)
+{
+    Menu *const over = menuManager.FindMenu("reloaded_options");
+
+    return over && over->isVisible() ? rl_over : -1;
+}
+
 void RL_MainShow(int what)
 {
     if (what != RL_SHOW_KEYS) {
@@ -3505,9 +3899,10 @@ void UIReloadedMenu::DrawMain(const rlView_t& v)
 
 /*
 ================
-DrawOptions: Options over the game (the Esc menu's OPTIONS, shown over it):
-the page beside the Esc menu's rail where the main menu shows it; the game
-running under them, blurred and dimmed by the Esc menu
+DrawOptions: Options over the game (the Esc menu's OPTIONS, shown over it),
+or the vote's page (its VOTE): the page beside the Esc menu's rail where
+the main menu shows it; the game running under them, blurred and dimmed by
+the Esc menu
 ================
 */
 void UIReloadedMenu::DrawOptions(const rlView_t& v)
@@ -3515,7 +3910,7 @@ void UIReloadedMenu::DrawOptions(const rlView_t& v)
     float x, w;
 
     RL_PageX(v, &x, &w);
-    RL_Options(this, v, x, RL_EDGE, w, v.dh - 2 * RL_EDGE);
+    (rl_over == RL_OVER_VOTE ? RL_Vote : RL_Options)(this, v, x, RL_EDGE, w, v.dh - 2 * RL_EDGE);
 }
 
 /*
@@ -3771,6 +4166,8 @@ static std::string *RL_Edited(void)
         return &rl_opt.code;
     case F_VALUE:
         return &rl_opt.value;
+    case F_VOTE:
+        return &rl_vote.entry;
     }
     return &rl_host.field[rl_mm.edit - F_HOST];
 }
@@ -3807,6 +4204,10 @@ void UIReloadedMenu::ChooseMain(int id)
     }
     // Options over the Esc menu: a click off its page the Esc menu's
     if (m_screen == SCR_OPTIONS && id < 0 && RL_EscClick(uid.mouseX - (int)m_screenframe.pos.x, uid.mouseY - (int)m_screenframe.pos.y)) {
+        return;
+    }
+    if (m_screen == SCR_OPTIONS && rl_over == RL_OVER_VOTE) {
+        RL_VoteChoose(id);
         return;
     }
     if (m_screen == SCR_CONNECT) {
@@ -4081,7 +4482,7 @@ static qboolean RL_CampKey(int key)
 qboolean UIReloadedMenu::MainKey(int key)
 {
     const int step = key == K_MWHEELUP ? -3 : key == K_MWHEELDOWN ? 3 : 0;
-    const int page = m_screen == SCR_OPTIONS ? PAGE_OPTIONS : rl_mm.page;
+    const int page = m_screen != SCR_OPTIONS ? rl_mm.page : rl_over == RL_OVER_VOTE ? PAGE_VOTE : PAGE_OPTIONS;
 
     if (m_screen == SCR_CONFIRM || m_screen == SCR_CONNECT) {
         if (m_screen == SCR_CONNECT && key == K_BACKSPACE && !rl_cn.typed.empty()) {
@@ -4105,6 +4506,9 @@ qboolean UIReloadedMenu::MainKey(int key)
         // the wheel: the model list open, else the page's list
         if (page == PAGE_OPTIONS) {
             RL_OptScroll(step > 0);
+        } else if (page == PAGE_VOTE) {
+            // (the list under the mouse)
+            (uid.mouseX - (int)m_screenframe.pos.x >= rl_vote.split ? rl_vote.ctop : rl_vote.top) += step;
         } else if (rl_mm.pick >= 0) {
             rl_mm.pickTop += step;
         } else if (page == PAGE_HOST) {
@@ -4140,6 +4544,8 @@ qboolean UIReloadedMenu::MainKey(int key)
                 RL_OptTyped();
             } else if (rl_mm.edit == F_CODE) {
                 RL_OptImport();
+            } else if (rl_mm.edit == F_VOTE) {
+                RL_VoteCall();
             } else {
                 rl_mm.edit = F_NONE;
             }
@@ -4149,6 +4555,10 @@ qboolean UIReloadedMenu::MainKey(int key)
     }
     if (page == PAGE_CAMPAIGN) {
         return RL_CampKey(key);
+    }
+    if (page == PAGE_VOTE && (key == K_ENTER || key == K_KP_ENTER)) {
+        RL_VoteCall();
+        return qtrue;
     }
     if (page != PAGE_PLAY) {
         return qfalse;
@@ -4201,18 +4611,22 @@ void UIReloadedMenu::MainChar(int ch)
     std::string *text = RL_Edited();
     // (the printable ones; the player's name as long as the game keeps it, a
     // server's as the stock host menu's, Host's numbers three digits, a
-    // slider's value a number, a crosshair code CS2's letters and digits)
-    const bool number = rl_mm.edit >= F_HOST && rl_mm.edit != F_HOST + HF_NAME;
-    const int  most   = rl_mm.edit == F_NAME             ? MAX_NAME_LENGTH - 1
-                      : rl_mm.edit == F_HOST + HF_NAME   ? 31
-                      : number                           ? 3
-                      : rl_mm.edit == F_VALUE            ? 6
-                      : rl_mm.edit == F_CODE             ? 46
-                                                         : 40;
+    // slider's value a number, a crosshair code CS2's letters and digits, a
+    // vote's number a number, its text what a callvote's quotes hold)
+    const bool      number = rl_mm.edit >= F_HOST && rl_mm.edit != F_HOST + HF_NAME;
+    const rlVote_t *vote   = rl_mm.edit == F_VOTE ? RL_VotePicked() : NULL;
+    const int       most   = rl_mm.edit == F_NAME             ? MAX_NAME_LENGTH - 1
+                           : rl_mm.edit == F_HOST + HF_NAME   ? 31
+                           : number                           ? 3
+                           : rl_mm.edit == F_VALUE            ? 6
+                           : rl_mm.edit == F_CODE             ? 46
+                           : vote                             ? 24
+                                                              : 40;
 
     if (!text || ch < ' ' || ch > '~' || (int)text->size() >= most || (number && !isdigit(ch))
         || (rl_mm.edit == F_HOST + HF_NAME && !RL_NameChar(ch)) || (rl_mm.edit == F_VALUE && !isdigit(ch) && ch != '.' && ch != '-')
-        || (rl_mm.edit == F_CODE && !isalnum(ch))) {
+        || (rl_mm.edit == F_CODE && !isalnum(ch)) || (rl_mm.edit == F_VOTE && (!vote || ch == '"' || ch == ';' || ch == '\\'))
+        || (vote && vote->type != VOTE_OPTION_TEXT && !isdigit(ch) && ch != '-' && (ch != '.' || vote->type == VOTE_OPTION_INTEGER))) {
         return;
     }
     *text += (char)ch;
@@ -4240,7 +4654,7 @@ slider dragged; opened, nothing typed in or waiting for a key
 */
 void UIReloadedMenu::MainTick(bool opened)
 {
-    const int page = m_screen == SCR_OPTIONS ? PAGE_OPTIONS : rl_mm.page;
+    const int page = m_screen != SCR_OPTIONS ? rl_mm.page : rl_over == RL_OVER_VOTE ? PAGE_VOTE : PAGE_OPTIONS;
 
     if (m_screen == SCR_CONNECT) {
         // the connect's box: the backdrop, its map's photo made
@@ -4320,6 +4734,12 @@ void UIReloadedMenu::MainTick(bool opened)
             }
         }
     }
+    if (page == PAGE_VOTE && !(rl_vote.got && rl_vote.level == cl.serverId) && clc.state == CA_ACTIVE && !clc.demoplaying
+        && (!rl_vote.askedAt || (unsigned)(cls.realtime - rl_vote.askedAt) >= 3000)) {
+        // the server's votes asked for (again a while on: a server asked too soon sends none)
+        rl_vote.askedAt = cls.realtime;
+        CL_AddReliableCommand("gvo", qfalse);
+    }
     if (m_screen == SCR_OPTIONS) {
         return;
     }
@@ -4384,7 +4804,7 @@ int UIReloadedMenu::MainDrawKey(void)
         return (RL_BgFade() * 2 + rl_bg.cur) * 4099 + rl_bg.shader[0] * 31 + rl_bg.shader[1] * 7 + rl_mm.page
              + (rl_mm.page == PAGE_OPTIONS ? rl_mm.serial * 131 : 0);
     }
-    // (the caret's blink while typed in; in a game, DISCONNECT; the bindings, KEYS')
+    // (the caret's blink while typed in; in a game, DISCONNECT; the bindings, KEYS'; the vote running's)
     return rl_mm.serial * 31 + rl_sv.serial * 7 + (rl_mm.edit != F_NONE ? (cls.realtime / 530) % 2 : 0) * 3 + (clc.state > CA_PRIMED)
-         + key_serial * 131;
+         + key_serial * 131 + (m_screen == SCR_OPTIONS && rl_over == RL_OVER_VOTE ? RL_VoteKey() * 257 : 0);
 }

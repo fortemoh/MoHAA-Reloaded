@@ -30,8 +30,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // SelectFFAModel, SelectPrimaryWeapon[_<nation>], dm_main, DM_Scoreboard,
 // DM_Round_Scoreboard, Obj_Scoreboard, Tow_Scoreboard, Lib_Scoreboard,
 // main, connecting and its errors, StatsScreen_Success|Failed,
-// mission_success|failed_N: UI_Menus_Alias; F3's Controls and F4's LoadSave
-// their pages: RL_FKey), so nothing on the server or in the cgame changes;
+// mission_success|failed_N, the vote menus: UI_Menus_Alias; F3's Controls and
+// F4's LoadSave their pages: RL_FKey), so nothing on the server or in the cgame changes;
 // ui_classicmenus 1 shows the stock ones (and the stock cursor: the Reloaded
 // one is RL_Cursor's).
 //
@@ -211,6 +211,11 @@ void UI_Menus_ServerCommand(void)
     // (the server drops the player: its reason for the connect's box)
     if (!strcmp(Cmd_Argv(0), "disconnect")) {
         RL_ConnectDropped(Cmd_Argv(1));
+        return;
+    }
+    // (its votes, in parts: the Esc menu's VOTE page's)
+    if (!strncmp(Cmd_Argv(0), "vo", 2) && Cmd_Argv(0)[2] >= '0' && Cmd_Argv(0)[2] <= '2' && !Cmd_Argv(0)[3]) {
+        RL_VoteRead(Cmd_Argv(0)[2] - '0', Cmd_Argv(1));
         return;
     }
     if (strcmp(Cmd_Argv(0), "scores")) {
@@ -1104,13 +1109,20 @@ static const struct {
     {"mission_failed_3",            "reloaded_end"       },
 };
 
+// Spearhead's and Breakthrough's vote menus (the cgame's: votemain, votecast, votesub*): the Esc menu's VOTE page
+// (the page over it), shown in their place (UI_Menus_Pushing)
+#define RL_VOTEMENUS "reloaded_options"
+
 const char *UI_Menus_Alias(const char *name)
 {
     if (!ui_classicmenus || ui_classicmenus->integer || !name) {
         return NULL;
     }
-    // (every menu lookup asks, the HUD's 13 each frame: the stock names start with s, o, d, t, l, m, c, e, b or w)
+    // (every menu lookup asks, the HUD's 13 each frame: the stock names start with s, o, d, t, l, m, c, e, b, w or v)
     switch (name[0]) {
+    case 'V':
+    case 'v':
+        return Q_stricmpn(name, "vote", 4) ? NULL : RL_VOTEMENUS;
     case 'S':
     case 's':
     case 'O':
@@ -1168,10 +1180,7 @@ qboolean UI_Menus_Covering(void)
 void UI_GetPlayerModel_f(void);
 
 // F3 and F4 (default.cfg's "pushmenu Controls" and "pushmenu_sp LoadSave", the stock menus): Options' KEYS (in a game
-// over the Esc menu, unless the main menu is up), Campaign's saved games (over a game as the Esc menu's LOAD).
-// rl_escKeys: the Esc menu pushed for it, Options shown over it once the push's lock is gone (Tick)
-static bool rl_escKeys;
-
+// over the Esc menu, unless the main menu is up), Campaign's saved games (over a game as the Esc menu's LOAD)
 static void RL_FKey(bool keys)
 {
     Menu *const up = menuManager.CurrentMenu();
@@ -1181,12 +1190,7 @@ static void RL_FKey(bool keys)
         return;
     }
     if (keys && clc.state > CA_PRIMED) {
-        if (up == menuManager.FindMenu("dm_main")) {
-            menuManager.ShowMenu("reloaded_options");
-        } else if (up != menuManager.FindMenu("reloaded_options")) {
-            UI_PushMenu("dm_main");
-            rl_escKeys = menuManager.CurrentMenu() == menuManager.FindMenu("dm_main");
-        }
+        RL_OverShow(RL_OVER_OPTIONS);
     } else if (up && clc.state > CA_PRIMED) {
         Cbuf_AddText("popmenu 0;wait 250;pushmenu main\n");
     } else {
@@ -1204,6 +1208,11 @@ qboolean UI_Menus_Pushing(const char *name)
             return qfalse;
         }
         return qtrue;
+    }
+    if (!strcmp(alias, RL_VOTEMENUS)) {
+        // (the cgame's pushcallvote and pushvote, its votes' arrival: the page, not pushed again)
+        RL_OverShow(RL_OVER_VOTE);
+        return qfalse;
     }
     if (!strcmp(alias, "reloaded_connect")) {
         // a connect's end: what happened, in its box
@@ -1362,7 +1371,15 @@ static struct {
     Menu     *stock;         // the stock load screen
     qhandle_t shot, blur;    // the photo and its blurred copy, 0 none
     int       stamp, refSeq; // UI_BakeStamp and the renderer's sequence then
+    bool      saveShot;      // a saved game's shot of the next frame (a level's autosave): no CONTINUE in it
 } rl_ld;
+
+void UI_Menus_SaveShot(void)
+{
+    Menu *const m = menuManager.FindMenuNamed("reloaded_mission");
+
+    rl_ld.saveShot = m && m->isVisible();
+}
 
 // the photo shrunk to rows texels high in the screen's shape (the part of it
 // a screen filled with it shows), blurred, dimmed and darker to the corners:
@@ -1603,7 +1620,10 @@ static void RL_DrawMission(UIReloadedMenu *m, const rlView_t& v, float frac, con
 
     RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0));
     RL_StockPictures(rl_ld.stock, RL_P(v, lx), 0, RL_P(v, lx + lw), RL_P(v, v.dh));
-    if (button && button->isEnabled()) {
+    if (rl_ld.saveShot) {
+        // (the painting alone in a saved game's shot)
+        rl_ld.saveShot = false;
+    } else if (button && button->isEnabled()) {
         const bool hot = uid.mouseX >= RL_P(v, bx) && uid.mouseX < RL_P(v, bx + bw) && uid.mouseY >= RL_P(v, by) && uid.mouseY < RL_P(v, by + bh);
 
         RL_Skew(v, bx, by, bw, bh, 12, 12, hot ? RL_BRASS_HOT : RL_BRASS);
@@ -1684,14 +1704,6 @@ ReloadedMenu (cl_uiwidget.h)
 
 ====================================================================
 */
-
-// Options shown over the Esc menu (ui/reloaded_options.urc)
-static int RL_OptionsOver(void)
-{
-    Menu *const o = menuManager.FindMenu("reloaded_options");
-
-    return o && o->isVisible();
-}
 
 // the front layer's hot item, for the back layer (a frame later)
 static int rl_hot[SCR_NUM] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
@@ -1893,6 +1905,10 @@ void UIReloadedMenu::Tick(void)
     if (m_screen == SCR_MAIN || m_screen == SCR_CONNECT || m_screen == SCR_OPTIONS) {
         MainTick(opened);
     }
+    if (m_screen == SCR_ESC && !m_back) {
+        // (a page asked for before it was up: over it now)
+        RL_OverTick();
+    }
     if (m_back) {
         m_focus = rl_hot[m_screen];
         return;
@@ -1900,9 +1916,6 @@ void UIReloadedMenu::Tick(void)
     if (m_screen == SCR_SCOREBOARD) {
         RL_WantScores();
         return;
-    }
-    if (rl_escKeys && m_screen == SCR_ESC && menuManager.ShowMenu("reloaded_options")) {
-        rl_escKeys = false;
     }
     if (!menuManager.CurrentMenu() || !getParent() || menuManager.CurrentMenu()->GetContainerWidget() != getParent()) {
         // another menu over it (Options over the Esc menu: its rail still hot under the mouse, RL_EscClick)
@@ -1931,7 +1944,7 @@ int UIReloadedMenu::DrawKey(void)
         int cs, scores, seconds, focus, self, team, gametype, banner;
         int wtab, wpick[2], wserial; // the weapon menu's preview
         int main;                    // the main menu's
-        int over;                    // the Esc menu's: Options over it
+        int over;                    // the Esc menu's: the page over it
     } k;
     int h = 0;
 
@@ -1964,7 +1977,7 @@ int UIReloadedMenu::DrawKey(void)
         k.main = MainDrawKey();
     }
     if (m_screen == SCR_ESC) {
-        k.over = RL_OptionsOver();
+        k.over = RL_OverPage();
     }
     for (size_t i = 0; i + 4 <= sizeof(k); i += 4) {
         int w;
@@ -2251,18 +2264,19 @@ The Esc menu: the main menu's rail over the game, blurred (the renderer's
 dimmed; under the lockup the map, the mode and players, the time left;
 RESUME, MAIN MENU, TEAM & WEAPON (the weapon menu picks the side too),
 OPTIONS (shown over it, lit while it is: ui/reloaded_options.urc),
-SPECTATE; DISCONNECT and QUIT at its foot. In a mission (single player):
+SPECTATE, in Spearhead and Breakthrough VOTE (its page shown over it as
+Options is); DISCONNECT and QUIT at its foot. In a mission (single player):
 the level's name, the mission and the difficulty; RESUME, MAIN MENU, SAVE,
 LOAD (Campaign's saved games), OPTIONS; LEAVE MISSION and QUIT
 ================
 */
 
-enum { ID_MAINMENU, ID_WEAPON, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_QUIT, ID_RESUME, ID_SAVE, ID_LOAD, ID_CONTINUE };
+enum { ID_MAINMENU, ID_WEAPON, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_QUIT, ID_RESUME, ID_SAVE, ID_LOAD, ID_CONTINUE, ID_VOTE };
 
-// multiplayer's, single player's
-static const rlRailItem_t rl_escItems[2][5] = {
+// multiplayer's (VOTE Spearhead's and Breakthrough's), single player's
+static const rlRailItem_t rl_escItems[2][6] = {
     {{ID_RESUME, "RESUME", NULL}, {ID_MAINMENU, "MAIN MENU", NULL}, {ID_WEAPON, "TEAM & WEAPON", NULL}, {ID_OPTIONS, "OPTIONS", NULL},
-     {ID_SPECTATOR, "SPECTATE", NULL}},
+     {ID_SPECTATOR, "SPECTATE", NULL}, {ID_VOTE, "VOTE", NULL}},
     {{ID_RESUME, "RESUME", NULL}, {ID_MAINMENU, "MAIN MENU", NULL}, {ID_SAVE, "SAVE", NULL}, {ID_LOAD, "LOAD", NULL},
      {ID_OPTIONS, "OPTIONS", NULL}},
 };
@@ -2317,10 +2331,14 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
             head[2] += va("  \xb7  %s LEFT", left);
         }
     }
-    RL_Rail(this, v, rl_escItems[sp], 5, RL_OptionsOver() ? ID_OPTIONS : -1, foot, 2, head);
-    // the keys: down the items, then the foot's
-    for (const rlRailItem_t& item : rl_escItems[sp]) {
-        m_order.push_back(item.id);
+    {
+        const int n = !sp && in.target >= TG_MOHTA ? 6 : 5, over = RL_OverPage();
+
+        RL_Rail(this, v, rl_escItems[sp], n, over == RL_OVER_VOTE ? ID_VOTE : over == RL_OVER_OPTIONS ? ID_OPTIONS : -1, foot, 2, head);
+        // the keys: down the items, then the foot's
+        for (int i = 0; i < n; i++) {
+            m_order.push_back(rl_escItems[sp][i].id);
+        }
     }
     m_order.push_back(ID_DISCONNECT);
     m_order.push_back(ID_QUIT);
@@ -2331,10 +2349,11 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
 The end of a mission's level (single player), shown for the statistics
 screens the cgame shows at the intermission (StatsScreen_Success and
 _Failed; Spearhead's and Breakthrough's mission_success_N and
-mission_failed_N): the stock screen's painting, unstretched, full height,
-black beside it (not the photos Spearhead's fade in over it), dimmed as
-the Esc menu dims the game; on it a column as wide as the grid: the level's name,
-the mission and the difficulty, the outcome; the stock screen's numbers
+mission_failed_N): the stock screen's painting (Spearhead's and
+Breakthrough's: the level's load screen's, theirs being black or
+letterboxed), unstretched, full height, black beside it (not the photos
+Spearhead's fade in over it), dimmed as the Esc menu dims the game; on
+it a column as wide as the grid: the level's name, the mission and the difficulty, the outcome; the stock screen's numbers
 (the ui_* cvars of the stats the cgame asks for: CG_ParseStats); the
 weapon most hits came from and where they landed; the medal won, if one
 was; MAIN MENU and CONTINUE (TRY AGAIN when failed), which sends the fire
@@ -2484,13 +2503,25 @@ void UIReloadedMenu::DrawEnd(const rlView_t& v, const rlInfo_t& in)
     RL_Grid(v, &tw, &wh, &gap, &gw);
     const float x0 = (v.dw - gw) / 2;
     float       y  = (v.dh - (head + gap + 2 * th + 2 * gap + wh + (medal < 0 ? 0 : gap + mh) + 22 + bh)) / 2;
+    float       aspect   = 1;
+    qhandle_t   painting = 0; // (Spearhead's and Breakthrough's: the level's)
 
     if (!rl_bakeOnly) {
         rl_end.drawn = cls.realtime;
         RL_EndSounds();
+        painting = RL_LevelPainting(in.map, &aspect);
     }
     RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0));
-    RL_StockPictures(rl_end.stock, RL_P(v, lx), 0, RL_P(v, lx + lw), RL_P(v, v.dh), true);
+    if (painting > 0) {
+        // (as wide as its shape gives, its sides cut on a narrower screen)
+        const float pw = Q_min(v.dh * aspect, v.dw), cut = (1.0f - pw / (v.dh * aspect)) / 2;
+
+        RL_SetColor(RL_Rgb(255, 255, 255));
+        uii.Rend_DrawPicStretched(RL_P(v, (v.dw - pw) / 2), 0, RL_P(v, (v.dw + pw) / 2) - RL_P(v, (v.dw - pw) / 2), RL_P(v, v.dh), cut, 0,
+                                  1.0f - cut, 1, painting);
+    } else {
+        RL_StockPictures(rl_end.stock, RL_P(v, lx), 0, RL_P(v, lx + lw), RL_P(v, v.dh), true);
+    }
     RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
     // the header: the level, the mission; the outcome a tag the buttons' height and
     // shape (CONTINUE's), as far in from the panel's top, bottom and right as the title from its left
@@ -2640,8 +2671,9 @@ void UIReloadedMenu::Choose(int id)
             cmd = "quit\n";
             break;
         case ID_OPTIONS:
-            // Options over it (BACK and Esc back to it)
-            menuManager.ShowMenu("reloaded_options");
+        case ID_VOTE:
+            // Options or the vote's page over it (BACK and Esc back to it)
+            RL_OverShow(id == ID_VOTE ? RL_OVER_VOTE : RL_OVER_OPTIONS);
             break;
         case ID_SPECTATOR:
             cmd = "popmenu 0;wait 250;spectator\n";
@@ -2696,9 +2728,13 @@ bool RL_EscClick(int x, int y)
     if (id < 0) {
         return false;
     }
-    // (OPTIONS, lit: Options closed only)
-    Cbuf_AddText("popmenu 0\n");
-    if (id != ID_OPTIONS) {
+    // (the page's item, lit: the page closed; the other page's: shown in its place; another: chosen, the page closed first)
+    const int lit = RL_OverPage() == RL_OVER_VOTE ? ID_VOTE : ID_OPTIONS;
+
+    if (id == lit || (id != ID_OPTIONS && id != ID_VOTE)) {
+        Cbuf_AddText("popmenu 0\n");
+    }
+    if (id != lit) {
         static_cast<UIReloadedMenu *>(w)->Choose(id);
     }
     return true;
