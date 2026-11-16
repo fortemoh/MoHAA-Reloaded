@@ -22,25 +22,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #pragma once
 
-class linkstring
-{
-public:
-    str value;
-    str string;
-
-    linkstring(str value, str string);
-};
-
-inline linkstring::linkstring(str value, str string)
-{
-    this->value  = value;
-    this->string = string;
-}
-
 class UILabel : public UIWidget
 {
     str                     label;
-    Container<linkstring *> m_linkstrings;
     qboolean                m_bLinkCvarToShader;
     str                     m_sCurrentShaderName;
     str                     m_sOneShotSoundName;
@@ -68,24 +52,18 @@ protected:
     int                     m_linkCount;
     str                     m_linkText;
 
-protected:
-    qboolean m_bOutlinedText;
-
 public:
     CLASS_PROTOTYPE(UILabel);
 
 private:
     void MouseEntered(Event *ev);
     void MouseExited(Event *ev);
-    void LinkString(Event *ev);
-    int  FindLinkString(str val);
     void LabelLayoutShader(Event *ev);
     void LabelLayoutTileShader(Event *ev);
     // Added in 2.0
     //====
     void OneShotSound(Event *ev);
     void LoopingSound(Event *ev);
-    void EventSetOutlinedText(Event *ev);
     //====
     void SetLinkCvarToShader(Event *ev);
     void FrameInitialized() override; // Added in 2.0

@@ -212,6 +212,5 @@ public:
 };
 
 bool              CL_LoadInventory(const char *filename, inventory_t *inv);
-inventory_item_t *CL_GetInvItemByName(inventory_t *inv, const char *name);
 qboolean          CL_HasInventoryItem(const char *name);
 void              CL_AmmoCount(const char *name, int *ammo_count, int *max_ammo_count);

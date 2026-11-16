@@ -367,15 +367,6 @@ Event EV_Widget_HideCommand
     "Set a command to be executed when the widget is hidden"
 );
 
-Event EV_Widget_ShowCommand
-(
-    "showcommand",
-    EV_DEFAULT,
-    "s",
-    "command",
-    "Set a command to be executed when the widget is shown"
-);
-
 Event EV_Widget_OrderNumber
 (
     "ordernumber",
@@ -403,15 +394,6 @@ Event EV_Widget_EnabledCvar
     "Set the cvar to check to see if this button is enabled or not"
 );
 
-Event EV_Widget_ScaleCvar
-(
-    "scalecvar",
-    EV_DEFAULT,
-    "s",
-    "cvar_name",
-    "Set the cvar to check to scale this component"
-);
-
 Event EV_Layout_AliasCache
 (
     "aliascache",
@@ -419,15 +401,6 @@ Event EV_Layout_AliasCache
     "ssSSSSSS",
     "alias realPath arg1 arg2 arg3 arg4 arg5 arg6",
     "Create an alias to the specified path and cache the resource"
-);
-
-Event EV_Layout_DontLocalize
-(
-    "dontlocalize",
-    EV_DEFAULT,
-    NULL,
-    NULL,
-    "Disables localization for this widget"
 );
 
 // Added
@@ -632,20 +605,17 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Layout_StuffCommand,       &UIWidget::LayoutStuffCommand      },
     {&EV_Layout_LinkCvar,           &UIWidget::LayoutLinkCvar          },
     {&EV_Layout_AliasCache,         &UIWidget::LayoutAliasCache        },
-    {&EV_Widget_ShowCommand,        &UIWidget::ShowCommand             },
     {&EV_Widget_HideCommand,        &UIWidget::HideCommand             },
     {&EV_Widget_OrderNumber,        &UIWidget::LayoutOrderNumber       },
     {&EV_Widget_TextAlignment,      &UIWidget::TextAlignment           },
     {&EV_Widget_Enable,             &UIWidget::EnableEvent             },
     {&EV_Widget_Disable,            &UIWidget::DisableEvent            },
     {&EV_Widget_EnabledCvar,        &UIWidget::SetEnabledCvar          },
-    {&EV_Widget_ScaleCvar,          &UIWidget::SetScaleCvar            },
 
     //
     // Added in 2.0
     //
 
-    {&EV_Layout_DontLocalize,       &UIWidget::SetDontLocalize         },
     {&EV_Layout_FadeSequence,       &UIWidget::EventFadeSequence       },
 
     // Added
@@ -862,7 +832,6 @@ UIWidget::UIWidget()
     m_iFontAlignmentHorizontal = FONT_JUSTHORZ_CENTER;
     m_iFontAlignmentVertical   = FONT_JUSTVERT_CENTER;
     m_bVirtual                 = false;
-    m_scaleCvar                = NULL;
     m_enabledCvar              = "";
     m_numEnabled               = -1;
     m_drawCache                = false;
@@ -951,12 +920,6 @@ void UIWidget::PropogateCoordinateSystem(void)
     int       i;
     int       n;
     UIWidget *subview;
-
-    if (m_parent) {
-        if (m_parent->m_scaleCvar) {
-            m_scaleCvar = m_parent->m_scaleCvar;
-        }
-    }
 
     if (!m_parent || (m_flags & WF_NOPARENTADJUST)) {
         m_screenorigin  = m_origin;
@@ -2818,16 +2781,6 @@ void UIWidget::LinkCommand(str cmd)
     m_command = cmd;
 }
 
-void UIWidget::ExecuteShowCommands(void)
-{
-    for (int i = 1; i <= m_showcommands.NumObjects(); i++) {
-        //uii.Cmd_Stuff( m_showcommands.ObjectAt( i )->c_str() );
-        // Fixed in 2.0
-        Event event(m_showcommands.ObjectAt(i)->c_str());
-        ProcessEvent(event);
-    }
-}
-
 void UIWidget::ExecuteHideCommands(void)
 {
     for (int i = 1; i <= m_hidecommands.NumObjects(); i++) {
@@ -3044,18 +2997,6 @@ bool UIWidget::SendSignal(Event& event)
     }
 }
 
-void UIWidget::ShowCommand(Event *ev)
-{
-    int  i;
-    str *command = new str;
-
-    for (i = 1; i <= ev->NumArgs(); i++) {
-        *command += ev->GetToken(i);
-    }
-
-    m_showcommands.AddObject(command);
-}
-
 void UIWidget::HideCommand(Event *ev)
 {
     int  i;
@@ -3183,32 +3124,15 @@ void UIWidget::SetEnabledCvar(Event *ev)
     m_numEnabled  = -1;
 }
 
-void UIWidget::SetScaleCvar(Event *ev)
-{
-    m_scaleCvar = uii.Cvar_Find(ev->GetString(1).c_str());
-}
-
 void UIWidget::SetVirtualScale(vec2_t out)
 {
     if (m_designSize[0] > 0 && m_designSize[1] > 0) {
         // Added: a design's size, alike both ways
         out[0] = out[1] = UI_DesignScale(m_designSize[0], m_designSize[1]);
-    } else if (m_scaleCvar) {
-        const float vidRatio  = (float)uid.vidWidth / (float)uid.vidHeight;
-        const float minHeight = 480;
-        const float minWidth  = minHeight * vidRatio;
-
-        out[0] = uid.vidWidth / minWidth * m_scaleCvar->value;
-        out[1] = uid.vidHeight / minHeight * m_scaleCvar->value;
     } else {
         out[0] = uid.vidWidth / 640.0;
         out[1] = uid.vidHeight / 480.0;
     }
-}
-
-void UIWidget::SetDontLocalize(Event *ev)
-{
-    SetDontLocalize();
 }
 
 void UIWidget::EventFadeSequence(Event *ev)

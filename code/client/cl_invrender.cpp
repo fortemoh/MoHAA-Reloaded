@@ -341,8 +341,6 @@ void UI_DoInventory(qboolean activate_mouse)
 
 qboolean UI_CloseInventory()
 {
-    menuManager.PassEventToAllWidgets(EV_ClearInvItemReference);
-
     if (!s_main_inv || s_main_inv->isDying()) {
         return false;
     }

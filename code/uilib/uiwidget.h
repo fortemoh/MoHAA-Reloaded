@@ -140,7 +140,6 @@ protected:
     str                   m_cvarname;
     str                   m_cvarvalue;
     str                   m_command;
-    Container<str *>      m_showcommands;
     Container<str *>      m_hidecommands;
     str                   m_title;
     float                 m_indent;
@@ -180,11 +179,6 @@ protected:
     str                   m_enabledNames[8];
     cvar_t               *m_enabledVars[8];
     int                   m_numEnabled; // -1: not split yet
-    //
-    // Added in 2.0
-    //
-    cvar_t *m_scaleCvar;
-
     //
     // Added in OPM
     //
@@ -312,7 +306,6 @@ public:
     void TextAlignment(Event *ev);
     void LayoutAliasCache(Event *ev);
     void SetEnabledCvar(Event *ev);
-    void SetScaleCvar(Event *ev);
     // Added
     void LayoutShape(Event *ev);
     void LayoutRotateCvar(Event *ev);
@@ -340,7 +333,6 @@ public:
 
     // Added in 2.0
     //====
-    void SetDontLocalize(Event *ev);
     void EventFadeSequence(Event *ev);
     //====
 
@@ -424,7 +416,6 @@ public:
     bool               IsVisible(void);
     virtual void       LinkCvar(str cvarname);
     void               LinkCommand(str cmd);
-    void               ExecuteShowCommands(void);
     void               ExecuteHideCommands(void);
     void               InitializeCommandHandler(void (*fcn)(const char *, void *));
     class UIWidget    *FindWidget(str name);
@@ -439,7 +430,6 @@ public:
     bool               getAlwaysOnBottom(void);
     bool               getAlwaysOnTop(void);
     bool               SendSignal(Event& event);
-    void               ShowCommand(Event *ev);
     void               HideCommand(Event *ev);
     void               AddFlag(int flag);
     void               SetHovermaterialActive(bool a);
@@ -532,7 +522,6 @@ extern Event EV_Layout_LinkCvar;
 extern Event EV_Layout_NoParentClipping;
 extern Event EV_Layout_NoParentAdjustment;
 extern Event EV_Widget_HideCommand;
-extern Event EV_Widget_ShowCommand;
 extern Event EV_Widget_OrderNumber;
 extern Event EV_Widget_TextAlignment;
 extern Event EV_Widget_EnabledCvar;

@@ -133,7 +133,6 @@ void Menu::ShowMenu(Event *ev)
             wid->ResetMotion(MOTION_IN);
             wid->UpdateUIElement();
             wid->UpdateData();
-            wid->ExecuteShowCommands();
         }
     }
 

@@ -67,14 +67,6 @@ public:
         const char       *text,
         const float      *vVirtualScale
     );
-    void PrintOutlinedJustified(
-        const UIRect2D&   rect,
-        fonthorzjustify_t horz,
-        fontvertjustify_t vert,
-        const char       *text,
-        const UColor&     outlineColor,
-        const float      *vVirtualScale
-    );
     void setColor(UColor col);
     // Added: drawn and measured this much smaller (a long text in a width, UILabel's fitwidth)
     void setFit(float fit) { m_fit = fit; }

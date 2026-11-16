@@ -37,6 +37,8 @@ void     UI_CompHud_Shutdown(void);       // the UI's end
 void     UI_CompHud_ConfigString(void);   // a configstring changed
 void     UI_CompHud_MapLoaded(void);      // the radar's walk and the pictures, at the load
 void     UI_CompHud_PreBake(qboolean ahead); // the pictures (after the renderer's restart); ahead: their texels begun
+// the cgame's teammates (cg.radars, the radar's), the player's place in them; NULL none
+void     CL_InitRadar(radarClient_t *radars, int clientNum);
 // a weapon's outline (ui/outlines/weapons/) by its name (its configstring's, its item name), NULL none
 const char *UI_CompHud_WeaponOutline(const char *name);
 

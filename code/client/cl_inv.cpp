@@ -1118,31 +1118,6 @@ void invlistener::HudCompassNeedleAngles(Event *ev)
     curitem->anglesType = INV_HUDANGLES_COMPASS_NEEDLE;
 }
 
-inventory_item_t *CL_GetInvItemByName(inventory_t *inv, const char *name)
-{
-    if (!inv) {
-        return NULL;
-    }
-
-    for (int i = 1; i <= inv->types.NumObjects(); i++) {
-        const inventory_type_t *type = inv->types.ObjectAt(i);
-
-        for (int ii = 1; ii <= type->items.NumObjects(); ii++) {
-            inventory_item_t *item = type->items.ObjectAt(i);
-
-            if (!item) {
-                return NULL;
-            }
-
-            if (!str::icmp(item->name, name)) {
-                return item;
-            }
-        }
-    }
-
-    return NULL;
-}
-
 qboolean CL_HasInventoryItem(const char *name)
 {
     int i;

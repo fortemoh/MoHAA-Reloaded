@@ -31,7 +31,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cl_ui.h"
 #include "cl_uicomp.h"
 #include "cl_uiextras.h"
-#include "cl_uiradar.h"
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
 
@@ -42,9 +41,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define COMP_PICTURES "ui/competitive/"
 #define COMP_OUTLINES "ui/outlines/weapons/"
 
-// the stock radar's teammates (cl_uiradar.cpp)
-extern radarClient_t *g_radarClients;
-extern int            g_radarClientNum;
+// the teammates the cgame tracks (CL_InitRadar), and the player's own place in them
+static radarClient_t *g_radarClients;
+static int            g_radarClientNum;
 #define COMP_LINES    8
 #define COMP_KILLS    6
 
@@ -2569,12 +2568,18 @@ void UI_CompHud_MapLoaded(void)
     rm.stamp = -1;
 }
 
+void CL_InitRadar(radarClient_t *radars, int clientNum)
+{
+    g_radarClients   = radars;
+    g_radarClientNum = clientNum;
+}
+
 /*
 ================
 UIHudRadar
 
 The radar: the map turned with the view (up is where the player looks),
-the objectives, the teammates the stock radar knows (the snapshot's and the
+the objectives, the teammates the cgame tracks (the snapshot's and the
 server's radar's: never enemies), the player's arrow, N E S W inside the
 edge. Its disc and ring are its URC shapes
 ================

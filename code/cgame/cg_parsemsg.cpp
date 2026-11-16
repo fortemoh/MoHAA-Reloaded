@@ -1649,7 +1649,6 @@ void CG_ParseCGMessage_ver_15()
                     commandManager.PlaySound(szTmp, vStart, CHAN_LOCAL, -1, -1, -1, 1);
                 }
 
-                CG_RadarClientSpeaks(iInfo);
                 current_entity_number = iOldEnt;
             }
             break;

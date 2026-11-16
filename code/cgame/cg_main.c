@@ -1135,7 +1135,7 @@ void CG_Shutdown(void)
 {
     L_ShutdownEvents();
     // Shutdown radar
-    cgi.CL_InitRadar(NULL, NULL, -1);
+    cgi.CL_InitRadar(NULL, -1);
 
     // some mods may need to do cleanup work here,
     // like closing files or archiving session data
@@ -1185,7 +1185,6 @@ clientGameExport_t *GetCGameAPI(void)
     cge.CG_WeaponCommandButtonBits  = CG_WeaponCommandButtonBits;
     cge.CG_CheckCaptureKey          = CG_CheckCaptureKey;
     cge.CG_ReadNonPVSClient         = CG_ReadNonPVSClient;
-    cge.CG_UpdateRadar              = CG_UpdateRadar;
     cge.CG_SaveStateToBuffer        = CG_SaveStateToBuffer;
     cge.CG_LoadStateToBuffer        = CG_LoadStateToBuffer;
     cge.CG_CleanUpTempModels        = CG_CleanUpTempModels;

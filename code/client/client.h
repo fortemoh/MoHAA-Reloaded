@@ -470,9 +470,6 @@ extern	cvar_t	*cl_conXOffset;
 
 extern	cvar_t	*cl_lanForcePackets;
 extern	cvar_t	*cl_langamerefreshstatus;
-extern	cvar_t	*cl_radar_icon_size;
-extern	cvar_t	*cl_radar_speak_time;
-extern	cvar_t	*cl_radar_blink_time;
 extern	cvar_t	*cl_autoRecordDemo;
 
 extern	cvar_t	*cl_r_fullscreen;

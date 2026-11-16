@@ -27,7 +27,6 @@ set(CLIENT_SOURCES
     ${SOURCE_DIR}/client/cl_uigamespy.cpp
     ${SOURCE_DIR}/client/cl_uimaprunner.cpp
     ${SOURCE_DIR}/client/cl_uiminicon.cpp
-    ${SOURCE_DIR}/client/cl_uiradar.cpp
     ${SOURCE_DIR}/client/cl_uicomp.cpp
     ${SOURCE_DIR}/client/cl_uimenus.cpp
     ${SOURCE_DIR}/client/cl_uimain.cpp

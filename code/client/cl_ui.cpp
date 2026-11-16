@@ -2365,7 +2365,10 @@ void UI_GlobalWidgetCommand_f(void)
         event->AddToken(Cmd_Argv(i));
     }
 
-    uWinMan.PassEventToWidget(name, event);
+    // Added: freed when no widget has the name (the cgame's vote lists: their stock menus aren't loaded)
+    if (!uWinMan.PassEventToWidget(name, event)) {
+        delete event;
+    }
 }
 
 /*
@@ -4288,23 +4291,64 @@ void CL_ShutdownUI(void)
 ====================
 UI_StockMenuGone
 
-Added: a stock menu file whose widgets the client has no more (the
-Reloaded menus are its screens): not loaded
+Added: a stock menu file nothing shows any more (the Reloaded menus and
+the URC HUD are its screens): not loaded. Named one by one, the games'
+own (Allied Assault's, Spearhead's and Breakthrough's pk3s): a map's or a
+mod's menus load. What still loads: the load screens (the Reloaded load
+screen shows their pictures), the end of a level's (StatsScreen_*,
+mission_*: the end screen's), what the game scripts show (the briefings,
+the title cards, credits1, dday1 and 2, the briefing room and its
+difficulty menus) and the developer tools' menus
 ====================
 */
 static qboolean UI_StockMenuGone(const char *file)
 {
     static const char *const gone[] = {
-        "controls.urc",            // the key list (Options' KEYS)
-        "instant_action_menu.urc", // Breakthrough's Instant Action
-        "joinlangame.urc",         // the LAN browser
-        "joinnetgame.urc",         // the internet browser
-        "loadsave.urc",            // the saved games (Campaign's)
-        "map_rotation_setup.urc",  // Spearhead's and Breakthrough's host's map rotation
+        // the stock HUD's (the URC HUD in its place)
+        "hud_ammo_15cmc36", "hud_ammo_aagun", "hud_ammo_abturretmain", "hud_ammo_abturretmini", "hud_ammo_bar",
+        "hud_ammo_bazooka", "hud_ammo_beretta", "hud_ammo_bohler", "hud_ammo_bomba", "hud_ammo_bombabreda",
+        "hud_ammo_breda", "hud_ammo_carcano", "hud_ammo_colt45", "hud_ammo_delisle", "hud_ammo_empty",
+        "hud_ammo_flak88", "hud_ammo_g43", "hud_ammo_garand", "hud_ammo_granatwerfer", "hud_ammo_kar98",
+        "hud_ammo_kar98mortar", "hud_ammo_kar98sniper", "hud_ammo_l42a1", "hud_ammo_landmineallies",
+        "hud_ammo_landmineaxis", "hud_ammo_lee-enfield", "hud_ammo_m2grenade", "hud_ammo_mg42",
+        "hud_ammo_mills_grenade", "hud_ammo_minedetector", "hud_ammo_minedetector_axis", "hud_ammo_modello",
+        "hud_ammo_moschetto", "hud_ammo_mosinnagantrifle", "hud_ammo_mp40", "hud_ammo_mp44",
+        "hud_ammo_nagantrevolver", "hud_ammo_nebelhandgranate", "hud_ammo_nebelwerfer", "hud_ammo_p38",
+        "hud_ammo_panzercannon", "hud_ammo_panzerschreck", "hud_ammo_piat", "hud_ammo_portableturret",
+        "hud_ammo_ppsh", "hud_ammo_pzb41", "hud_ammo_rdg-1smokegrenade", "hud_ammo_russian_f1_grenade",
+        "hud_ammo_shotgun", "hud_ammo_silencedpistol", "hud_ammo_smokegrenade", "hud_ammo_springfield",
+        "hud_ammo_steilhandgranate", "hud_ammo_sten", "hud_ammo_svt", "hud_ammo_t34_dtm", "hud_ammo_t34cannon",
+        "hud_ammo_thompson", "hud_ammo_vickers", "hud_ammo_webleyrevolver", "hud_compass", "hud_fraglimit",
+        "hud_fuse", "hud_fuse_wet", "hud_health", "hud_items", "hud_score", "hud_stopwatch", "hud_timelimit",
+        "hud_weapons",
+        // the main menu's pages, Options' and the old Campaign's (the Reloaded menus' screens)
+        "main", "options_main", "advancedoptions", "audio options", "video options", "controls", "calibrate_monitor",
+        "loadsave", "loadsave_mp", "medals", "war_records", "mission1_briefing", "mission2_briefing",
+        "mission3_briefing", "mission4_briefing", "mission5_briefing", "mission6_briefing", "missiont1difficulty",
+        // Multiplayer's: the browsers, Host, the map rotation, Instant Action
+        "multiplayer", "multiplayeroptions", "multiplayerstart", "multiplayerstart_ffa", "multiplayerstart_lib",
+        "multiplayerstart_obj", "multiplayerstart_round", "multiplayerstart_team", "multiplayerstart_tow",
+        "joingame", "joininternetgame", "joinlangame", "joinnetgame", "filtermenu", "map_rotation_setup",
+        "instant_action_menu",
+        // a game's: the Esc menu, the team and weapon menus, the scoreboards, the votes
+        "dm_main", "dm_teamselect", "obj_teamselect", "dm_ffamodelselect", "dm_primaryselect",
+        "dm_primaryselect_british", "dm_primaryselect_german", "dm_primaryselect_italian",
+        "dm_primaryselect_russian", "dm_scoreboard", "dm_round_scoreboard", "obj_scoreboard", "tow_scoreboard",
+        "lib_scoreboard", "votemain", "votecast", "votesubclient", "votesubfloat", "votesubinteger", "votesublist",
+        "votesubtext",
+        // the connect's boxes
+        "connecting", "errormessage", "badserveraddy", "disconnected", "serverdisconnected", "servertimeout",
+        "serverfull", "wrongversion",
+        // screens no game shows: the startup's logo, the demo's help, the update check's, the stock crosshair, briefing
+        // slides no briefing uses
+        "eascreen", "patch_available", "demohelp", "crosshair", "briefing2c", "briefing2d", "briefing3f", "briefing3g",
+        "briefing3h",
     };
+    char name[MAX_QPATH];
 
+    COM_StripExtension(file, name, sizeof(name));
     for (size_t i = 0; i < ARRAY_LEN(gone); i++) {
-        if (!Q_stricmp(file, gone[i])) {
+        if (!Q_stricmp(name, gone[i])) {
             return qtrue;
         }
     }

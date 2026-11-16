@@ -23,16 +23,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "ui_local.h"
 #include "../qcommon/localization.h"
 
-Event EV_UILabel_LinkString
-(
-    "linkstring",
-    EV_DEFAULT,
-    "is",
-    "value string",
-    "Creates a link from the specified value to a string. "
-    "Use this if you want the label to display a string different from the value of the cvar"
-
-);
 Event EV_UILabel_LinkCvarToShader
 (
     "linkcvartoshader",
@@ -60,14 +50,6 @@ Event EV_UILabel_LoopingSound
     "Set the sound to play"
 
 );
-Event EV_UILabel_OutlinedText
-(
-    "outlinedtext",
-    EV_DEFAULT,
-    "i",
-    "outlined",
-    "Set/clear outline text"
-);
 //====
 
 static const char *localizableVars[] = {
@@ -92,13 +74,11 @@ static const char *localizableVars[] = {
 CLASS_DECLARATION(UIWidget, UILabel, NULL) {
     {&W_MouseEntered,              &UILabel::MouseEntered         },
     {&W_MouseExited,               &UILabel::MouseExited          },
-    {&EV_UILabel_LinkString,       &UILabel::LinkString           },
     {&EV_UILabel_LinkCvarToShader, &UILabel::SetLinkCvarToShader  },
     {&EV_UILabel_OneShotSound,     &UILabel::OneShotSound         },
     {&EV_UILabel_LoopingSound,     &UILabel::LoopingSound         },
     {&EV_Layout_Shader,            &UILabel::LabelLayoutShader    },
     {&EV_Layout_TileShader,        &UILabel::LabelLayoutTileShader},
-    {&EV_UILabel_OutlinedText,     &UILabel::EventSetOutlinedText },
     {NULL,                         NULL                           }
 };
 
@@ -110,7 +90,6 @@ UILabel::UILabel()
     m_iNextOneShotTime  = 0;
     m_iNextStateTime    = 0;
     m_iLastDrawTime     = 0;
-    m_bOutlinedText     = false;
     m_linkVar           = NULL;
     m_linkCount         = -1;
 }
@@ -126,36 +105,9 @@ void UILabel::MouseExited(Event *ev)
     SetPressedmaterialActive(false);
 }
 
-void UILabel::LinkString(Event *ev)
-{
-    linkstring *ls;
-    str         value;
-    str         string;
-
-    value  = ev->GetString(1);
-    string = ev->GetString(2);
-
-    ls = new linkstring(value, string);
-
-    m_linkstrings.AddObject(ls);
-}
-
 void UILabel::SetLabel(str lab)
 {
     label = lab;
-}
-
-int UILabel::FindLinkString(str val)
-{
-    int i;
-
-    for (i = 1; i <= m_linkstrings.NumObjects(); i++) {
-        if (val == m_linkstrings.ObjectAt(i)->value) {
-            return i;
-        }
-    }
-
-    return 0;
 }
 
 void UILabel::LabelLayoutShader(Event *ev)
@@ -226,17 +178,8 @@ void UILabel::LoopingSound(Event *ev)
     }
 }
 
-void UILabel::EventSetOutlinedText(Event *ev)
-{
-    if (ev->NumArgs() > 0) {
-        m_bOutlinedText = ev->GetInteger(1) ? true : false;
-    } else {
-        m_bOutlinedText = true;
-    }
-}
-
 // Added: the linked cvar's text: the cvar found once, its text made again
-// only when it changed (localized, a link string)
+// only when it changed (localized)
 const char *UILabel::LinkedText(void)
 {
     const char *string;
@@ -263,13 +206,6 @@ const char *UILabel::LinkedText(void)
         }
         m_linkText  = string;
         m_linkCount = m_linkVar->modificationCount;
-    }
-    if (m_linkstrings.NumObjects()) {
-        const int ret = FindLinkString(m_linkVar->latchedString ? m_linkVar->latchedString : m_linkVar->string);
-
-        if (ret) {
-            return m_linkstrings.ObjectAt(ret)->string;
-        }
     }
     return m_linkText.c_str();
 }
@@ -363,22 +299,10 @@ void UILabel::Draw(void)
         // Added: a long text smaller to fit (fitwidth)
         m_font->setFit(m_font->FitScale(string, m_fitWidth));
 
-        if (m_bOutlinedText) {
-            // print the text
-            m_font->PrintOutlinedJustified(
-                getClientFrame(),
-                m_iFontAlignmentHorizontal,
-                m_iFontAlignmentVertical,
-                string,
-                UBlack,
-                getVirtualScale()
-            );
-        } else {
-            // print the text
-            m_font->PrintJustified(
-                getClientFrame(), m_iFontAlignmentHorizontal, m_iFontAlignmentVertical, string, getVirtualScale()
-            );
-        }
+        // print the text
+        m_font->PrintJustified(
+            getClientFrame(), m_iFontAlignmentHorizontal, m_iFontAlignmentVertical, string, getVirtualScale()
+        );
         m_font->setFit(1.0f);
     }
 }

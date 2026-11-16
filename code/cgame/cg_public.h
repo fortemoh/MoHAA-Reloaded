@@ -430,7 +430,7 @@ functions exported to the main executable
         );
         void (*UI_DeleteScoreBoardItems)(int maxIndex);
         void (*UI_ToggleDMMessageConsole)(int consoleMode);
-        void (*CL_InitRadar)(radarClient_t* radars, qhandle_t* shaders, int clientNum); // Added in 2.0
+        void (*CL_InitRadar)(radarClient_t* radars, int clientNum); // Added in 2.0
         dtiki_t *(*TIKI_FindTiki)(const char *path);
         void (*LoadResource)(const char *name);
         void (*FS_CanonicalFilename)(char *name);
@@ -546,7 +546,6 @@ functions exported to the main executable
         // Added in 2.0
         //
 		void (*CG_ReadNonPVSClient)(radarUnpacked_t* radarUnpacked);
-		void (*CG_UpdateRadar)();
 		size_t (*CG_SaveStateToBuffer)(void** out, int svsTime);
 		qboolean (*CG_LoadStateToBuffer)(void* state, size_t size, int svsTime);
 		void (*CG_CleanUpTempModels)();

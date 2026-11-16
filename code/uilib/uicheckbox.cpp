@@ -22,24 +22,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "ui_local.h"
 
-Event EV_UICheckBox_SetCheckedCommand
-(
-    "checked_command",
-    EV_DEFAULT,
-    "s",
-    "command",
-    "Command to execute when checkbox is checked"
-);
-
-Event EV_UICheckBox_SetUncheckedCommand
-(
-    "unchecked_command",
-    EV_DEFAULT,
-    "s",
-    "command",
-    "Command to execute when checkbox is unchecked" // text not present in original executable
-);
-
 Event EV_UICheckBox_SetCheckedShader
 (
     "checked_shader",
@@ -59,15 +41,13 @@ Event EV_UICheckBox_SetUncheckedShader
 );
 
 CLASS_DECLARATION(UIWidget, UICheckBox, NULL) {
-    {&W_LeftMouseDown,                   &UICheckBox::Pressed            },
-    {&W_LeftMouseUp,                     &UICheckBox::Released           },
-    {&W_MouseEntered,                    &UICheckBox::MouseEntered       },
-    {&W_MouseExited,                     &UICheckBox::MouseExited        },
-    {&EV_UICheckBox_SetCheckedCommand,   &UICheckBox::SetCheckedCommand  },
-    {&EV_UICheckBox_SetUncheckedCommand, &UICheckBox::SetUncheckedCommand},
-    {&EV_UICheckBox_SetCheckedShader,    &UICheckBox::SetCheckedShader   },
-    {&EV_UICheckBox_SetUncheckedShader,  &UICheckBox::SetUncheckedShader },
-    {NULL,                               NULL                            }
+    {&W_LeftMouseDown,                  &UICheckBox::Pressed           },
+    {&W_LeftMouseUp,                    &UICheckBox::Released          },
+    {&W_MouseEntered,                   &UICheckBox::MouseEntered      },
+    {&W_MouseExited,                    &UICheckBox::MouseExited       },
+    {&EV_UICheckBox_SetCheckedShader,   &UICheckBox::SetCheckedShader  },
+    {&EV_UICheckBox_SetUncheckedShader, &UICheckBox::SetUncheckedShader},
+    {NULL,                              NULL                           }
 };
 
 UICheckBox::UICheckBox()
@@ -127,14 +107,6 @@ void UICheckBox::Released(Event *ev)
 {
     m_checked = !m_checked;
 
-    // Handle additional commands:
-    // this is for checkboxes that either change multiple cvars,
-    // or that set a cvar with a non-bool value.
-    // e.g.: the Invert Mouse checkbox originally flips cvar m_invert_pitch,
-    // but also does ("set m_pitch -0.022" : "set m_pitch 0.022") commands using this
-    str command = m_checked ? m_checked_command : m_unchecked_command;
-    Cbuf_AddText(command.c_str());
-
     m_depressed = qfalse;
     UpdateCvar();
 }
@@ -171,16 +143,6 @@ void UICheckBox::MouseEntered(Event *ev)
 void UICheckBox::MouseExited(Event *ev)
 {
     m_depressed = qfalse;
-}
-
-void UICheckBox::SetCheckedCommand(Event *ev)
-{
-    m_checked_command = ev->GetString(1);
-}
-
-void UICheckBox::SetUncheckedCommand(Event *ev)
-{
-    m_unchecked_command = ev->GetString(1);
 }
 
 void UICheckBox::SetCheckedShader(Event *ev)
