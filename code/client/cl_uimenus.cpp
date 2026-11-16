@@ -467,6 +467,8 @@ void RL_Skew(const rlView_t& v, float x, float y, float w, float h, float kl, fl
 {
     const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
 
+    kl *= RL_SLANT;
+    kr *= RL_SLANT;
     if (kl <= 0.0f && kr <= 0.0f) {
         RL_Box(v, x, y, w, h, c);
         return;
@@ -2476,7 +2478,7 @@ void UIReloadedMenu::DrawEnd(const rlView_t& v, const rlInfo_t& in)
         RL_HeaderPanel(v, x0, y, gw, head, level[0] ? level : in.map, RL_H3, -1, RL_MissionLine(in.map).c_str(), NULL, 1.0f,
                        gw - 56 - cw - 16);
         RL_Skew(v, x0 + gw - 28 - cw, y + (head - bh) / 2, cw, bh, 12, 0, rl_end.ok ? RL_BRASS : RL_Rgb(214, 104, 88));
-        RL_Text(v, x0 + gw - 28 - cw / 2 + 3, y + head / 2, tag, 18, RL_INK, true, RL_CENTER, 2, RL_MID);
+        RL_Text(v, x0 + gw - 28 - cw / 2 + 3 * RL_SLANT, y + head / 2, tag, 18, RL_INK, true, RL_CENTER, 2, RL_MID);
     }
     y += head + gap;
     // the numbers, three a row
@@ -2539,7 +2541,7 @@ void UIReloadedMenu::DrawEnd(const rlView_t& v, const rlInfo_t& in)
         Hit(v, x0, y, tw, bh, ID_MAINMENU);
         RL_Button(v, cx, y, cw, bh, rl_end.ok ? "CONTINUE" : "TRY AGAIN", true, 12, 0, Hot(ID_CONTINUE), wait < 1.0f);
         if (wait < 1.0f) {
-            RL_Box(v, cx + 12, y + bh - 4, (cw - 12) * wait, 4, RL_BRASS);
+            RL_Box(v, cx + 12 * RL_SLANT, y + bh - 4, (cw - 12 * RL_SLANT) * wait, 4, RL_BRASS);
         }
         Hit(v, cx, y, cw, bh, ID_CONTINUE);
         if (!rl_end.ok) {

@@ -1282,11 +1282,17 @@ static void RL_Head(const rlView_t& v, float x, float y, float w, float h)
     RL_Box(v, x, y + h, w, 1, RL_LINE);
 }
 
-// Omaha's slanted divider between tabs, at x
+// Omaha's slanted divider between tabs, at x (RL_SLANT 0: a line a pixel wide at the tabs' edge, x + 6)
 static void RL_Divider(const rlView_t& v, float x, float y, float h)
 {
     const float m = h * 0.18f, k = 12 * (h - 2 * m) / h;
 
+    if (!RL_SLANT) {
+        const int x0 = RL_P(v, x + 6);
+
+        RL_BoxPx(x0, RL_P(v, y + m), x0 + 1, RL_P(v, y + h - m), RL_Rgb(255, 255, 255, 97));
+        return;
+    }
     RL_Skew(v, x - 1, y + m, 2 + k, h - 2 * m, k, k, RL_Rgb(255, 255, 255, 97));
 }
 
@@ -1295,15 +1301,15 @@ void RL_Button(const rlView_t& v, float x, float y, float w, float h, const char
     const rlColor_t fill = primary ? (hot ? RL_Rgb(236, 196, 106) : RL_BRASS) : RL_Rgb(255, 255, 255, hot ? 44 : 26);
 
     RL_Skew(v, x, y, w, h, kl, kr, off ? RL_Rgb(255, 255, 255, 14) : fill);
-    RL_Text(v, x + w / 2 + (kl - kr) * 0.25f, y + h / 2, label, 18, off ? RL_FAINT : primary ? RL_INK : RL_TEXT, true, RL_CENTER, 2,
-            RL_MID);
+    RL_Text(v, x + w / 2 + (kl - kr) * 0.25f * RL_SLANT, y + h / 2, label, 18, off ? RL_FAINT : primary ? RL_INK : RL_TEXT, true,
+            RL_CENTER, 2, RL_MID);
 }
 
 // a text field: the text (typed in: its end, should it not fit, and a caret; else cut), the placeholder when empty
 static void RL_Field(const rlView_t& v, float x, float y, float w, float h, float kl, float kr, const std::string& text,
                      const char *placeholder, bool editing, bool hot)
 {
-    const float tx = x + 16 + kl * 0.5f, room = w - 32 - (kl + kr) * 0.5f;
+    const float tx = x + 16 + kl * 0.5f * RL_SLANT, room = w - 32 - (kl + kr) * 0.5f * RL_SLANT;
     std::string shown = editing ? text : RL_Ellipsize(v, text.c_str(), 17, false, room);
 
     RL_Skew(v, x, y, w, h, kl, kr, RL_Rgb(255, 255, 255, editing ? 70 : hot ? 48 : 30));
@@ -1389,21 +1395,26 @@ static float RL_Segments(UIReloadedMenu *m, const rlView_t& v, float x, float y,
     return x - 4;
 }
 
-// Omaha's tabs along a panel's head (48 high from y), slanted dividers between them, the one on (-1 none) brass
+// Omaha's tabs along a panel's head (48 high from y, x 4 in from its edge), slanted dividers between them, the one on
+// (-1 none) brass. RL_SLANT 0: square, from the frame's inside, under its line; a divider only between two tabs
+// neither on nor hot (none touching a box)
 static void RL_Tabs(UIReloadedMenu *m, const rlView_t& v, float x, float y, const char *const *labels, int n, int on, int id, float size,
                     float pad)
 {
+    const float top = RL_SLANT ? 0.0f : 1.0f;
+
+    x -= 3 * top;
     for (int i = 0; i < n; i++) {
         const float tw = RL_TextW(v, labels[i], size, true, 2) + 2 * pad;
         const bool  hot = m->Hot(id + i);
 
         if (i == on || hot) {
-            RL_Skew(v, x, y, tw, 48, 12, 12, i == on ? RL_BRASS : RL_Rgb(255, 255, 255, 16));
+            RL_Skew(v, x, y + top, tw, 48 - top, 12, 12, i == on ? RL_BRASS : RL_Rgb(255, 255, 255, 16));
         }
         RL_Text(v, x + tw / 2, y + 24, labels[i], size, i == on ? RL_INK : hot ? RL_TEXT : RL_MUTED, true, RL_CENTER, 2, RL_MID);
         m->Hit(v, x, y, tw, 48, id + i);
         x += tw;
-        if (i < n - 1) {
+        if (i < n - 1 && (RL_SLANT || (i != on && i + 1 != on && !hot && !m->Hot(id + i + 1)))) {
             RL_Divider(v, x - 6, y, 48);
         }
     }
