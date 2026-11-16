@@ -1104,8 +1104,7 @@ static void RL_Divider(const rlView_t& v, float x, float y, float h)
     RL_Skew(v, x - 1, y + m, 2 + k, h - 2 * m, k, k, RL_Rgb(255, 255, 255, 97));
 }
 
-static void RL_Button(const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, float kl, float kr, bool hot,
-                      bool off = false)
+void RL_Button(const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, float kl, float kr, bool hot, bool off)
 {
     const rlColor_t fill = primary ? (hot ? RL_Rgb(236, 196, 106) : RL_BRASS) : RL_Rgb(255, 255, 255, hot ? 44 : 26);
 

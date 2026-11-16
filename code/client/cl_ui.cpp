@@ -3028,6 +3028,11 @@ void UI_ShowMenu(const char *name, qboolean bForce)
 
     pMenu = menuManager.FindMenu(name);
 
+    // Added: the Reloaded end of a mission's level pushed (cl_uimenus.cpp)
+    if (pMenu && UI_Menus_End(name, pMenu, qtrue)) {
+        return;
+    }
+
     if (pMenu) {
         if (bForce) {
             pMenu->ForceShow();
@@ -3049,6 +3054,11 @@ void UI_HideMenu(const char *name, qboolean bForce)
     Menu *pMenu;
 
     pMenu = menuManager.FindMenu(name);
+
+    // Added: the Reloaded end of a mission's level popped (cl_uimenus.cpp)
+    if (pMenu && UI_Menus_End(name, pMenu, qfalse)) {
+        return;
+    }
 
     if (pMenu) {
         if (bForce) {

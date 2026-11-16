@@ -22,13 +22,15 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 // cl_uimenus.cpp: the Reloaded menus (Added). The weapon select (which picks
 // the side and the model too: the team menus show it), the Esc menu, the
-// scoreboard, the load screen (UI_Menus_Loading) and the main menu
-// (cl_uimain.cpp), each a URC menu (ui/reloaded_*.urc) of a ReloadedMenu
-// widget, which lays the screen out and draws it, and the stock 3D player
-// model views it places. They are shown for the stock menus' names
-// (SelectTeam, ObjSelectTeam, SelectFFAModel, SelectPrimaryWeapon[_<nation>],
-// dm_main, DM_Scoreboard, DM_Round_Scoreboard, Obj_Scoreboard, main:
-// UI_Menus_Alias), so nothing on the server or in the cgame changes;
+// scoreboard, the load screen (UI_Menus_Loading), the end of a mission's
+// level and the main menu (cl_uimain.cpp), each a URC menu
+// (ui/reloaded_*.urc) of a ReloadedMenu widget, which lays the screen out and
+// draws it, and the stock 3D player model views it places. They are shown for
+// the stock menus' names (SelectTeam, ObjSelectTeam, SelectFFAModel,
+// SelectPrimaryWeapon[_<nation>], dm_main, DM_Scoreboard,
+// DM_Round_Scoreboard, Obj_Scoreboard, main, StatsScreen_Success|Failed,
+// mission_success|failed_N: UI_Menus_Alias), so nothing on the server or in
+// the cgame changes;
 // ui_classicmenus 1 shows the stock ones (and the stock cursor: the Reloaded
 // one is RL_Cursor's).
 //
@@ -1064,6 +1066,15 @@ static const struct {
     {"DM_Round_Scoreboard",         "reloaded_scoreboard"},
     {"Obj_Scoreboard",              "reloaded_scoreboard"},
     {"main",                        "reloaded_main"      },
+    // the end of a mission's level (Spearhead's and Breakthrough's a menu a mission)
+    {"StatsScreen_Success",         "reloaded_end"       },
+    {"StatsScreen_Failed",          "reloaded_end"       },
+    {"mission_success_1",           "reloaded_end"       },
+    {"mission_success_2",           "reloaded_end"       },
+    {"mission_success_3",           "reloaded_end"       },
+    {"mission_failed_1",            "reloaded_end"       },
+    {"mission_failed_2",            "reloaded_end"       },
+    {"mission_failed_3",            "reloaded_end"       },
 };
 
 const char *UI_Menus_Alias(const char *name)
@@ -1424,11 +1435,12 @@ const char *UI_Menus_Loading(Menu *stock, const char *map)
     return ours;
 }
 
-// the stock screen's pictures (not its bar, button and text) in the card
-// x0 y0 x1 y1, as on its screen, clipped to it
-static void RL_LoadStockCard(int x0, int y0, int x1, int y1)
+// a stock screen's pictures (not its bar, button and text) in the box x0 y0
+// x1 y1, as on its screen, clipped to it; tall: only those its height (an end
+// of a level's painting, not the photos Spearhead's fade in over it)
+static void RL_StockPictures(Menu *stock, int x0, int y0, int x1, int y1, bool tall = false)
 {
-    UIWidget *c = rl_ld.stock ? rl_ld.stock->GetContainerWidget() : NULL;
+    UIWidget *c = stock ? stock->GetContainerWidget() : NULL;
 
     RL_SetColor(RL_Rgb(255, 255, 255));
     for (UIWidget *l = c ? c->getFirstChild() : NULL; l; l = c->getNextChild(l)) {
@@ -1438,7 +1450,7 @@ static void RL_LoadStockCard(int x0, int y0, int x1, int y1)
         const float    cu0 = Q_max(u0, 0.0f), cv0 = Q_max(v0, 0.0f), cu1 = Q_min(u1, 1.0f), cv1 = Q_min(v1, 1.0f);
 
         if (!l->getMaterial() || !l->isEnabled() || !Q_stricmpn(l->getName(), "loading", 7) || !l->isSubclassOf(UILabel)
-            || (l->getTitle() && l->getTitle()[0]) || cu1 <= cu0 || cv1 <= cv0) {
+            || (l->getTitle() && l->getTitle()[0]) || cu1 <= cu0 || cv1 <= cv0 || (tall && (v0 > 0.0f || v1 < 0.99f))) {
             continue;
         }
         uii.Rend_DrawPicStretched(
@@ -1493,7 +1505,7 @@ static void RL_DrawMission(UIReloadedMenu *m, const rlView_t& v, float frac, con
     UIWidget   *button = m->getParent() ? m->getParent()->FindWidget("continuebutton") : NULL;
 
     RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0));
-    RL_LoadStockCard(RL_P(v, lx), 0, RL_P(v, lx + lw), RL_P(v, v.dh));
+    RL_StockPictures(rl_ld.stock, RL_P(v, lx), 0, RL_P(v, lx + lw), RL_P(v, v.dh));
     if (button && button->isEnabled()) {
         const bool hot = uid.mouseX >= RL_P(v, bx) && uid.mouseX < RL_P(v, bx + bw) && uid.mouseY >= RL_P(v, by) && uid.mouseY < RL_P(v, by + bh);
 
@@ -1541,7 +1553,7 @@ static void RL_DrawLoading(UIReloadedMenu *m, const rlView_t& v)
         RL_SetColor(white);
         uii.Rend_DrawPicStretched(x0, y0, x1 - x0, y1 - y0, 0, 0, 1, 1, rl_ld.shot);
     } else {
-        RL_LoadStockCard(x0, y0, x1, y1);
+        RL_StockPictures(rl_ld.stock, x0, y0, x1, y1);
     }
     RL_BoxPx(x0, y0, x1, y0 + 1, line);
     RL_BoxPx(x0, y1 - 1, x1, y1, line);
@@ -1575,7 +1587,7 @@ ReloadedMenu (cl_uiwidget.h)
 */
 
 // the front layer's hot item, for the back layer (a frame later)
-static int rl_hot[SCR_NUM] = {-1, -1, -1, -1, -1, -1};
+static int rl_hot[SCR_NUM] = {-1, -1, -1, -1, -1, -1, -1};
 
 Event EV_ReloadedMenu_Screen("screen", EV_DEFAULT, "s", "screen", "weapon, esc, scoreboard, loading, main or confirm");
 Event EV_ReloadedMenu_Layer("layer", EV_DEFAULT, "s", "layer", "back (under the model views) or front");
@@ -1596,6 +1608,7 @@ void UIReloadedMenu::SetScreen(Event *ev)
              : !str::icmp(s, "loading")    ? SCR_LOADING
              : !str::icmp(s, "main")       ? SCR_MAIN
              : !str::icmp(s, "confirm")    ? SCR_CONFIRM
+             : !str::icmp(s, "end")        ? SCR_END
                                            : SCR_WEAPON;
     AllowActivate(m_screen != SCR_SCOREBOARD && m_screen != SCR_LOADING);
 }
@@ -1661,6 +1674,9 @@ qboolean UIReloadedMenu::KeyEvent(int key, unsigned int time)
     if (key == K_ENTER || key == K_KP_ENTER || key == K_SPACE) {
         if (m_focus >= 0) {
             Choose(m_focus);
+        } else if (m_screen == SCR_END) {
+            // (the end of a level, nothing picked: its last item, CONTINUE)
+            Choose(m_order.back());
         }
         return qtrue;
     }
@@ -1872,6 +1888,10 @@ void UIReloadedMenu::Draw(void)
     case SCR_ESC:
         RL_Info(&in);
         DrawEsc(v, in);
+        break;
+    case SCR_END:
+        RL_Info(&in);
+        DrawEnd(v, in);
         break;
     default:
         RL_Info(&in);
@@ -2105,7 +2125,7 @@ menu, Save, Load (Campaign's saved games); Options, Leave mission, Quit
 ================
 */
 
-enum { ID_MAINMENU, ID_WEAPON, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_QUIT, ID_RESUME, ID_SAVE, ID_LOAD };
+enum { ID_MAINMENU, ID_WEAPON, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_QUIT, ID_RESUME, ID_SAVE, ID_LOAD, ID_CONTINUE };
 
 typedef struct {
     int         id, col, row, span; // span: the columns it takes
@@ -2231,6 +2251,257 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
 
 /*
 ================
+The end of a mission's level (single player), shown for the statistics
+screens the cgame shows at the intermission (StatsScreen_Success and
+_Failed; Spearhead's and Breakthrough's mission_success_N and
+mission_failed_N): the stock screen's painting, unstretched, full height,
+black beside it (not the photos Spearhead's fade in over it), dimmed as
+the Esc menu dims the game; on it the Esc menu's column: the level's name,
+the mission and the difficulty, the outcome; the stock screen's numbers
+(the ui_* cvars of the stats the cgame asks for: CG_ParseStats); the
+weapon most hits came from and where they landed; the medal won, if one
+was; MAIN MENU and CONTINUE (TRY AGAIN when failed), which sends the fire
+the game waits for (not taken in its first 4 s: Player's intermission).
+Pushed, not just shown, so that its buttons take the mouse and the keys
+(UI_Menus_End). The stock screens' sounds as their labels play them:
+Spearhead's poem and its music, Breakthrough's music
+================
+*/
+
+#define RL_ENDWAIT 4000 // what the game waits before it takes the fire
+
+static struct {
+    Menu *stock;      // the stock screen it is shown for
+    bool  ok;         // a success
+    int   mission;    // Spearhead's and Breakthrough's number, 0 Allied Assault's
+    int   at, drawn;  // when it was pushed, last drawn
+    int   sound;      // the music: 0 not begun, 1 held, 2 raised
+} rl_end;
+
+// the medals a level can award: the stock medal cases' (ui/medals.urc) cvar
+// and picture, the name on its sign
+static const struct {
+    int         game;
+    const char *cvar, *pic, *name;
+} rl_medals[] = {
+    {TG_MOH,   "g_medal0",    "armycommendation_med",                 "Army Commendation Medal"        },
+    {TG_MOH,   "g_medal1",    "distinguishedservice_med",             "Distinguished Service Medal"    },
+    {TG_MOH,   "g_medal2",    "legionmerit_med",                      "The Legion of Merit"            },
+    {TG_MOH,   "g_medal3",    "goodconduct_med",                      "The Good Conduct Medal"         },
+    {TG_MOH,   "g_medal4",    "norwegiancross",                       "Norwegian War Cross With Sword" },
+    {TG_MOH,   "g_medal5",    "americanmedal",                        "American Campaign Medal"        },
+    {TG_MOH,   "g_eogmedal0", "distinguishedcross_med",               "Distinguished Service Cross"    },
+    {TG_MOH,   "g_eogmedal1", "silverstar_med",                       "Silver Star"                    },
+    {TG_MOH,   "g_eogmedal2", "bronzestar_med",                       "Bronze Star"                    },
+    {TG_MOHTA, "g_medal0",    "distinguishedcross_med",               "Distinguished Service Cross"    },
+    {TG_MOHTA, "g_medal1",    "silverstar_med",                       "Silver Star"                    },
+    {TG_MOHTA, "g_medal2",    "bronzestar_med",                       "Bronze Star"                    },
+    {TG_MOHTA, "g_medal3",    "textures/mohmenu/frangermstar_med",    "The France And Germany Star"    },
+    {TG_MOHTA, "g_medal4",    "textures/mohmenu/croixdeguerre_med",   "Belgian Croix De Guerre"        },
+    {TG_MOHTA, "g_medal5",    "textures/mohmenu/captureofberlin_med", "Medal For The Capture Of Berlin"},
+    {TG_MOHTT, "g_medalbt0",  "distinguishedcross_med",               "Distinguished Service Cross"    },
+    {TG_MOHTT, "g_medalbt1",  "silverstar_med",                       "Silver Star"                    },
+    {TG_MOHTT, "g_medalbt2",  "bronzestar_med",                       "Bronze Star"                    },
+    {TG_MOHTT, "g_medalbt3",  "africastar_med",                       "Africa Star"                    },
+    {TG_MOHTT, "g_medalbt4",  "distinguishedflyingcross_med",         "Distinguished Flying Cross"     },
+    {TG_MOHTT, "g_medalbt5",  "airmedal_med",                         "Air Medal"                      },
+};
+
+qboolean UI_Menus_End(const char *name, Menu *m, qboolean show)
+{
+    // (the menu found for the stock name: UI_Menus_Alias's)
+    if (Q_stricmp(m->m_name.c_str(), "reloaded_end")) {
+        return qfalse;
+    }
+    if (!show) {
+        if (menuManager.CurrentMenu() == m) {
+            menuManager.PopMenu(qfalse);
+            UI_FocusMenuIfExists();
+        }
+        return qtrue;
+    }
+    // (shown each frame of the intermission: pushed once, not over a menu opened from it)
+    if (m->isVisible() || menuManager.CurrentMenu()) {
+        return qtrue;
+    }
+    // (taken down by Esc a moment ago: its wait and its sounds go on)
+    if (cls.realtime - rl_end.drawn > 1000) {
+        UIWidget *c;
+
+        rl_end.stock   = menuManager.FindMenuNamed(name);
+        rl_end.ok      = !Q_stricmp(name, "StatsScreen_Success") || !Q_stricmpn(name, "mission_success_", 16);
+        rl_end.mission = Q_stricmpn(name, "mission_", 8) ? 0 : atoi(strrchr(name, '_') + 1);
+        rl_end.at      = cls.realtime;
+        rl_end.sound   = 0;
+        // (a stock menu's widgets load when it is first shown)
+        c = rl_end.stock ? rl_end.stock->GetContainerWidget() : NULL;
+        if (c && c->isSubclassOf(UIWidgetContainer) && static_cast<UIWidgetContainer *>(c)->m_layout) {
+            static_cast<UIWidgetContainer *>(c)->m_layout->ForceLoad();
+        }
+    }
+    UI_PushMenu("reloaded_end");
+    return qtrue;
+}
+
+// the stock screen's sounds, as its labels play them: 2 s on, Spearhead's
+// poem (the game's sounds stopped) and the music at 0.35, held (by the
+// mission) then raised to full over 2 s; Breakthrough's music so
+static void RL_EndSounds(void)
+{
+    static const float hold[3] = {120, 70, 77};
+    const int          t       = cls.realtime - rl_end.at - 2000;
+    const bool         sh      = com_target_game->integer == TG_MOHTA;
+
+    if (!rl_end.ok || rl_end.mission < 1 || rl_end.mission > 3 || t < 0 || rl_end.sound == 2) {
+        return;
+    }
+    if (!rl_end.sound) {
+        if (sh) {
+            uii.Snd_StopAllSound();
+            uii.Snd_FadeSound(0);
+            uii.Snd_PlaySoundDialog(va("sound/menu/mission%dpoem.mp3", rl_end.mission));
+        }
+        Cbuf_AddText(va("tmstartloop sound/music/mus_stat_%c%d.mp3\ntmvolume 0.35\n", sh ? 't' : 'e', rl_end.mission));
+        rl_end.sound = 1;
+    } else if (t > hold[rl_end.mission - 1] * 1000) {
+        const float k = Q_min(1.0f, (t - hold[rl_end.mission - 1] * 1000) / 2000.0f);
+
+        Cbuf_AddText(va("tmvolume %4.2f\n", 0.35f + 0.65f * k));
+        rl_end.sound = k < 1.0f ? 1 : 2;
+    }
+}
+
+void UIReloadedMenu::DrawEnd(const rlView_t& v, const rlInfo_t& in)
+{
+    static const char *const hitNames[5] = {"HEAD", "TORSO", "ARMS", "GROIN", "LEGS"};
+    const float hits[5] = {Cvar_VariableValue("ui_HeadShots"), Cvar_VariableValue("ui_TorsoShots"),
+                           Cvar_VariableValue("ui_LeftArmShots") + Cvar_VariableValue("ui_RightArmShots"), Cvar_VariableValue("ui_GroinShots"),
+                           Cvar_VariableValue("ui_LeftLegShots") + Cvar_VariableValue("ui_RightLegShots")};
+    const std::string numbers[6][2] = {
+        {va("%d", Cvar_VariableIntegerValue("ui_NumEnemysKilled")), "ENEMIES KILLED" },
+        {va("%d%%", (int)(Cvar_VariableValue("ui_Accuracy") + 0.5f)), "ACCURACY"       },
+        {va("%d", Cvar_VariableIntegerValue("ui_NumComplete")), "OBJECTIVES DONE"},
+        {va("%d", Cvar_VariableIntegerValue("ui_NumShotsFired")), "SHOTS FIRED"    },
+        {va("%d", Cvar_VariableIntegerValue("ui_NumHits")), "SHOTS HIT"      },
+        {va("%d", Cvar_VariableIntegerValue("ui_NumHitsTaken")), "HITS TAKEN"     },
+    };
+    const std::string weapon(Cvar_VariableString("ui_PreferredWeapon"));
+    // (copied: va's buffers are reused while it draws)
+    const char       *found = UI_CompHud_WeaponOutline(weapon.c_str());
+    const std::string outline(found ? found : "");
+    const char       *level   = CL_ConfigString(CS_MESSAGE);
+    const float       wait    = (cls.realtime - rl_end.at) / (float)RL_ENDWAIT;
+    const float       lw = v.dh * 4 / 3, lx = (v.dw - lw) / 2;
+    const float       th = 112, mh = 76, bh = 48, head = 104;
+    int               medal = -1;
+    float             tw, wh, gap, gw; // (the Esc menu's grid; wh its tiles' height)
+
+    // the medal won: the first whose cvar the level set (as the game tells, g_gotmedal: ui_gotmedal)
+    for (int i = 0; medal < 0 && i < (int)ARRAY_LEN(rl_medals) && Cvar_VariableIntegerValue("ui_gotmedal"); i++) {
+        const cvar_t *c = rl_medals[i].game == Q_min(in.target, TG_MOHTT) ? Cvar_FindVar(rl_medals[i].cvar) : NULL;
+
+        if (c && c->modificationCount > 1) {
+            medal = i;
+        }
+    }
+    RL_Grid(v, &tw, &wh, &gap, &gw);
+    const float x0 = (v.dw - gw) / 2;
+    float       y  = (v.dh - (head + gap + 2 * th + 2 * gap + wh + (medal < 0 ? 0 : gap + mh) + 22 + bh)) / 2;
+
+    if (!rl_bakeOnly) {
+        rl_end.drawn = cls.realtime;
+        RL_EndSounds();
+    }
+    RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0));
+    RL_StockPictures(rl_end.stock, RL_P(v, lx), 0, RL_P(v, lx + lw), RL_P(v, v.dh), true);
+    RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
+    // the header: the level, the mission; the outcome a tag the buttons' height and
+    // shape (CONTINUE's), as far in from the panel's top, bottom and right as the title from its left
+    {
+        const char *tag = rl_end.ok ? "SUCCESS" : "FAILED";
+        const float cw  = RL_TextW(v, tag, 18, true, 2) + 56;
+
+        RL_HeaderPanel(v, x0, y, gw, head, level[0] ? level : in.map, RL_H3, -1, RL_MissionLine(in.map).c_str(), NULL, 1.0f,
+                       gw - 56 - cw - 16);
+        RL_Skew(v, x0 + gw - 28 - cw, y + (head - bh) / 2, cw, bh, 12, 0, rl_end.ok ? RL_BRASS : RL_Rgb(214, 104, 88));
+        RL_Text(v, x0 + gw - 28 - cw / 2 + 3, y + head / 2, tag, 18, RL_INK, true, RL_CENTER, 2, RL_MID);
+    }
+    y += head + gap;
+    // the numbers, three a row
+    for (int k = 0; k < 6; k++) {
+        const float x = x0 + (k % 3) * (tw + gap), ty = y + (k / 3) * (th + gap);
+
+        RL_Round(v, x, ty, tw, th, 4, RL_Rgb(14, 16, 18, 226));
+        RL_Text(v, x + tw / 2, ty + th / 2 - 12, numbers[k][0].c_str(), 44, RL_TEXT, true, RL_CENTER, 0, RL_MID);
+        RL_Text(v, x + tw / 2, ty + th - 22, numbers[k][1].c_str(), RL_S2, RL_MUTED, true, RL_CENTER, 1.6f, RL_MID);
+    }
+    y += 2 * th + 2 * gap;
+    // the weapon most hits came from (none without a hit), where they landed
+    {
+        const float hx = x0 + tw + gap, hw = 2 * tw + gap, top = y + 50, rh = (wh - 66) / 5;
+        const float bx0 = hx + 96, bx1 = hx + hw - 76;
+
+        RL_Round(v, x0, y, tw, wh, 4, RL_Rgb(14, 16, 18, 226));
+        if (!outline.empty()) {
+            RL_Outline(v, outline.c_str(), x0 + tw / 2, y + wh * 0.36f, tw * 0.74f, wh * 0.34f, RL_Rgb(200, 196, 186));
+        }
+        RL_Text(v, x0 + tw / 2, y + wh - 52, Q_stricmp(weapon.c_str(), "none") ? RL_Upper(weapon.c_str()).c_str() : "\x97", RL_S1, RL_TEXT, true,
+                RL_CENTER, 1.6f, RL_MID, tw - 20);
+        RL_Text(v, x0 + tw / 2, y + wh - 22, "PREFERRED WEAPON", RL_S2, RL_MUTED, true, RL_CENTER, 1.6f, RL_MID);
+        RL_Round(v, hx, y, hw, wh, 4, RL_Rgb(14, 16, 18, 226));
+        RL_Text(v, hx + 20, y + 24, "WHERE YOUR HITS LANDED", RL_S2, RL_MUTED, true, RL_LEFT, 1.6f, RL_MID);
+        for (int k = 0; k < 5; k++) {
+            const float cy = top + rh * (k + 0.5f), f = Q_max(0.0f, Q_min(hits[k], 100.0f)) / 100;
+
+            RL_Text(v, hx + 20, cy, hitNames[k], 15, RL_Rgb(200, 196, 186), true, RL_LEFT, 1.6f, RL_MID);
+            RL_Box(v, bx0, cy - 2, bx1 - bx0, 4, RL_Rgb(255, 255, 255, 30));
+            RL_Box(v, bx0, cy - 2, (bx1 - bx0) * f, 4, RL_BRASS);
+            RL_Text(v, hx + hw - 20, cy, va("%d%%", (int)(hits[k] + 0.5f)), 17, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
+        }
+    }
+    y += wh;
+    // the medal won: its picture, its name
+    if (medal >= 0) {
+        const qhandle_t pic = re.RegisterShaderNoMip(rl_medals[medal].pic);
+        const float     ph  = mh - 20;
+        const float     pw  = pic ? ph * uii.Rend_GetShaderWidth(pic) / Q_max(1, uii.Rend_GetShaderHeight(pic)) : 0.0f;
+
+        y += gap;
+        RL_Round(v, x0, y, gw, mh, 4, RL_Rgb(14, 16, 18, 226));
+        if (pic && !rl_bakeOnly) {
+            RL_SetColor(RL_Rgb(255, 255, 255));
+            uii.Rend_DrawPicStretched(RL_P(v, x0 + 14), RL_P(v, y + 10), RL_P(v, x0 + 14 + pw) - RL_P(v, x0 + 14), RL_P(v, y + 10 + ph) - RL_P(v, y + 10),
+                                      0, 0, 1, 1, pic);
+        }
+        RL_RoundFrame(v, x0 + 14, y + 10, pw, ph, 0, 1, RL_Rgb(255, 255, 255, 40));
+        RL_Text(v, x0 + 30 + pw, y + mh / 2 - 12, "MEDAL AWARDED", RL_S2, RL_BRASS, true, RL_LEFT, 2.6f, RL_MID);
+        RL_Text(v, x0 + 30 + pw, y + mh / 2 + 13, rl_medals[medal].name, RL_S1, RL_TEXT, true, RL_LEFT, 0, RL_MID);
+        y += mh;
+    }
+    y += 22;
+    // MAIN MENU, CONTINUE (off, a brass bar filling under it, while the game waits)
+    {
+        const float cx = x0 + tw + gap, cw = 2 * tw + gap;
+
+        RL_Button(v, x0, y, tw, bh, "MAIN MENU", false, 0, 12, Hot(ID_MAINMENU));
+        Hit(v, x0, y, tw, bh, ID_MAINMENU);
+        RL_Button(v, cx, y, cw, bh, rl_end.ok ? "CONTINUE" : "TRY AGAIN", true, 12, 0, Hot(ID_CONTINUE), wait < 1.0f);
+        if (wait < 1.0f) {
+            RL_Box(v, cx + 12, y + bh - 4, (cw - 12) * wait, 4, RL_BRASS);
+        }
+        Hit(v, cx, y, cw, bh, ID_CONTINUE);
+        if (!rl_end.ok) {
+            RL_Text(v, x0 + gw, y + bh + 24, *Cvar_VariableString("g_lastsave") ? "TRY AGAIN loads your last save." : "TRY AGAIN starts the level again.",
+                    15, RL_MUTED, false, RL_RIGHT, 0, RL_MID);
+        }
+    }
+    m_order.push_back(ID_MAINMENU);
+    m_order.push_back(ID_CONTINUE);
+    m_cols = 2;
+}
+
+/*
+================
 Choose: what an item does (the stock menus' commands)
 ================
 */
@@ -2331,9 +2602,20 @@ void UIReloadedMenu::Choose(int id)
             break;
         }
         break;
+    case SCR_END:
+        if (id == ID_MAINMENU) {
+            // (over it: it is there again when the main menu closes)
+            RL_MainShow(RL_SHOW_MISSIONS);
+            cmd = "pushmenu main\n";
+        } else if (id == ID_CONTINUE && cls.realtime - rl_end.at >= RL_ENDWAIT) {
+            // the fire the game waits for (down and up at once: still a press in the next command)
+            cmd = "+attackprimary\n-attackprimary\n";
+        }
+        break;
     }
     if (cmd) {
         const std::string text(cmd);
+
 
         uii.Snd_PlaySound("sound/menu/apply.wav");
         Cbuf_AddText(text.c_str());

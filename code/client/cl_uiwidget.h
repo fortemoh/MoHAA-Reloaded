@@ -32,14 +32,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <vector>
 
 /*
-ReloadedMenu: "screen weapon|esc|scoreboard|loading|main|confirm", "layer
+ReloadedMenu: "screen weapon|esc|scoreboard|loading|main|confirm|end", "layer
 back|front". The back layer draws what is under the 3D model views and
 places them (labels the menu names); the front layer draws what is over
 them and takes the mouse and the keys. Both lay the screen out alike from
 the same data
 */
 
-enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD, SCR_LOADING, SCR_MAIN, SCR_CONFIRM, SCR_NUM };
+enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD, SCR_LOADING, SCR_MAIN, SCR_CONFIRM, SCR_END, SCR_NUM };
 
 // items from this id on are hot without a sound (a list's rows)
 #define RL_QUIET 1000
@@ -95,6 +95,7 @@ public:
     void DrawWeapon(const rlView_t& v, const rlInfo_t& in);
     void DrawEsc(const rlView_t& v, const rlInfo_t& in);
     void DrawScoreboard(const rlView_t& v, const rlInfo_t& in);
+    void DrawEnd(const rlView_t& v, const rlInfo_t& in);
 
     // the main menu and its confirmations (cl_uimain.cpp)
     void     DrawMain(const rlView_t& v);
@@ -111,6 +112,9 @@ enum { RL_SHOW_OPTIONS, RL_SHOW_MISSIONS, RL_SHOW_SAVES };
 void        RL_MainShow(int what);
 // the Esc menu's caption in a mission ("MISSION 2  ·  SCUTTLING THE U-529  ·  MEDIUM")
 std::string RL_MissionLine(const char *map);
+// the main menu's slanted button (primary: brass; off: dimmed), kl kr its edges' lean
+void        RL_Button(const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, float kl, float kr, bool hot,
+                      bool off = false);
 
 // the player models a side can pick, the stock picker's, in its order
 typedef struct {
