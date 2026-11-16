@@ -145,7 +145,7 @@ qhandle_t   RL_LevelPainting(const char *map, float *aspect);
 void        RL_Button(const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, float kl, float kr, bool hot,
                       bool off = false);
 
-// the player models a side can pick, the stock picker's, in its order
+// the player models a side can pick, in the order of their names (PM_FilenameToDisplayname)
 typedef struct {
     std::string file;  // models/player/<file>.tik
     std::string order; // the picker's name ("DE - Wehrmacht Soldier")

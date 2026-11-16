@@ -74,8 +74,6 @@ static void CG_Viewpos_f(void)
 void CG_SetDesiredObjectiveAlpha(float fAlpha)
 {
     cg.ObjectivesDesiredAlpha = fAlpha;
-    cg.ObjectivesAlphaTime    = (float)(cg.time + 250);
-    cg.ObjectivesBaseAlpha    = cg.ObjectivesCurrentAlpha;
 }
 
 void CG_ScoresDown_f(void)

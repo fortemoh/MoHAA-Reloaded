@@ -366,7 +366,6 @@ functions exported to the main executable
         void (*UI_HideMenu)(const char *name, qboolean bForce);
         int (*UI_FontStringWidth)(fontheader_t *font, const char *string, int maxLen);
         // Added in 2.0
-        float (*UI_GetObjectivesTop)(void);
         void (*UI_GetHighResolutionScale)(vec2_t scale);
 
         int (*Key_StringToKeynum)(const char *str);
@@ -471,10 +470,6 @@ functions exported to the main executable
         // faded by alpha
         void (*UI_DrawZoomOverlay)(int type, float alpha);
 
-        // Added: the objectives' box's left edge in pixels (the stock 25; beside
-        // the Competitive HUD's radar, UI_GetObjectivesTop then level with its top)
-        float (*UI_GetObjectivesLeft)(void);
-
         // Added: the quick messages' menu drawn by the client (the Competitive
         // HUD's): its title (NULL: the groups'), its count lines (the
         // localization's keys, "" not shown, numbered from 1). Static texts:
@@ -482,9 +477,8 @@ functions exported to the main executable
         void (*UI_DrawInstaMessage)(const char *title, const char *const *lines, int count);
 
         // Added: a mission's objectives drawn by the client while TAB is held
-        // (shown; the Reloaded menus' card), called each frame. qfalse: the
-        // stock list is to be drawn
-        qboolean (*UI_DrawObjectives)(qboolean shown);
+        // (shown; the Reloaded menus' card), called each frame
+        void (*UI_DrawObjectives)(qboolean shown);
 
     } clientGameImport_t;
 
@@ -512,7 +506,6 @@ functions exported to the main executable
         void (*CG_HudDrawShader)(int info);
         void (*CG_HudDrawFont)(int info);
         int (*CG_GetParent)(int entNum);
-        float (*CG_GetObjectiveAlpha)();
         int (*CG_PermanentMark)(
             vec3_t          origin,
             vec3_t          dir,

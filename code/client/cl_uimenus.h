@@ -23,15 +23,18 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // cl_uimenus.h: the Reloaded menus (Added): team select, weapon select, the
 // Esc menu, the scoreboard, the load screen, the end of a mission's level
 // and the connect's box (ui/reloaded_*.urc), shown in place of the stock
-// menus unless ui_classicmenus is 1, and the cursor
+// menus, and the cursor
 
 #pragma once
 
 void        UI_Menus_Init(void);
-// the menu shown for a stock menu's name, NULL: the stock one
+// a player model's name ("US - Soldier"), else the file's (fileName)
+const char *PM_FilenameToDisplayname(const char *fileName);
+// the menu shown for a stock menu's name, NULL: none (the menu of that name)
 const char *UI_Menus_Alias(const char *name);
 // a menu about to be pushed by that name (the weapon menu's nation and
-// preview); qfalse: not pushed (the server's push after a side picked in the weapon menu)
+// preview); qfalse: not pushed (the server's push after a side picked in the
+// weapon menu, F2's mpoptions, F3's and F4's pages shown instead)
 qboolean    UI_Menus_Pushing(const char *name);
 // the cgame shows (show) or hides a stock menu m was found for: the end of a
 // mission's level (reloaded_end) pushed or popped instead (its buttons take
@@ -48,11 +51,11 @@ void        UI_Menus_ConfigString(void);
 // the menus laid out to bake their faces and shapes (a map's load, a new screen size)
 void        UI_Menus_PreBake(void);
 // a mission's objectives as the scoreboard's card while TAB is held (shown; the cgame's
-// call each frame); qfalse with ui_classicmenus 1: the stock list
-qboolean    UI_Menus_DrawObjectives(qboolean shown);
+// call each frame)
+void        UI_Menus_DrawObjectives(qboolean shown);
 // a map's load begins (UI_BeginLoad): the Reloaded menu that shows it
 // (reloaded_loading, a mission's level reloaded_mission; the pictures the
-// stock load screen's, stock); NULL: the stock one
+// stock load screen's, stock); NULL: the stock one (no Reloaded menu loaded)
 const char *UI_Menus_Loading(class Menu *stock, const char *map);
 // a saved game's shot is taken of the next frame (saveshot): the mission's load screen without its CONTINUE
 void        UI_Menus_SaveShot(void);

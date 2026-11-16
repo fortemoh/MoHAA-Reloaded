@@ -31,9 +31,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // DM_Round_Scoreboard, Obj_Scoreboard, Tow_Scoreboard, Lib_Scoreboard,
 // main, connecting and its errors, StatsScreen_Success|Failed,
 // mission_success|failed_N, the vote menus: UI_Menus_Alias; F3's Controls and
-// F4's LoadSave their pages: RL_FKey), so nothing on the server or in the cgame changes;
-// ui_classicmenus 1 shows the stock ones (and the stock cursor: the Reloaded
-// one is RL_Cursor's).
+// F4's LoadSave their pages: RL_FKey; F2's mpoptions nothing), so nothing on the
+// server or in the cgame changes. The cursor is RL_Cursor's.
 //
 // Sizes are design units: a 1080-line screen (900 below 900 lines, so small
 // screens get bigger type), the width what the screen's shape gives. Type is
@@ -63,7 +62,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define RL_FIGMID   63.0f
 #define RL_FIGHEAD  98.0f
 
-static cvar_t *ui_classicmenus;
 static cvar_t *ui_reloaded_figure; // the figure's model (the label's linkcvar)
 static cvar_t *ui_dm_primary;
 static cvar_t *ui_reloaded_nation;
@@ -205,9 +203,6 @@ deaths, time, ping)
 */
 void UI_Menus_ServerCommand(void)
 {
-    if (!ui_classicmenus || ui_classicmenus->integer) {
-        return;
-    }
     // (the server drops the player: its reason for the connect's box)
     if (!strcmp(Cmd_Argv(0), "disconnect")) {
         RL_ConnectDropped(Cmd_Argv(1));
@@ -826,13 +821,13 @@ static int RL_NationTeam(int nation)
 PLAYER MODELS
 
 The weapon menu's side tabs and model cycler, the main menu's profile.
-Each side's models are the stock picker's (PlayerModelPickerClass::
-SetupFiles: models/player's .tik but the view models and hidden ones, the
-Axis' german*, axis*, it*, sc*), in the order of its names ("US - Soldier"),
-listed when a menu showing them opens. What the weapon menu previews (the
-side, each side's model) is kept here for both layers (the back one places
-the live model) and set again each time the menu opens; nothing is sent
-until a weapon is picked (UIReloadedMenu::Choose)
+Each side's models are models/player's .tik but the view models and hidden
+ones (the Axis' german*, axis*, it*, sc*), in the order of their names
+("US - Soldier": PM_FilenameToDisplayname), listed when a menu showing them
+opens. What the weapon menu previews (the side, each side's model) is kept
+here for both layers (the back one places the live model) and set again
+each time the menu opens; nothing is sent until a weapon is picked
+(UIReloadedMenu::Choose)
 
 ====================================================================
 */
@@ -848,7 +843,100 @@ static struct {
     int                    swallowAt;
 } rl_wp = {{-1, -1}, {-1, -1}, 0, 0, false, 0};
 
-// the picker's name without its nation ("DE - Wehrmacht Soldier": "Wehrmacht
+// the models' names (the stock model picker's), "US - Soldier"
+static const struct {
+    const char *fileName;
+    const char *displayName;
+} pickerModels[] = {
+    // 2.0 skins
+    {"allied_101st_captain",                    "US - 101st Airborne Captain"    },
+    {"allied_101st_infantry",                   "US - 101st Airborne Private 1"  },
+    {"allied_101st_scout",                      "US - 101st Airborne Private 2"  },
+    {"allied_501st_pir_scout",                  "US - 501st Paratrooper 1"       },
+    {"allied_501st_pir_soldier",                "US - 501st Paratrooper 2"       },
+    // 1.0 skins
+    {"allied_airborne",                         "US - 501st Paratrooper 3"       },
+    // Readded in OPM (was removed in 2.0)
+    {"allied_manon",                            "US - Manon"                     },
+    // 2.0 skins
+    {"allied_british_6th_airborne_captain",     "UK - 6th Airborne Captain"      },
+    {"allied_british_6th_airborne_paratrooper", "UK - 6th Airborne Paratrooper"  },
+    // 1.0 skins
+    {"allied_pilot",                            "US - Army Pilot"                },
+    // 2.0 skins
+    {"allied_russian_corporal",                 "RA - Corporal"                  },
+    {"allied_russian_crazy_boris",              "RA - Crazy Boris"               },
+    {"allied_russian_recon_scout",              "RA - Junior Lieutenant"         },
+    {"allied_russian_recon_soldier",            "RA - Black Sea Petty Officer"   },
+    // 1.0 skins
+    {"allied_sas",                              "UK - SAS Officer"               },
+    {"american_army",                           "US - Soldier"                   },
+    {"american_ranger",                         "US - Ranger"                    },
+    // 1.0 skins
+    {"german_afrika_officer",                   "DE - Afrika Officer"            },
+    {"german_afrika_private",                   "DE - Afrika Private"            },
+    // 2.0 skins
+    {"german_ardennes_artillery_commander",     "DE - Artillery Commander"       },
+    {"german_dday_colonel",                     "DE - Normandy Colonel"          },
+    // 1.0 skins
+    {"german_elite_officer",                    "DE - Elite Officer"             },
+    {"german_elite_sentry",                     "DE - Elite Sentry"              },
+    {"german_kradshutzen",                      "DE - Kradshutzen"               },
+    {"german_panzer_grenadier",                 "DE - Panzer Grenadier"          },
+    {"german_panzer_obershutze",                "DE - Panzer Obershutze"         },
+    {"german_panzer_shutze",                    "DE - Panzer Shutze"             },
+    {"german_panzer_tankcommander",             "DE - Panzer Tank Commander"     },
+    {"german_scientist",                        "DE - German Scientist"          },
+    // 1.0 skins
+    {"german_waffenss_officer",                 "DE - Waffen Officer"            },
+    {"german_waffenss_shutze",                  "DE - Waffen Shutze"             },
+    {"german_wehrmacht_officer",                "DE - Wehrmacht Officer"         },
+    {"german_wehrmacht_soldier",                "DE - Wehrmacht Soldier"         },
+    {"german_winter_1",                         "DE - Winter Infantry 1"         },
+    {"german_winter_2",                         "DE - Winter Infantry 2"         },
+    {"german_worker",                           "DE - German Mechanic"           },
+    // 2.11 skins
+    {"allied_british_tank_corporal",            "UK - 6th Royal Tank Regiment"   },
+    {"allied_russian_seaman",                   "RA - Red Navy Seaman"           },
+    {"german_Panzer_Corporal",                  "DE - 1st Panzer Regiment"       },
+    {"allied_technician",                       "US - Air Force Technician"      },
+    {"german_stukageschwader",                  "DE - Stukageschwader"           },
+    // 2.30 skins
+    {"It_AX_Ital_Vol",                          "IT - 10th Army XXI Corps"       },
+    {"SC_AX_Ital_Inf",                          "IT - 6th Army 202nd Coastal Div"},
+    {"SC_AX_Ital_Inf2",                         "IT - 114th Inf Regiment"        },
+    {"SC_AX_ITAL_PARA",                         "IT - Paracadutista Militare"    },
+    // 2.40 skins
+    {"allied_Wheathers",                        "US - General Wheathers"         },
+    {"allied_US_Tank",                          "US - II Corps Tank Commander"   },
+    {"allied_US_Mask",                          "US - II Corps Infantry"         },
+    {"allied_british_Cmd",                      "UK - 10th Corps"                },
+    {"allied_british_Tank",                     "UK - 8th Army"                  },
+    {NULL,                                      NULL                             }
+};
+
+// Allied Assault never named its models: its paratrooper is "Airborne" there,
+// not Spearhead's "501st Paratrooper 3" (the third beside its own 1 and 2)
+static const char pmAirborneAA[] = "US - Airborne";
+
+const char *PM_FilenameToDisplayname(const char *fileName)
+{
+    int i;
+
+    if (com_target_game->integer == target_game_e::TG_MOH && !Q_stricmp(fileName, "allied_airborne")) {
+        return pmAirborneAA;
+    }
+
+    for (i = 0; pickerModels[i].fileName; i++) {
+        if (!Q_stricmp(pickerModels[i].fileName, fileName)) {
+            return pickerModels[i].displayName;
+        }
+    }
+
+    return fileName;
+}
+
+// the name without its nation ("DE - Wehrmacht Soldier": "Wehrmacht
 // Soldier"), else the file's
 std::string RL_ModelName(const char *file)
 {
@@ -1115,7 +1203,7 @@ static const struct {
 
 const char *UI_Menus_Alias(const char *name)
 {
-    if (!ui_classicmenus || ui_classicmenus->integer || !name) {
+    if (!name) {
         return NULL;
     }
     // (every menu lookup asks, the HUD's 13 each frame: the stock names start with s, o, d, t, l, m, c, e, b, w or v)
@@ -1203,11 +1291,12 @@ qboolean UI_Menus_Pushing(const char *name)
     const char *alias = UI_Menus_Alias(name);
 
     if (!alias) {
-        if (name && ui_classicmenus && !ui_classicmenus->integer && (!Q_stricmp(name, "Controls") || !Q_stricmp(name, "LoadSave"))) {
+        if (name && (!Q_stricmp(name, "Controls") || !Q_stricmp(name, "LoadSave"))) {
             RL_FKey(*name == 'C' || *name == 'c');
             return qfalse;
         }
-        return qtrue;
+        // F2's (default.cfg's "pushmenu_dm mpoptions", the stock Multiplayer Options): nothing
+        return name && !Q_stricmp(name, "mpoptions") ? qfalse : qtrue;
     }
     if (!strcmp(alias, RL_VOTEMENUS)) {
         // (the cgame's pushcallvote and pushvote, its votes' arrival: the page, not pushed again)
@@ -1270,8 +1359,7 @@ THE CURSOR
 A brass dart (ui/outlines/glyphs/cursor.svg, in its colours: the tip of
 its dark edge, the top-left, the hot spot) 22 units high, baked at its
 size for the UI's draw and the system's cursor (a window's) when the size
-changes, registered again after a map's load or a renderer's restart; the
-stock picture with ui_classicmenus 1
+changes, registered again after a map's load or a renderer's restart
 
 ====================================================================
 */
@@ -1291,9 +1379,6 @@ static const byte *RL_Cursor(int *w, int *h, uihandle_t *shader)
     const int                ph    = Q_max(12, RL_P(RL_View(), 22.0f));
     float                    sw, sh;
 
-    if (ui_classicmenus->integer) {
-        return NULL;
-    }
     if (ph != rl_cur.h) {
         if (!UI_OutlineSize(RL_CURSOR, &sw, &sh)) {
             return NULL;
@@ -1330,7 +1415,6 @@ void UI_Menus_Init(void)
     RL_BRASS     = RL_Rgb(a[0][0], a[0][1], a[0][2]);
     RL_BRASS_HOT = RL_Rgb(a[1][0], a[1][1], a[1][2]);
 
-    ui_classicmenus    = Cvar_Get("ui_classicmenus", "0", CVAR_ARCHIVE);
     ui_dm_primary      = Cvar_Get("ui_dm_primary", "", CVAR_ARCHIVE);
     ui_reloaded_nation = Cvar_Get("ui_reloaded_nation", "american", 0);
     ui_reloaded_figure = Cvar_Get("ui_reloaded_figure", "", 0);
@@ -1344,7 +1428,7 @@ void UI_Menus_Init(void)
 THE LOAD SCREEN
 
 Shown while a map loads in place of the stock one (the menu named after
-the map, else loading_default), unless ui_classicmenus is 1. A mission's
+the map, else loading_default). A mission's
 level (single player): its orders letter, the stock screen's pictures,
 unstretched, full height, black beside it; in the stock CONTINUE's place
 what loads and how far, then CONTINUE (reloaded_mission: the game waits
@@ -1524,7 +1608,7 @@ const char *UI_Menus_Loading(Menu *stock, const char *map)
     // (a mission's level waits for CONTINUE as its stock screen does; loading_default's doesn't)
     ours = rl_ld.gametype == GT_SINGLE_PLAYER && stock && Q_stricmp(stock->m_name.c_str(), "loading_default") ? "reloaded_mission"
                                                                                                              : "reloaded_loading";
-    if (!ui_classicmenus || ui_classicmenus->integer || !menuManager.FindMenuNamed(ours)) {
+    if (!menuManager.FindMenuNamed(ours)) {
         return NULL;
     }
     Q_strncpyz(name, map, sizeof(name));
@@ -3208,10 +3292,10 @@ UI_Menus_DrawObjectives
 A mission's objectives while TAB is held (the cgame's call), as the
 scoreboard's card: its header (the level, the mission's line, how many
 are done) over a row each, the box ticked when done, the current one
-marked in brass. qfalse with ui_classicmenus 1: the stock list
+marked in brass
 ================
 */
-qboolean UI_Menus_DrawObjectives(qboolean shown)
+void UI_Menus_DrawObjectives(qboolean shown)
 {
     struct rlObj_t {
         std::string text;
@@ -3222,11 +3306,8 @@ qboolean UI_Menus_DrawObjectives(qboolean shown)
     char                 map[MAX_QPATH], *dollar;
     const char          *level;
 
-    if (!ui_classicmenus || ui_classicmenus->integer) {
-        return qfalse;
-    }
     if (!shown || !uii.IsRendererLoaded()) {
-        return qtrue;
+        return;
     }
     current = atoi(CL_ConfigString(CS_CURRENT_OBJECTIVE));
     for (int i = 0; i < MAX_OBJECTIVES; i++) {
@@ -3259,7 +3340,7 @@ qboolean UI_Menus_DrawObjectives(qboolean shown)
         RL_HeaderPanel(v, x, y0, w, head, level[0] ? level : map, RL_H3, -1, RL_MissionLine(map).c_str(), NULL, 1.0f, w - 56 - count);
         RL_Box(v, x, y0 + head - 4, w, 4, RL_BRASS);
         if (objs.empty()) {
-            return qtrue;
+            return;
         }
         RL_Text(v, x + w - 28, y0 + 32, va("%d / %d", done, (int)objs.size()), RL_H3, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
         RL_Text(v, x + w - 28, y0 + 68, "OBJECTIVES DONE", RL_S2, RL_MUTED, false, RL_RIGHT, 2.4f, RL_MID);
@@ -3286,7 +3367,6 @@ qboolean UI_Menus_DrawObjectives(qboolean shown)
                     RL_MID, w - 80);
         }
     }
-    return qtrue;
 }
 
 /*
@@ -3302,7 +3382,7 @@ void UI_Menus_PreBake(void)
 {
     static const char *const menus[] = {"reloaded_weapon", "reloaded_esc", "reloaded_options", "reloaded_scoreboard"};
 
-    if (!ui_classicmenus || ui_classicmenus->integer || clc.state < CA_PRIMED || !uii.IsRendererLoaded()) {
+    if (clc.state < CA_PRIMED || !uii.IsRendererLoaded()) {
         return;
     }
     UI_BakeBatch(true);

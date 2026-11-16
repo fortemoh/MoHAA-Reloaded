@@ -48,7 +48,6 @@ void CL_ShutdownUI(void);
 // general ui stuff
 //
 extern inventory_t  client_inv;
-extern bind_t       client_bind;
 extern cvar_t      *cl_greenfps;
 extern qboolean     server_loading;
 extern const UColor UWhiteChatMessageColor;
@@ -59,8 +58,6 @@ const char *CvarGetForUI(const char *name, const char *defval);
 void        UI_ClearState(void);
 void        CL_BeginRegistration(void);
 void        CL_EndRegistration(void);
-float       UI_GetObjectivesTop(void);
-float       UI_GetObjectivesLeft(void); // Added: beside the Competitive HUD's radar
 void        UI_GetHighResolutionScale(vec2_t scale);
 
 //

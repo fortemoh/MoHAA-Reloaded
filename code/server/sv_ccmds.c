@@ -2666,7 +2666,6 @@ void SV_CheckSaveGame(void)
 	if (cl.serverTime >= svs.time) {
 		bSavegame = qfalse;
 		SV_SaveGame(savegame_name[0] ? savegame_name : NULL, qfalse);
-		UI_SetupFiles();
 	}
 #endif
 }

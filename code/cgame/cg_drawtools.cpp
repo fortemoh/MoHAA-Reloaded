@@ -572,189 +572,7 @@ void CG_HudDrawElements()
 
 void CG_InitializeObjectives()
 {
-    int i;
-
-    cg.ObjectivesAlphaTime    = 0.0;
-    cg.ObjectivesBaseAlpha    = 0.0;
     cg.ObjectivesDesiredAlpha = 0.0;
-    cg.ObjectivesCurrentAlpha = 0.0;
-
-    for (i = 0; i < MAX_OBJECTIVES; i++) {
-        cg.Objectives[i].flags   = 0;
-        cg.Objectives[i].text[0] = 0;
-    }
-}
-
-void CG_DrawObjectives()
-{
-    float        vColor[4];
-    float        fX, fY;
-    int          iNumObjectives;
-    float        fObjectivesTop;
-    static float fWidth;
-    float        fHeight;
-    int          iNumLines[20];
-    int          iTotalNumLines;
-    int          i;
-    int          iCurrentObjective;
-    float        fTimeDelta;
-    const char  *pszLocalizedText;
-    const char  *pszLine;
-    float        fShift; // Added: pixels right of the stock place (beside the Competitive HUD's radar)
-
-    iTotalNumLines = 0;
-    for (i = CS_OBJECTIVES; i < CS_OBJECTIVES + MAX_OBJECTIVES; ++i) {
-        CG_ProcessConfigString(i, qfalse);
-    }
-
-    iCurrentObjective         = atoi(CG_ConfigString(CS_CURRENT_OBJECTIVE));
-    fTimeDelta                = cg.ObjectivesAlphaTime - cg.time;
-    cg.ObjectivesCurrentAlpha = cg.ObjectivesDesiredAlpha;
-    if (fTimeDelta > 0) {
-        cg.ObjectivesCurrentAlpha =
-            (cg.ObjectivesBaseAlpha - cg.ObjectivesDesiredAlpha) * sin(fTimeDelta / (M_PI * 50.f + 2.f))
-            + cg.ObjectivesDesiredAlpha;
-    }
-
-    if (cg.ObjectivesCurrentAlpha < 0.02) {
-        return;
-    }
-
-    // Added in 2.0
-    //  Get the minimum Y value, it should be below the compass
-    fObjectivesTop = cgi.UI_GetObjectivesTop();
-    fShift         = cgi.UI_GetObjectivesLeft() - 25;
-    iNumObjectives = 0;
-
-    for (i = 0; i < MAX_OBJECTIVES; i++) {
-        if ((cg.Objectives[i].flags == OBJ_FLAG_NONE) || (cg.Objectives[i].flags & OBJ_FLAG_HIDDEN)) {
-            continue;
-        }
-
-        iNumObjectives++;
-        iNumLines[i]     = 0;
-        pszLocalizedText = cgi.LV_ConvertString(cg.Objectives[i].text);
-
-        for (pszLine = strchr(pszLocalizedText, '\n'); pszLine; pszLine = strchr(pszLine + 1, '\n')) {
-            iNumLines[i]++;
-        }
-
-        iTotalNumLines += iNumLines[i];
-    }
-
-    fX        = 25.0 + fShift;
-    fY        = fObjectivesTop + 5;
-    fWidth    = (float)(iTotalNumLines * 12 + fObjectivesTop + iNumObjectives * 25 + 32) - fY;
-    vColor[2] = 0.2f;
-    vColor[1] = 0.2f;
-    vColor[0] = 0.2f;
-    vColor[3] = cg.ObjectivesCurrentAlpha * 0.75;
-    cgi.R_SetColor(vColor);
-    cgi.R_DrawStretchPic(
-        fX,
-        fY,
-        450.0 * cgs.uiHiResScale[0],
-        fWidth * cgs.uiHiResScale[1],
-        0.0,
-        0.0,
-        1.0,
-        1.0,
-        cgs.media.objectivesBackShader
-    );
-
-    fX        = 30.0 + fShift / cgs.uiHiResScale[0];
-    fY        = fObjectivesTop + 10;
-    vColor[0] = 1.0;
-    vColor[1] = 1.0;
-    vColor[2] = 1.0;
-    vColor[3] = cg.ObjectivesCurrentAlpha;
-    cgi.R_SetColor(vColor);
-    cgi.R_DrawString(
-        cgs.media.objectiveFont,
-        cgi.LV_ConvertString("Mission Objectives:"),
-        fX,
-        fY / cgs.uiHiResScale[1],
-        -1,
-        cgs.uiHiResScale
-    );
-    fY = fY + 5.0;
-
-    cgi.R_DrawString(
-        cgs.media.objectiveFont,
-        "_______________________________________________________",
-        fX,
-        fY / cgs.uiHiResScale[1],
-        -1,
-        cgs.uiHiResScale
-    );
-    fHeight = fObjectivesTop + 35 * cgs.uiHiResScale[1];
-
-    for (i = 0; i < MAX_OBJECTIVES; ++i) {
-        qhandle_t hBoxShader;
-
-        if ((cg.Objectives[i].flags == OBJ_FLAG_NONE) || (cg.Objectives[i].flags & OBJ_FLAG_HIDDEN)) {
-            continue;
-        }
-
-        if ((cg.Objectives[i].flags & OBJ_FLAG_CURRENT) != 0) {
-            vColor[0]  = 1.0;
-            vColor[1]  = 1.0;
-            vColor[2]  = 1.0;
-            vColor[3]  = cg.ObjectivesCurrentAlpha;
-            hBoxShader = cgs.media.uncheckedBoxShader;
-        } else if ((cg.Objectives[i].flags & OBJ_FLAG_COMPLETED) != 0) {
-            vColor[0]  = 0.75;
-            vColor[1]  = 0.75;
-            vColor[2]  = 0.75;
-            vColor[3]  = cg.ObjectivesCurrentAlpha;
-            hBoxShader = cgs.media.checkedBoxShader;
-        } else {
-            vColor[0]  = 1.0;
-            vColor[1]  = 1.0;
-            vColor[2]  = 1.0;
-            vColor[3]  = cg.ObjectivesCurrentAlpha;
-            hBoxShader = cgs.media.uncheckedBoxShader;
-        }
-        if (i == iCurrentObjective && !(cg.Objectives[i].flags & OBJ_FLAG_COMPLETED)) {
-            vColor[0] = 1.0;
-            vColor[1] = 1.0;
-            vColor[2] = 0.0;
-            vColor[3] = cg.ObjectivesCurrentAlpha;
-        }
-
-        cgi.R_SetColor(vColor);
-        fX = 55.0 + fShift / cgs.uiHiResScale[0];
-        fY = fHeight;
-        cgi.R_DrawString(
-            cgs.media.objectiveFont,
-            cgi.LV_ConvertString(cg.Objectives[i].text),
-            fX,
-            fY / cgs.uiHiResScale[1],
-            -1,
-            cgs.uiHiResScale
-        );
-
-        fX        = 30.0 + fShift / cgs.uiHiResScale[0];
-        fY        = fHeight;
-        vColor[0] = 1.0;
-        vColor[1] = 1.0;
-        vColor[2] = 1.0;
-        vColor[3] = cg.ObjectivesCurrentAlpha;
-        cgi.R_SetColor(vColor);
-        cgi.R_DrawStretchPic(
-            fX * cgs.uiHiResScale[0],
-            fY,
-            16.0 * cgs.uiHiResScale[0],
-            16.0 * cgs.uiHiResScale[1],
-            0.0,
-            0.0,
-            1.0,
-            1.0,
-            hBoxShader
-        );
-
-        fHeight += iNumLines[i] * 12 + 25 * cgs.uiHiResScale[1];
-    }
 }
 
 void CG_DrawInstantMessageMenu()
@@ -1023,7 +841,6 @@ void CG_Draw2D(void)
     // Added: no HUD under the Reloaded weapon and Esc menus (the client's
     // ui_menucover); a scope's mask stays, being the view
     static cvar_t *ui_menucover = cgi.Cvar_Get("ui_menucover", "0", 0);
-    bool           card;
 
     CG_DrawZoomOverlay();
     if (ui_menucover->integer) {
@@ -1032,16 +849,13 @@ void CG_Draw2D(void)
     CG_DrawLagometer();
     CG_HudDrawElements();
     // Added: a mission's objectives on TAB as the Reloaded menus' card (the
-    // client's, at once as their scoreboard; no crosshair over it), else the stock list
-    card = cgi.UI_DrawObjectives && cgi.UI_DrawObjectives(cg.ObjectivesDesiredAlpha > 0.0f ? qtrue : qfalse);
-    if (!card) {
-        CG_DrawObjectives();
-    }
+    // client's, at once as their scoreboard; no crosshair over it)
+    cgi.UI_DrawObjectives(cg.ObjectivesDesiredAlpha > 0.0f ? qtrue : qfalse);
     CG_DrawIcons();
     // (the stopwatch, the spectator's keys, the team, the player aimed at, the
     // attacker and the vote: the Competitive HUD's, the client's cl_uicomp.cpp)
     CG_DrawInstantMessageMenu();
-    if (!card || cg.ObjectivesDesiredAlpha <= 0.0f) {
+    if (cg.ObjectivesDesiredAlpha <= 0.0f) {
         CG_DrawCrosshair();
     }
 }

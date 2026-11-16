@@ -489,13 +489,6 @@ void CG_ProcessConfigString(int num, qboolean modelOnly)
             return;
         }
 
-        if (num >= CS_OBJECTIVES && num < CS_OBJECTIVES + MAX_OBJECTIVES) {
-            cobjective_t *objective = &cg.Objectives[num - CS_OBJECTIVES];
-
-            objective->flags = atoi(Info_ValueForKey(str, "flags"));
-            Q_strncpyz(objective->text, Info_ValueForKey(str, "text"), sizeof(objective->text));
-        }
-
         switch (num) {
         case CS_MUSIC:
             cgi.MUSIC_NewSoundtrack(str);
@@ -941,10 +934,6 @@ void CG_PrepRefresh(void)
     cgs.media.pausedShader             = cgi.R_RegisterShaderNoMip("textures/menu/paused");
     cgs.media.backTileShader           = cgi.R_RegisterShader("gfx/2d/backtile");
     cgs.media.hudDrawFont              = cgi.R_LoadFont("verdana-14");
-    cgs.media.objectiveFont            = cgi.R_LoadFont("facfont-20"); // was courier-16 before 2.0
-    cgs.media.objectivesBackShader     = cgi.R_RegisterShaderNoMip("textures/hud/objectives_backdrop");
-    cgs.media.checkedBoxShader         = cgi.R_RegisterShaderNoMip("textures/objectives/filledbox");
-    cgs.media.uncheckedBoxShader       = cgi.R_RegisterShaderNoMip("textures/objectives/emptybox");
 
     // go through all the configstrings and process them
     for (i = CS_SYSTEMINFO + 1; i < MAX_CONFIGSTRINGS; i++) {
@@ -1164,11 +1153,6 @@ int CG_GetParent(int entnum)
     return cg_entities[entnum].currentState.parent;
 }
 
-float CG_GetObjectiveAlpha()
-{
-    return cg.ObjectivesCurrentAlpha;
-}
-
 /*
 ================
 GetCGameAPI
@@ -1198,7 +1182,6 @@ clientGameExport_t *GetCGameAPI(void)
     cge.CG_ProcessInitCommands      = CG_ProcessInitCommands;
     cge.CG_EndTiki                  = CG_EndTiki;
     cge.CG_GetParent                = CG_GetParent;
-    cge.CG_GetObjectiveAlpha        = CG_GetObjectiveAlpha;
     cge.CG_WeaponCommandButtonBits  = CG_WeaponCommandButtonBits;
     cge.CG_CheckCaptureKey          = CG_CheckCaptureKey;
     cge.CG_ReadNonPVSClient         = CG_ReadNonPVSClient;

@@ -171,11 +171,6 @@ extern "C" {
         char name[64];
     } clientInfo_t;
 
-    typedef struct cobjective_s {
-        char text[MAX_STRING_CHARS];
-        int  flags;
-    } cobjective_t;
-
 #define MAX_RAIN_SHADERS 16
 
     typedef struct crain_s {
@@ -367,13 +362,9 @@ extern "C" {
         float viewkickMinDecay;
         float viewkickMaxDecay;
 
-        // objectives
-        cobjective_t Objectives[20];
-        float        ObjectivesAlphaTime;
-        float        ObjectivesBaseAlpha;
-        float        ObjectivesDesiredAlpha;
-        float        ObjectivesCurrentAlpha;
-        int          ObjectivesCurrentIndex;
+        // objectives (TAB held: shown)
+        float ObjectivesDesiredAlpha;
+        int   ObjectivesCurrentIndex;
 
         // the last shadow trace of each entity
         shadowTrace_t shadowTraces[MAX_GENTITIES];
@@ -396,10 +387,6 @@ extern "C" {
         qhandle_t     pausedShader;
         qhandle_t     levelExitShader;
         fontheader_t *hudDrawFont;
-        fontheader_t *objectiveFont;
-        qhandle_t     objectivesBackShader;
-        qhandle_t     checkedBoxShader;
-        qhandle_t     uncheckedBoxShader;
     } media_t;
 
     // The client game static (cgs) structure hold everything
@@ -680,7 +667,6 @@ extern "C" {
     void CG_RefreshHudDrawElements();
     void CG_HudDrawElements();
     void CG_InitializeObjectives();
-    void CG_DrawObjectives();
     void CG_UpdateCrosshair(void);
     void CG_Draw2D(void);
 

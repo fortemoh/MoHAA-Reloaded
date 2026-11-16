@@ -808,7 +808,6 @@ void CL_InitCGameDLL( clientGameImport_t *cgi, clientGameExport_t **cge ) {
 	cgi->UI_ShowMenu				= UI_ShowMenu;
 	cgi->UI_HideMenu				= UI_HideMenu;
 	cgi->UI_FontStringWidth			= CL_FontStringWidth;
-	cgi->UI_GetObjectivesTop		= UI_GetObjectivesTop;
 	cgi->UI_GetHighResolutionScale  = UI_GetHighResolutionScale;
 	cgi->Key_StringToKeynum			= Key_StringToKeynum;
 	cgi->Key_KeynumToBindString		= Key_KeynumToBindString;
@@ -870,7 +869,6 @@ void CL_InitCGameDLL( clientGameImport_t *cgi, clientGameExport_t **cge ) {
 	cgi->GetConfigString			= CL_ConfigString;
 	cgi->R_DrawBoxes				= re.DrawBoxes;
 	cgi->UI_DrawZoomOverlay			= UI_DrawZoomOverlay;
-	cgi->UI_GetObjectivesLeft		= UI_GetObjectivesLeft;
 	cgi->UI_DrawInstaMessage		= UI_DrawInstaMessage;
 	cgi->UI_DrawObjectives			= UI_Menus_DrawObjectives;
 	// FIXME

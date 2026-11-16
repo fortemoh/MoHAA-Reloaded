@@ -146,7 +146,7 @@ enum {
 
 SERVERS
 
-The game's master server lists (as the stock browser's, cl_uiserverlist.cpp:
+The game's master server lists (the stock browser's were the same:
 Allied Assault's, or Breakthrough's and Spearhead's unless
 dm_omit_spearhead), each server queried for its status; a row each that
 answered. Shown through the tab and the search, sorted by a column, the
@@ -523,10 +523,6 @@ static void RL_ConnectNamed(std::string name, std::string map, const std::string
 
 void UI_Menus_Connect(const char *server, const netadr_t *adr)
 {
-    // (the stock menus: nothing asked)
-    if (!UI_Menus_Alias("connecting")) {
-        return;
-    }
     if (rl_cn.addr != server) {
         RL_ConnectTo(server);
     }
@@ -665,13 +661,13 @@ static void RL_SvJoin(void)
 
 HOST
 
-Omaha's host panel: a map for the game type, as the stock host menu offers
-them (cl_uimpmappicker.cpp: Allied Assault's dm maps for the deathmatch
-types and its obj maps for objective; Spearhead's and Breakthrough's dm,
-obj and lib maps but obj_team2 and obj_team4 for the deathmatch types,
-the obj and lib maps named with an obj or ship part for objective, a tow
-part for Tug of War, a lib part for Liberation), the
-limits, the players and bots, the server's name, who can join. START sets
+Omaha's host panel: a map for the game type, as the stock host menu offered
+them (Allied Assault's dm maps for the deathmatch types and its obj maps
+for objective; Spearhead's and Breakthrough's dm, obj and lib maps but
+obj_team2 and obj_team4 for the deathmatch types, the obj and lib maps
+named with an obj or ship part for objective, a tow part for Tug of War, a
+lib part for Liberation), the limits, the players and bots, the server's
+name, who can join. START sets
 the stock host menu's cvars (as it left them, read the first time) and
 runs its ui_startdmmap, the map the rotation's only one; the bots as
 sv_maxbots and sv_numbots
