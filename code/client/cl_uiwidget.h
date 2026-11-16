@@ -129,3 +129,8 @@ const char *RL_MapName(const char *map);
 // a photo (RGBA) as a screen-shaped texture rows texels high, blurred, its
 // light times dim, darker to the corners, registered as name
 qhandle_t   RL_Blur(const char *name, const byte *pic, int pw, int ph, int rows, float dim);
+// the browser joins this server (its address, name and map's file): the connecting screen shows them
+void        RL_Joining(const char *addr, const char *name, const char *map);
+// Omaha's slanted button (cl_uimain.cpp): brass (primary) or dark, kl kr its edges' lean
+void        RL_Button(const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, float kl, float kr, bool hot,
+                      bool off = false);
