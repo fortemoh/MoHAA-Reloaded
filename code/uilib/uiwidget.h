@@ -140,7 +140,6 @@ protected:
     str                   m_cvarname;
     str                   m_cvarvalue;
     str                   m_command;
-    Container<str *>      m_hidecommands;
     str                   m_title;
     float                 m_indent;
     float                 m_bottomindent;
@@ -416,7 +415,6 @@ public:
     bool               IsVisible(void);
     virtual void       LinkCvar(str cvarname);
     void               LinkCommand(str cmd);
-    void               ExecuteHideCommands(void);
     void               InitializeCommandHandler(void (*fcn)(const char *, void *));
     class UIWidget    *FindWidget(str name);
     void               ResetMotion(motion_t type);
@@ -430,7 +428,6 @@ public:
     bool               getAlwaysOnBottom(void);
     bool               getAlwaysOnTop(void);
     bool               SendSignal(Event& event);
-    void               HideCommand(Event *ev);
     void               AddFlag(int flag);
     void               SetHovermaterialActive(bool a);
     void               SetPressedmaterialActive(bool a);
@@ -521,7 +518,6 @@ extern Event EV_Layout_StuffCommand;
 extern Event EV_Layout_LinkCvar;
 extern Event EV_Layout_NoParentClipping;
 extern Event EV_Layout_NoParentAdjustment;
-extern Event EV_Widget_HideCommand;
 extern Event EV_Widget_OrderNumber;
 extern Event EV_Widget_TextAlignment;
 extern Event EV_Widget_EnabledCvar;

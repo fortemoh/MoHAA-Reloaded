@@ -358,15 +358,6 @@ Event EV_Layout_NoParentAdjustment
     "Set the widget to not be adjusted by the parent widget"
 );
 
-Event EV_Widget_HideCommand
-(
-    "hidecommand",
-    EV_DEFAULT,
-    "s",
-    "command",
-    "Set a command to be executed when the widget is hidden"
-);
-
 Event EV_Widget_OrderNumber
 (
     "ordernumber",
@@ -605,7 +596,6 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Layout_StuffCommand,       &UIWidget::LayoutStuffCommand      },
     {&EV_Layout_LinkCvar,           &UIWidget::LayoutLinkCvar          },
     {&EV_Layout_AliasCache,         &UIWidget::LayoutAliasCache        },
-    {&EV_Widget_HideCommand,        &UIWidget::HideCommand             },
     {&EV_Widget_OrderNumber,        &UIWidget::LayoutOrderNumber       },
     {&EV_Widget_TextAlignment,      &UIWidget::TextAlignment           },
     {&EV_Widget_Enable,             &UIWidget::EnableEvent             },
@@ -2781,16 +2771,6 @@ void UIWidget::LinkCommand(str cmd)
     m_command = cmd;
 }
 
-void UIWidget::ExecuteHideCommands(void)
-{
-    for (int i = 1; i <= m_hidecommands.NumObjects(); i++) {
-        //uii.Cmd_Stuff( m_hidecommands.ObjectAt( i )->c_str() );
-        // Fixed in 2.0
-        Event event(m_hidecommands.ObjectAt(i)->c_str());
-        ProcessEvent(event);
-    }
-}
-
 void UIWidget::InitializeCommandHandler(void (*fcn)(const char *, void *))
 {
     m_commandhandler = fcn;
@@ -2995,18 +2975,6 @@ bool UIWidget::SendSignal(Event& event)
     } else {
         return USignal::SendSignal(event);
     }
-}
-
-void UIWidget::HideCommand(Event *ev)
-{
-    int  i;
-    str *command = new str;
-
-    for (i = 1; i <= ev->NumArgs(); i++) {
-        *command += ev->GetToken(i);
-    }
-
-    m_hidecommands.AddObject(command);
 }
 
 void UIWidget::AddFlag(int flag)

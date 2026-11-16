@@ -208,7 +208,6 @@ void Menu::ForceHide(void)
     for (i = 1; i <= n; i++) {
         UIWidget *wid = m_itemlist.ObjectAt(i);
 
-        wid->ExecuteHideCommands();
         wid->setShow(false);
     }
 }
