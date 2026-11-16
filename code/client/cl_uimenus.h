@@ -21,8 +21,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 // cl_uimenus.h: the Reloaded menus (Added): team select, weapon select, the
-// Esc menu, the scoreboard and the load screen (ui/reloaded_*.urc), shown in
-// place of the stock menus unless ui_classicmenus is 1, and the cursor
+// Esc menu, the scoreboard, the load screen and the end of a mission's level
+// (ui/reloaded_*.urc), shown in place of the stock menus unless
+// ui_classicmenus is 1, and the cursor
 
 #pragma once
 
@@ -32,6 +33,10 @@ const char *UI_Menus_Alias(const char *name);
 // a menu about to be pushed by that name (the weapon menu's nation and
 // preview); qfalse: not pushed (the server's push after a side picked in the weapon menu)
 qboolean    UI_Menus_Pushing(const char *name);
+// the cgame shows (show) or hides a stock menu m was found for: the end of a
+// mission's level (reloaded_end) pushed or popped instead (its buttons take
+// the mouse and the keys); qfalse: not that one
+qboolean    UI_Menus_End(const char *name, class Menu *m, qboolean show);
 // a server command just tokenized (the scoreboard's "scores")
 void        UI_Menus_ServerCommand(void);
 // the scoreboard of this (stock) name is the Reloaded one: the stock list isn't shown
@@ -42,6 +47,7 @@ qboolean    UI_Menus_Covering(void);
 void        UI_Menus_ConfigString(void);
 // the menus laid out to bake their faces and shapes (a map's load, a new screen size)
 void        UI_Menus_PreBake(void);
-// a map's load begins (UI_BeginLoad): qtrue, reloaded_loading shows it (the
-// picture the stock load screen's, stock); qfalse: the stock one
-qboolean    UI_Menus_Loading(class Menu *stock, const char *map);
+// a map's load begins (UI_BeginLoad): the Reloaded menu that shows it
+// (reloaded_loading, a mission's level reloaded_mission; the pictures the
+// stock load screen's, stock); NULL: the stock one
+const char *UI_Menus_Loading(class Menu *stock, const char *map);

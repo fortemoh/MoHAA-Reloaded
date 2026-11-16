@@ -55,7 +55,6 @@ static FakkMiniconsole     *mini_console;
 static UIGMBox             *gmbox;
 static UIDMBox             *dmbox;
 static View3D              *view3d;
-static Menu                *mainmenu;
 static Menu                *hud_weapons;
 static Menu                *hud_items;
 static Menu                *hud_health;
@@ -1239,12 +1238,58 @@ static UIRect2D getDefaultDMBoxRectangle(void)
 
 /*
 ====================
+UI_ObjectivesBeside
+
+Added: the Competitive HUD's radar (or its compass) shown, the objectives
+beside it, level with its top, as far from it as it is from the screen's
+edge; NULL: in the stock place
+====================
+*/
+static UIWidget *UI_ObjectivesBeside(void)
+{
+    static const char *const discs[2][3] = {
+        {"ui_hud_radar_on",   "hud_comp_topleft",         "radar"  },
+        {"ui_hud_compass_on", "hud_comp_topleft_compass", "compass"},
+    };
+
+    if (!UI_CompHud_Active()) {
+        return NULL;
+    }
+    for (int i = 0; i < 2; i++) {
+        Menu *m = Cvar_VariableIntegerValue(discs[i][0]) ? menuManager.FindMenu(discs[i][1]) : NULL;
+
+        if (m) {
+            return m->GetContainerWidget()->FindWidget(discs[i][2]);
+        }
+    }
+    return NULL;
+}
+
+/*
+====================
 UI_GetObjectivesTop
 ====================
 */
 float UI_GetObjectivesTop(void)
 {
-    return getDefaultGMBoxRectangle().pos.y;
+    UIWidget *disc = UI_ObjectivesBeside();
+
+    // (the cgame's box 5 under it)
+    return disc ? disc->getFrame().pos.y - 5 : getDefaultGMBoxRectangle().pos.y;
+}
+
+/*
+====================
+UI_GetObjectivesLeft
+
+Added: the objectives' box's left edge, in pixels (the stock 25)
+====================
+*/
+float UI_GetObjectivesLeft(void)
+{
+    UIWidget *disc = UI_ObjectivesBeside();
+
+    return disc ? 2 * disc->getFrame().pos.x + disc->getFrame().size.width : 25;
 }
 
 /*
@@ -2203,7 +2248,12 @@ void UI_Update(void)
                 view3d->setShow(false);
                 UI_ClearBackground();
             } else if (clc.state == CA_ACTIVE || clc.state == CA_CINEMATIC) {
-                Com_FakeUnpause();
+                // Changed: the Reloaded Esc menu holds a mission as the stock menu did, the game shown under it
+                if (covered && com_sv_running->integer && !cg_gametype->integer) {
+                    Com_FakePause();
+                } else {
+                    Com_FakeUnpause();
+                }
                 view3d->setShow(true);
             } else {
                 UI_ClearBackground();
@@ -2757,6 +2807,13 @@ UI_MainMenuWidgetsUpdate
 */
 void UI_MainMenuWidgetsUpdate(void)
 {
+    Menu *menu = menuManager.CurrentMenu();
+
+    // Added: the widgets are the stock main menu's; the Reloaded one shown for
+    // its name has none (an event no widget takes isn't freed)
+    if (!menu || str::icmp(menu->m_name, "main")) {
+        return;
+    }
     if (clc.state > CA_PRIMED) {
         Event *event = new Event(EV_Widget_Enable);
         menuManager.PassEventToWidget("backtogame", event);
@@ -2971,6 +3028,11 @@ void UI_ShowMenu(const char *name, qboolean bForce)
 
     pMenu = menuManager.FindMenu(name);
 
+    // Added: the Reloaded end of a mission's level pushed (cl_uimenus.cpp)
+    if (pMenu && UI_Menus_End(name, pMenu, qtrue)) {
+        return;
+    }
+
     if (pMenu) {
         if (bForce) {
             pMenu->ForceShow();
@@ -2992,6 +3054,11 @@ void UI_HideMenu(const char *name, qboolean bForce)
     Menu *pMenu;
 
     pMenu = menuManager.FindMenu(name);
+
+    // Added: the Reloaded end of a mission's level popped (cl_uimenus.cpp)
+    if (pMenu && UI_Menus_End(name, pMenu, qfalse)) {
+        return;
+    }
 
     if (pMenu) {
         if (bForce) {
@@ -3304,7 +3371,8 @@ void UI_MenuEscape(const char *name)
         return;
     }
 
-    if (menuManager.CurrentMenu() == mainmenu && clc.state == CA_DISCONNECTED) {
+    // Changed: the main menu looked up now (the Reloaded one or the stock one: ui_classicmenus)
+    if (menuManager.CurrentMenu() == menuManager.FindMenu("main") && clc.state == CA_DISCONNECTED) {
         if (developer->integer) {
             if (UI_ConsoleIsVisible()) {
                 UI_CloseConsole();
@@ -3322,8 +3390,8 @@ void UI_MenuEscape(const char *name)
 
     if (menuManager.CurrentMenu()) {
         menuManager.PopMenu(qtrue);
-    } else if (!Q_stricmp(name, "main") && clc.state > CA_PRIMED && cg_gametype->integer > 0) {
-        // multiplayer
+    } else if (!Q_stricmp(name, "main") && clc.state > CA_PRIMED && (cg_gametype->integer > 0 || UI_Menus_Alias("dm_main"))) {
+        // multiplayer (Changed: and single player when the Reloaded Esc menu is shown for dm_main: a mission's own tiles)
         UI_PushMenu("dm_main");
     } else {
         // single-player
@@ -5834,9 +5902,6 @@ void CL_InitializeUI(void)
         hud_compass->ShowMenu(NULL);
     }
 
-    // find the main menu
-    mainmenu = menuManager.FindMenu("main");
-
     IN_MouseOn();
 
     // realign menus
@@ -6258,10 +6323,14 @@ void UI_BeginLoad(const char *pszMapName)
         ui_pLoadingMenu        = menuManager.FindMenu(ui_sCurrentLoadingMenu);
     }
 
-    // Added: the Reloaded load screen, the stock one's picture in it (cl_uimenus.cpp)
-    if (UI_Menus_Loading(ui_pLoadingMenu, pszMapName)) {
-        ui_sCurrentLoadingMenu = "reloaded_loading";
-        ui_pLoadingMenu        = menuManager.FindMenu(ui_sCurrentLoadingMenu);
+    // Added: the Reloaded load screen, the stock one's pictures in it (cl_uimenus.cpp)
+    {
+        const char *ours = UI_Menus_Loading(ui_pLoadingMenu, pszMapName);
+
+        if (ours) {
+            ui_sCurrentLoadingMenu = ours;
+            ui_pLoadingMenu        = menuManager.FindMenu(ui_sCurrentLoadingMenu);
+        }
     }
     ui_loadWhat[0] = 0;
 

@@ -22,14 +22,17 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 // cl_uimenus.cpp: the Reloaded menus (Added). The weapon select (which picks
 // the side and the model too: the team menus show it), the Esc menu, the
-// scoreboard and the load screen (UI_Menus_Loading), each a URC
-// menu (ui/reloaded_*.urc) of a ReloadedMenu widget, which lays the screen
-// out and draws it, and the stock 3D player model views it places. They are
-// shown for the stock menus' names (SelectTeam, ObjSelectTeam,
-// SelectFFAModel, SelectPrimaryWeapon[_<nation>], dm_main, DM_Scoreboard,
-// DM_Round_Scoreboard, Obj_Scoreboard: UI_Menus_Alias), so nothing on the
-// server or in the cgame changes; ui_classicmenus 1 shows the stock ones
-// (and the stock cursor: the Reloaded one is RL_Cursor's).
+// scoreboard, the load screen (UI_Menus_Loading), the end of a mission's
+// level and the main menu (cl_uimain.cpp), each a URC menu
+// (ui/reloaded_*.urc) of a ReloadedMenu widget, which lays the screen out and
+// draws it, and the stock 3D player model views it places. They are shown for
+// the stock menus' names (SelectTeam, ObjSelectTeam, SelectFFAModel,
+// SelectPrimaryWeapon[_<nation>], dm_main, DM_Scoreboard,
+// DM_Round_Scoreboard, Obj_Scoreboard, main, StatsScreen_Success|Failed,
+// mission_success|failed_N: UI_Menus_Alias), so nothing on the server or in
+// the cgame changes;
+// ui_classicmenus 1 shows the stock ones (and the stock cursor: the Reloaded
+// one is RL_Cursor's).
 //
 // Sizes are design units: a 1080-line screen (900 below 900 lines, so small
 // screens get bigger type), the width what the screen's shape gives. Type is
@@ -41,6 +44,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cl_uimenus.h"
 #include "cl_uicomp.h"
 #include "cl_uidraw.h"
+#include "cl_uiwidget.h"
 #include "cl_uiextras.h"
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
@@ -106,7 +110,7 @@ typedef struct {
     int  team;
 } rlPlayer_t;
 
-typedef struct {
+struct rlInfo_t {
     int                     gametype;
     int                     target;   // TG_MOH, TG_MOHTA, TG_MOHTT
     int                     dmflags, fraglimit, maxClients;
@@ -116,7 +120,7 @@ typedef struct {
     int                     self, selfTeam;
     int                     teamScore[2]; // -1 unknown
     bool                    serverScores; // the teams' scores from the server's configstring
-} rlInfo_t;
+};
 
 static int RL_Gametype(void)
 {
@@ -273,7 +277,7 @@ static const rlScore_t *RL_Score(int client)
 
 // the map's display name: its loading screen's (a menu named after the
 // map, its first titled label: "V2 Rocket Facility"), else the file's name
-static const char *RL_MapName(const char *map)
+const char *RL_MapName(const char *map)
 {
     static char last[MAX_QPATH], name[128];
     const char *slash;
@@ -432,7 +436,7 @@ void RL_Shape(int x, int y, int w, int h, const char *text, rlColor_t c, float s
     uii.Rend_DrawPicStretched(x, y, w, h, 0, 0, 1, 1, shader);
 }
 
-static void RL_Round(const rlView_t& v, float x, float y, float w, float h, float r, rlColor_t c)
+void RL_Round(const rlView_t& v, float x, float y, float w, float h, float r, rlColor_t c)
 {
     const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
 
@@ -443,17 +447,28 @@ static void RL_Round(const rlView_t& v, float x, float y, float w, float h, floa
     RL_Shape(x0, y0, x1 - x0, y1 - y0, va("roundbox %g 1 1 1 1", r), c, v.s);
 }
 
-static void RL_RoundFrame(const rlView_t& v, float x, float y, float w, float h, float r, float width, rlColor_t c)
+void RL_RoundFrame(const rlView_t& v, float x, float y, float w, float h, float r, float width, rlColor_t c)
 {
     const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
 
     RL_Shape(x0, y0, x1 - x0, y1 - y0, va("roundframe %g %g 1 1 1 1", r, width), c, v.s);
 }
 
+void RL_Skew(const rlView_t& v, float x, float y, float w, float h, float kl, float kr, rlColor_t c)
+{
+    const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
+
+    if (kl <= 0.0f && kr <= 0.0f) {
+        RL_Box(v, x, y, w, h, c);
+        return;
+    }
+    RL_Shape(x0, y0, x1 - x0, y1 - y0, va("poly 1 1 1 1 %.4g 0 1 0 %.4g 1 0 1", kl / w, 1.0f - kr / w), c, v.s);
+}
+
 // a horizontal gradient as strips (a and b at the left and right edges);
 // under: the alpha of a black layer under it, drawn with it as one layer (two
 // flat layers blended make one: the screen filled once, not twice)
-static void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b, float under = 0.0f)
+void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b, float under)
 {
     const int x0 = RL_P(v, x), x1 = RL_P(v, x + w), y0 = RL_P(v, y), y1 = RL_P(v, y + h);
     const int n  = Q_max(1, Q_min(64, (x1 - x0) / 8));
@@ -628,7 +643,7 @@ float RL_Text(
 }
 
 // a name cut with "…" to fit
-static std::string RL_Ellipsize(const rlView_t& v, const char *text, float size, bool bold, float maxw)
+std::string RL_Ellipsize(const rlView_t& v, const char *text, float size, bool bold, float maxw)
 {
     std::string s(text);
 
@@ -788,10 +803,11 @@ static int RL_NationTeam(int nation)
 
 PLAYER MODELS
 
-The weapon menu's side tabs and model cycler. Each side's models are the
-stock picker's (PlayerModelPickerClass::SetupFiles: models/player's .tik
-but the view models and hidden ones, the Axis' german*, axis*, it*, sc*),
-in the order of its names ("US - Soldier"). What the menu previews (the
+The weapon menu's side tabs and model cycler, the main menu's profile.
+Each side's models are the stock picker's (PlayerModelPickerClass::
+SetupFiles: models/player's .tik but the view models and hidden ones, the
+Axis' german*, axis*, it*, sc*), in the order of its names ("US - Soldier"),
+listed when a menu showing them opens. What the weapon menu previews (the
 side, each side's model) is kept here for both layers (the back one places
 the live model) and set again each time the menu opens; nothing is sent
 until a weapon is picked (UIReloadedMenu::Choose)
@@ -799,25 +815,20 @@ until a weapon is picked (UIReloadedMenu::Choose)
 ====================================================================
 */
 
-typedef struct {
-    std::string file;  // models/player/<file>.tik
-    std::string order; // the picker's name ("DE - Wehrmacht Soldier")
-    std::string name;  // shown ("WEHRMACHT SOLDIER")
-} rlModel_t;
+std::vector<rlModel_t> rl_models[2];
 
 static struct {
-    std::vector<rlModel_t> models[2];
     int                    own[2];  // the player's (dm_playermodel, dm_playergermanmodel), -1 not listed
     int                    pick[2]; // the one previewed
     int                    tab;     // the side previewed
     int                    serial;  // the lists' (the draw cache's key)
     bool                   swallow; // a switch of side sent: the server's push of the weapon menu not shown
     int                    swallowAt;
-} rl_wp = {{}, {-1, -1}, {-1, -1}, 0, 0, false, 0};
+} rl_wp = {{-1, -1}, {-1, -1}, 0, 0, false, 0};
 
-// the picker's name without its nation ("DE - Wehrmacht Soldier": "WEHRMACHT
-// SOLDIER"), else the file's
-static std::string RL_ModelName(const char *file)
+// the picker's name without its nation ("DE - Wehrmacht Soldier": "Wehrmacht
+// Soldier"), else the file's
+std::string RL_ModelName(const char *file)
 {
     const char *shown = PM_FilenameToDisplayname(file);
     std::string s;
@@ -830,7 +841,7 @@ static std::string RL_ModelName(const char *file)
     } else {
         s = shown;
     }
-    return RL_Upper(s.c_str());
+    return s;
 }
 
 // the nation a side's model gives (fgame's GetPlayerAlliedTeamType and GetPlayerAxisTeamType)
@@ -856,7 +867,7 @@ static int RL_ModelNation(int side, const char *file, int target)
 
 // a side's own model (dm_playermodel, dm_playergermanmodel): its file (the old
 // Waffen-SS names the files' german_waffenss_, as UI_GetPlayerModel_f shows them)
-static std::string RL_OwnModel(int side)
+std::string RL_OwnModel(int side)
 {
     const char *own = Cvar_VariableString(side ? "dm_playergermanmodel" : "dm_playermodel");
 
@@ -871,8 +882,8 @@ static std::string RL_PreviewModel(int side)
 {
     const int pick = rl_wp.pick[side];
 
-    if (pick >= 0 && pick < (int)rl_wp.models[side].size()) {
-        return rl_wp.models[side][pick].file;
+    if (pick >= 0 && pick < (int)rl_models[side].size()) {
+        return rl_models[side][pick].file;
     }
     return RL_OwnModel(side);
 }
@@ -903,7 +914,7 @@ static std::map<std::string, rlFigure_t> rl_figures; // by the model's file, low
 
 // the figure of a model's file (no extension): its TIKI's name; the model's own
 // when it can't be made
-static std::string RL_Figure(const std::string& file)
+std::string RL_Figure(const std::string& file)
 {
     const std::string own = "models/player/" + file + ".tik";
     std::string       key = file;
@@ -965,17 +976,13 @@ static int RL_SmallerSide(void)
     return n[1] < n[0];
 }
 
-// the menu opened: the models listed, the player's side and models previewed
-static void RL_WeaponPreviewReset(void)
+void RL_ListModels(void)
 {
-    const int team = cl.snap.valid ? cl.snap.ps.stats[STAT_TEAM] : TEAM_NONE;
-    char    **files;
-    int       count;
+    char **files;
+    int    count;
 
-    for (int t = 0; t < 2; t++) {
-        rl_wp.models[t].clear();
-        rl_wp.own[t] = rl_wp.pick[t] = -1;
-    }
+    rl_models[0].clear();
+    rl_models[1].clear();
     files = FS_ListFiles("models/player", ".tik", qfalse, &count);
     for (int i = 0; i < count; i++) {
         char      work[128];
@@ -992,24 +999,38 @@ static void RL_WeaponPreviewReset(void)
         m.file  = work;
         m.order = PM_FilenameToDisplayname(work);
         m.name  = RL_ModelName(work);
-        rl_wp.models[!Q_stricmpn(work, "german", 6) || !Q_stricmpn(work, "axis", 4) || !Q_stricmpn(work, "it", 2)
-                     || !Q_stricmpn(work, "sc", 2)]
+        rl_models[!Q_stricmpn(work, "german", 6) || !Q_stricmpn(work, "axis", 4) || !Q_stricmpn(work, "it", 2)
+                  || !Q_stricmpn(work, "sc", 2)]
             .push_back(m);
     }
     FS_FreeFileList(files);
-    for (int t = 0; t < 2; t++) {
-        std::vector<rlModel_t>& list = rl_wp.models[t];
-        const std::string       own = RL_OwnModel(t);
-
+    for (std::vector<rlModel_t>& list : rl_models) {
         std::sort(list.begin(), list.end(), [](const rlModel_t& a, const rlModel_t& b) {
             return Q_stricmp(a.order.c_str(), b.order.c_str()) < 0;
         });
-        for (int i = 0; i < (int)list.size(); i++) {
-            if (!Q_stricmp(list[i].file.c_str(), own.c_str())) {
-                rl_wp.own[t] = rl_wp.pick[t] = i;
-                break;
-            }
+    }
+}
+
+int RL_OwnIndex(int side)
+{
+    const std::string own = RL_OwnModel(side);
+
+    for (int i = 0; i < (int)rl_models[side].size(); i++) {
+        if (!Q_stricmp(rl_models[side][i].file.c_str(), own.c_str())) {
+            return i;
         }
+    }
+    return -1;
+}
+
+// the menu opened: the models listed, the player's side and models previewed
+static void RL_WeaponPreviewReset(void)
+{
+    const int team = cl.snap.valid ? cl.snap.ps.stats[STAT_TEAM] : TEAM_NONE;
+
+    RL_ListModels();
+    for (int t = 0; t < 2; t++) {
+        rl_wp.own[t] = rl_wp.pick[t] = RL_OwnIndex(t);
     }
     // the player's side (FFA's too); a spectator's in a team game the one with
     // fewer players, else the menu's nation's
@@ -1044,6 +1065,16 @@ static const struct {
     {"DM_Scoreboard",               "reloaded_scoreboard"},
     {"DM_Round_Scoreboard",         "reloaded_scoreboard"},
     {"Obj_Scoreboard",              "reloaded_scoreboard"},
+    {"main",                        "reloaded_main"      },
+    // the end of a mission's level (Spearhead's and Breakthrough's a menu a mission)
+    {"StatsScreen_Success",         "reloaded_end"       },
+    {"StatsScreen_Failed",          "reloaded_end"       },
+    {"mission_success_1",           "reloaded_end"       },
+    {"mission_success_2",           "reloaded_end"       },
+    {"mission_success_3",           "reloaded_end"       },
+    {"mission_failed_1",            "reloaded_end"       },
+    {"mission_failed_2",            "reloaded_end"       },
+    {"mission_failed_3",            "reloaded_end"       },
 };
 
 const char *UI_Menus_Alias(const char *name)
@@ -1051,7 +1082,7 @@ const char *UI_Menus_Alias(const char *name)
     if (!ui_classicmenus || ui_classicmenus->integer || !name) {
         return NULL;
     }
-    // (every menu lookup asks, the HUD's 13 each frame: the stock names start with s, o or d)
+    // (every menu lookup asks, the HUD's 13 each frame: the stock names start with s, o, d or m)
     switch (name[0]) {
     case 'S':
     case 's':
@@ -1059,6 +1090,8 @@ const char *UI_Menus_Alias(const char *name)
     case 'o':
     case 'D':
     case 'd':
+    case 'M':
+    case 'm':
         break;
     default:
         return NULL;
@@ -1213,9 +1246,12 @@ void UI_Menus_Init(void)
 THE LOAD SCREEN
 
 Shown while a map loads in place of the stock one (the menu named after
-the map, else loading_default), unless ui_classicmenus is 1 or the game is
-single player (the missions keep their paintings and Continue button).
-The map's picture as a 4:3 card in the middle, over a dimmed, blurred copy
+the map, else loading_default), unless ui_classicmenus is 1. A mission's
+level (single player): its orders letter, the stock screen's pictures,
+unstretched, full height, black beside it; in the stock CONTINUE's place
+what loads and how far, then CONTINUE (reloaded_mission: the game waits
+for its continuebutton). Else the map's picture as a 4:3 card in the
+middle, over a dimmed, blurred copy
 of it filling the screen; the map's name above it on the left, the mode on
 the right (the name made smaller, then cut, to leave it room), a brass
 bar and what loads under it. The picture is the stock screen's: the dm
@@ -1239,13 +1275,14 @@ static struct {
     int       stamp, refSeq; // UI_BakeStamp and the renderer's sequence then
 } rl_ld;
 
-// the photo shrunk to 36 texels high in the screen's shape (the part of it
+// the photo shrunk to rows texels high in the screen's shape (the part of it
 // a screen filled with it shows), blurred, dimmed and darker to the corners:
-// stretched over the screen, a blur that costs nothing a frame
-static void RL_LoadBlur(const byte *pic, int pw, int ph)
+// stretched over the screen, a blur that costs nothing a frame (the load
+// screen's, the main menu's background)
+qhandle_t RL_Blur(const char *name, const byte *pic, int pw, int ph, int rows, float dim, float photo)
 {
-    const float aspect = (float)uid.vidWidth / (float)uid.vidHeight, photo = 4.0f / 3.0f;
-    const int   bh = 36, bw = Q_max(1, Q_min(128, (int)(bh * aspect + 0.5f)));
+    const float aspect = (float)uid.vidWidth / (float)uid.vidHeight;
+    const int   bh = rows, bw = Q_max(1, Q_min(4 * rows, (int)(bh * aspect + 0.5f)));
     float       sx0 = 0, sx1 = (float)pw, sy0 = 0, sy1 = (float)ph;
 
     if (aspect > photo) {
@@ -1299,7 +1336,7 @@ static void RL_LoadBlur(const byte *pic, int pw, int ph)
     for (int y = 0; y < bh; y++) {
         for (int x = 0; x < bw; x++) {
             const float r = sqrtf(Square((x + 0.5f) / bw * 2 - 1) + Square((y + 0.5f) / bh * 2 - 1)) * 0.7071f;
-            const float k = 0.42f * Q_max(0.0f, 1.0f - 0.7f * powf(r, 1.8f));
+            const float k = dim * Q_max(0.0f, 1.0f - 0.7f * powf(r, 1.8f));
 
             for (int c = 0; c < 3; c++) {
                 out[(y * bw + x) * 4 + c] = (byte)Q_min(255.0f, a[(y * bw + x) * 3 + c] * k + 0.5f);
@@ -1307,22 +1344,19 @@ static void RL_LoadBlur(const byte *pic, int pw, int ph)
             out[(y * bw + x) * 4 + 3] = 255;
         }
     }
-    rl_ld.blur = re.RegisterTexture2D(RL_LOADBLUR, out.data(), bw, bh);
+    return re.RegisterTexture2D(name, out.data(), bw, bh);
 }
 
-// the stock screen's photo: of its pictures covering a third to nine tenths
-// of the screen (the dm maps': the photo, its white mount, its sepia tint),
-// the one with the most texels where the stock maps keep their photos;
-// registered opaque (in colour), with its blurred copy
-static void RL_LoadPictures(void)
+// a stock load screen's photo: of its pictures covering a third to nine
+// tenths of the screen (the dm maps': the photo, its white mount, its sepia
+// tint), the one with the most texels where the stock maps keep their
+// photos, opaque (in colour)
+byte *RL_MenuPhoto(Menu *stock, int *width, int *height)
 {
-    UIWidget *c   = rl_ld.stock ? rl_ld.stock->GetContainerWidget() : NULL;
+    UIWidget *c   = stock ? stock->GetContainerWidget() : NULL;
     byte     *pic = NULL;
     int       w = 0, h = 0;
 
-    rl_ld.shot = rl_ld.blur = 0;
-    rl_ld.stamp             = UI_BakeStamp();
-    rl_ld.refSeq            = uii.GetRefSequence();
     for (UIWidget *l = c ? c->getFirstChild() : NULL; l; l = c->getNextChild(l)) {
         const UIRect2D f = l->getFrame(), cf = c->getFrame();
         const float    k = f.size.width * f.size.height / (cf.size.width * cf.size.height);
@@ -1347,26 +1381,45 @@ static void RL_LoadPictures(void)
             }
         }
     }
+    for (int i = 0; pic && i < w * h; i++) {
+        pic[i * 4 + 3] = 255;
+    }
+    *width  = w;
+    *height = h;
+    return pic;
+}
+
+// the load screen's photo, registered, with its blurred copy
+static void RL_LoadPictures(void)
+{
+    int   w, h;
+    byte *pic = RL_MenuPhoto(rl_ld.stock, &w, &h);
+
+    rl_ld.shot = rl_ld.blur = 0;
+    rl_ld.stamp             = UI_BakeStamp();
+    rl_ld.refSeq            = uii.GetRefSequence();
     if (!pic) {
         return;
     }
-    for (int i = 0; i < w * h; i++) {
-        pic[i * 4 + 3] = 255;
-    }
     rl_ld.shot = re.RegisterTexture2D(RL_LOADSHOT, pic, w, h);
-    RL_LoadBlur(pic, w, h);
+    // (36 texels high, dimmed to 0.42)
+    rl_ld.blur = RL_Blur(RL_LOADBLUR, pic, w, h, 36, 0.42f);
     uii.Rend_FreeRawImage(pic);
 }
 
-qboolean UI_Menus_Loading(Menu *stock, const char *map)
+const char *UI_Menus_Loading(Menu *stock, const char *map)
 {
     // (a local server's own: its configstring isn't here yet when it loads a map)
     const char *info = com_sv_running->integer ? Cvar_InfoString(CVAR_SERVERINFO) : CL_ConfigString(CS_SERVERINFO);
+    const char *ours;
     char       *dollar;
 
     rl_ld.gametype = atoi(Info_ValueForKey(info, "g_gametype"));
-    if (!ui_classicmenus || ui_classicmenus->integer || rl_ld.gametype == GT_SINGLE_PLAYER || !menuManager.FindMenuNamed("reloaded_loading")) {
-        return qfalse;
+    // (a mission's level waits for CONTINUE as its stock screen does; loading_default's doesn't)
+    ours = rl_ld.gametype == GT_SINGLE_PLAYER && stock && Q_stricmp(stock->m_name.c_str(), "loading_default") ? "reloaded_mission"
+                                                                                                             : "reloaded_loading";
+    if (!ui_classicmenus || ui_classicmenus->integer || !menuManager.FindMenuNamed(ours)) {
+        return NULL;
     }
     Q_strncpyz(rl_ld.map, map, sizeof(rl_ld.map));
     dollar = strchr(rl_ld.map, '$');
@@ -1374,15 +1427,20 @@ qboolean UI_Menus_Loading(Menu *stock, const char *map)
         *dollar = 0;
     }
     rl_ld.stock = stock;
-    RL_LoadPictures();
-    return qtrue;
+    if (rl_ld.gametype == GT_SINGLE_PLAYER) {
+        rl_ld.shot = rl_ld.blur = 0;
+    } else {
+        RL_LoadPictures();
+    }
+    return ours;
 }
 
-// the stock screen's pictures (not its bar, button and text) in the card
-// x0 y0 x1 y1, as on its screen, clipped to it
-static void RL_LoadStockCard(int x0, int y0, int x1, int y1)
+// a stock screen's pictures (not its bar, button and text) in the box x0 y0
+// x1 y1, as on its screen, clipped to it; tall: only those its height (an end
+// of a level's painting, not the photos Spearhead's fade in over it)
+static void RL_StockPictures(Menu *stock, int x0, int y0, int x1, int y1, bool tall = false)
 {
-    UIWidget *c = rl_ld.stock ? rl_ld.stock->GetContainerWidget() : NULL;
+    UIWidget *c = stock ? stock->GetContainerWidget() : NULL;
 
     RL_SetColor(RL_Rgb(255, 255, 255));
     for (UIWidget *l = c ? c->getFirstChild() : NULL; l; l = c->getNextChild(l)) {
@@ -1392,7 +1450,7 @@ static void RL_LoadStockCard(int x0, int y0, int x1, int y1)
         const float    cu0 = Q_max(u0, 0.0f), cv0 = Q_max(v0, 0.0f), cu1 = Q_min(u1, 1.0f), cv1 = Q_min(v1, 1.0f);
 
         if (!l->getMaterial() || !l->isEnabled() || !Q_stricmpn(l->getName(), "loading", 7) || !l->isSubclassOf(UILabel)
-            || (l->getTitle() && l->getTitle()[0]) || cu1 <= cu0 || cv1 <= cv0) {
+            || (l->getTitle() && l->getTitle()[0]) || cu1 <= cu0 || cv1 <= cv0 || (tall && (v0 > 0.0f || v1 < 0.99f))) {
             continue;
         }
         uii.Rend_DrawPicStretched(
@@ -1424,7 +1482,47 @@ static const char *RL_LoadStage(const char *what)
     }
 }
 
-static void RL_DrawLoading(const rlView_t& v)
+// the load bar, 4 high: the part loaded, or (the map's first load: not known) a dash sweeping across
+static void RL_LoadBar(const rlView_t& v, float x, float y, float w, float frac)
+{
+    RL_Box(v, x, y, w, 4, RL_Rgb(255, 255, 255, 30));
+    if (frac >= 0.0f) {
+        RL_Box(v, x, y, w * Q_min(frac, 1.0f), 4, RL_BRASS);
+    } else {
+        const float dw = w * 0.2f, dx = (w + dw) * (cls.realtime % 1400) / 1400.0f - dw;
+
+        RL_Box(v, x + Q_max(dx, 0.0f), y, Q_min(dx + dw, w) - Q_max(dx, 0.0f), 4, RL_BRASS);
+    }
+}
+
+// a mission's level: its letter 4:3 (the stock screen's 640 x 480), black
+// beside it; in the stock CONTINUE's box (its middle 460 of 480 down) what
+// loads over the bar, then the main menu's brass button (the menu's clear
+// continuebutton placed over it takes the click and Enter)
+static void RL_DrawMission(UIReloadedMenu *m, const rlView_t& v, float frac, const char *what)
+{
+    const float lw = v.dh * 4 / 3, lx = (v.dw - lw) / 2, bw = 260, bh = 48, bx = (v.dw - bw) / 2, by = v.dh * 460 / 480 - bh / 2;
+    UIWidget   *button = m->getParent() ? m->getParent()->FindWidget("continuebutton") : NULL;
+
+    RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0));
+    RL_StockPictures(rl_ld.stock, RL_P(v, lx), 0, RL_P(v, lx + lw), RL_P(v, v.dh));
+    if (button && button->isEnabled()) {
+        const bool hot = uid.mouseX >= RL_P(v, bx) && uid.mouseX < RL_P(v, bx + bw) && uid.mouseY >= RL_P(v, by) && uid.mouseY < RL_P(v, by + bh);
+
+        RL_Skew(v, bx, by, bw, bh, 12, 12, hot ? RL_Rgb(236, 196, 106) : RL_BRASS);
+        RL_Text(v, bx + bw / 2, by + bh / 2, "CONTINUE", RL_S1, RL_INK, true, RL_CENTER, 2.4f, RL_MID);
+    } else {
+        RL_Box(v, bx, by, bw, bh, RL_Rgb(10, 11, 12, 228));
+        RL_Text(v, bx + 16, by + (bh - 4) / 2, va("%s\x85", RL_LoadStage(what)), 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+        if (frac >= 0.0f) {
+            RL_Text(v, bx + bw - 16, by + (bh - 4) / 2, va("%d%%", (int)(Q_min(frac, 1.0f) * 100)), 17, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
+        }
+        RL_LoadBar(v, bx, by + bh - 4, bw, frac);
+    }
+    m->PlaceView(v, "continuebutton", bx, by, bw, bh);
+}
+
+static void RL_DrawLoading(UIReloadedMenu *m, const rlView_t& v)
 {
     const char *what;
     const float frac = UI_LoadProgress(&what);
@@ -1433,6 +1531,10 @@ static void RL_DrawLoading(const rlView_t& v)
     const int   x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + cw), y1 = RL_P(v, y + ch);
     const rlColor_t white = RL_Rgb(255, 255, 255), line = RL_Rgb(255, 255, 255, 40);
 
+    if (rl_ld.gametype == GT_SINGLE_PLAYER) {
+        RL_DrawMission(m, v, frac, what);
+        return;
+    }
     // the renderer restarted since: made again; the map's load reset its shaders: looked up again
     if (rl_ld.shot && rl_ld.refSeq != uii.GetRefSequence()) {
         RL_LoadPictures();
@@ -1451,7 +1553,7 @@ static void RL_DrawLoading(const rlView_t& v)
         RL_SetColor(white);
         uii.Rend_DrawPicStretched(x0, y0, x1 - x0, y1 - y0, 0, 0, 1, 1, rl_ld.shot);
     } else {
-        RL_LoadStockCard(x0, y0, x1, y1);
+        RL_StockPictures(rl_ld.stock, x0, y0, x1, y1);
     }
     RL_BoxPx(x0, y0, x1, y0 + 1, line);
     RL_BoxPx(x0, y1 - 1, x1, y1, line);
@@ -1466,15 +1568,10 @@ static void RL_DrawLoading(const rlView_t& v)
         RL_Text(v, x, y - 26, RL_Ellipsize(v, name, size, true, room).c_str(), size, RL_TEXT, true, RL_LEFT, 0, RL_BASE);
         RL_Text(v, x + cw, y - 26, mode, 16, RL_BRASS, true, RL_RIGHT, 2.6f, RL_BASE);
     }
-    // the bar: the part loaded, or (the map's first load: not known) a dash sweeping across
-    RL_Box(v, x, by, cw, 4, RL_Rgb(255, 255, 255, 30));
+    // the bar, and how far
+    RL_LoadBar(v, x, by, cw, frac);
     if (frac >= 0.0f) {
-        RL_Box(v, x, by, cw * Q_min(frac, 1.0f), 4, RL_BRASS);
         RL_Text(v, x + cw, by + 28, va("%d%%", (int)(Q_min(frac, 1.0f) * 100)), RL_S1, RL_TEXT, true, RL_RIGHT, 0, RL_TOP);
-    } else {
-        const float dw = cw * 0.2f, dx = (cw + dw) * (cls.realtime % 1400) / 1400.0f - dw;
-
-        RL_Box(v, x + Q_max(dx, 0.0f), by, Q_min(dx + dw, cw) - Q_max(dx, 0.0f), 4, RL_BRASS);
     }
     RL_Text(v, x, by + 28, va("%s\x85", RL_LoadStage(what)), RL_S1, RL_MUTED, false, RL_LEFT, 0, RL_TOP);
 }
@@ -1484,79 +1581,15 @@ static void RL_DrawLoading(const rlView_t& v)
 
 THE WIDGET
 
-ReloadedMenu: "screen weapon|esc|scoreboard|loading", "layer back|front".
-The back layer draws what is under the 3D model view (a dimming, the
-weapon menu's warm haze) and places the view (the weapon menu's label
-named figure); the front layer draws the rest and takes the mouse and the
-keys. Both lay the screen out alike from the same data
+ReloadedMenu (cl_uiwidget.h)
 
 ====================================================================
 */
 
-enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD, SCR_LOADING };
-
 // the front layer's hot item, for the back layer (a frame later)
-static int rl_hot[3] = {-1, -1, -1};
+static int rl_hot[SCR_NUM] = {-1, -1, -1, -1, -1, -1, -1};
 
-typedef struct {
-    int   x, y, w, h; // pixels
-    int   id;
-} rlHit_t;
-
-class UIReloadedMenu : public UIWidget
-{
-public:
-    CLASS_PROTOTYPE(UIReloadedMenu);
-
-    int                  m_screen, m_back;
-    int                  m_focus;     // the item hot (hovered or moved to), -1 none
-    int                  m_mouse[2];  // where the mouse was
-    int                  m_shown;     // the frame last drawn
-    std::vector<rlHit_t> m_hits;
-    std::vector<int>     m_order;     // the items in order (the arrow keys)
-    int                  m_cols;      // the items a row (left and right)
-
-    int                  m_tick;      // the frame Tick ran
-
-    UIReloadedMenu() : m_screen(SCR_WEAPON), m_back(0), m_focus(-1), m_shown(-1), m_cols(1), m_tick(-1)
-    {
-        m_mouse[0] = m_mouse[1] = -1;
-        AllowActivate(true);
-    }
-
-    void SetScreen(Event *ev)
-    {
-        const str s = ev->GetString(1);
-
-        m_screen = !str::icmp(s, "esc")          ? SCR_ESC
-                   : !str::icmp(s, "scoreboard") ? SCR_SCOREBOARD
-                   : !str::icmp(s, "loading")    ? SCR_LOADING
-                                                 : SCR_WEAPON;
-        AllowActivate(m_screen != SCR_SCOREBOARD && m_screen != SCR_LOADING);
-    }
-    void SetLayer(Event *ev) { m_back = !str::icmp(ev->GetString(1), "back"); }
-    void MouseUp(Event *ev);
-    void Draw(void) override;
-    qboolean KeyEvent(int key, unsigned int time) override;
-    // the draw cache: drawn again from its list while DrawKey stays (the data's
-    // changes, the hot item, the clock's seconds) and the cvars it read
-    bool CacheDraw(void) override { return true; }
-    bool DrawKeyed(void) override { return true; }
-    int  DrawKey(void) override;
-    void Tick(void);
-
-    void Hit(const rlView_t& v, float x, float y, float w, float h, int id);
-    int  HitAt(int x, int y);
-    bool Hot(int id) const { return m_focus == id; }
-    void Choose(int id);
-    void PlaceFigure(const rlView_t& v, float cx, float headY, float width);
-
-    void DrawWeapon(const rlView_t& v, const rlInfo_t& in);
-    void DrawEsc(const rlView_t& v, const rlInfo_t& in);
-    void DrawScoreboard(const rlView_t& v, const rlInfo_t& in);
-};
-
-Event EV_ReloadedMenu_Screen("screen", EV_DEFAULT, "s", "screen", "weapon, esc, scoreboard or loading");
+Event EV_ReloadedMenu_Screen("screen", EV_DEFAULT, "s", "screen", "weapon, esc, scoreboard, loading, main or confirm");
 Event EV_ReloadedMenu_Layer("layer", EV_DEFAULT, "s", "layer", "back (under the model views) or front");
 
 CLASS_DECLARATION(UIWidget, UIReloadedMenu, NULL) {
@@ -1565,6 +1598,20 @@ CLASS_DECLARATION(UIWidget, UIReloadedMenu, NULL) {
     {&W_LeftMouseUp,          &UIReloadedMenu::MouseUp  },
     {NULL,                    NULL                      }
 };
+
+void UIReloadedMenu::SetScreen(Event *ev)
+{
+    const str s = ev->GetString(1);
+
+    m_screen = !str::icmp(s, "esc")          ? SCR_ESC
+             : !str::icmp(s, "scoreboard") ? SCR_SCOREBOARD
+             : !str::icmp(s, "loading")    ? SCR_LOADING
+             : !str::icmp(s, "main")       ? SCR_MAIN
+             : !str::icmp(s, "confirm")    ? SCR_CONFIRM
+             : !str::icmp(s, "end")        ? SCR_END
+                                           : SCR_WEAPON;
+    AllowActivate(m_screen != SCR_SCOREBOARD && m_screen != SCR_LOADING);
+}
 
 void UIReloadedMenu::Hit(const rlView_t& v, float x, float y, float w, float h, int id)
 {
@@ -1596,8 +1643,21 @@ void UIReloadedMenu::MouseUp(Event *ev)
     const UIPoint2D p  = MouseEventToClientPoint(ev);
     const int       id = HitAt((int)p.x, (int)p.y);
 
-    if (id >= 0 && !m_back) {
+    if (m_back) {
+        return;
+    }
+    if (m_screen == SCR_MAIN || m_screen == SCR_CONFIRM) {
+        // (a click on nothing too: it closes what is open)
+        ChooseMain(id);
+    } else if (id >= 0) {
         Choose(id);
+    }
+}
+
+void UIReloadedMenu::CharEvent(int ch)
+{
+    if (!m_back && m_screen == SCR_MAIN) {
+        MainChar(ch);
     }
 }
 
@@ -1605,12 +1665,18 @@ qboolean UIReloadedMenu::KeyEvent(int key, unsigned int time)
 {
     int at, n = (int)m_order.size();
 
+    if (!m_back && (m_screen == SCR_MAIN || m_screen == SCR_CONFIRM)) {
+        return MainKey(key);
+    }
     if (m_back || m_screen == SCR_SCOREBOARD || !n) {
         return qfalse;
     }
     if (key == K_ENTER || key == K_KP_ENTER || key == K_SPACE) {
         if (m_focus >= 0) {
             Choose(m_focus);
+        } else if (m_screen == SCR_END) {
+            // (the end of a level, nothing picked: its last item, CONTINUE)
+            Choose(m_order.back());
         }
         return qtrue;
     }
@@ -1653,7 +1719,6 @@ qboolean UIReloadedMenu::KeyEvent(int key, unsigned int time)
         at = to;
     }
     m_focus = m_order[at];
-    uii.Snd_PlaySound("sound/menu/scroll.wav");
     return qtrue;
 }
 
@@ -1663,12 +1728,20 @@ qboolean UIReloadedMenu::KeyEvent(int key, unsigned int time)
 // RL_FIGMID up from his feet in its middle
 void UIReloadedMenu::PlaceFigure(const rlView_t& v, float cx, float headY, float width)
 {
-    UIWidget   *w = m_parent ? m_parent->FindWidget("figure") : NULL;
     const float k = (v.dh - headY) / (RL_FIGHEAD - RL_FIGMID + 48.0f * RL_FIGSCALE); // units a model unit
-    const int   x = RL_P(v, cx - width / 2), y = RL_P(v, v.dh - 96.0f * RL_FIGSCALE * k);
+    const float y = v.dh - 96.0f * RL_FIGSCALE * k;
 
-    if (w) {
-        w->setFrame(UIRect2D(x, y, RL_P(v, cx + width / 2) - x, RL_P(v, v.dh) - y));
+    PlaceView(v, "figure", cx - width / 2, y, width, v.dh - y);
+}
+
+void UIReloadedMenu::PlaceView(const rlView_t& v, const char *name, float x, float y, float w, float h)
+{
+    UIWidget *view = m_parent ? m_parent->FindWidget(name) : NULL;
+    const int px = RL_P(v, x), py = RL_P(v, y);
+
+    if (view) {
+        view->setFrame(UIRect2D(px, py, RL_P(v, x + w) - px, RL_P(v, y + h) - py));
+        view->setShow(w > 0 && h > 0);
     }
 }
 
@@ -1677,16 +1750,20 @@ void UIReloadedMenu::PlaceFigure(const rlView_t& v, float cx, float headY, float
 Tick
 
 Each frame the menu shows (from DrawKey, its list drawn again, or from
-Draw): the keys to it, what the mouse is over hot, the scoreboard asked for
+Draw): the keys to it, what the mouse is over hot (nothing while another
+menu is shown over it), the scoreboard asked for, the main menu's servers
+queried
 ================
 */
 void UIReloadedMenu::Tick(void)
 {
+    const bool opened = m_tick != cls.framecount - 1;
+
     if (m_tick == cls.framecount) {
         return;
     }
     // shown again: nothing hot until the mouse moves or a key is pressed
-    if (m_tick != cls.framecount - 1) {
+    if (opened) {
         m_focus    = -1;
         m_mouse[0] = uid.mouseX;
         m_mouse[1] = uid.mouseY;
@@ -1695,6 +1772,9 @@ void UIReloadedMenu::Tick(void)
         }
     }
     m_tick = cls.framecount;
+    if (m_screen == SCR_MAIN) {
+        MainTick(opened);
+    }
     if (m_back) {
         m_focus = rl_hot[m_screen];
         return;
@@ -1703,9 +1783,13 @@ void UIReloadedMenu::Tick(void)
         RL_WantScores();
         return;
     }
+    if (!menuManager.CurrentMenu() || !getParent() || menuManager.CurrentMenu()->GetContainerWidget() != getParent()) {
+        // another menu over it
+        m_focus = rl_hot[m_screen] = -1;
+        return;
+    }
     // the keys come here while the menu is up
-    if (uWinMan.ActiveControl() != this && menuManager.CurrentMenu() && getParent()
-        && menuManager.CurrentMenu()->GetContainerWidget() == getParent()) {
+    if (uWinMan.ActiveControl() != this) {
         uWinMan.ActivateControl(this);
     }
     // the mouse moved: what it is over is hot
@@ -1714,9 +1798,6 @@ void UIReloadedMenu::Tick(void)
 
         m_mouse[0] = uid.mouseX;
         m_mouse[1] = uid.mouseY;
-        if (id != m_focus && id >= 0) {
-            uii.Snd_PlaySound("sound/menu/scroll.wav");
-        }
         m_focus = id;
     }
     rl_hot[m_screen] = m_focus;
@@ -1727,6 +1808,7 @@ int UIReloadedMenu::DrawKey(void)
     struct {
         int cs, scores, seconds, focus, self, team, gametype, banner;
         int wtab, wpick[2], wserial; // the weapon menu's preview
+        int main;                    // the main menu's
     } k;
     int h = 0;
 
@@ -1755,6 +1837,9 @@ int UIReloadedMenu::DrawKey(void)
         // (the round's end banner over the header)
         k.banner = UI_Extras_BannerKey();
     }
+    if (m_screen == SCR_MAIN || m_screen == SCR_CONFIRM) {
+        k.main = MainDrawKey();
+    }
     for (size_t i = 0; i + 4 <= sizeof(k); i += 4) {
         int w;
 
@@ -1771,28 +1856,41 @@ void UIReloadedMenu::Draw(void)
     rlInfo_t       in;
 
     if (m_screen == SCR_LOADING) {
-        RL_DrawLoading(v);
+        RL_DrawLoading(this, v);
         uii.Rend_SetColor(white);
         return;
     }
-    if (clc.state < CA_PRIMED) {
+    // (the main menu's before any map)
+    if (clc.state < CA_PRIMED && m_screen != SCR_MAIN && m_screen != SCR_CONFIRM) {
         return;
     }
     if (!rl_bakeOnly) {
         Tick();
     }
-    RL_Info(&in);
     m_hits.clear();
     m_order.clear();
     m_cols = 1;
     switch (m_screen) {
+    case SCR_MAIN:
+        DrawMain(v);
+        break;
+    case SCR_CONFIRM:
+        DrawConfirm(v);
+        break;
     case SCR_WEAPON:
+        RL_Info(&in);
         DrawWeapon(v, in);
         break;
     case SCR_ESC:
+        RL_Info(&in);
         DrawEsc(v, in);
         break;
+    case SCR_END:
+        RL_Info(&in);
+        DrawEnd(v, in);
+        break;
     default:
+        RL_Info(&in);
         DrawScoreboard(v, in);
         break;
     }
@@ -1864,7 +1962,7 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
     const int                     tab    = rl_wp.tab;
     const int                     nation = RL_PreviewNation(in.target);
     const rlTeam_t&               T      = rl_teams[tab];
-    const std::vector<rlModel_t>& models = rl_wp.models[tab];
+    const std::vector<rlModel_t>& models = rl_models[tab];
     const int                     nm = (int)models.size(), pick = rl_wp.pick[tab] < nm ? rl_wp.pick[tab] : -1;
     // (the player's own model unlisted: the one listed is another)
     const bool                    cycle     = nm > 1 || (nm == 1 && pick < 0);
@@ -1989,7 +2087,7 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
         m_order.push_back(cycle ? id : -1);
     }
     {
-        const std::string name   = pick >= 0 ? models[pick].name : RL_ModelName(RL_PreviewModel(tab).c_str());
+        const std::string name   = RL_Upper((pick >= 0 ? models[pick].name : RL_ModelName(RL_PreviewModel(tab).c_str())).c_str());
         // a dash a model, while they fit between the chevrons
         const bool        dashes = nm > 1 && nm * 20 - 6 <= gw - 220;
         const float       ny     = fy + (dashes ? 36 : 42);
@@ -2017,30 +2115,42 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
 ================
 The Esc menu: the map, mode and players, the time left; two rows of
 tiles (Main menu, Team & weapon, as the weapon menu picks the side too,
-Options; Spectate, Disconnect, Quit) and Resume under them
+Options; Spectate, Disconnect, Quit) and Resume under them. In a mission
+(single player): the level's name, the mission and the difficulty; Main
+menu, Save, Load (Campaign's saved games); Options, Leave mission, Quit
 ================
 */
 
-// (in the grid's order, row by row: the keys step through them so)
-enum { ID_MAINMENU, ID_WEAPON, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_QUIT, ID_RESUME };
+enum { ID_MAINMENU, ID_WEAPON, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_QUIT, ID_RESUME, ID_SAVE, ID_LOAD, ID_CONTINUE };
 
-static const struct {
+typedef struct {
     int         id, col, row, span; // span: the columns it takes
     const char *label;
-} rl_escTiles[] = {
-    {ID_MAINMENU,   0, 0, 1, "MAIN MENU"    },
-    {ID_WEAPON,     1, 0, 1, "TEAM & WEAPON"},
-    {ID_OPTIONS,    2, 0, 1, "OPTIONS"      },
-    {ID_SPECTATOR,  0, 1, 1, "SPECTATE"     },
-    {ID_DISCONNECT, 1, 1, 1, "DISCONNECT"   },
-    {ID_QUIT,       2, 1, 1, "QUIT"         },
+} rlEscTile_t;
+
+// multiplayer's, single player's (in the grid's order, row by row: the keys step through them so)
+static const rlEscTile_t rl_escTiles[2][6] = {
+    {{ID_MAINMENU,   0, 0, 1, "MAIN MENU"    },
+     {ID_WEAPON,     1, 0, 1, "TEAM & WEAPON"},
+     {ID_OPTIONS,    2, 0, 1, "OPTIONS"      },
+     {ID_SPECTATOR,  0, 1, 1, "SPECTATE"     },
+     {ID_DISCONNECT, 1, 1, 1, "DISCONNECT"   },
+     {ID_QUIT,       2, 1, 1, "QUIT"         }},
+    {{ID_MAINMENU,   0, 0, 1, "MAIN MENU"    },
+     {ID_SAVE,       1, 0, 1, "SAVE"         },
+     {ID_LOAD,       2, 0, 1, "LOAD"         },
+     {ID_OPTIONS,    0, 1, 1, "OPTIONS"      },
+     {ID_DISCONNECT, 1, 1, 1, "LEAVE MISSION"},
+     {ID_QUIT,       2, 1, 1, "QUIT"         }},
 };
 
 void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
 {
-    const int      team = in.selfTeam == TEAM_AXIS ? 1 : 0;
-    const rlTeam_t& T   = rl_teams[team];
-    float          tw, th, gap, gw;
+    const int          team  = in.selfTeam == TEAM_AXIS ? 1 : 0;
+    const rlTeam_t&    T     = rl_teams[team];
+    const bool         sp    = in.gametype == GT_SINGLE_PLAYER;
+    const rlEscTile_t *tiles = rl_escTiles[sp];
+    float              tw, th, gap, gw;
 
     RL_Grid(v, &tw, &th, &gap, &gw);
     const float    head = 104, rb = 56;
@@ -2052,7 +2162,11 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
         return;
     }
     RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
-    {
+    if (sp) {
+        const char *level = CL_ConfigString(CS_MESSAGE);
+
+        RL_HeaderPanel(v, x0, y0, gw, head, level[0] ? level : in.map, RL_H3, -1, RL_MissionLine(in.map).c_str(), NULL);
+    } else {
         char line[128];
 
         // (bots take slots past sv_maxclients, which the client isn't told: then no limit shown)
@@ -2063,8 +2177,9 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
         }
         RL_HeaderPanel(v, x0, y0, gw, head, RL_MapName(in.map), RL_H3, -1, line, RL_TimeLeft(in.gametype));
     }
-    for (const auto& t : rl_escTiles) {
-        const int   i = t.id;
+    for (int k = 0; k < (int)ARRAY_LEN(rl_escTiles[0]); k++) {
+        const rlEscTile_t& t = tiles[k];
+        const int          i = t.id;
         const float x = x0 + t.col * (tw + gap), y = gy + t.row * (th + gap), w = t.span * tw + (t.span - 1) * gap;
         const bool  hot = Hot(i);
         const rlColor_t gc = hot ? RL_TEXT : RL_Rgb(200, 196, 186);
@@ -2098,6 +2213,12 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
         case ID_SPECTATOR:
             RL_Outline(v, RL_OUTLINES "glyphs/spectate.svg", gcx, gcy, S, S, gc);
             break;
+        case ID_SAVE:
+            RL_Outline(v, RL_OUTLINES "glyphs/save.svg", gcx, gcy, S, S, gc);
+            break;
+        case ID_LOAD:
+            RL_Outline(v, RL_OUTLINES "glyphs/load.svg", gcx, gcy, S, S, gc);
+            break;
         default:
             RL_Outline(v, RL_OUTLINES "glyphs/disconnect.svg", gcx, gcy, S, S, gc);
             break;
@@ -2115,13 +2236,264 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
         Hit(v, x0, ry, gw, rb, ID_RESUME);
     }
     // the keys: the tiles three a row, then Resume (the whole row)
-    for (int i = ID_MAINMENU; i <= ID_QUIT; i++) {
-        m_order.push_back(i);
+    for (int k = 0; k < (int)ARRAY_LEN(rl_escTiles[0]); k++) {
+        m_order.push_back(tiles[k].id);
     }
     m_order.push_back(ID_RESUME);
     m_order.push_back(ID_RESUME);
     m_order.push_back(ID_RESUME);
     m_cols = 3;
+}
+
+/*
+================
+The end of a mission's level (single player), shown for the statistics
+screens the cgame shows at the intermission (StatsScreen_Success and
+_Failed; Spearhead's and Breakthrough's mission_success_N and
+mission_failed_N): the stock screen's painting, unstretched, full height,
+black beside it (not the photos Spearhead's fade in over it), dimmed as
+the Esc menu dims the game; on it the Esc menu's column: the level's name,
+the mission and the difficulty, the outcome; the stock screen's numbers
+(the ui_* cvars of the stats the cgame asks for: CG_ParseStats); the
+weapon most hits came from and where they landed; the medal won, if one
+was; MAIN MENU and CONTINUE (TRY AGAIN when failed), which sends the fire
+the game waits for (not taken in its first 4 s: Player's intermission).
+Pushed, not just shown, so that its buttons take the mouse and the keys
+(UI_Menus_End). The stock screens' sounds as their labels play them:
+Spearhead's poem and its music, Breakthrough's music
+================
+*/
+
+#define RL_ENDWAIT 4000 // what the game waits before it takes the fire
+
+static struct {
+    Menu *stock;      // the stock screen it is shown for
+    bool  ok;         // a success
+    int   mission;    // Spearhead's and Breakthrough's number, 0 Allied Assault's
+    int   at, drawn;  // when it was pushed, last drawn
+    int   sound;      // the music: 0 not begun, 1 held, 2 raised
+} rl_end;
+
+// the medals a level can award: the stock medal cases' (ui/medals.urc) cvar
+// and picture, the name on its sign
+static const struct {
+    int         game;
+    const char *cvar, *pic, *name;
+} rl_medals[] = {
+    {TG_MOH,   "g_medal0",    "armycommendation_med",                 "Army Commendation Medal"        },
+    {TG_MOH,   "g_medal1",    "distinguishedservice_med",             "Distinguished Service Medal"    },
+    {TG_MOH,   "g_medal2",    "legionmerit_med",                      "The Legion of Merit"            },
+    {TG_MOH,   "g_medal3",    "goodconduct_med",                      "The Good Conduct Medal"         },
+    {TG_MOH,   "g_medal4",    "norwegiancross",                       "Norwegian War Cross With Sword" },
+    {TG_MOH,   "g_medal5",    "americanmedal",                        "American Campaign Medal"        },
+    {TG_MOH,   "g_eogmedal0", "distinguishedcross_med",               "Distinguished Service Cross"    },
+    {TG_MOH,   "g_eogmedal1", "silverstar_med",                       "Silver Star"                    },
+    {TG_MOH,   "g_eogmedal2", "bronzestar_med",                       "Bronze Star"                    },
+    {TG_MOHTA, "g_medal0",    "distinguishedcross_med",               "Distinguished Service Cross"    },
+    {TG_MOHTA, "g_medal1",    "silverstar_med",                       "Silver Star"                    },
+    {TG_MOHTA, "g_medal2",    "bronzestar_med",                       "Bronze Star"                    },
+    {TG_MOHTA, "g_medal3",    "textures/mohmenu/frangermstar_med",    "The France And Germany Star"    },
+    {TG_MOHTA, "g_medal4",    "textures/mohmenu/croixdeguerre_med",   "Belgian Croix De Guerre"        },
+    {TG_MOHTA, "g_medal5",    "textures/mohmenu/captureofberlin_med", "Medal For The Capture Of Berlin"},
+    {TG_MOHTT, "g_medalbt0",  "distinguishedcross_med",               "Distinguished Service Cross"    },
+    {TG_MOHTT, "g_medalbt1",  "silverstar_med",                       "Silver Star"                    },
+    {TG_MOHTT, "g_medalbt2",  "bronzestar_med",                       "Bronze Star"                    },
+    {TG_MOHTT, "g_medalbt3",  "africastar_med",                       "Africa Star"                    },
+    {TG_MOHTT, "g_medalbt4",  "distinguishedflyingcross_med",         "Distinguished Flying Cross"     },
+    {TG_MOHTT, "g_medalbt5",  "airmedal_med",                         "Air Medal"                      },
+};
+
+qboolean UI_Menus_End(const char *name, Menu *m, qboolean show)
+{
+    // (the menu found for the stock name: UI_Menus_Alias's)
+    if (Q_stricmp(m->m_name.c_str(), "reloaded_end")) {
+        return qfalse;
+    }
+    if (!show) {
+        if (menuManager.CurrentMenu() == m) {
+            menuManager.PopMenu(qfalse);
+            UI_FocusMenuIfExists();
+        }
+        return qtrue;
+    }
+    // (shown each frame of the intermission: pushed once, not over a menu opened from it)
+    if (m->isVisible() || menuManager.CurrentMenu()) {
+        return qtrue;
+    }
+    // (taken down by Esc a moment ago: its wait and its sounds go on)
+    if (cls.realtime - rl_end.drawn > 1000) {
+        UIWidget *c;
+
+        rl_end.stock   = menuManager.FindMenuNamed(name);
+        rl_end.ok      = !Q_stricmp(name, "StatsScreen_Success") || !Q_stricmpn(name, "mission_success_", 16);
+        rl_end.mission = Q_stricmpn(name, "mission_", 8) ? 0 : atoi(strrchr(name, '_') + 1);
+        rl_end.at      = cls.realtime;
+        rl_end.sound   = 0;
+        // (a stock menu's widgets load when it is first shown)
+        c = rl_end.stock ? rl_end.stock->GetContainerWidget() : NULL;
+        if (c && c->isSubclassOf(UIWidgetContainer) && static_cast<UIWidgetContainer *>(c)->m_layout) {
+            static_cast<UIWidgetContainer *>(c)->m_layout->ForceLoad();
+        }
+    }
+    UI_PushMenu("reloaded_end");
+    return qtrue;
+}
+
+// the stock screen's sounds, as its labels play them: 2 s on, Spearhead's
+// poem (the game's sounds stopped) and the music at 0.35, held (by the
+// mission) then raised to full over 2 s; Breakthrough's music so
+static void RL_EndSounds(void)
+{
+    static const float hold[3] = {120, 70, 77};
+    const int          t       = cls.realtime - rl_end.at - 2000;
+    const bool         sh      = com_target_game->integer == TG_MOHTA;
+
+    if (!rl_end.ok || rl_end.mission < 1 || rl_end.mission > 3 || t < 0 || rl_end.sound == 2) {
+        return;
+    }
+    if (!rl_end.sound) {
+        if (sh) {
+            uii.Snd_StopAllSound();
+            uii.Snd_FadeSound(0);
+            uii.Snd_PlaySoundDialog(va("sound/menu/mission%dpoem.mp3", rl_end.mission));
+        }
+        Cbuf_AddText(va("tmstartloop sound/music/mus_stat_%c%d.mp3\ntmvolume 0.35\n", sh ? 't' : 'e', rl_end.mission));
+        rl_end.sound = 1;
+    } else if (t > hold[rl_end.mission - 1] * 1000) {
+        const float k = Q_min(1.0f, (t - hold[rl_end.mission - 1] * 1000) / 2000.0f);
+
+        Cbuf_AddText(va("tmvolume %4.2f\n", 0.35f + 0.65f * k));
+        rl_end.sound = k < 1.0f ? 1 : 2;
+    }
+}
+
+void UIReloadedMenu::DrawEnd(const rlView_t& v, const rlInfo_t& in)
+{
+    static const char *const hitNames[5] = {"HEAD", "TORSO", "ARMS", "GROIN", "LEGS"};
+    const float hits[5] = {Cvar_VariableValue("ui_HeadShots"), Cvar_VariableValue("ui_TorsoShots"),
+                           Cvar_VariableValue("ui_LeftArmShots") + Cvar_VariableValue("ui_RightArmShots"), Cvar_VariableValue("ui_GroinShots"),
+                           Cvar_VariableValue("ui_LeftLegShots") + Cvar_VariableValue("ui_RightLegShots")};
+    const std::string numbers[6][2] = {
+        {va("%d", Cvar_VariableIntegerValue("ui_NumEnemysKilled")), "ENEMIES KILLED" },
+        {va("%d%%", (int)(Cvar_VariableValue("ui_Accuracy") + 0.5f)), "ACCURACY"       },
+        {va("%d", Cvar_VariableIntegerValue("ui_NumComplete")), "OBJECTIVES DONE"},
+        {va("%d", Cvar_VariableIntegerValue("ui_NumShotsFired")), "SHOTS FIRED"    },
+        {va("%d", Cvar_VariableIntegerValue("ui_NumHits")), "SHOTS HIT"      },
+        {va("%d", Cvar_VariableIntegerValue("ui_NumHitsTaken")), "HITS TAKEN"     },
+    };
+    const std::string weapon(Cvar_VariableString("ui_PreferredWeapon"));
+    // (copied: va's buffers are reused while it draws)
+    const char       *found = UI_CompHud_WeaponOutline(weapon.c_str());
+    const std::string outline(found ? found : "");
+    const char       *level   = CL_ConfigString(CS_MESSAGE);
+    const float       wait    = (cls.realtime - rl_end.at) / (float)RL_ENDWAIT;
+    const float       lw = v.dh * 4 / 3, lx = (v.dw - lw) / 2;
+    const float       th = 112, mh = 76, bh = 48, head = 104;
+    int               medal = -1;
+    float             tw, wh, gap, gw; // (the Esc menu's grid; wh its tiles' height)
+
+    // the medal won: the first whose cvar the level set (as the game tells, g_gotmedal: ui_gotmedal)
+    for (int i = 0; medal < 0 && i < (int)ARRAY_LEN(rl_medals) && Cvar_VariableIntegerValue("ui_gotmedal"); i++) {
+        const cvar_t *c = rl_medals[i].game == Q_min(in.target, TG_MOHTT) ? Cvar_FindVar(rl_medals[i].cvar) : NULL;
+
+        if (c && c->modificationCount > 1) {
+            medal = i;
+        }
+    }
+    RL_Grid(v, &tw, &wh, &gap, &gw);
+    const float x0 = (v.dw - gw) / 2;
+    float       y  = (v.dh - (head + gap + 2 * th + 2 * gap + wh + (medal < 0 ? 0 : gap + mh) + 22 + bh)) / 2;
+
+    if (!rl_bakeOnly) {
+        rl_end.drawn = cls.realtime;
+        RL_EndSounds();
+    }
+    RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0));
+    RL_StockPictures(rl_end.stock, RL_P(v, lx), 0, RL_P(v, lx + lw), RL_P(v, v.dh), true);
+    RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
+    // the header: the level, the mission; the outcome a tag the buttons' height and
+    // shape (CONTINUE's), as far in from the panel's top, bottom and right as the title from its left
+    {
+        const char *tag = rl_end.ok ? "SUCCESS" : "FAILED";
+        const float cw  = RL_TextW(v, tag, 18, true, 2) + 56;
+
+        RL_HeaderPanel(v, x0, y, gw, head, level[0] ? level : in.map, RL_H3, -1, RL_MissionLine(in.map).c_str(), NULL, 1.0f,
+                       gw - 56 - cw - 16);
+        RL_Skew(v, x0 + gw - 28 - cw, y + (head - bh) / 2, cw, bh, 12, 0, rl_end.ok ? RL_BRASS : RL_Rgb(214, 104, 88));
+        RL_Text(v, x0 + gw - 28 - cw / 2 + 3, y + head / 2, tag, 18, RL_INK, true, RL_CENTER, 2, RL_MID);
+    }
+    y += head + gap;
+    // the numbers, three a row
+    for (int k = 0; k < 6; k++) {
+        const float x = x0 + (k % 3) * (tw + gap), ty = y + (k / 3) * (th + gap);
+
+        RL_Round(v, x, ty, tw, th, 4, RL_Rgb(14, 16, 18, 226));
+        RL_Text(v, x + tw / 2, ty + th / 2 - 12, numbers[k][0].c_str(), 44, RL_TEXT, true, RL_CENTER, 0, RL_MID);
+        RL_Text(v, x + tw / 2, ty + th - 22, numbers[k][1].c_str(), RL_S2, RL_MUTED, true, RL_CENTER, 1.6f, RL_MID);
+    }
+    y += 2 * th + 2 * gap;
+    // the weapon most hits came from (none without a hit), where they landed
+    {
+        const float hx = x0 + tw + gap, hw = 2 * tw + gap, top = y + 50, rh = (wh - 66) / 5;
+        const float bx0 = hx + 96, bx1 = hx + hw - 76;
+
+        RL_Round(v, x0, y, tw, wh, 4, RL_Rgb(14, 16, 18, 226));
+        if (!outline.empty()) {
+            RL_Outline(v, outline.c_str(), x0 + tw / 2, y + wh * 0.36f, tw * 0.74f, wh * 0.34f, RL_Rgb(200, 196, 186));
+        }
+        RL_Text(v, x0 + tw / 2, y + wh - 52, Q_stricmp(weapon.c_str(), "none") ? RL_Upper(weapon.c_str()).c_str() : "\x97", RL_S1, RL_TEXT, true,
+                RL_CENTER, 1.6f, RL_MID, tw - 20);
+        RL_Text(v, x0 + tw / 2, y + wh - 22, "PREFERRED WEAPON", RL_S2, RL_MUTED, true, RL_CENTER, 1.6f, RL_MID);
+        RL_Round(v, hx, y, hw, wh, 4, RL_Rgb(14, 16, 18, 226));
+        RL_Text(v, hx + 20, y + 24, "WHERE YOUR HITS LANDED", RL_S2, RL_MUTED, true, RL_LEFT, 1.6f, RL_MID);
+        for (int k = 0; k < 5; k++) {
+            const float cy = top + rh * (k + 0.5f), f = Q_max(0.0f, Q_min(hits[k], 100.0f)) / 100;
+
+            RL_Text(v, hx + 20, cy, hitNames[k], 15, RL_Rgb(200, 196, 186), true, RL_LEFT, 1.6f, RL_MID);
+            RL_Box(v, bx0, cy - 2, bx1 - bx0, 4, RL_Rgb(255, 255, 255, 30));
+            RL_Box(v, bx0, cy - 2, (bx1 - bx0) * f, 4, RL_BRASS);
+            RL_Text(v, hx + hw - 20, cy, va("%d%%", (int)(hits[k] + 0.5f)), 17, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
+        }
+    }
+    y += wh;
+    // the medal won: its picture, its name
+    if (medal >= 0) {
+        const qhandle_t pic = re.RegisterShaderNoMip(rl_medals[medal].pic);
+        const float     ph  = mh - 20;
+        const float     pw  = pic ? ph * uii.Rend_GetShaderWidth(pic) / Q_max(1, uii.Rend_GetShaderHeight(pic)) : 0.0f;
+
+        y += gap;
+        RL_Round(v, x0, y, gw, mh, 4, RL_Rgb(14, 16, 18, 226));
+        if (pic && !rl_bakeOnly) {
+            RL_SetColor(RL_Rgb(255, 255, 255));
+            uii.Rend_DrawPicStretched(RL_P(v, x0 + 14), RL_P(v, y + 10), RL_P(v, x0 + 14 + pw) - RL_P(v, x0 + 14), RL_P(v, y + 10 + ph) - RL_P(v, y + 10),
+                                      0, 0, 1, 1, pic);
+        }
+        RL_RoundFrame(v, x0 + 14, y + 10, pw, ph, 0, 1, RL_Rgb(255, 255, 255, 40));
+        RL_Text(v, x0 + 30 + pw, y + mh / 2 - 12, "MEDAL AWARDED", RL_S2, RL_BRASS, true, RL_LEFT, 2.6f, RL_MID);
+        RL_Text(v, x0 + 30 + pw, y + mh / 2 + 13, rl_medals[medal].name, RL_S1, RL_TEXT, true, RL_LEFT, 0, RL_MID);
+        y += mh;
+    }
+    y += 22;
+    // MAIN MENU, CONTINUE (off, a brass bar filling under it, while the game waits)
+    {
+        const float cx = x0 + tw + gap, cw = 2 * tw + gap;
+
+        RL_Button(v, x0, y, tw, bh, "MAIN MENU", false, 0, 12, Hot(ID_MAINMENU));
+        Hit(v, x0, y, tw, bh, ID_MAINMENU);
+        RL_Button(v, cx, y, cw, bh, rl_end.ok ? "CONTINUE" : "TRY AGAIN", true, 12, 0, Hot(ID_CONTINUE), wait < 1.0f);
+        if (wait < 1.0f) {
+            RL_Box(v, cx + 12, y + bh - 4, (cw - 12) * wait, 4, RL_BRASS);
+        }
+        Hit(v, cx, y, cw, bh, ID_CONTINUE);
+        if (!rl_end.ok) {
+            RL_Text(v, x0 + gw, y + bh + 24, *Cvar_VariableString("g_lastsave") ? "TRY AGAIN loads your last save." : "TRY AGAIN starts the level again.",
+                    15, RL_MUTED, false, RL_RIGHT, 0, RL_MID);
+        }
+    }
+    m_order.push_back(ID_MAINMENU);
+    m_order.push_back(ID_CONTINUE);
+    m_cols = 2;
 }
 
 /*
@@ -2138,19 +2510,15 @@ void UIReloadedMenu::Choose(int id)
     case SCR_WEAPON:
         if (id == ID_WTAB || id == ID_WTAB_AXIS) {
             // a side previewed
-            if (id - ID_WTAB != rl_wp.tab) {
-                rl_wp.tab = id - ID_WTAB;
-                uii.Snd_PlaySound("sound/menu/apply.wav");
-            }
+            rl_wp.tab = id - ID_WTAB;
         } else if (id == ID_WPREV || id == ID_WNEXT) {
             // its next or previous model previewed (the figure follows)
-            const int t = rl_wp.tab, nm = (int)rl_wp.models[t].size();
+            const int t = rl_wp.tab, nm = (int)rl_models[t].size();
             int       p = rl_wp.pick[t];
 
             if (nm) {
                 p = p < 0 || p >= nm ? (id == ID_WNEXT ? 0 : nm - 1) : (p + (id == ID_WNEXT ? 1 : nm - 1)) % nm;
                 rl_wp.pick[t] = p;
-                uii.Snd_PlaySound("sound/menu/apply.wav");
             }
         } else if (id >= 0 && id < WC_NUM) {
             // the lot sent: the models cycled to, the side previewed, the weapon
@@ -2161,8 +2529,8 @@ void UIReloadedMenu::Choose(int id)
             for (int t = 0; t < 2; t++) {
                 const int p = rl_wp.pick[t];
 
-                if (p >= 0 && p < (int)rl_wp.models[t].size() && p != rl_wp.own[t]) {
-                    Cvar_Set(t ? "dm_playergermanmodel" : "dm_playermodel", rl_wp.models[t][p].file.c_str());
+                if (p >= 0 && p < (int)rl_models[t].size() && p != rl_wp.own[t]) {
+                    Cvar_Set(t ? "dm_playergermanmodel" : "dm_playermodel", rl_models[t][p].file.c_str());
                     models = true;
                 }
             }
@@ -2191,28 +2559,54 @@ void UIReloadedMenu::Choose(int id)
             cmd = "quit\n";
             break;
         case ID_OPTIONS:
-            cmd = "popmenu 0;wait 250;ui_getplayermodel;pushmenu mpoptions\n";
+            RL_MainShow(RL_SHOW_OPTIONS);
+            cmd = "popmenu 0;wait 250;pushmenu main\n";
             break;
         case ID_SPECTATOR:
             cmd = "popmenu 0;wait 250;spectator\n";
             break;
         case ID_DISCONNECT:
-            cmd = "disconnect;wait 5;popmenu 0;pushmenu main;pushmenu multiplayer\n";
+            if (RL_Gametype() == GT_SINGLE_PLAYER) {
+                // (a mission left: the main menu, on Campaign)
+                RL_MainShow(RL_SHOW_MISSIONS);
+                cmd = "disconnect;wait 5;popmenu 0;pushmenu main\n";
+            } else {
+                cmd = "disconnect;wait 5;popmenu 0;pushmenu main;pushmenu multiplayer\n";
+            }
             break;
         case ID_RESUME:
             cmd = "popmenu 0\n";
             break;
         case ID_MAINMENU:
+            if (RL_Gametype() == GT_SINGLE_PLAYER) {
+                RL_MainShow(RL_SHOW_MISSIONS);
+            }
+            cmd = "popmenu 0;wait 250;pushmenu main\n";
+            break;
+        case ID_SAVE:
+            // (back in the mission: the shot taken of it, not of the menu)
+            cmd = "popmenu 0;savegame\n";
+            break;
+        case ID_LOAD:
+            // Campaign's saved games
+            RL_MainShow(RL_SHOW_SAVES);
             cmd = "popmenu 0;wait 250;pushmenu main\n";
             break;
         }
         break;
+    case SCR_END:
+        if (id == ID_MAINMENU) {
+            // (over it: it is there again when the main menu closes)
+            RL_MainShow(RL_SHOW_MISSIONS);
+            cmd = "pushmenu main\n";
+        } else if (id == ID_CONTINUE && cls.realtime - rl_end.at >= RL_ENDWAIT) {
+            // the fire the game waits for (down and up at once: still a press in the next command)
+            cmd = "+attackprimary\n-attackprimary\n";
+        }
+        break;
     }
     if (cmd) {
-        const std::string text(cmd);
-
-        uii.Snd_PlaySound("sound/menu/apply.wav");
-        Cbuf_AddText(text.c_str());
+        Cbuf_AddText(cmd);
     }
 }
 

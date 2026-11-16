@@ -708,6 +708,7 @@ void CG_DrawObjectives()
     float        fTimeDelta;
     const char  *pszLocalizedText;
     const char  *pszLine;
+    float        fShift; // Added: pixels right of the stock place (beside the Competitive HUD's radar)
 
     iTotalNumLines = 0;
     for (i = CS_OBJECTIVES; i < CS_OBJECTIVES + MAX_OBJECTIVES; ++i) {
@@ -730,6 +731,7 @@ void CG_DrawObjectives()
     // Added in 2.0
     //  Get the minimum Y value, it should be below the compass
     fObjectivesTop = cgi.UI_GetObjectivesTop();
+    fShift         = cgi.UI_GetObjectivesLeft() - 25;
     iNumObjectives = 0;
 
     for (i = 0; i < MAX_OBJECTIVES; i++) {
@@ -748,7 +750,7 @@ void CG_DrawObjectives()
         iTotalNumLines += iNumLines[i];
     }
 
-    fX        = 25.0;
+    fX        = 25.0 + fShift;
     fY        = fObjectivesTop + 5;
     fWidth    = (float)(iTotalNumLines * 12 + fObjectivesTop + iNumObjectives * 25 + 32) - fY;
     vColor[2] = 0.2f;
@@ -768,7 +770,7 @@ void CG_DrawObjectives()
         cgs.media.objectivesBackShader
     );
 
-    fX        = 30.0;
+    fX        = 30.0 + fShift / cgs.uiHiResScale[0];
     fY        = fObjectivesTop + 10;
     vColor[0] = 1.0;
     vColor[1] = 1.0;
@@ -829,18 +831,18 @@ void CG_DrawObjectives()
         }
 
         cgi.R_SetColor(vColor);
-        fX = 55.0;
+        fX = 55.0 + fShift / cgs.uiHiResScale[0];
         fY = fHeight;
         cgi.R_DrawString(
             cgs.media.objectiveFont,
             cgi.LV_ConvertString(cg.Objectives[i].text),
-            55.0,
+            fX,
             fY / cgs.uiHiResScale[1],
             -1,
             cgs.uiHiResScale
         );
 
-        fX        = 30.0;
+        fX        = 30.0 + fShift / cgs.uiHiResScale[0];
         fY        = fHeight;
         vColor[0] = 1.0;
         vColor[1] = 1.0;

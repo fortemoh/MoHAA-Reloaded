@@ -870,6 +870,7 @@ void CL_InitCGameDLL( clientGameImport_t *cgi, clientGameExport_t **cge ) {
 	cgi->GetConfigString			= CL_ConfigString;
 	cgi->R_DrawBoxes				= re.DrawBoxes;
 	cgi->UI_DrawZoomOverlay			= UI_DrawZoomOverlay;
+	cgi->UI_GetObjectivesLeft		= UI_GetObjectivesLeft;
 	// FIXME
 	//cgi->pUnknownVar				= NULL;
 

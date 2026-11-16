@@ -60,6 +60,7 @@ void        UI_ClearState(void);
 void        CL_BeginRegistration(void);
 void        CL_EndRegistration(void);
 float       UI_GetObjectivesTop(void);
+float       UI_GetObjectivesLeft(void); // Added: beside the Competitive HUD's radar
 void        UI_GetHighResolutionScale(vec2_t scale);
 
 //

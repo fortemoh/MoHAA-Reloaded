@@ -240,6 +240,13 @@ static const compWeapon_t *Comp_Weapon(const char *name)
     return NULL;
 }
 
+const char *UI_CompHud_WeaponOutline(const char *name)
+{
+    const compWeapon_t *w = Comp_Weapon(name);
+
+    return w ? va(COMP_OUTLINES "%s.svg", w->pic) : NULL;
+}
+
 // the obituaries' English keys (fgame's), the weapon each says: s2 the text
 // after the attacker it needs ("" none at all), kind p a player's, s a
 // suicide, w the world's
