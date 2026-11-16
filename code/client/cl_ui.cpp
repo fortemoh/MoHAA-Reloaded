@@ -37,15 +37,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include <chrono>
 
-typedef struct {
-    float             fadetime;
-    float             starttime;
-    float             endtime;
-    float             alpha_start;
-    float             alpha_end;
-    UIReggedMaterial *material;
-} intro_stage_t;
-
 static qboolean             ui_hud;
 static class UIFont        *globalFont;
 static UIFloatingConsole   *fakk_console;
@@ -83,15 +74,6 @@ cvar_t        *ui_gotmedal;
 cvar_t        *ui_success;
 cvar_t        *ui_failed;
 cvar_t        *ui_returnmenu;
-cvar_t        *ui_skip_eamovie;
-cvar_t        *ui_skip_titlescreen;
-cvar_t        *ui_skip_legalscreen;
-cvar_t        *ui_titlescreen_fadein;
-cvar_t        *ui_titlescreen_fadeout;
-cvar_t        *ui_titlescreen_stay;
-cvar_t        *ui_legalscreen_fadein;
-cvar_t        *ui_legalscreen_fadeout;
-cvar_t        *ui_legalscreen_stay;
 cvar_t        *ui_drawcoords;
 cvar_t        *ui_minicon;
 cvar_t        *ui_consoleposition;
@@ -103,7 +85,6 @@ cvar_t        *ui_health_end;
 cvar_t        *ui_debugload;
 cvar_t        *sound_overlay;
 
-static intro_stage_t intro_stage;
 static char          server_mapname[64];
 static UIListCtrl   *scoreboardlist;
 static Menu         *scoreboard_menu;
@@ -114,8 +95,6 @@ static float         scoreboard_y;
 static float         scoreboard_w;
 static float         scoreboard_h;
 static qboolean      scoreboard_header;
-cvar_t              *cl_playintro;
-cvar_t              *cl_movieaudio;
 
 unsigned char        UIListCtrlItem[8];
 
@@ -1613,53 +1592,6 @@ void UI_ActivateView3D(void)
 
 /*
 ====================
-UI_DrawIntro
-====================
-*/
-void UI_DrawIntro(void)
-{
-    if (clc.state == CA_CINEMATIC) {
-        view3d->setShow(true);
-        return;
-    }
-
-    view3d->setShow(false);
-    UI_ClearBackground();
-
-    if (cls.startStage < 3 || cls.startStage >= 12) {
-        return;
-    }
-
-    if (intro_stage.material->GetMaterial()) {
-        float  swidth;
-        float  sheight;
-        vec4_t color;
-
-        VectorSet4(color, 1, 1, 1, 1);
-        if (intro_stage.fadetime) {
-            float frac;
-
-            frac     = Q_clamp_float((cls.realtime - intro_stage.starttime) / intro_stage.fadetime, 0, 1);
-            color[0] = color[1] = color[2] =
-                intro_stage.alpha_start + frac * (intro_stage.alpha_end - intro_stage.alpha_start);
-        }
-
-        swidth  = view3d->getFrame().getMaxX();
-        sheight = view3d->getFrame().getMaxY();
-
-        re.SetColor(color);
-
-        re.DrawStretchPic(0.0, 0.0, swidth, sheight, 0.0, 0.0, 1.0, 1.0, intro_stage.material->GetMaterial());
-        re.SetColor(NULL);
-    }
-
-    if (cls.realtime >= intro_stage.endtime) {
-        CL_FinishedStartStage();
-    }
-}
-
-/*
-====================
 UI_MenuUp
 ====================
 */
@@ -1949,10 +1881,7 @@ void UI_Update(void)
 
     currentMenu = menuManager.CurrentMenu();
 
-    // don't care about the intro
-    if (!CL_FinishedIntro()) {
-        UI_DrawIntro();
-    } else if (!server_loading && (clc.state == CA_CONNECTING || clc.state == CA_CHALLENGING) && ui_pConnectingMenu) {
+    if (!server_loading && (clc.state == CA_CONNECTING || clc.state == CA_CHALLENGING) && ui_pConnectingMenu) {
         view3d->setShow(false);
         UI_ClearBackground();
         UI_StopBind();
@@ -1981,7 +1910,7 @@ void UI_Update(void)
             if (clc.state <= CA_PRIMED) {
                 view3d->setShow(false);
                 UI_ClearBackground();
-            } else if (clc.state == CA_ACTIVE || clc.state == CA_CINEMATIC) {
+            } else if (clc.state == CA_ACTIVE) {
                 // Changed: the Reloaded Esc menu holds a mission as the stock menu did, the game shown under it
                 if (covered && com_sv_running->integer && !cg_gametype->integer) {
                     Com_FakePause();
@@ -3601,9 +3530,6 @@ void UI_ClearState(void)
     S_FadeSound(0.0);
     UI_ClearCenterPrint();
     UI_CompHud_Clear();
-
-    // Added in OPM
-    SCR_StopCinematic();
 }
 
 /*
@@ -4129,173 +4055,6 @@ void UI_ClearConsole_f(void)
 
 /*
 ====================
-CL_FinishedIntro
-====================
-*/
-qboolean CL_FinishedIntro(void)
-{
-    return cls.startStage == 0;
-}
-
-/*
-====================
-CL_FinishedStartStage
-====================
-*/
-void CL_FinishedStartStage(void)
-{
-    int wait;
-
-    switch (cls.startStage++) {
-    case 1:
-        Cbuf_ExecuteText(EXEC_NOW, "cinematic EAlogo.RoQ\n");
-        break;
-    case 2:
-        intro_stage.alpha_start = 0.0;
-        intro_stage.alpha_end   = 1.0;
-
-        wait                  = ui_titlescreen_fadein->value * 1000.0;
-        intro_stage.fadetime  = wait;
-        intro_stage.starttime = cls.realtime;
-        intro_stage.endtime   = cls.realtime + wait;
-
-        intro_stage.material = uWinMan.RegisterShader("mohaa_title");
-        break;
-    case 3:
-        intro_stage.alpha_start = 1.0;
-        intro_stage.alpha_end   = 1.0;
-
-        wait                  = ui_legalscreen_stay->value * 1000.0;
-        intro_stage.fadetime  = 0.0;
-        intro_stage.starttime = cls.realtime;
-        intro_stage.endtime   = cls.realtime + wait;
-        break;
-    case 4:
-        intro_stage.alpha_start = 1.0;
-        intro_stage.alpha_end   = 0.0;
-
-        wait                  = ui_titlescreen_fadeout->value * 1000.0;
-        intro_stage.fadetime  = wait;
-        intro_stage.starttime = cls.realtime;
-        intro_stage.endtime   = cls.realtime + wait;
-        break;
-    case 5:
-        intro_stage.alpha_start = 0.0;
-        intro_stage.alpha_end   = 1.0;
-
-        wait                  = ui_legalscreen_fadein->value * 1000.0;
-        intro_stage.fadetime  = wait;
-        intro_stage.starttime = cls.realtime;
-        intro_stage.endtime   = cls.realtime + wait;
-
-        intro_stage.material = uWinMan.RegisterShader("legal");
-        break;
-    case 6:
-        intro_stage.alpha_start = 1.0;
-        intro_stage.alpha_end   = 1.0;
-
-        wait                  = ui_legalscreen_stay->value * 1000.0;
-        intro_stage.fadetime  = 0.0;
-        intro_stage.starttime = cls.realtime;
-        intro_stage.endtime   = cls.realtime + wait;
-        break;
-    case 7:
-        intro_stage.alpha_start = 1.0;
-        intro_stage.alpha_end   = 0.0;
-
-        wait                  = ui_legalscreen_fadeout->value * 1000.0;
-        intro_stage.fadetime  = wait;
-        intro_stage.starttime = cls.realtime;
-        intro_stage.endtime   = cls.realtime + wait;
-        break;
-    case 8:
-        if (com_target_game->integer >= target_game_e::TG_MOHTA) {
-            cls.startStage = 0;
-            return;
-        }
-
-        Cbuf_ExecuteText(EXEC_NOW, "cinematic 2015intro.RoQ\n");
-        break;
-    case 9:
-        Cbuf_ExecuteText(EXEC_NOW, "cinematic intro.RoQ\n");
-        break;
-    case 10:
-        cls.startStage = 0;
-        break;
-    default:
-        break;
-    }
-}
-
-/*
-====================
-UI_StartStageKeyEvent
-====================
-*/
-void UI_StartStageKeyEvent(void)
-{
-    switch (cls.startStage) {
-    case 2:
-        if (ui_skip_eamovie->integer) {
-            SCR_StopCinematic();
-        }
-        break;
-    case 3:
-    case 4:
-    case 5:
-        if (ui_skip_titlescreen->integer) {
-            cls.startStage = 5;
-            CL_FinishedStartStage();
-        }
-        break;
-    case 6:
-    case 7:
-    case 8:
-        if (ui_skip_legalscreen->integer) {
-            cls.startStage = 8;
-            CL_FinishedStartStage();
-        }
-        break;
-    case 9:
-    case 10:
-        SCR_StopCinematic();
-        break;
-    default:
-        break;
-    }
-}
-
-/*
-====================
-UI_StartIntro_f
-====================
-*/
-void UI_StartIntro_f(void)
-{
-    cls.startStage = 1;
-    IN_MouseOff();
-    CL_FinishedStartStage();
-}
-
-/*
-====================
-CL_TryStartIntro
-====================
-*/
-void CL_TryStartIntro(void)
-{
-    // the console opens at startup only in developer mode (upstream opened it whenever no intro played)
-    if (developer->integer) {
-        UI_ToggleConsole();
-    } else if (cl_playintro->integer) {
-        // FIXME: no intro from now
-        Cvar_Set(cl_playintro->name, "0");
-        UI_StartIntro_f();
-    }
-}
-
-/*
-====================
 SaveConsoleRectangle
 ====================
 */
@@ -4603,19 +4362,7 @@ void CL_InitializeUI(void)
     ui_success             = Cvar_Get("ui_success", "0", 0);
     ui_failed              = Cvar_Get("ui_failed", "0", 0);
     ui_returnmenu          = Cvar_Get("ui_returnmenu", "0", 0);
-    ui_skip_eamovie        = Cvar_Get("ui_skip_eamovie", "1", 0);
-    ui_skip_titlescreen    = Cvar_Get("ui_skip_titlescreen", "1", 0);
-    ui_skip_legalscreen    = Cvar_Get("ui_skip_legalscreen", "1", 0);
-    ui_titlescreen_fadein  = Cvar_Get("ui_titlescreen_fadein", "1", 0);
-    ui_titlescreen_fadeout = Cvar_Get("ui_titlescreen_fadeout", "1", 0);
-    ui_titlescreen_stay    = Cvar_Get("ui_titlescreen_stay", "3", 0);
-    ui_legalscreen_fadein  = Cvar_Get("ui_legalscreen_fadein", "1", 0);
-    ui_legalscreen_fadeout = Cvar_Get("ui_legalscreen_fadeout", "1", 0);
-    ui_legalscreen_stay    = Cvar_Get("ui_legalscreen_stay", "3", 0);
     cl_greenfps            = Cvar_Get("cl_greenfps", "0", 1);
-    // no intro videos unless asked for (MoHAA Reloaded's default, upstream's is 1)
-    cl_playintro           = Cvar_Get("cl_playintro", "0", 0);
-    cl_movieaudio          = Cvar_Get("cl_movieaudio", "1", 0);
     Cvar_Get("ui_startmap", "", 1);
     Cvar_Get("dlg_badsave", "This save game is invalid", 0);
 
@@ -4703,8 +4450,6 @@ void CL_InitializeUI(void)
     view3d->setName("view3d");
     view3d->InitSubtitle();
 
-    memset(&intro_stage, 0, sizeof(intro_stage));
-
     // Register the loading material
     ui_static_materials.loading = uWinMan.RegisterShader("textures/menu/loading");
 
@@ -4767,8 +4512,9 @@ void CL_InitializeUI(void)
 
     cls.uiStarted = qtrue;
 
-    if (!com_dedicated->integer) {
-        CL_TryStartIntro();
+    // the console opens at startup in developer mode (upstream opened it whenever no intro played)
+    if (!com_dedicated->integer && developer->integer) {
+        UI_ToggleConsole();
     }
 }
 

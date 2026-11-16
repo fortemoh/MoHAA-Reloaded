@@ -210,7 +210,6 @@ typedef struct uiexport_s {
     void        UI_Init(void);
     void        UI_Shutdown(void);
     void        UI_InitExports();
-    void        UI_StartStageKeyEvent(void);
     void        UI_GetMouseState(int *mouseX, int *mouseY, int *flags);
     int         UI_GetCvarInt(const char *name, int def);
     float       UI_GetCvarFloat(const char *name, float def);

@@ -435,7 +435,7 @@ This will be called twice if rendering in stereo mode
 void SCR_DrawScreenField( void ) {
 	// wide aspect ratio screens need to have the sides cleared
 	// unless they are displaying game renderings
-	if ( clc.state != CA_ACTIVE && clc.state != CA_CINEMATIC ) {
+	if ( clc.state != CA_ACTIVE ) {
 		if ( cls.glconfig.vidWidth * 480 > cls.glconfig.vidHeight * 640 ) {
 			re.SetColor( g_color_table[0] );
 			//re.DrawStretchPic( 0, 0, cls.glconfig.vidWidth, cls.glconfig.vidHeight, 0, 0, 0, 0, cls.whiteShader );
@@ -463,9 +463,6 @@ void SCR_DrawScreenField( void ) {
 		// refresh to update the time
 		UI_DrawConnect();
 		break;
-	case CA_CINEMATIC:
-		SCR_DrawCinematic();
-		break;
 	case CA_ACTIVE:
 		CL_CGameRendering(s_scr_stereoFrame);
 		break;
@@ -482,9 +479,6 @@ UpdateStereoSide
 void UpdateStereoSide( stereoFrame_t s ) {
 	s_scr_stereoFrame = s;
 	re.BeginFrame( s );
-	if( clc.state == CA_CINEMATIC ) {
-		SCR_DrawCinematic();
-	}
 	UI_Update();
 }
 

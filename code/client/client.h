@@ -325,7 +325,6 @@ typedef enum loadProgress_e {
 } loadProgress_t;
 
 typedef struct {
-	int				startStage;
 	loadProgress_t	loading;
 	int				keyCatchers;
 	qboolean		vid_restart;
@@ -468,7 +467,6 @@ extern	cvar_t	*cl_activeAction;
 
 extern	cvar_t	*cl_allowDownload;
 extern	cvar_t	*cl_conXOffset;
-extern	cvar_t	*cl_inGameVideo;
 
 extern	cvar_t	*cl_lanForcePackets;
 extern	cvar_t	*cl_langamerefreshstatus;
@@ -693,23 +691,6 @@ void	SCR_DrawSmallStringExt( int x, int y, const char *string, float *setColor, 
 void	SCR_DrawSmallChar( int x, int y, int ch );
 
 void	UpdateStereoSide( stereoFrame_t s );
-
-//
-// cl_cin.c
-//
-
-void CL_PlayCinematic_f( void );
-void SCR_DrawCinematic (void);
-void SCR_RunCinematic (void);
-void SCR_StopCinematic (void);
-int CIN_PlayCinematic( const char *arg0, int xpos, int ypos, int width, int height, int bits);
-e_status CIN_StopCinematic(int handle);
-e_status CIN_RunCinematic (int handle);
-void CIN_DrawCinematic (int handle);
-void CIN_SetExtents (int handle, int x, int y, int w, int h);
-void CIN_SetLooping (int handle, qboolean loop);
-void CIN_UploadCinematic(int handle);
-void CIN_CloseAllVideos(void);
 
 //
 // cl_cgame.cpp

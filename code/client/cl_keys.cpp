@@ -1090,11 +1090,6 @@ void CL_KeyEvent(int key, qboolean down, unsigned time)
         ctrl_down = down;
     }
 
-    if (down && !CL_FinishedIntro()) {
-        UI_StartStageKeyEvent();
-        return;
-    }
-
     if (clc.state > CA_DISCONNECTED && cge && !Key_GetCatcher() && cge->CG_CheckCaptureKey(key, down, time)
         && key != K_ESCAPE) {
         if (key != K_CONSOLE && (!keys[K_SHIFT].down || key != K_ESCAPE)) {
@@ -1153,8 +1148,7 @@ void CL_KeyEvent(int key, qboolean down, unsigned time)
     }
 
     // keys can still be used for bound actions
-    if (down && (key <= K_BACKSPACE || key == K_MOUSE4) && (clc.demoplaying || clc.state == CA_CINEMATIC)
-        && Key_GetCatcher() == 0) {
+    if (down && (key <= K_BACKSPACE || key == K_MOUSE4) && clc.demoplaying && Key_GetCatcher() == 0) {
         Cvar_Set("nextdemo", "");
         key = K_ESCAPE;
     }
@@ -1164,11 +1158,6 @@ void CL_KeyEvent(int key, qboolean down, unsigned time)
         if (down) {
             qboolean wasup = UI_MenuUp();
             UI_DeactiveFloatingWindows();
-
-            if (clc.state == CA_CINEMATIC) {
-                SCR_StopCinematic();
-                return;
-            }
 
             if (cls.realFrametime - last_escape_time <= 1000) {
                 UI_MenuEscape("main");

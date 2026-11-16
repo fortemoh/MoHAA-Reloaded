@@ -98,7 +98,6 @@ static const char *whiteListedLocalServerCommands[] = {
     "map",
     "disconnect",
 
-    "cinematic",
     "showmenu",
     "hidemenu"
 };

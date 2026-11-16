@@ -83,9 +83,6 @@ typedef struct sndHost_s {
     void (*TriggeredMusicSetupHandle)(const char *name, int loopCount, int offset, qboolean autostart);
     void (*TriggeredMusicPlayIntroMusic)(void);
     void (*TriggeredMusicStop)(void);
-    void (*SetupMovieAudio)(const char *movieName);
-    void (*StopMovieAudio)(void);
-    int (*CurrentMoviePosition)(void);
     void (*LoadData)(soundsystemsavegame_t *save);
     void (*SaveData)(soundsystemsavegame_t *save);
     void (*ReLoad)(soundsystemsavegame_t *save);

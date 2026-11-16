@@ -108,7 +108,6 @@ cvar_t	*cl_motdString;
 cvar_t	*cl_allowDownload;
 cvar_t	*cg_gametype;
 cvar_t	*cl_conXOffset;
-cvar_t	*cl_inGameVideo;
 
 cvar_t	*cl_serverStatusResendTime;
 cvar_t	*cl_trn;
@@ -760,7 +759,7 @@ void CL_StartDemoLoop( void ) {
 ==================
 CL_NextDemo
 
-Called when a demo or cinematic finishes
+Called when a demo finishes
 If the "nextdemo" cvar is set, that command will be issued
 ==================
 */
@@ -863,7 +862,7 @@ void CL_MapLoading( qboolean flush, const char *pszMapName ) {
 			clc.lastPacketSentTime = -9999;
 		}
 		else {
-			// clear nextmap so the cinematic shutdown doesn't execute it
+			// (a new game: the last one's nextmap cleared)
 			Cvar_Set("nextmap", "");
 			CL_Disconnect();
 			Q_strncpyz(clc.servername, "localhost", sizeof(clc.servername));
@@ -982,7 +981,6 @@ void CL_Disconnect() {
 		clc.demofile = 0;
 	}
 
-	SCR_StopCinematic ();
 	S_ClearSoundBuffer();
 
 	// send a disconnect message to the server
@@ -1659,7 +1657,7 @@ void CL_Vid_Restart_f( void ) {
 
     MUSIC_NewSoundtrack(current_soundtrack);
 
-	if (clc.state > CA_CONNECTED && clc.state != CA_CINEMATIC)
+	if (clc.state > CA_CONNECTED)
 	{
 		// send pure checksums
 		CL_SendPureChecksums();
@@ -2494,7 +2492,7 @@ void CL_CheckTimeout( void ) {
 	// check timeout
 	//
 	if ( ( !CL_CheckPaused() || !paused->integer )
-		&& clc.state >= CA_CONNECTED && clc.state != CA_CINEMATIC
+		&& clc.state >= CA_CONNECTED
 	    && cls.realtime - clc.lastPacketTime > cl_timeout->value*1000) {
 		if (++cl.timeoutcount > 5) {	// timeoutcount saves debugger
 			const char* info;
@@ -2602,17 +2600,11 @@ void CL_Frame ( int msec ) {
 		return;
 	}
 
-	if (CL_FinishedIntro()) {
-		if (clc.state == CA_DISCONNECTED) {
-			if (!UI_MenuActive() && !com_sv_running->integer) {
-				// if disconnected, bring up the menu
-				S_StopAllSounds2(qtrue);
-				S_TriggeredMusic_PlayIntroMusic();
-				UI_MenuEscape("main");
-			}
-		} else if (clc.state == CA_CINEMATIC) {
-			UI_ForceMenuOff(qtrue);
-		}
+	if (clc.state == CA_DISCONNECTED && !UI_MenuActive() && !com_sv_running->integer) {
+		// if disconnected, bring up the menu
+		S_StopAllSounds2(qtrue);
+		S_TriggeredMusic_PlayIntroMusic();
+		UI_MenuEscape("main");
 	}
 
 	// if recording an avi, lock to a fixed fps
@@ -2741,9 +2733,6 @@ void CL_Frame ( int msec ) {
 	// update audio
 	S_Update();
 
-	// advance local effects for next frame
-	SCR_RunCinematic();
-
 #ifdef USE_DISCORD
 	CL_Discord_Frame();
 #endif
@@ -2839,7 +2828,7 @@ void CL_StartHunkUsers( qboolean rendererOnly ) {
 	}
 
 	if( !cls.cgameStarted ) {
-		if( clc.state >= CA_LOADING && clc.state != CA_CINEMATIC ) {
+		if( clc.state >= CA_LOADING ) {
 			CL_InitCGame();
 		}
 	}
@@ -3012,14 +3001,6 @@ CL_RefFS_ListFiles
 */
 char** CL_RefFS_ListFiles(const char* name, const char* extension, int* numfilesfound) {
 	return FS_ListFiles(name, extension, qtrue, numfilesfound);
-}
-
-/*
-============
-CL_RefCIN_UploadCinematic
-============
-*/
-void CL_RefCIN_UploadCinematic(int handle) {
 }
 
 /*
@@ -3213,9 +3194,6 @@ void CL_InitRef( void ) {
     ri.Cvar_SetDescription = Cvar_SetDescription;
     ri.Cvar_VariableIntegerValue = Cvar_VariableIntegerValue;
 
-    ri.CIN_UploadCinematic = CL_RefCIN_UploadCinematic;
-    ri.CIN_PlayCinematic = CIN_PlayCinematic;
-    ri.CIN_RunCinematic = CIN_RunCinematic;
     ri.CL_WriteAVIVideoFrame = CL_WriteAVIVideoFrame;
 
     ri.IN_Init = IN_Init;
@@ -3547,12 +3525,6 @@ void CL_Init( void ) {
 	cl_ctrlbindings = Cvar_Get( "cl_altbindings", "0", CVAR_ARCHIVE );
 
 	cl_conXOffset = Cvar_Get ("cl_conXOffset", "0", 0);
-#ifdef MACOS_X
-        // In game video is REALLY slow in Mac OS X right now due to driver slowness
-	cl_inGameVideo = Cvar_Get ("r_inGameVideo", "0", CVAR_ARCHIVE);
-#else
-	cl_inGameVideo = Cvar_Get ("r_inGameVideo", "1", CVAR_ARCHIVE);
-#endif
 
 	cl_serverStatusResendTime = Cvar_Get ("cl_serverStatusResendTime", "750", 0);
 
@@ -3630,7 +3602,6 @@ void CL_Init( void ) {
 	Cmd_AddCommand ("disconnect", CL_Disconnect_f);
 	Cmd_AddCommand ("record", CL_Record_f);
 	Cmd_AddCommand ("demo", CL_PlayDemo_f);
-	Cmd_AddCommand ("cinematic", CL_PlayCinematic_f);
 	Cmd_AddCommand ("stoprecord", CL_StopRecord_f);
 	Cmd_AddCommand ("connect", CL_Connect_f);
 	Cmd_AddCommand ("menuconnect", CL_MenuConnect_f);
@@ -3736,7 +3707,6 @@ void CL_Shutdown(const char* finalmsg, qboolean disconnect, qboolean quit) {
 	Cmd_RemoveCommand ("disconnect");
 	Cmd_RemoveCommand ("record");
 	Cmd_RemoveCommand ("demo");
-	Cmd_RemoveCommand ("cinematic");
 	Cmd_RemoveCommand ("stoprecord");
 	Cmd_RemoveCommand ("connect");
 	Cmd_RemoveCommand ("localservers");

@@ -81,21 +81,6 @@ void S_TriggeredMusic_Stop()
     s_sndHost->TriggeredMusicStop();
 }
 
-void S_SetupMovieAudio(const char *pszMovieName)
-{
-    s_sndHost->SetupMovieAudio(pszMovieName);
-}
-
-void S_StopMovieAudio()
-{
-    s_sndHost->StopMovieAudio();
-}
-
-int S_CurrentMoviePosition()
-{
-    return s_sndHost->CurrentMoviePosition();
-}
-
 void S_LoadData(soundsystemsavegame_t *pSave)
 {
     s_sndHost->LoadData(pSave);

@@ -47,8 +47,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "../gamespy/q_gamespy.h"
 
-qboolean CL_FinishedIntro(void);
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -163,7 +161,6 @@ static const char *target_game_names[] =
 };
 
 void Com_WriteConfig_f( void );
-void CIN_CloseAllVideos(void);
 
 void Com_InitTargetGame();
 void Com_InitHunkMemory( void );
@@ -2741,11 +2738,8 @@ void Com_Frame( void ) {
     msec = com_frameTime - lastTime;
 
 #ifndef DEDICATED
-	if (com_dedicated->integer || CL_FinishedIntro())
-	{
-		Cbuf_Execute(0);
-		SV_CheckSaveGame();
-	}
+	Cbuf_Execute(0);
+	SV_CheckSaveGame();
 #else
 	// Fixed in OPM
 	//   On dedicated servers, the client part that runs buffered commands is never run.
@@ -2802,9 +2796,7 @@ void Com_Frame( void ) {
 		timeBeforeEvents = Sys_Milliseconds ();
 	}
 	Com_EventLoop();
-	if (CL_FinishedIntro()) {
-		Cbuf_Execute(msec);
-	}
+	Cbuf_Execute(msec);
 
 
 	//

@@ -93,9 +93,6 @@ static void S_OMAHA_TriggeredMusic_Volume(void);
 static void S_OMAHA_TriggeredMusic_Pause(void);
 static void S_OMAHA_TriggeredMusic_Unpause(void);
 static void S_OMAHA_TriggeredMusic_PlayIntroMusic(void);
-static void S_OMAHA_StopMovieAudio(void);
-static void S_OMAHA_SetupMovieAudio(const char *pszMovieName);
-static int S_OMAHA_CurrentMoviePosition(void);
 
 static bool  s_bFading             = false;
 static float s_fFadeVolume         = 1.f;
@@ -5565,56 +5562,6 @@ void S_OMAHA_TriggeredMusic_PlayIntroMusic()
 
 /*
 ==============
-S_OMAHA_StopMovieAudio
-==============
-*/
-void S_OMAHA_StopMovieAudio()
-{
-    omaha.chan_movie.stop();
-}
-
-/*
-==============
-S_OMAHA_SetupMovieAudio
-==============
-*/
-void S_OMAHA_SetupMovieAudio(const char *pszMovieName)
-{
-    char filename[MAX_QPATH];
-
-    S_OMAHA_StopMovieAudio();
-
-    COM_StripExtension(pszMovieName, filename, sizeof(filename));
-    Q_strcat(filename, sizeof(filename), ".mp3");
-
-    if (!omaha.chan_movie.queue_stream(filename)) {
-        COM_StripExtension(pszMovieName, filename, sizeof(filename));
-        Q_strcat(filename, sizeof(filename), ".wav");
-
-        if (!omaha.chan_movie.queue_stream(filename)) {
-            Com_DPrintf("Can't find any matching audio file for movie: %s\n", pszMovieName);
-            return;
-        }
-    }
-
-    omaha.chan_movie.set_gain(S_OMAHA_GetBaseVolume() * 1.5f);
-    omaha.chan_movie.play();
-
-    Com_DPrintf("Movie Audio setup: %s\n", filename);
-}
-
-/*
-==============
-S_OMAHA_CurrentMoviePosition
-==============
-*/
-int S_OMAHA_CurrentMoviePosition()
-{
-    return omaha.chan_movie.sample_ms_offset();
-}
-
-/*
-==============
 omaha_channel::update
 ==============
 */
@@ -6406,9 +6353,6 @@ const sndHost_t s_sndHostOmaha = {
     S_OMAHA_TriggeredMusic_SetupHandle,
     S_OMAHA_TriggeredMusic_PlayIntroMusic,
     S_OMAHA_TriggeredMusic_Stop,
-    S_OMAHA_SetupMovieAudio,
-    S_OMAHA_StopMovieAudio,
-    S_OMAHA_CurrentMoviePosition,
     S_OMAHA_LoadData,
     S_OMAHA_SaveData,
     S_OMAHA_ReLoad,
