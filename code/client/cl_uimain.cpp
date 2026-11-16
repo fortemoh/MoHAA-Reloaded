@@ -22,13 +22,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 // cl_uimain.cpp: the Reloaded main menu (Added), ui/reloaded_main.urc, shown
 // for the stock "main" (cl_uimenus.cpp's aliases), and its confirmations
-// (Quit, Disconnect), ui/reloaded_confirm.urc, shown over it. Project: Omaha's
+// (Quit, Disconnect, Delete), ui/reloaded_confirm.urc, shown over it. Project: Omaha's
 // screens, stripped down, in our look: a side rail (the star and the
-// wordmark, PLAY / HOST / OPTIONS, QUIT at its foot) over maps' photos
-// blurred once to the screen's shape (no map loaded behind it); PLAY is
-// Omaha's server browser (the game's master server lists, queried only
+// wordmark, PLAY / CAMPAIGN / HOST / OPTIONS, QUIT at its foot) over maps'
+// photos blurred once to the screen's shape (no map loaded behind it); PLAY
+// is Omaha's server browser (the game's master server lists, queried only
 // while the menu is up) and its profile (the name, each side's model in a
-// 3D view, the views being the menu's labels "allies" and "axis").
+// 3D view, the views being the menu's labels "allies" and "axis"); CAMPAIGN
+// the single player missions and saved games.
 //
 // Sizes are design units (cl_uidraw.h): a 1080-line screen, the width what
 // the screen's shape gives; the screens beside the rail from x 480 (420
@@ -41,6 +42,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../gamespy/goaceng.h"
 #include "../gamespy/sv_gamespy.h"
 #include "../cgame/cg_viewmodel.h"
+#include "../qcommon/localization.h"
 
 #include <algorithm>
 #include <functional>
@@ -70,7 +72,8 @@ static const rlColor_t RL_SEL   = {222 / 255.0f, 178 / 255.0f, 80 / 255.0f, 44 /
 #define RL_RAILX  54.0f
 #define RL_LABELX 72.0f
 
-enum { PAGE_PLAY, PAGE_HOST, PAGE_OPTIONS };
+enum { PAGE_PLAY, PAGE_CAMPAIGN, PAGE_HOST, PAGE_OPTIONS };
+enum { CT_MISSIONS, CT_SAVES }; // Campaign's tabs
 enum { HF_TIME, HF_FRAG, HF_PLAYERS, HF_BOTS, HF_NAME, HF_NUM }; // Host's fields
 // the field typed in: the browser's search, the name, Options' search, a crosshair code, a slider's value, Host's (F_HOST + its)
 enum { F_NONE, F_SEARCH, F_NAME, F_OSEARCH, F_CODE, F_VALUE, F_HOST };
@@ -85,6 +88,7 @@ static const char *const rl_colNames[COL_NUM] = {"SERVER NAME", "MAP", "PLAYERS"
 // the items (the hit ids); from RL_QUIET on, a list's rows
 enum {
     ID_PLAY,
+    ID_CAMPAIGN,
     ID_HOST,
     ID_OPTIONS,
     ID_QUIT,
@@ -108,11 +112,19 @@ enum {
     ID_OSEARCH = ID_OTAB + OT_NUM,
     ID_DEFAULTS,
     ID_OAPPLY,
+    ID_CTAB,                // + Campaign's tab
+    ID_CARD = ID_CTAB + 2,  // + the card: Continue, Training, Missions 1-6
+    ID_DIFF = ID_CARD + 8,  // + the difficulty
+    ID_CSTART = ID_DIFF + 3,
+    ID_CDELETE,
+    ID_CSAVE,
+    ID_CLOAD,
     ID_ROW  = RL_QUIET, // + the row shown
     ID_FAV  = ID_ROW + 1000,
     ID_PICK = ID_FAV + 1000, // + the model
     ID_MAP  = ID_PICK + 1000, // + Host's map shown
-    ID_OPT  = ID_MAP + 1000,  // + Options' setting * 16 + its control's part
+    ID_SAVE = ID_MAP + 1000,  // + the saved game shown
+    ID_OPT  = ID_SAVE + 1000, // + Options' setting * 16 + its control's part
 };
 
 /*
@@ -158,7 +170,7 @@ static struct {
     int         pick; // the side whose model list is open, -1 none
     int         pickTop;
     std::string note; // a word on the status row in place of the lists' state
-    int         confirm; // what the confirmation asks: ID_QUIT or ID_DISCONNECT
+    int         confirm; // what the confirmation asks: ID_QUIT, ID_DISCONNECT or ID_CDELETE
     int         clickAt;
     int         serial; // changes with all of the above
 } rl_mm = {PAGE_PLAY, F_NONE, "", "", TAB_ALL, COL_PING, true, "", 0, 1, -1, 0, "", ID_QUIT, 0, 0};
@@ -594,13 +606,14 @@ static void RL_HostStart(void)
 
 /*
 ----------------
-The maps' photos (their stock load screens'), registered whole, one a
-frame while Host shows; made again after a renderer's restart, looked up
-again after a map's load
+The photos: the maps' (their stock load screens'), the missions' and the
+saved games' (CAMPAIGN), registered whole, one a frame while their page
+shows; made again after a renderer's restart, looked up again after a
+map's load
 ----------------
 */
 static struct {
-    std::map<std::string, qhandle_t> shot; // by map, 0 none
+    std::map<std::string, qhandle_t> shot; // by map, or CAMPAIGN's key (RL_MissionKey, RL_SaveKey); 0 none
     int                              stamp, refSeq;
 } rl_shots;
 
@@ -612,7 +625,7 @@ static std::string RL_ShotName(const std::string& map)
     return name;
 }
 
-// a map's photo, 0 none, -1 not made yet
+// a photo, 0 none, -1 not made yet
 static qhandle_t RL_Shot(const std::string& map)
 {
     if (rl_shots.refSeq != uii.GetRefSequence()) {
@@ -630,15 +643,371 @@ static qhandle_t RL_Shot(const std::string& map)
     return it == rl_shots.shot.end() ? -1 : it->second;
 }
 
+// a photo kept (pic RGBA, freed; NULL none)
+static void RL_ShotKeep(const std::string& key, byte *pic, int w, int h)
+{
+    rl_shots.shot[key] = pic ? re.RegisterTexture2D(RL_ShotName(key).c_str(), pic, w, h) : 0;
+    if (pic) {
+        uii.Rend_FreeRawImage(pic);
+    }
+}
+
 static void RL_ShotMake(const std::string& map)
 {
     int   w, h;
     byte *pic = RL_MenuPhoto(menuManager.FindMenu(map.c_str()), &w, &h);
 
-    rl_shots.shot[map] = pic ? re.RegisterTexture2D(RL_ShotName(map).c_str(), pic, w, h) : 0;
-    if (pic) {
-        uii.Rend_FreeRawImage(pic);
+    RL_ShotKeep(map, pic, w, h);
+}
+
+/*
+====================================================================
+
+CAMPAIGN
+
+Allied Assault's missions, as the stock briefing room offers them:
+Training, then Missions 1-6, each open once the one before is finished
+(g_m1l1 .. g_m6l1, set by the levels' scripts); START runs the stock
+difficulty menus' commands (the difficulty, then the mission's briefing
+film, which goes on to its first level). The saved games of the game
+running (save/<config>/*.ssv), newest first; the newest is Continue
+
+====================================================================
+*/
+
+// the missions: the briefing room's signs' names, its dossiers' places and years, the photos its slides show
+static const struct {
+    const char *tag, *name, *place, *year, *photo;
+    float       trim; // the photo's white border, a part of each side
+} rl_missions[] = {
+    {"TRAINING",  "Training Course",      "Basic training",          "",     "bootcamp",    0     },
+    {"MISSION 1", "Lighting the Torch",   "Algeria, North Africa",   "1942", "portphoto",   0     },
+    {"MISSION 2", "Scuttling the U-529",  "Trondheim, Norway",       "1943", "subdiving",   0     },
+    {"MISSION 3", "Operation Overlord",   "Normandy, France",        "1944", "higginsboat", 0     },
+    {"MISSION 4", "Behind Enemy Lines",   "Normandy, France",        "1944", "manorhouse",  0     },
+    {"MISSION 5", "The Day of the Tiger", "Brittany, France",        "1944", "shoreguns",   0     },
+    {"MISSION 6", "Return to Schmerzen",  "Siegfried Line, Germany", "1945", "train",       0.06f},
+};
+#define RL_MISSIONS ((int)ARRAY_LEN(rl_missions))
+
+static const char *const rl_campTabs[] = {"MISSIONS", "SAVED GAMES"};
+static const char *const rl_diffs[]    = {"EASY", "MEDIUM", "HARD"};
+static const char *const rl_diffSays[] = {"You can take many more hits.", "The game as it was made.", "A few hits and you are down."};
+
+typedef struct {
+    std::string name; // its files' (loadgame's)
+    std::string comment, map;
+    int         time;
+} rlSave_t;
+
+static struct {
+    int                   tab;
+    int                   card;  // picked: 0 Continue, else 1 + the mission; -1 not yet
+    int                   diff;  // -1 not read yet (skill)
+    std::vector<rlSave_t> saves; // newest first
+    std::string           save;  // the one picked: its name
+    int                   top, fit; // the first shown, how many show
+    bool                  scanned;
+    int                   clickAt;
+    cvar_t               *open[RL_MISSIONS]; // g_mNl1 (Training's none)
+} rl_camp = {CT_MISSIONS, -1, -1, {}, "", 0, 1, false, 0, {}};
+
+static bool RL_HasCampaign(void)
+{
+    return com_target_game->integer == TG_MOH;
+}
+
+// in a single player game
+static bool RL_InMission(void)
+{
+    return clc.state > CA_PRIMED && !cg_gametype->integer;
+}
+
+// the mission a map is of: Training 0, Missions 1-6 (their briefing films briefing/briefingN, their levels mNl...), -1 none
+static int RL_MissionOf(const char *map)
+{
+    if (!RL_HasCampaign()) {
+        return -1;
     }
+    if (!Q_stricmp(map, "training")) {
+        return 0;
+    }
+    if (!Q_stricmpn(map, "briefing/briefing", 17)) {
+        return map[17] >= '1' && map[17] <= '6' && !map[18] ? map[17] - '0' : -1;
+    }
+    return tolower(map[0]) == 'm' && map[1] >= '1' && map[1] <= '6' && tolower(map[2]) == 'l' ? map[1] - '0' : -1;
+}
+
+// a mission open (the stock defaults: Mission 1 open)
+static bool RL_MissionOpen(int k)
+{
+    if (!k) {
+        return true;
+    }
+    if (!rl_camp.open[k]) {
+        rl_camp.open[k] = Cvar_Get(va("g_m%dl1", k), k == 1 ? "1" : "0", CVAR_ARCHIVE);
+    }
+    return rl_camp.open[k]->integer != 0;
+}
+
+// a mission's photo, RGBA, opaque, its white border cut; NULL none; freed with uii.Rend_FreeRawImage
+static byte *RL_MissionPhoto(int k, int *w, int *h)
+{
+    byte *pic;
+
+    if (!uii.Rend_LoadRawImage(va("textures/mohmenu/briefing/%s.tga", rl_missions[k].photo), &pic, w, h)) {
+        return NULL;
+    }
+    if (rl_missions[k].trim) {
+        // (the rows moved up in place: each lands before where it was)
+        const int x0 = (int)(*w * rl_missions[k].trim), y0 = (int)(*h * rl_missions[k].trim), cw = *w - 2 * x0, ch = *h - 2 * y0;
+
+        for (int y = 0; y < ch; y++) {
+            memmove(pic + y * cw * 4, pic + ((y + y0) * *w + x0) * 4, cw * 4);
+        }
+        *w = cw;
+        *h = ch;
+    }
+    for (int i = 0; i < *w * *h; i++) {
+        pic[i * 4 + 3] = 255;
+    }
+    return pic;
+}
+
+// the photos' keys: a mission's (grey while it is locked), a saved game's shot
+static std::string RL_MissionKey(int k)
+{
+    return std::string(RL_MissionOpen(k) ? "brief/" : "grey/") + rl_missions[k].photo;
+}
+
+static std::string RL_SaveKey(const rlSave_t& s)
+{
+    return "save/" + s.name;
+}
+
+static void RL_MissionShot(int k)
+{
+    const bool grey = !RL_MissionOpen(k);
+    int        w, h;
+    byte      *pic = RL_MissionPhoto(k, &w, &h);
+
+    for (int i = 0; pic && grey && i < w * h; i++) {
+        byte *p = pic + i * 4;
+
+        p[0] = p[1] = p[2] = (byte)((p[0] * 77 + p[1] * 150 + p[2] * 29) >> 8);
+    }
+    RL_ShotKeep(RL_MissionKey(k), pic, w, h);
+}
+
+// a saved game's shot (256 x 256, the screen squeezed); none when too dark
+// to tell (a level's autosave, taken as it fades in: its mission's photo shown)
+static void RL_SaveShot(const rlSave_t& s)
+{
+    byte *pic = NULL;
+    int   w = 0, h = 0, light = 0;
+
+    if (uii.Rend_LoadRawImage(Com_GetArchiveFileName(s.name.c_str(), "tga"), &pic, &w, &h)) {
+        for (int i = 0; i < w * h; i++) {
+            light += (pic[i * 4] * 77 + pic[i * 4 + 1] * 150 + pic[i * 4 + 2] * 29) >> 8;
+            pic[i * 4 + 3] = 255;
+        }
+        if (light < 10 * w * h) {
+            uii.Rend_FreeRawImage(pic);
+            pic = NULL;
+        }
+    }
+    RL_ShotKeep(RL_SaveKey(s), pic, w, h);
+}
+
+// a saved game's photo: its shot (as wide as the screen), else its mission's (4:3)
+static qhandle_t RL_SavePhoto(const rlSave_t& s, float *aspect)
+{
+    const qhandle_t shot = RL_Shot(RL_SaveKey(s));
+    const int       k    = RL_MissionOf(s.map.c_str());
+
+    *aspect = (float)uid.vidWidth / (float)uid.vidHeight;
+    if (shot || k < 0) {
+        return shot;
+    }
+    *aspect = 4.0f / 3.0f;
+    return RL_Shot(RL_MissionKey(k));
+}
+
+// a saved game's mission's name (else its map's)
+static const char *RL_SaveMission(const rlSave_t& s)
+{
+    const int k = RL_MissionOf(s.map.c_str());
+
+    return k < 0 ? s.map.c_str() : rl_missions[k].name;
+}
+
+// the saved games read again; a shot made again whose game was saved again
+static void RL_CampScan(void)
+{
+    const char           *folder = Com_GetArchiveFolder();
+    std::vector<rlSave_t> old;
+    int                   n;
+    char                **files = FS_ListFiles(folder, "ssv", qfalse, &n);
+
+    old.swap(rl_camp.saves);
+    for (int i = 0; i < n; i++) {
+        fileHandle_t     f;
+        savegamestruct_t save;
+        rlSave_t         s;
+        char             name[MAX_QPATH];
+        int              got;
+
+        FS_FOpenFileRead(va("%s/%s", folder, files[i]), &f, qfalse, qtrue);
+        if (!f) {
+            continue;
+        }
+        got = FS_Read(&save, sizeof(save), f);
+        FS_FCloseFile(f);
+        Com_SwapSaveStruct(&save);
+        if (got != sizeof(save) || save.version != SAVEGAME_STRUCT_VERSION || save.type != com_target_game->integer) {
+            continue;
+        }
+        COM_StripExtension(files[i], name, sizeof(name));
+        save.comment[sizeof(save.comment) - 1] = save.mapName[sizeof(save.mapName) - 1] = 0;
+        s.name    = name;
+        s.comment = save.comment;
+        s.map     = save.mapName;
+        s.time    = save.time;
+        rl_camp.saves.push_back(s);
+    }
+    FS_FreeFileList(files);
+    std::sort(rl_camp.saves.begin(), rl_camp.saves.end(), [](const rlSave_t& a, const rlSave_t& b) {
+        return a.time != b.time ? a.time > b.time : a.name < b.name;
+    });
+    for (const rlSave_t& s : rl_camp.saves) {
+        auto was = std::find_if(old.begin(), old.end(), [&s](const rlSave_t& o) { return o.name == s.name; });
+
+        if (was == old.end() || was->time != s.time) {
+            rl_shots.shot.erase(RL_SaveKey(s));
+        }
+    }
+    // (the one picked kept, else the newest; the card Continue when there is one, else Training)
+    if (std::none_of(rl_camp.saves.begin(), rl_camp.saves.end(), [](const rlSave_t& s) { return s.name == rl_camp.save; })) {
+        rl_camp.save = rl_camp.saves.empty() ? "" : rl_camp.saves[0].name;
+    }
+    if (rl_camp.card < 0 || (!rl_camp.card && rl_camp.saves.empty())) {
+        rl_camp.card = rl_camp.saves.empty() ? 1 : 0;
+    }
+    rl_camp.scanned = true;
+}
+
+// the saved game picked, NULL none; at its place
+static const rlSave_t *RL_CampPicked(int *at = NULL)
+{
+    for (size_t i = 0; i < rl_camp.saves.size(); i++) {
+        if (rl_camp.saves[i].name == rl_camp.save) {
+            if (at) {
+                *at = (int)i;
+            }
+            return &rl_camp.saves[i];
+        }
+    }
+    return NULL;
+}
+
+// the mission whose photo is behind the page: the card picked's (Continue: the newest saved game's), the saved game picked's
+static int RL_CampBackdrop(void)
+{
+    const rlSave_t *s = rl_camp.tab == CT_SAVES ? RL_CampPicked() : rl_camp.saves.empty() ? NULL : &rl_camp.saves[0];
+
+    if (rl_camp.tab == CT_MISSIONS && rl_camp.card > 0) {
+        return rl_camp.card - 1;
+    }
+    return s ? RL_MissionOf(s->map.c_str()) : -1;
+}
+
+// when a game was saved: "Today 18:57", "Yesterday 18:57", "14 Nov 18:57"; full: "Sunday 15 November, 18:57"
+static std::string RL_When(int time, bool full)
+{
+    static const char *const days[]   = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+    static const char *const months[] = {"January", "February", "March",     "April",   "May",      "June",
+                                         "July",    "August",   "September", "October", "November", "December"};
+    const time_t             t = time, now = ::time(NULL);
+    struct tm                at = *localtime(&t), day = at, today = *localtime(&now);
+    int                      ago;
+
+    if (full) {
+        return va("%s %d %s, %02d:%02d", days[at.tm_wday], at.tm_mday, months[at.tm_mon], at.tm_hour, at.tm_min);
+    }
+    // (the days between their midnights)
+    day.tm_hour = day.tm_min = day.tm_sec = today.tm_hour = today.tm_min = today.tm_sec = 0;
+    day.tm_isdst = today.tm_isdst = -1;
+    ago          = (int)floor(difftime(mktime(&today), mktime(&day)) / 86400 + 0.5);
+    if (ago == 0 || ago == 1) {
+        return va("%s %02d:%02d", ago ? "Yesterday" : "Today", at.tm_hour, at.tm_min);
+    }
+    return va("%d %.3s %02d:%02d", at.tm_mday, months[at.tm_mon], at.tm_hour, at.tm_min);
+}
+
+// (out of a multiplayer game first: no loadgame there)
+static void RL_CampLoad(const std::string& name)
+{
+    uii.Snd_PlaySound("sound/menu/apply.wav");
+    if (clc.state != CA_DISCONNECTED && cg_gametype->integer) {
+        Cbuf_AddText("disconnect\n");
+    }
+    Cbuf_AddText(va("loadgame \"%s\"\n", name.c_str()));
+}
+
+// START: the card picked
+static void RL_CampStart(void)
+{
+    const int k = rl_camp.card - 1;
+
+    if (k < 0) {
+        if (!rl_camp.saves.empty()) {
+            RL_CampLoad(rl_camp.saves[0].name);
+        }
+        return;
+    }
+    if (!RL_MissionOpen(k)) {
+        return;
+    }
+    uii.Snd_PlaySound("sound/menu/apply.wav");
+    if (!k) {
+        Cbuf_AddText("spmap training\n");
+    } else {
+        static const char *const commands[] = {"difficultyeasy", "difficultymedium", "difficultyhard"};
+
+        Cbuf_AddText(va("%s;spmap briefing/briefing%d\n", commands[rl_camp.diff], k));
+    }
+}
+
+// DELETE confirmed: the saved game picked's files gone (the next one picked)
+static void RL_CampDelete(void)
+{
+    int             at;
+    const rlSave_t *s = RL_CampPicked(&at);
+
+    if (!s) {
+        return;
+    }
+    if (!strcmp(Cvar_VariableString("g_lastsave"), s->name.c_str())) {
+        // (not the one loadlastgame loads)
+        Cvar_Set("g_lastsave", "");
+    }
+    Com_WipeSavegame(s->name.c_str());
+    rl_camp.save    = at + 1 < (int)rl_camp.saves.size() ? rl_camp.saves[at + 1].name : at ? rl_camp.saves[at - 1].name : "";
+    rl_camp.scanned = false;
+}
+
+// the Esc menu's caption in a mission: "MISSION 2  ·  SCUTTLING THE U-529  ·  MEDIUM"
+std::string RL_MissionLine(const char *map)
+{
+    const int k = RL_MissionOf(map), skill = Q_max(0, Q_min(2, Cvar_VariableIntegerValue("skill")));
+
+    if (!k) {
+        return RL_Upper(rl_missions[0].name);
+    }
+    if (k < 0) {
+        return std::string("SINGLE PLAYER  \xb7  ") + rl_diffs[skill];
+    }
+    return std::string(rl_missions[k].tag) + "  \xb7  " + RL_Upper(rl_missions[k].name) + "  \xb7  " + rl_diffs[skill];
 }
 
 /*
@@ -649,16 +1018,22 @@ DRAWING
 ====================================================================
 */
 
-// a panel: dark, a line round it (square: rounded, a panel this size would be baked as large)
-static void RL_Panel(const rlView_t& v, float x, float y, float w, float h, rlColor_t fill)
+// a frame t pixels thick inside a box's edge
+static void RL_Frame(const rlView_t& v, float x, float y, float w, float h, int t, rlColor_t c)
 {
     const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
 
+    RL_BoxPx(x0, y0, x1, y0 + t, c);
+    RL_BoxPx(x0, y1 - t, x1, y1, c);
+    RL_BoxPx(x0, y0 + t, x0 + t, y1 - t, c);
+    RL_BoxPx(x1 - t, y0 + t, x1, y1 - t, c);
+}
+
+// a panel: dark, a line round it (square: rounded, a panel this size would be baked as large)
+static void RL_Panel(const rlView_t& v, float x, float y, float w, float h, rlColor_t fill)
+{
     RL_Box(v, x, y, w, h, fill);
-    RL_BoxPx(x0, y0, x1, y0 + 1, RL_LINE);
-    RL_BoxPx(x0, y1 - 1, x1, y1, RL_LINE);
-    RL_BoxPx(x0, y0 + 1, x0 + 1, y1 - 1, RL_LINE);
-    RL_BoxPx(x1 - 1, y0 + 1, x1, y1 - 1, RL_LINE);
+    RL_Frame(v, x, y, w, h, 1, RL_LINE);
 }
 
 // a panel's header band, h high, a line under it
@@ -736,11 +1111,12 @@ static void RL_Arrow(const rlView_t& v, float x, float y, float w, float h, bool
     RL_Shape(x0, y0, RL_P(v, x + w) - x0, RL_P(v, y + h) - y0, up ? "poly 1 1 1 1 0.5 0 1 1 0 1" : "poly 1 1 1 1 0 0 1 0 0.5 1", c, v.s);
 }
 
-// a photo (shown 4:3, as the stock load screens show theirs) filling a box, cut to its shape
-static void RL_Photo(const rlView_t& v, qhandle_t shot, float x, float y, float w, float h)
+// a photo (shown 4:3, as the stock load screens show theirs; a saved game's
+// shot as the screen it was taken of) filling a box, cut to its shape
+static void RL_Photo(const rlView_t& v, qhandle_t shot, float x, float y, float w, float h, float aspect = 4.0f / 3.0f)
 {
     const int   x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
-    const float k  = (w / h) / (4.0f / 3.0f); // over 1: the photo's top and bottom cut
+    const float k  = (w / h) / aspect; // over 1: the photo's top and bottom cut
     const float cs = k < 1.0f ? (1.0f - k) / 2 : 0.0f, ct = k > 1.0f ? (1.0f - 1.0f / k) / 2 : 0.0f;
 
     if (shot <= 0) {
@@ -753,22 +1129,26 @@ static void RL_Photo(const rlView_t& v, qhandle_t shot, float x, float y, float 
     }
 }
 
-// Omaha's segmented choice: a box a label, the one chosen brass, h high (right: x its right edge)
-static void RL_Segments(UIReloadedMenu *m, const rlView_t& v, float x, float y, float h, const char *const *labels, int n, int on, int id,
-                        bool right = false)
+// Omaha's segmented choice: a box a label, the one chosen brass, h high (right: x its right edge; off: dimmed,
+// none chosen, not hit); its right edge
+static float RL_Segments(UIReloadedMenu *m, const rlView_t& v, float x, float y, float h, const char *const *labels, int n, int on, int id,
+                         bool right = false, bool off = false)
 {
     for (int i = 0; right && i < n; i++) {
         x -= RL_TextW(v, labels[i], 15, true, 1.6f) + 36 + (i ? 4 : 0);
     }
     for (int i = 0; i < n; i++) {
         const float w = RL_TextW(v, labels[i], 15, true, 1.6f) + 36;
-        const bool  hot = m->Hot(id + i);
+        const bool  hot = !off && m->Hot(id + i), chosen = !off && i == on;
 
-        RL_Box(v, x, y, w, h, i == on ? RL_BRASS : RL_Rgb(255, 255, 255, hot ? 36 : 18));
-        RL_Text(v, x + w / 2, y + h / 2, labels[i], 15, i == on ? RL_INK : hot ? RL_TEXT : RL_SOFT, true, RL_CENTER, 1.6f, RL_MID);
-        m->Hit(v, x, y, w, h, id + i);
+        RL_Box(v, x, y, w, h, chosen ? RL_BRASS : RL_Rgb(255, 255, 255, off ? 10 : hot ? 36 : 18));
+        RL_Text(v, x + w / 2, y + h / 2, labels[i], 15, chosen ? RL_INK : off ? RL_FAINT : hot ? RL_TEXT : RL_SOFT, true, RL_CENTER, 1.6f, RL_MID);
+        if (!off) {
+            m->Hit(v, x, y, w, h, id + i);
+        }
         x += w + 4;
     }
+    return x - 4;
 }
 
 // Omaha's tabs along a panel's head (48 high from y), slanted dividers between them, the one on (-1 none) brass
@@ -797,6 +1177,51 @@ static void RL_Label(const rlView_t& v, float x, float y, const char *label)
     RL_Text(v, x, y, label, 14, RL_MUTED, true, RL_LEFT, 1.6f, RL_MID);
 }
 
+// a list's row (Host's maps, the saved games) across a panel's left part w
+// wide: picked brass-marked (else hot), a 16:9 photo, the title over its caption
+static void RL_ListRow(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, qhandle_t shot, float aspect,
+                       const char *title, const char *caption, bool sel, int id)
+{
+    const float th = h - 16, tw = floorf(th * 16 / 9 + 0.5f), tx = x + RL_PAD + tw + 16, room = x + w - RL_PAD - tx;
+
+    if (sel) {
+        RL_Box(v, x + 2, y, w - 3, h, RL_SEL);
+        RL_Box(v, x + 2, y, 3, h, RL_BRASS);
+    } else if (m->Hot(id)) {
+        RL_Box(v, x + 2, y, w - 3, h, RL_Rgb(255, 255, 255, 14));
+    }
+    RL_Photo(v, shot, x + RL_PAD, y + 8, tw, th, aspect);
+    RL_Text(v, tx, y + h / 2 - 11, RL_Ellipsize(v, title, 19, sel, room).c_str(), 19, RL_TEXT, sel, RL_LEFT, 0, RL_MID);
+    RL_Text(v, tx, y + h / 2 + 15, caption, 14, RL_MUTED, false, RL_LEFT, 0.6f, RL_MID, room);
+    m->Hit(v, x + 2, y, w - 3, h, id);
+}
+
+// the scroll bar of a list over y h, its right edge at x: shown of total, from at
+static void RL_ScrollBar(const rlView_t& v, float x, float y, float h, float at, float shown, float total)
+{
+    RL_Box(v, x - 8, y + 4 + (h - 8) * at / total, 3, Q_max(24.0f, (h - 8) * shown / total), RL_Rgb(255, 255, 255, 60));
+}
+
+// a panel's foot row (its top at foot): its band, a line over it; its controls' top
+static float RL_FootRow(const rlView_t& v, float x, float foot, float w)
+{
+    RL_Box(v, x + 1, foot, w - 2, RL_FOOT - 1, RL_HEAD);
+    RL_Box(v, x, foot, w, 1, RL_LINE);
+    return foot + (RL_FOOT - RL_CTRL) / 2;
+}
+
+// the photo picked large, its name (NULL none) over its foot on a shade
+static void RL_Picture(const rlView_t& v, qhandle_t shot, float aspect, float x, float y, float w, float h, const char *name)
+{
+    RL_Photo(v, shot, x, y, w, h, aspect);
+    if (name) {
+        const int x0 = RL_P(v, x), y0 = RL_P(v, y + h - 72);
+
+        RL_Shape(x0, y0, RL_P(v, x + w) - x0, RL_P(v, y + h) - y0, "vgradient 0 1 0 0 0 0 0 0 0 0.75", RL_Rgb(255, 255, 255), v.s);
+        RL_Text(v, x + RL_PAD, y + h - RL_PAD - 8, name, 28, RL_TEXT, true, RL_LEFT, 0, RL_BASE, w - 2 * RL_PAD);
+    }
+}
+
 /*
 ================
 The background: the stock load screens' photos (dm and obj maps,
@@ -805,30 +1230,32 @@ blurred once to the screen's shape, 54 texels high, its light 0.55 (the
 load screen's 36 and 0.42: RL_Blur), into one of two textures: the one
 shown, and the next, made while the one shown holds. Made again at a new
 screen size or a renderer's restart, looked up again after a map's load;
-the photo shown again from its start when the menu opens
+the photo shown again from its start when the menu opens. CAMPAIGN shows
+the mission picked's photo instead, blurred so into a third texture
 ================
 */
 static const char *const rl_photos[] = {"dmloading/mohdm6", "dmloading/mohdm1", "objloading/objdm2", "dmloading/mohdm4",
                                         "objloading/objdm1", "dmloading/mohdm7", "dmloading/mohdm2", "objloading/objdm5",
                                         "dmloading/mohdm3", "objloading/objdm4", "dmloading/mohdm5"};
+#define RL_BGPHOTOS ((int)ARRAY_LEN(rl_photos))
 
 #define RL_HOLD 8000
 #define RL_FADE 2000
 
 static struct {
-    qhandle_t shader[2]; // the slots' textures ("*rl_menublur0", "1"), 0 none
-    int       made[2];   // the photo each holds, -1 none
+    qhandle_t shader[3]; // the slots' textures ("*rl_menublur0", "1"; "2" CAMPAIGN's), 0 none
+    int       made[3];   // the photo each holds (rl_photos', then the missions'), -1 none, -2 to be made again
     int       cur;       // the slot shown
     int       photo;     // the photo shown
     int       since;     // cls.realtime it began showing
     int       w, h;          // the screen's when made
     int       stamp, refSeq; // UI_BakeStamp and the renderer's sequence then
-} rl_bg = {{0, 0}, {-1, -1}, 0, 0, 0, 0, 0, 0, 0};
+} rl_bg = {{0, 0, 0}, {-1, -1, -1}, 0, 0, 0, 0, 0, 0, 0};
 
-// a slot holding a photo
+// a slot holding a photo (-1 none)
 static void RL_BgMake(int slot, int photo)
 {
-    byte *pic;
+    byte *pic = NULL;
     int   pw, ph;
 
     if (rl_bg.made[slot] == photo) {
@@ -836,28 +1263,44 @@ static void RL_BgMake(int slot, int photo)
     }
     rl_bg.made[slot]   = photo;
     rl_bg.shader[slot] = 0;
-    if (uii.Rend_LoadRawImage(va("textures/mohmenu/%s.tga", rl_photos[photo]), &pic, &pw, &ph)) {
+    if (photo >= RL_BGPHOTOS) {
+        pic = RL_MissionPhoto(photo - RL_BGPHOTOS, &pw, &ph);
+    } else if (photo >= 0 && !uii.Rend_LoadRawImage(va("textures/mohmenu/%s.tga", rl_photos[photo]), &pic, &pw, &ph)) {
+        pic = NULL;
+    }
+    if (pic) {
         rl_bg.shader[slot] = RL_Blur(va("*rl_menublur%d", slot), pic, pw, ph, 54, 0.55f);
         uii.Rend_FreeRawImage(pic);
     }
 }
 
+// CAMPAIGN's photo shown
+static bool RL_BgCampaign(void)
+{
+    return rl_mm.page == PAGE_CAMPAIGN && rl_bg.shader[2];
+}
+
 // each frame the menu shows: the photos moved on, made
 static void RL_BgTick(bool opened)
 {
-    const int n = (int)ARRAY_LEN(rl_photos);
+    const int n = RL_BGPHOTOS;
 
     if (rl_bg.w != uid.vidWidth || rl_bg.h != uid.vidHeight || rl_bg.refSeq != uii.GetRefSequence()) {
         rl_bg.w       = uid.vidWidth;
         rl_bg.h       = uid.vidHeight;
         rl_bg.refSeq  = uii.GetRefSequence();
         rl_bg.stamp   = UI_BakeStamp();
-        rl_bg.made[0] = rl_bg.made[1] = -1;
+        rl_bg.made[0] = rl_bg.made[1] = rl_bg.made[2] = -2;
     } else if (rl_bg.stamp != UI_BakeStamp()) {
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < 3; i++) {
             rl_bg.shader[i] = rl_bg.shader[i] ? re.RegisterShaderNoMip(va("*rl_menublur%d", i)) : 0;
         }
         rl_bg.stamp = UI_BakeStamp();
+    }
+    if (rl_mm.page == PAGE_CAMPAIGN) {
+        const int k = RL_CampBackdrop();
+
+        RL_BgMake(2, k < 0 ? -1 : RL_BGPHOTOS + k);
     }
     if (opened || cls.realtime - rl_bg.since >= 2 * (RL_HOLD + RL_FADE)) {
         rl_bg.since = cls.realtime;
@@ -886,8 +1329,8 @@ static void RL_BgDraw(const rlView_t& v, float x, float y, float w, float h)
     if (rl_bakeOnly) {
         return;
     }
-    for (int i = 0; i < 2; i++) {
-        const qhandle_t shader = rl_bg.shader[i ? !rl_bg.cur : rl_bg.cur];
+    for (int i = 0; i < (RL_BgCampaign() ? 1 : 2); i++) {
+        const qhandle_t shader = RL_BgCampaign() ? rl_bg.shader[2] : rl_bg.shader[i ? !rl_bg.cur : rl_bg.cur];
         // (eased in and out)
         const float     a      = i ? t * t * (3 - 2 * t) : 1.0f;
 
@@ -900,7 +1343,7 @@ static void RL_BgDraw(const rlView_t& v, float x, float y, float w, float h)
 
 static void RL_Background(const rlView_t& v)
 {
-    if (!rl_bg.shader[rl_bg.cur]) {
+    if (!rl_bg.shader[rl_bg.cur] && !RL_BgCampaign()) {
         RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(8, 9, 10));
     }
     RL_BgDraw(v, 0, 0, v.dw, v.dh);
@@ -910,18 +1353,21 @@ static void RL_Background(const rlView_t& v)
 ================
 The rail: 440 units, dark, fading out past 400; the star and the wordmark
 (92 high) at its head, level with the screens' top and the buttons' left
-edge; PLAY / HOST / OPTIONS (the page shown filled brass); QUIT at its
-foot, level with the screens' foot row, its label under the buttons' and
-its icon ending at their edge; DISCONNECT over it while in a game (level
-with the browser's status row)
+edge; PLAY / CAMPAIGN / HOST / OPTIONS (the page shown filled brass;
+CAMPAIGN in Allied Assault only: Spearhead's and Breakthrough's missions
+aren't known here); QUIT at its foot, level with the screens' foot row,
+its label under the buttons' and its icon ending at their edge;
+DISCONNECT (LEAVE MISSION in single player) over it while in a game
+(level with the browser's status row)
 ================
 */
-static const char *const rl_pages[] = {"PLAY", "HOST", "OPTIONS"};
+static const char *const rl_pages[] = {"PLAY", "CAMPAIGN", "HOST", "OPTIONS"};
 
 static void RL_Rail(UIReloadedMenu *m, const rlView_t& v)
 {
     const float qy = v.dh - RL_EDGE - RL_FOOT / 2;
     const bool  connected = clc.state > CA_PRIMED;
+    int         slot      = 0;
 
     RL_Box(v, 0, 0, 400, v.dh, RL_Rgb(10, 11, 12, 232));
     RL_HGradient(v, 400, 0, 240, v.dh, RL_Rgb(10, 11, 12, 232), RL_Rgb(10, 11, 12, 0));
@@ -936,8 +1382,11 @@ static void RL_Rail(UIReloadedMenu *m, const rlView_t& v)
             RL_Outline(v, RL_GLYPH("wordmark"), RL_RAILX + 92 * 1.2f + ww / 2, RL_EDGE + 46, ww, 92, RL_Rgb(255, 255, 255));
         }
     }
-    for (int i = 0; i < 3; i++) {
-        const float y = 380 + i * 78;
+    for (int i = 0; i < (int)ARRAY_LEN(rl_pages); i++) {
+        if (i == PAGE_CAMPAIGN && !RL_HasCampaign()) {
+            continue;
+        }
+        const float y = 380 + slot++ * 78;
         const bool  on = rl_mm.page == i, hot = m->Hot(ID_PLAY + i);
 
         if (on || hot) {
@@ -953,7 +1402,7 @@ static void RL_Rail(UIReloadedMenu *m, const rlView_t& v)
         const rlColor_t c   = m->Hot(id) ? RL_TEXT : i ? RL_MUTED : RL_Rgb(214, 120, 100);
 
         RL_Outline(v, i ? RL_GLYPH("quit") : RL_GLYPH("disconnect"), RL_RAILX - 12, y, 24, 24, c);
-        RL_Text(v, RL_LABELX, y, i ? "QUIT" : "DISCONNECT", 20, c, true, RL_LEFT, 2.4f, RL_MID);
+        RL_Text(v, RL_LABELX, y, i ? "QUIT" : RL_InMission() ? "LEAVE MISSION" : "DISCONNECT", 20, c, true, RL_LEFT, 2.4f, RL_MID);
         m->Hit(v, RL_RAILX - 24, y - 24, 260, 48, id);
     }
 }
@@ -1208,36 +1657,17 @@ static void RL_Host(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
     rl_host.top = Q_max(0, Q_min(rl_host.top, n - fit));
     for (int i = 0; i < fit && rl_host.top + i < n; i++) {
         const std::string& map = rl_host.maps[rl_host.top + i];
-        const float        yy = ly + i * rh, th = rh - 16, tw = floorf(th * 16 / 9 + 0.5f), tx = x + RL_PAD + tw + 16;
-        const bool         sel = map == rl_host.map;
 
-        if (sel) {
-            RL_Box(v, x + 2, yy, lw - 3, rh, RL_SEL);
-            RL_Box(v, x + 2, yy, 3, rh, RL_BRASS);
-        } else if (m->Hot(ID_MAP + i)) {
-            RL_Box(v, x + 2, yy, lw - 3, rh, RL_Rgb(255, 255, 255, 14));
-        }
-        RL_Photo(v, RL_Shot(map), x + RL_PAD, yy + 8, tw, th);
-        RL_Text(v, tx, yy + rh / 2 - 11, RL_Ellipsize(v, RL_MapName(map.c_str()), 19, sel, x + lw - RL_PAD - tx).c_str(), 19, RL_TEXT, sel,
-                RL_LEFT, 0, RL_MID);
-        RL_Text(v, tx, yy + rh / 2 + 15, map.c_str(), 14, RL_MUTED, false, RL_LEFT, 0.6f, RL_MID, x + lw - RL_PAD - tx);
-        m->Hit(v, x + 2, yy, lw - 3, rh, ID_MAP + i);
+        RL_ListRow(m, v, x, ly + i * rh, lw, rh, RL_Shot(map), 4.0f / 3.0f, RL_MapName(map.c_str()), map.c_str(), map == rl_host.map, ID_MAP + i);
     }
     if (!n) {
         RL_Text(v, x + RL_PAD, ly + rh / 2, "No maps for this mode.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
     } else if (n > fit) {
-        const float th = foot - ly - 8;
-
-        RL_Box(v, x + lw - 8, ly + 4 + th * rl_host.top / n, 3, Q_max(24.0f, th * fit / n), RL_Rgb(255, 255, 255, 60));
+        RL_ScrollBar(v, x + lw, ly, foot - ly, rl_host.top, fit, n);
     }
     // the map picked, its name over its foot
-    RL_Photo(v, rl_host.map.empty() ? 0 : RL_Shot(rl_host.map), rx, py, rw, ph);
-    if (!rl_host.map.empty()) {
-        const int x0 = RL_P(v, rx), y0 = RL_P(v, py + ph - 72);
-
-        RL_Shape(x0, y0, RL_P(v, rx + rw) - x0, RL_P(v, py + ph) - y0, "vgradient 0 1 0 0 0 0 0 0 0 0.75", RL_Rgb(255, 255, 255), v.s);
-        RL_Text(v, rx + RL_PAD, py + ph - RL_PAD - 8, RL_MapName(rl_host.map.c_str()), 28, RL_TEXT, true, RL_LEFT, 0, RL_BASE, rw - 2 * RL_PAD);
-    }
+    RL_Picture(v, rl_host.map.empty() ? 0 : RL_Shot(rl_host.map), 4.0f / 3.0f, rx, py, rw, ph,
+               rl_host.map.empty() ? NULL : RL_MapName(rl_host.map.c_str()));
     // the settings
     RL_Label(v, rx, fy, "GAMETYPE");
     RL_Segments(m, v, rx, fy + 16, 40, rl_modeLabels, 4, rl_host.mode, ID_MODE);
@@ -1255,10 +1685,190 @@ static void RL_Host(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
     RL_Label(v, rx, fy, "WHO CAN JOIN");
     RL_Segments(m, v, rx, fy + 16, 40, rl_joinLabels, 2, rl_host.online, ID_LOCAL);
     // the foot row
-    RL_Box(v, x + 1, foot, w - 2, RL_FOOT - 1, RL_HEAD);
-    RL_Box(v, x, foot, w, 1, RL_LINE);
-    RL_Button(v, x + w - RL_PAD - 190, foot + (RL_FOOT - RL_CTRL) / 2, 190, RL_CTRL, "START", true, 12, 0, m->Hot(ID_START), rl_host.map.empty());
-    m->Hit(v, x + w - RL_PAD - 190, foot + (RL_FOOT - RL_CTRL) / 2, 190, RL_CTRL, ID_START);
+    {
+        const float by = RL_FootRow(v, x, foot, w);
+
+        RL_Button(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "START", true, 12, 0, m->Hot(ID_START), rl_host.map.empty());
+        m->Hit(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, ID_START);
+    }
+}
+
+/*
+================
+CAMPAIGN: the MISSIONS tab, load screen A's cards (the name and its tag
+over the photo, a bar and two words under it), Continue first, four across
+while a card is 300 wide (else three), the one picked framed brass, a
+locked one grey with a padlock; the difficulty and START on the foot row.
+The SAVED GAMES tab: Host's list and the one picked large, its mission,
+kind and time; DELETE, SAVE (in a mission) and LOAD. The game's name on
+the head's right
+================
+*/
+typedef struct {
+    std::string name, tag, left, right;
+    qhandle_t   photo;
+    float       aspect;
+    bool        dim;    // can't be picked (no saved game, locked)
+    bool        locked; // grey (its photo made so), a padlock
+} rlCard_t;
+
+static void RL_Card(UIReloadedMenu *m, const rlView_t& v, const rlCard_t& c, float x, float y, float w, float ph, bool on, int id)
+{
+    const float tagw = RL_TextW(v, c.tag.c_str(), 14, true, 2.6f), room = w - tagw - 16, py = y + 44, by = py + ph + 14;
+    const float rw   = c.right.empty() ? 0.0f : RL_TextW(v, c.right.c_str(), 16, true);
+    float       size = 24;
+
+    // the name smaller (to 20), then cut, to leave its tag room
+    while (size > 20 && RL_TextW(v, c.name.c_str(), size, true) > room) {
+        size--;
+    }
+    RL_Text(v, x, y + 30, RL_Ellipsize(v, c.name.c_str(), size, true, room).c_str(), size, c.dim ? RL_FAINT : RL_TEXT, true, RL_LEFT, 0, RL_BASE);
+    RL_Text(v, x + w, y + 30, c.tag.c_str(), 14, c.dim ? RL_FAINT : RL_BRASS, true, RL_RIGHT, 2.6f, RL_BASE);
+    RL_Photo(v, c.photo, x, py, w, ph, c.aspect);
+    if (c.locked) {
+        RL_Box(v, x, py, w, ph, RL_Rgb(8, 9, 10, 158));
+        RL_Outline(v, RL_GLYPH("lock"), x + w / 2, py + ph / 2, 34, 34, RL_Rgb(238, 234, 224, 210));
+    }
+    RL_Frame(v, x, py, w, ph, on ? Q_max(2, RL_P(v, 2)) : 1, on ? RL_BRASS : RL_Rgb(255, 255, 255, m->Hot(id) ? 120 : 40));
+    RL_Box(v, x, by, w, 4, on ? RL_BRASS : RL_Rgb(255, 255, 255, 30));
+    RL_Text(v, x, by + 24, RL_Ellipsize(v, c.left.c_str(), 16, false, w - rw - 12).c_str(), 16, c.dim ? RL_FAINT : RL_MUTED, false, RL_LEFT, 0,
+            RL_MID);
+    if (rw) {
+        RL_Text(v, x + w, by + 24, c.right.c_str(), 16, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
+    }
+    if (!c.dim) {
+        m->Hit(v, x, y, w, by + 36 - y, id);
+    }
+}
+
+static void RL_CampMissions(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float foot)
+{
+    const float gap = 24, top = y + 49 + RL_PAD, bot = foot - RL_PAD;
+    const int   cols = (w - 2 * RL_PAD - 3 * gap) / 4 >= 300 ? 4 : 3, rows = (RL_MISSIONS + cols) / cols;
+    const float cw = floorf((w - 2 * RL_PAD - (cols - 1) * gap) / cols), ph = floorf((bot - top - (rows - 1) * gap) / rows - 96);
+
+    for (int k = 0; k <= RL_MISSIONS; k++) {
+        rlCard_t c;
+
+        c.aspect = 4.0f / 3.0f;
+        if (!k) {
+            // Continue: the newest saved game
+            const rlSave_t *s = rl_camp.saves.empty() ? NULL : &rl_camp.saves[0];
+
+            c.name   = "Continue";
+            c.tag    = "NEWEST SAVE";
+            c.photo  = s ? RL_SavePhoto(*s, &c.aspect) : 0;
+            c.left   = s ? s->comment : "No saved game yet";
+            c.right  = s ? RL_When(s->time, false) : "";
+            c.dim    = !s;
+            c.locked = false;
+        } else {
+            const int  i    = k - 1;
+            const bool open = RL_MissionOpen(i);
+
+            c.name   = rl_missions[i].name;
+            c.tag    = rl_missions[i].tag;
+            c.photo  = RL_Shot(RL_MissionKey(i));
+            c.left   = open ? rl_missions[i].place : i == 1 ? "Finish Training to unlock" : va("Finish Mission %d to unlock", i - 1);
+            c.right  = open ? rl_missions[i].year : "";
+            c.dim = c.locked = !open;
+        }
+        RL_Card(m, v, c, x + RL_PAD + (k % cols) * (cw + gap), top + (k / cols) * (ph + 96 + gap), cw, ph, k == rl_camp.card, ID_CARD + k);
+    }
+    // the foot row: the difficulty (Continue's the saved game's, Training's none) and its meaning, START
+    {
+        const float by   = RL_FootRow(v, x, foot, w);
+        const bool  none = rl_camp.card < 2;
+        const float lw   = RL_TextW(v, "DIFFICULTY", 14, true, 1.6f);
+        const float ex   = RL_Segments(m, v, x + RL_PAD + lw + 16, by, RL_CTRL, rl_diffs, 3, rl_camp.diff, ID_DIFF, false, none);
+        const char *says = !rl_camp.card ? "The saved game keeps its own." : rl_camp.card == 1 ? "Training is the same for everyone."
+                                                                                              : rl_diffSays[rl_camp.diff];
+
+        RL_Label(v, x + RL_PAD, foot + RL_FOOT / 2, "DIFFICULTY");
+        RL_Text(v, ex + 16, foot + RL_FOOT / 2, RL_Ellipsize(v, says, 17, false, x + w - RL_PAD - 190 - 16 - (ex + 16)).c_str(), 17, RL_SOFT,
+                false, RL_LEFT, 0, RL_MID);
+        RL_Button(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "START", true, 12, 0, m->Hot(ID_CSTART), !rl_camp.card && rl_camp.saves.empty());
+        m->Hit(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, ID_CSTART);
+    }
+}
+
+static void RL_CampSaves(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float foot)
+{
+    // (Host's: the list 40 % across, its rows 76 high; the picture's top on the first row's photo's, the details under it)
+    const float     lw = floorf(w * 0.40f + 0.5f), rx = x + lw + RL_PAD, rw = w - lw - 2 * RL_PAD, rh = 76, ly = y + 96;
+    const float     py = ly + 8, ph = foot - py - 172, col = (rw - RL_PAD) / 2;
+    const int       n  = (int)rl_camp.saves.size();
+    const rlSave_t *s  = RL_CampPicked();
+
+    rl_camp.fit = Q_max(1, (int)((foot - ly) / rh));
+    rl_camp.top = Q_max(0, Q_min(rl_camp.top, n - rl_camp.fit));
+    RL_Box(v, x + lw, y + 49, 1, foot - (y + 49), RL_LINE);
+    RL_Label(v, x + RL_PAD, y + 76, "NEWEST FIRST");
+    for (int i = 0; i < rl_camp.fit && rl_camp.top + i < n; i++) {
+        const rlSave_t& r = rl_camp.saves[rl_camp.top + i];
+        float           aspect;
+        const qhandle_t shot = RL_SavePhoto(r, &aspect);
+
+        RL_ListRow(m, v, x, ly + i * rh, lw, rh, shot, aspect, r.comment.c_str(), (RL_When(r.time, false) + "  \xb7  " + RL_SaveMission(r)).c_str(),
+                   &r == s, ID_SAVE + i);
+    }
+    if (!n) {
+        RL_Text(v, x + RL_PAD, ly + rh / 2, "No saved games yet.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+    } else if (n > rl_camp.fit) {
+        RL_ScrollBar(v, x + lw, ly, foot - ly, rl_camp.top, rl_camp.fit, n);
+    }
+    // the one picked: its mission, its kind (an autosave's comment is the level's name and "Starting"), when
+    if (s) {
+        const std::string autosave = std::string(" - ") + Sys_LV_CL_ConvertString("Starting");
+        const bool        isAuto   = s->comment.size() > autosave.size() && !s->comment.compare(s->comment.size() - autosave.size(), autosave.size(), autosave);
+        const std::string rows[3][2] = {
+            {"MISSION", RL_SaveMission(*s)},
+            {"KIND", s->name == "quick" ? "Quick save" : isAuto ? "Autosave" : "Saved by you"},
+            {"SAVED", RL_When(s->time, true)},
+        };
+        float           aspect, fy = py + ph + RL_PAD + 14;
+        const qhandle_t shot = RL_SavePhoto(*s, &aspect);
+
+        RL_Picture(v, shot, aspect, rx, py, rw, ph, s->comment.c_str());
+        for (int k = 0; k < 3; k++) {
+            const float fx = rx + (k % 2) * (col + RL_PAD);
+
+            RL_Label(v, fx, fy, rows[k][0].c_str());
+            RL_Text(v, fx, fy + 34, rows[k][1].c_str(), 20, RL_TEXT, false, RL_LEFT, 0, RL_MID, col);
+            fy += k % 2 ? 74 : 0;
+        }
+    } else {
+        RL_Picture(v, 0, 1, rx, py, rw, ph, NULL);
+    }
+    // the foot row: DELETE, SAVE (in a mission) beside LOAD
+    {
+        const float by = RL_FootRow(v, x, foot, w);
+
+        RL_Button(v, x + RL_PAD, by, 150, RL_CTRL, "DELETE", false, 0, 12, m->Hot(ID_CDELETE), !s);
+        m->Hit(v, x + RL_PAD, by, 150, RL_CTRL, ID_CDELETE);
+        if (RL_InMission()) {
+            RL_Button(v, x + w - RL_PAD - 190 - 8 - 150, by, 150, RL_CTRL, "SAVE", false, 0, 12, m->Hot(ID_CSAVE));
+            m->Hit(v, x + w - RL_PAD - 190 - 8 - 150, by, 150, RL_CTRL, ID_CSAVE);
+        }
+        RL_Button(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "LOAD", true, 12, 0, m->Hot(ID_CLOAD), !s);
+        m->Hit(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, ID_CLOAD);
+    }
+}
+
+static void RL_Campaign(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h)
+{
+    if (rl_camp.diff < 0) {
+        rl_camp.diff = Q_max(0, Q_min(2, Cvar_VariableIntegerValue("skill")));
+    }
+    RL_Panel(v, x, y, w, h, RL_PANEL);
+    RL_Head(v, x, y, w, 48);
+    RL_Tabs(m, v, x + 4, y, rl_campTabs, 2, rl_camp.tab, ID_CTAB, 17, 22);
+    RL_Text(v, x + w - RL_PAD, y + 24, "ALLIED ASSAULT", 15, RL_MUTED, true, RL_RIGHT, 2.6f, RL_MID);
+    if (rl_camp.tab == CT_MISSIONS) {
+        RL_CampMissions(m, v, x, y, w, y + h - RL_FOOT);
+    } else {
+        RL_CampSaves(m, v, x, y, w, y + h - RL_FOOT);
+    }
 }
 
 /*
@@ -2102,18 +2712,14 @@ static void RL_Options(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
     if (places.empty()) {
         RL_Text(v, x + RL_PAD, top + 20, "No setting matches.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
     } else if (height > band) {
-        const float th = band - 8;
-
-        RL_Box(v, x + w - 8, top + 4 + th * scroll / height, 3, Q_max(24.0f, th * band / height), RL_Rgb(255, 255, 255, 60));
+        RL_ScrollBar(v, x + w, top, band, scroll, band, height);
     }
     // the foot row
     {
-        const float by = foot + (RL_FOOT - RL_CTRL) / 2;
+        const float by = RL_FootRow(v, x, foot, w);
         const int   pending = RL_OptPending();
         const char *restart[4] = {rl_opt.note.c_str(), "APPLY RESTARTS THE VIDEO", "APPLY RESTARTS THE SOUND", "APPLY RESTARTS THE VIDEO AND THE SOUND"};
 
-        RL_Box(v, x + 1, foot, w - 2, RL_FOOT - 1, RL_HEAD);
-        RL_Box(v, x, foot, w, 1, RL_LINE);
         RL_Button(v, x + RL_PAD, by, 150, RL_CTRL, "DEFAULTS", false, 0, 12, m->Hot(ID_DEFAULTS));
         RL_Text(v, x + w / 2, foot + RL_FOOT / 2, restart[pending], 15, RL_BRASS, true, RL_CENTER, 2, RL_MID);
         RL_Button(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "APPLY", true, 12, 0, m->Hot(ID_OAPPLY) && pending, !pending);
@@ -2176,10 +2782,15 @@ static void RL_OptChoose(int id)
     uii.Snd_PlaySound("sound/menu/apply.wav");
 }
 
-void RL_MainOptions(void)
+bool RL_MainShow(int what)
 {
-    rl_mm.page = PAGE_OPTIONS;
+    if (what != RL_SHOW_OPTIONS && !RL_HasCampaign()) {
+        return false;
+    }
+    rl_mm.page  = what == RL_SHOW_OPTIONS ? PAGE_OPTIONS : PAGE_CAMPAIGN;
+    rl_camp.tab = what == RL_SHOW_SAVES ? CT_SAVES : CT_MISSIONS;
     RL_Changed();
+    return true;
 }
 
 /*
@@ -2214,6 +2825,8 @@ void UIReloadedMenu::DrawMain(const rlView_t& v)
     if (rl_mm.page == PAGE_PLAY) {
         RL_Browser(this, v, ax, ay, aw - pw - 20, ah);
         RL_Profile(this, v, ax + aw - pw, ay, pw, ah);
+    } else if (rl_mm.page == PAGE_CAMPAIGN) {
+        RL_Campaign(this, v, ax, ay, aw, ah);
     } else if (rl_mm.page == PAGE_HOST) {
         RL_Host(this, v, ax, ay, aw, ah);
     } else {
@@ -2223,14 +2836,22 @@ void UIReloadedMenu::DrawMain(const rlView_t& v)
 
 /*
 ================
-DrawConfirm: Omaha's confirmation, over the main menu: Quit's, or
-Disconnect's in a game
+DrawConfirm: Omaha's confirmation, over the main menu: Quit's,
+Disconnect's in a game (Leave mission's in single player), Campaign's
+Delete
 ================
 */
 void UIReloadedMenu::DrawConfirm(const rlView_t& v)
 {
     const float w = 560, h = 230, x = (v.dw - w) / 2, y = (v.dh - h) / 2, by = y + h - 24 - 48;
-    const bool  quit = rl_mm.confirm == ID_QUIT;
+    // (the title, the question, the button)
+    const char *const says[4][3] = {
+        {"QUIT",          "Close the game?",         "QUIT"      },
+        {"DISCONNECT",    "Leave the game?",         "DISCONNECT"},
+        {"LEAVE MISSION", "Leave the mission?",      "LEAVE"     },
+        {"DELETE",        "Delete this saved game?", "DELETE"    },
+    };
+    const int k = rl_mm.confirm == ID_QUIT ? 0 : rl_mm.confirm == ID_CDELETE ? 3 : RL_InMission() ? 2 : 1;
 
     if (m_back) {
         return;
@@ -2238,10 +2859,10 @@ void UIReloadedMenu::DrawConfirm(const rlView_t& v)
     RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 140));
     RL_Panel(v, x, y, w, h, RL_Rgb(12, 13, 15, 250));
     RL_Head(v, x, y, w, 56);
-    RL_Text(v, x + 24, y + 28, quit ? "QUIT" : "DISCONNECT", 22, RL_TEXT, true, RL_LEFT, 2, RL_MID);
-    RL_Text(v, x + 24, y + 100, quit ? "Close the game?" : "Leave the game?", 22, RL_SOFT, false, RL_LEFT, 0, RL_MID);
+    RL_Text(v, x + 24, y + 28, says[k][0], 22, RL_TEXT, true, RL_LEFT, 2, RL_MID);
+    RL_Text(v, x + 24, y + 100, says[k][1], 22, RL_SOFT, false, RL_LEFT, 0, RL_MID);
     RL_Button(v, x + w - 24 - 328, by, 150, 48, "CANCEL", false, 0, 12, Hot(ID_CANCEL));
-    RL_Button(v, x + w - 24 - 170, by, 170, 48, quit ? "QUIT" : "DISCONNECT", true, 12, 0, Hot(ID_CONFIRM));
+    RL_Button(v, x + w - 24 - 170, by, 170, 48, says[k][2], true, 12, 0, Hot(ID_CONFIRM));
     Hit(v, x + w - 24 - 328, by, 150, 48, ID_CANCEL);
     Hit(v, x + w - 24 - 170, by, 170, 48, ID_CONFIRM);
 }
@@ -2303,8 +2924,12 @@ void UIReloadedMenu::ChooseMain(int id)
     if (m_screen == SCR_CONFIRM) {
         if (id == ID_CONFIRM) {
             uii.Snd_PlaySound("sound/menu/apply.wav");
+            if (rl_mm.confirm == ID_CDELETE) {
+                RL_CampDelete();
+                RL_Changed();
+            }
             // (the confirmation closed first: the main menu stays, out of the game)
-            Cbuf_AddText(rl_mm.confirm == ID_QUIT ? "quit\n" : "popmenu 0\ndisconnect\n");
+            Cbuf_AddText(rl_mm.confirm == ID_QUIT ? "quit\n" : rl_mm.confirm == ID_CDELETE ? "popmenu 0\n" : "popmenu 0\ndisconnect\n");
         } else if (id == ID_CANCEL) {
             uii.Snd_PlaySound("sound/menu/back.wav");
             Cbuf_AddText("popmenu 0\n");
@@ -2331,6 +2956,23 @@ void UIReloadedMenu::ChooseMain(int id)
     rl_opt.note.clear();
     if (id >= ID_OPT) {
         RL_OptChoose(id);
+        return;
+    }
+    if (id >= ID_SAVE) {
+        // a saved game picked; clicked again (a double click), loaded
+        const int at = rl_camp.top + id - ID_SAVE;
+
+        if (at < (int)rl_camp.saves.size()) {
+            const bool again = rl_camp.saves[at].name == rl_camp.save && cls.realtime - rl_camp.clickAt < 400;
+
+            rl_camp.save    = rl_camp.saves[at].name;
+            rl_camp.clickAt = cls.realtime;
+            if (again) {
+                RL_CampLoad(rl_camp.save);
+            } else {
+                uii.Snd_PlaySound("sound/menu/apply.wav");
+            }
+        }
         return;
     }
     if (id >= ID_MAP) {
@@ -2390,6 +3032,29 @@ void UIReloadedMenu::ChooseMain(int id)
         rl_mm.edit = F_HOST + id - ID_FIELD;
         return;
     }
+    if (id >= ID_CTAB && id < ID_CTAB + 2) {
+        rl_camp.tab = id - ID_CTAB;
+        uii.Snd_PlaySound("sound/menu/apply.wav");
+        return;
+    }
+    if (id >= ID_CARD && id < ID_CARD + 1 + RL_MISSIONS) {
+        // a card picked; clicked again (a double click), started
+        const bool again = rl_camp.card == id - ID_CARD && cls.realtime - rl_camp.clickAt < 400;
+
+        rl_camp.card    = id - ID_CARD;
+        rl_camp.clickAt = cls.realtime;
+        if (again) {
+            RL_CampStart();
+        } else {
+            uii.Snd_PlaySound("sound/menu/apply.wav");
+        }
+        return;
+    }
+    if (id >= ID_DIFF && id < ID_DIFF + 3) {
+        rl_camp.diff = id - ID_DIFF;
+        uii.Snd_PlaySound("sound/menu/apply.wav");
+        return;
+    }
     if (id >= ID_OTAB && id < ID_OTAB + OT_NUM) {
         // (the search cleared: the tab's settings)
         rl_opt.tab = id - ID_OTAB;
@@ -2417,7 +3082,21 @@ void UIReloadedMenu::ChooseMain(int id)
     case ID_OAPPLY:
         RL_OptApply();
         break;
+    case ID_CSTART:
+        RL_CampStart();
+        break;
+    case ID_CLOAD:
+        if (RL_CampPicked()) {
+            RL_CampLoad(rl_camp.save);
+        }
+        break;
+    case ID_CSAVE:
+        // (back in the mission: the shot taken of it, not of the menu)
+        uii.Snd_PlaySound("sound/menu/apply.wav");
+        Cbuf_AddText("popmenu 0\nsavegame\n");
+        break;
     case ID_PLAY:
+    case ID_CAMPAIGN:
     case ID_HOST:
     case ID_OPTIONS:
         if (rl_mm.page != id - ID_PLAY) {
@@ -2428,6 +3107,11 @@ void UIReloadedMenu::ChooseMain(int id)
             }
         }
         break;
+    case ID_CDELETE:
+        if (!RL_CampPicked()) {
+            break;
+        }
+        // fall through
     case ID_QUIT:
     case ID_DISCONNECT:
         uii.Snd_PlaySound("sound/menu/apply.wav");
@@ -2466,6 +3150,38 @@ void UIReloadedMenu::ChooseMain(int id)
     }
 }
 
+// Campaign's keys: Enter starts (MISSIONS) or loads (SAVED GAMES); the arrows pick a saved game, Delete deletes it
+static qboolean RL_CampKey(int key)
+{
+    int at;
+
+    if (key == K_ENTER || key == K_KP_ENTER) {
+        if (rl_camp.tab == CT_MISSIONS) {
+            RL_CampStart();
+        } else if (RL_CampPicked()) {
+            RL_CampLoad(rl_camp.save);
+        }
+        return qtrue;
+    }
+    if (rl_camp.tab != CT_SAVES || !RL_CampPicked(&at)) {
+        return qfalse;
+    }
+    if (key == K_DEL) {
+        rl_mm.confirm = ID_CDELETE;
+        menuManager.ShowMenu("reloaded_confirm");
+        return qtrue;
+    }
+    if (key == K_UPARROW || key == K_DOWNARROW) {
+        at           = Q_max(0, Q_min(at + (key == K_UPARROW ? -1 : 1), (int)rl_camp.saves.size() - 1));
+        rl_camp.save = rl_camp.saves[at].name;
+        rl_camp.top  = Q_max(at - rl_camp.fit + 1, Q_min(rl_camp.top, at));
+        uii.Snd_PlaySound("sound/menu/scroll.wav");
+        RL_Changed();
+        return qtrue;
+    }
+    return qfalse;
+}
+
 qboolean UIReloadedMenu::MainKey(int key)
 {
     const int step = key == K_MWHEELUP ? -3 : key == K_MWHEELDOWN ? 3 : 0;
@@ -2485,6 +3201,8 @@ qboolean UIReloadedMenu::MainKey(int key)
             rl_host.top += step;
         } else if (rl_mm.page == PAGE_OPTIONS) {
             RL_OptScroll(step > 0);
+        } else if (rl_mm.page == PAGE_CAMPAIGN) {
+            rl_camp.top += step;
         } else {
             rl_mm.top += step;
         }
@@ -2520,6 +3238,9 @@ qboolean UIReloadedMenu::MainKey(int key)
             RL_Changed();
             return qtrue;
         }
+    }
+    if (rl_mm.page == PAGE_CAMPAIGN) {
+        return RL_CampKey(key);
     }
     if (rl_mm.page != PAGE_PLAY) {
         return qfalse;
@@ -2581,9 +3302,10 @@ void UIReloadedMenu::MainChar(int ch)
 MainTick
 
 Each frame the menu shows: the back layer's photos moved on; the front's
-lists' queries run on, Host's maps' photos made. Opened: the models
-listed, the name as it is, the favourites read, the servers asked for the
-first time
+lists' queries run on, Host's maps' photos made, Campaign's saved games
+read and its photos made. Opened: the models listed, the name as it is,
+the favourites read, the servers asked for the first time, the saved
+games to be read again
 ================
 */
 void UIReloadedMenu::MainTick(bool opened)
@@ -2614,7 +3336,8 @@ void UIReloadedMenu::MainTick(bool opened)
             }
             favs += n + (end ? 1 : 0);
         }
-        rl_vis.dirty = true;
+        rl_vis.dirty    = true;
+        rl_camp.scanned = false;
         if (rl_mm.page == PAGE_PLAY && !rl_sv.list[0]) {
             RL_SvRefresh();
         }
@@ -2644,6 +3367,27 @@ void UIReloadedMenu::MainTick(bool opened)
             }
         }
     }
+    if (rl_mm.page == PAGE_CAMPAIGN) {
+        // the saved games read, the photos made one a frame: the missions', then the saved games' (the newest first)
+        if (!rl_camp.scanned) {
+            RL_CampScan();
+            RL_Changed();
+        }
+        for (int k = 0; k < RL_MISSIONS; k++) {
+            if (RL_Shot(RL_MissionKey(k)) < 0) {
+                RL_MissionShot(k);
+                RL_Changed();
+                return;
+            }
+        }
+        for (const rlSave_t& s : rl_camp.saves) {
+            if (RL_Shot(RL_SaveKey(s)) < 0) {
+                RL_SaveShot(s);
+                RL_Changed();
+                return;
+            }
+        }
+    }
     if (rl_mm.page == PAGE_HOST) {
         // Host's settings read the first time, the maps' photos made one a frame (the one picked first)
         if (!rl_host.ready) {
@@ -2668,7 +3412,10 @@ void UIReloadedMenu::MainTick(bool opened)
 int UIReloadedMenu::MainDrawKey(void)
 {
     if (m_back) {
-        // the photos (made, faded), the profile's page, Options' layout (the crosshair's preview)
+        // the photos (made, faded; Campaign's), the profile's page, Options' layout (the crosshair's preview)
+        if (RL_BgCampaign()) {
+            return rl_bg.made[2] * 31 + rl_bg.shader[2] * 7 + PAGE_CAMPAIGN;
+        }
         return (RL_BgFade() * 2 + rl_bg.cur) * 4099 + rl_bg.shader[0] * 31 + rl_bg.shader[1] * 7 + rl_mm.page
              + (rl_mm.page == PAGE_OPTIONS ? rl_mm.serial * 131 : 0);
     }

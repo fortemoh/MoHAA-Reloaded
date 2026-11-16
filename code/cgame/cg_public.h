@@ -471,6 +471,10 @@ functions exported to the main executable
         // 3 the binoculars'; faded by alpha. qfalse: the stock one is to be drawn
         qboolean (*UI_DrawZoomOverlay)(int type, float alpha);
 
+        // Added: the objectives' box's left edge in pixels (the stock 25; beside
+        // the Competitive HUD's radar, UI_GetObjectivesTop then level with its top)
+        float (*UI_GetObjectivesLeft)(void);
+
     } clientGameImport_t;
 
     /*

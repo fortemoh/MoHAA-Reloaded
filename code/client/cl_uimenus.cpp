@@ -2049,30 +2049,42 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
 ================
 The Esc menu: the map, mode and players, the time left; two rows of
 tiles (Main menu, Team & weapon, as the weapon menu picks the side too,
-Options; Spectate, Disconnect, Quit) and Resume under them
+Options; Spectate, Disconnect, Quit) and Resume under them. In a mission
+(single player): the level's name, the mission and the difficulty; Main
+menu, Save, Load (Campaign's saved games); Options, Leave mission, Quit
 ================
 */
 
-// (in the grid's order, row by row: the keys step through them so)
-enum { ID_MAINMENU, ID_WEAPON, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_QUIT, ID_RESUME };
+enum { ID_MAINMENU, ID_WEAPON, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_QUIT, ID_RESUME, ID_SAVE, ID_LOAD };
 
-static const struct {
+typedef struct {
     int         id, col, row, span; // span: the columns it takes
     const char *label;
-} rl_escTiles[] = {
-    {ID_MAINMENU,   0, 0, 1, "MAIN MENU"    },
-    {ID_WEAPON,     1, 0, 1, "TEAM & WEAPON"},
-    {ID_OPTIONS,    2, 0, 1, "OPTIONS"      },
-    {ID_SPECTATOR,  0, 1, 1, "SPECTATE"     },
-    {ID_DISCONNECT, 1, 1, 1, "DISCONNECT"   },
-    {ID_QUIT,       2, 1, 1, "QUIT"         },
+} rlEscTile_t;
+
+// multiplayer's, single player's (in the grid's order, row by row: the keys step through them so)
+static const rlEscTile_t rl_escTiles[2][6] = {
+    {{ID_MAINMENU,   0, 0, 1, "MAIN MENU"    },
+     {ID_WEAPON,     1, 0, 1, "TEAM & WEAPON"},
+     {ID_OPTIONS,    2, 0, 1, "OPTIONS"      },
+     {ID_SPECTATOR,  0, 1, 1, "SPECTATE"     },
+     {ID_DISCONNECT, 1, 1, 1, "DISCONNECT"   },
+     {ID_QUIT,       2, 1, 1, "QUIT"         }},
+    {{ID_MAINMENU,   0, 0, 1, "MAIN MENU"    },
+     {ID_SAVE,       1, 0, 1, "SAVE"         },
+     {ID_LOAD,       2, 0, 1, "LOAD"         },
+     {ID_OPTIONS,    0, 1, 1, "OPTIONS"      },
+     {ID_DISCONNECT, 1, 1, 1, "LEAVE MISSION"},
+     {ID_QUIT,       2, 1, 1, "QUIT"         }},
 };
 
 void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
 {
-    const int      team = in.selfTeam == TEAM_AXIS ? 1 : 0;
-    const rlTeam_t& T   = rl_teams[team];
-    float          tw, th, gap, gw;
+    const int          team  = in.selfTeam == TEAM_AXIS ? 1 : 0;
+    const rlTeam_t&    T     = rl_teams[team];
+    const bool         sp    = in.gametype == GT_SINGLE_PLAYER;
+    const rlEscTile_t *tiles = rl_escTiles[sp];
+    float              tw, th, gap, gw;
 
     RL_Grid(v, &tw, &th, &gap, &gw);
     const float    head = 104, rb = 56;
@@ -2084,7 +2096,11 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
         return;
     }
     RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
-    {
+    if (sp) {
+        const char *level = CL_ConfigString(CS_MESSAGE);
+
+        RL_HeaderPanel(v, x0, y0, gw, head, level[0] ? level : in.map, RL_H3, -1, RL_MissionLine(in.map).c_str(), NULL);
+    } else {
         char line[128];
 
         // (bots take slots past sv_maxclients, which the client isn't told: then no limit shown)
@@ -2095,8 +2111,9 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
         }
         RL_HeaderPanel(v, x0, y0, gw, head, RL_MapName(in.map), RL_H3, -1, line, RL_TimeLeft(in.gametype));
     }
-    for (const auto& t : rl_escTiles) {
-        const int   i = t.id;
+    for (int k = 0; k < (int)ARRAY_LEN(rl_escTiles[0]); k++) {
+        const rlEscTile_t& t = tiles[k];
+        const int          i = t.id;
         const float x = x0 + t.col * (tw + gap), y = gy + t.row * (th + gap), w = t.span * tw + (t.span - 1) * gap;
         const bool  hot = Hot(i);
         const rlColor_t gc = hot ? RL_TEXT : RL_Rgb(200, 196, 186);
@@ -2130,6 +2147,12 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
         case ID_SPECTATOR:
             RL_Outline(v, RL_OUTLINES "glyphs/spectate.svg", gcx, gcy, S, S, gc);
             break;
+        case ID_SAVE:
+            RL_Outline(v, RL_OUTLINES "glyphs/save.svg", gcx, gcy, S, S, gc);
+            break;
+        case ID_LOAD:
+            RL_Outline(v, RL_OUTLINES "glyphs/load.svg", gcx, gcy, S, S, gc);
+            break;
         default:
             RL_Outline(v, RL_OUTLINES "glyphs/disconnect.svg", gcx, gcy, S, S, gc);
             break;
@@ -2147,8 +2170,8 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
         Hit(v, x0, ry, gw, rb, ID_RESUME);
     }
     // the keys: the tiles three a row, then Resume (the whole row)
-    for (int i = ID_MAINMENU; i <= ID_QUIT; i++) {
-        m_order.push_back(i);
+    for (int k = 0; k < (int)ARRAY_LEN(rl_escTiles[0]); k++) {
+        m_order.push_back(tiles[k].id);
     }
     m_order.push_back(ID_RESUME);
     m_order.push_back(ID_RESUME);
@@ -2223,20 +2246,37 @@ void UIReloadedMenu::Choose(int id)
             cmd = "quit\n";
             break;
         case ID_OPTIONS:
-            RL_MainOptions();
+            RL_MainShow(RL_SHOW_OPTIONS);
             cmd = "popmenu 0;wait 250;pushmenu main\n";
             break;
         case ID_SPECTATOR:
             cmd = "popmenu 0;wait 250;spectator\n";
             break;
         case ID_DISCONNECT:
-            cmd = "disconnect;wait 5;popmenu 0;pushmenu main;pushmenu multiplayer\n";
+            if (RL_Gametype() == GT_SINGLE_PLAYER) {
+                // (a mission left: the main menu, on Campaign)
+                RL_MainShow(RL_SHOW_MISSIONS);
+                cmd = "disconnect;wait 5;popmenu 0;pushmenu main\n";
+            } else {
+                cmd = "disconnect;wait 5;popmenu 0;pushmenu main;pushmenu multiplayer\n";
+            }
             break;
         case ID_RESUME:
             cmd = "popmenu 0\n";
             break;
         case ID_MAINMENU:
+            if (RL_Gametype() == GT_SINGLE_PLAYER) {
+                RL_MainShow(RL_SHOW_MISSIONS);
+            }
             cmd = "popmenu 0;wait 250;pushmenu main\n";
+            break;
+        case ID_SAVE:
+            // (back in the mission: the shot taken of it, not of the menu)
+            cmd = "popmenu 0;savegame\n";
+            break;
+        case ID_LOAD:
+            // Campaign's saved games (out of Allied Assault, the stock list)
+            cmd = RL_MainShow(RL_SHOW_SAVES) ? "popmenu 0;wait 250;pushmenu main\n" : "popmenu 0;wait 250;pushmenu loadsave\n";
             break;
         }
         break;

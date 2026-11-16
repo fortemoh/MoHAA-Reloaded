@@ -106,8 +106,12 @@ public:
     int      MainDrawKey(void);
 };
 
-// the main menu shown next on its Options page (the Esc menu's OPTIONS; cl_uimain.cpp)
-void RL_MainOptions(void);
+// the main menu shown next on a page (the Esc menu's OPTIONS, LOAD, MAIN MENU in a mission;
+// cl_uimain.cpp): false, not there (CAMPAIGN is Allied Assault's)
+enum { RL_SHOW_OPTIONS, RL_SHOW_MISSIONS, RL_SHOW_SAVES };
+bool        RL_MainShow(int what);
+// the Esc menu's caption in a mission ("MISSION 2  ·  SCUTTLING THE U-529  ·  MEDIUM")
+std::string RL_MissionLine(const char *map);
 
 // the player models a side can pick, the stock picker's, in its order
 typedef struct {
