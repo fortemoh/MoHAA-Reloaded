@@ -52,8 +52,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "uidialog.h"
 #include "editfield.h"
 #include "uifield.h"
-#include "uilangamelist.h"
-#include "uiglobalgamelist.h"
 #include "uilayout.h"
 #include "uilist.h"
 #include "uilistbox.h"
