@@ -106,10 +106,9 @@ public:
     int      MainDrawKey(void);
 };
 
-// the main menu shown next on a page (the Esc menu's OPTIONS, LOAD, MAIN MENU in a mission;
-// cl_uimain.cpp): false, not there (CAMPAIGN is Allied Assault's)
+// the main menu shown next on a page (the Esc menu's OPTIONS, LOAD, MAIN MENU in a mission; cl_uimain.cpp)
 enum { RL_SHOW_OPTIONS, RL_SHOW_MISSIONS, RL_SHOW_SAVES };
-bool        RL_MainShow(int what);
+void        RL_MainShow(int what);
 // the Esc menu's caption in a mission ("MISSION 2  ·  SCUTTLING THE U-529  ·  MEDIUM")
 std::string RL_MissionLine(const char *map);
 
@@ -136,6 +135,6 @@ const char *RL_MapName(const char *map);
 // a stock load screen's photo (the menu named after a dm or obj map), RGBA,
 // opaque, NULL none; freed with uii.Rend_FreeRawImage
 byte       *RL_MenuPhoto(class Menu *stock, int *width, int *height);
-// a photo (RGBA) as a screen-shaped texture rows texels high, blurred, its
-// light times dim, darker to the corners, registered as name
-qhandle_t   RL_Blur(const char *name, const byte *pic, int pw, int ph, int rows, float dim);
+// a photo (RGBA, shown photo wide a unit high) as a screen-shaped texture rows
+// texels high, blurred, its light times dim, darker to the corners, registered as name
+qhandle_t   RL_Blur(const char *name, const byte *pic, int pw, int ph, int rows, float dim, float photo = 4.0f / 3.0f);

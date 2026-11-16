@@ -664,30 +664,67 @@ static void RL_ShotMake(const std::string& map)
 
 CAMPAIGN
 
-Allied Assault's missions, as the stock briefing room offers them:
-Training, then Missions 1-6, each open once the one before is finished
-(g_m1l1 .. g_m6l1, set by the levels' scripts); START runs the stock
-difficulty menus' commands (the difficulty, then the mission's briefing
-film, which goes on to its first level). The saved games of the game
-running (save/<config>/*.ssv), newest first; the newest is Continue
+The missions of the game running, as its stock briefing room offers them
+(Allied Assault: Training, then Missions 1-6; Spearhead and Breakthrough:
+Missions 1-3), each open once the one before is finished (g_mNl1, set by
+Allied Assault's levels' scripts; g_t2l1 and g_t3l1, by the cgame at a
+mission's end); START runs the stock difficulty menus' commands (the
+difficulty, then the mission's briefing film, which goes on to its first
+level). The saved games of the game running (save/<config>/*.ssv),
+newest first; the newest is Continue
 
 ====================================================================
 */
 
-// the missions: the briefing room's signs' names, its dossiers' places and years, the photos its slides show
-static const struct {
-    const char *tag, *name, *place, *year, *photo;
-    float       trim; // the photo's white border, a part of each side
-} rl_missions[] = {
-    {"TRAINING",  "Training Course",      "Basic training",          "",     "bootcamp",    0     },
-    {"MISSION 1", "Lighting the Torch",   "Algeria, North Africa",   "1942", "portphoto",   0     },
-    {"MISSION 2", "Scuttling the U-529",  "Trondheim, Norway",       "1943", "subdiving",   0     },
-    {"MISSION 3", "Operation Overlord",   "Normandy, France",        "1944", "higginsboat", 0     },
-    {"MISSION 4", "Behind Enemy Lines",   "Normandy, France",        "1944", "manorhouse",  0     },
-    {"MISSION 5", "The Day of the Tiger", "Brittany, France",        "1944", "shoreguns",   0     },
-    {"MISSION 6", "Return to Schmerzen",  "Siegfried Line, Germany", "1945", "train",       0.06f},
+typedef struct {
+    const char *tag, *name, *place, *year;
+    const char *photo;   // its picture, in textures/mohmenu/
+    float       crop[4]; // the part of it shown (x0 y0 x1 y1, parts of its size)
+    float       aspect;  // that part's shape
+} rlMission_t;
+
+// Allied Assault's: the briefing room's signs' names, its dossiers' places and years, the photos its slides show
+static const rlMission_t rl_aaMissions[] = {
+    {"TRAINING",  "Training Course",      "Basic training",          "",     "briefing/bootcamp",    {0, 0, 1, 1},             4.0f / 3},
+    {"MISSION 1", "Lighting the Torch",   "Algeria, North Africa",   "1942", "briefing/portphoto",   {0, 0, 1, 1},             4.0f / 3},
+    {"MISSION 2", "Scuttling the U-529",  "Trondheim, Norway",       "1943", "briefing/subdiving",   {0, 0, 1, 1},             4.0f / 3},
+    {"MISSION 3", "Operation Overlord",   "Normandy, France",        "1944", "briefing/higginsboat", {0, 0, 1, 1},             4.0f / 3},
+    {"MISSION 4", "Behind Enemy Lines",   "Normandy, France",        "1944", "briefing/manorhouse",  {0, 0, 1, 1},             4.0f / 3},
+    {"MISSION 5", "The Day of the Tiger", "Brittany, France",        "1944", "briefing/shoreguns",   {0, 0, 1, 1},             4.0f / 3},
+    // (its white border cut)
+    {"MISSION 6", "Return to Schmerzen",  "Siegfried Line, Germany", "1945", "briefing/train",       {0.06f, 0.06f, 0.94f, 0.94f}, 4.0f / 3},
 };
-#define RL_MISSIONS ((int)ARRAY_LEN(rl_missions))
+// Spearhead's and Breakthrough's: the briefing room's signs' names, the
+// places and years of their first levels' title cards (but Berlin's year,
+// which they don't give), the paintings of their load screens (the left
+// 512 of 640, in a black band; on torn paper)
+static const rlMission_t rl_taMissions[] = {
+    {"MISSION 1", "Operation Overlord",  "Normandy, France",          "1944", "loadscreens/t1l1_1", {0, 75 / 512.0f, 1, 404 / 512.0f}, 512 / 329.0f},
+    {"MISSION 2", "The Ardennes Forest", "Ardennes Forest, Belgium",  "1944", "loadscreens/t2l1_1", {0, 75 / 512.0f, 1, 404 / 512.0f}, 512 / 329.0f},
+    {"MISSION 3", "Road to Berlin",      "Berlin, Germany",           "1945", "loadscreens/t3l1_1", {0, 75 / 512.0f, 1, 404 / 512.0f}, 512 / 329.0f},
+};
+static const rlMission_t rl_ttMissions[] = {
+    {"MISSION 1", "Operation Torch", "Kasserine Pass, North Africa", "1943", "loadscreens/e1l1_1", {30 / 512.0f, 92 / 512.0f, 1, 388 / 512.0f}, 482 / 296.0f},
+    {"MISSION 2", "Operation Husky", "Sicily, Italy",                "1943", "loadscreens/e2l1_1", {30 / 512.0f, 92 / 512.0f, 1, 388 / 512.0f}, 482 / 296.0f},
+    {"MISSION 3", "Battle Mountain", "Monte Cassino, Italy",         "1944", "loadscreens/e3l1_1", {30 / 512.0f, 92 / 512.0f, 1, 388 / 512.0f}, 482 / 296.0f},
+};
+#define RL_MOSTMISSIONS 7
+
+// the games' (com_target_game's)
+static const struct {
+    const char        *title;
+    const rlMission_t *missions;
+    int                n;
+    int                first;    // the first's number (Allied Assault's Training 0)
+    char               level;    // its levels' letter ("m1l1")
+    const char        *briefing; // its briefing films' maps but their number
+    const char        *open;     // the cvar a mission opens with (but the first's), and the first number with one
+    int                openFrom;
+} rl_games[] = {
+    {"ALLIED ASSAULT", rl_aaMissions, ARRAY_LEN(rl_aaMissions), 0, 'm', "briefing/briefing",  "g_m%dl1", 1},
+    {"SPEARHEAD",      rl_taMissions, ARRAY_LEN(rl_taMissions), 1, 't', "briefing/briefingt", "g_t%dl1", 2},
+    {"BREAKTHROUGH",   rl_ttMissions, ARRAY_LEN(rl_ttMissions), 1, 'e', "briefing/briefinge", "g_t%dl1", 2},
+};
 
 static const char *const rl_campTabs[] = {"MISSIONS", "SAVED GAMES"};
 static const char *const rl_diffs[]    = {"EASY", "MEDIUM", "HARD"};
@@ -708,13 +745,11 @@ static struct {
     int                   top, fit; // the first shown, how many show
     bool                  scanned;
     int                   clickAt;
-    cvar_t               *open[RL_MISSIONS]; // g_mNl1 (Training's none)
+    cvar_t               *open[RL_MOSTMISSIONS]; // the cvars that open them
 } rl_camp = {CT_MISSIONS, -1, -1, {}, "", 0, 1, false, 0, {}};
 
-static bool RL_HasCampaign(void)
-{
-    return com_target_game->integer == TG_MOH;
-}
+// the game running's
+#define RL_GAME (rl_games[Q_min(com_target_game->integer, TG_MOHTT)])
 
 // in a single player game
 static bool RL_InMission(void)
@@ -722,44 +757,63 @@ static bool RL_InMission(void)
     return clc.state > CA_PRIMED && !cg_gametype->integer;
 }
 
-// the mission a map is of: Training 0, Missions 1-6 (their briefing films briefing/briefingN, their levels mNl...), -1 none
-static int RL_MissionOf(const char *map)
+// a mission's number (Allied Assault's Training 0)
+static int RL_MissionNumber(int k)
 {
-    if (!RL_HasCampaign()) {
-        return -1;
-    }
-    if (!Q_stricmp(map, "training")) {
-        return 0;
-    }
-    if (!Q_stricmpn(map, "briefing/briefing", 17)) {
-        return map[17] >= '1' && map[17] <= '6' && !map[18] ? map[17] - '0' : -1;
-    }
-    return tolower(map[0]) == 'm' && map[1] >= '1' && map[1] <= '6' && tolower(map[2]) == 'l' ? map[1] - '0' : -1;
+    return RL_GAME.first + k;
 }
 
-// a mission open (the stock defaults: Mission 1 open)
+// Allied Assault's Training: no difficulty, no briefing film
+static bool RL_IsTraining(int k)
+{
+    return RL_MissionNumber(k) == 0;
+}
+
+// the mission a map is of (Allied Assault's Training: training; their
+// briefing films: briefing/briefingN; their levels: mNl..., tNl..., eNl...),
+// its place in the game's, -1 none
+static int RL_MissionOf(const char *map)
+{
+    const size_t b = strlen(RL_GAME.briefing);
+    int          n = -1;
+
+    if (RL_GAME.first == 0 && !Q_stricmp(map, "training")) {
+        n = 0;
+    } else if (!Q_stricmpn(map, RL_GAME.briefing, b) && isdigit((unsigned char)map[b]) && !map[b + 1]) {
+        n = map[b] - '0';
+    } else if (tolower(map[0]) == RL_GAME.level && isdigit((unsigned char)map[1]) && tolower(map[2]) == 'l') {
+        n = map[1] - '0';
+    }
+    n -= RL_GAME.first;
+    return n >= 0 && n < RL_GAME.n ? n : -1;
+}
+
+// a mission open (the stock defaults: Allied Assault's Mission 1 open; the first open)
 static bool RL_MissionOpen(int k)
 {
-    if (!k) {
+    const int n = RL_MissionNumber(k);
+
+    if (n < RL_GAME.openFrom) {
         return true;
     }
     if (!rl_camp.open[k]) {
-        rl_camp.open[k] = Cvar_Get(va("g_m%dl1", k), k == 1 ? "1" : "0", CVAR_ARCHIVE);
+        rl_camp.open[k] = Cvar_Get(va(RL_GAME.open, n), n == 1 ? "1" : "0", CVAR_ARCHIVE);
     }
     return rl_camp.open[k]->integer != 0;
 }
 
-// a mission's photo, RGBA, opaque, its white border cut; NULL none; freed with uii.Rend_FreeRawImage
+// a mission's picture, the part shown, RGBA, opaque; NULL none; freed with uii.Rend_FreeRawImage
 static byte *RL_MissionPhoto(int k, int *w, int *h)
 {
-    byte *pic;
+    const rlMission_t& m = RL_GAME.missions[k];
+    byte              *pic;
 
-    if (!uii.Rend_LoadRawImage(va("textures/mohmenu/briefing/%s.tga", rl_missions[k].photo), &pic, w, h)) {
+    if (!uii.Rend_LoadRawImage(va("textures/mohmenu/%s.tga", m.photo), &pic, w, h)) {
         return NULL;
     }
-    if (rl_missions[k].trim) {
+    {
         // (the rows moved up in place: each lands before where it was)
-        const int x0 = (int)(*w * rl_missions[k].trim), y0 = (int)(*h * rl_missions[k].trim), cw = *w - 2 * x0, ch = *h - 2 * y0;
+        const int x0 = (int)(*w * m.crop[0]), y0 = (int)(*h * m.crop[1]), cw = (int)(*w * m.crop[2]) - x0, ch = (int)(*h * m.crop[3]) - y0;
 
         for (int y = 0; y < ch; y++) {
             memmove(pic + y * cw * 4, pic + ((y + y0) * *w + x0) * 4, cw * 4);
@@ -776,7 +830,7 @@ static byte *RL_MissionPhoto(int k, int *w, int *h)
 // the photos' keys: a mission's (grey while it is locked), a saved game's shot
 static std::string RL_MissionKey(int k)
 {
-    return std::string(RL_MissionOpen(k) ? "brief/" : "grey/") + rl_missions[k].photo;
+    return std::string(RL_MissionOpen(k) ? "brief/" : "grey/") + RL_GAME.missions[k].photo;
 }
 
 static std::string RL_SaveKey(const rlSave_t& s)
@@ -818,7 +872,7 @@ static void RL_SaveShot(const rlSave_t& s)
     RL_ShotKeep(RL_SaveKey(s), pic, w, h);
 }
 
-// a saved game's photo: its shot (as wide as the screen), else its mission's (4:3)
+// a saved game's photo: its shot (as wide as the screen), else its mission's
 static qhandle_t RL_SavePhoto(const rlSave_t& s, float *aspect)
 {
     const qhandle_t shot = RL_Shot(RL_SaveKey(s));
@@ -828,7 +882,7 @@ static qhandle_t RL_SavePhoto(const rlSave_t& s, float *aspect)
     if (shot || k < 0) {
         return shot;
     }
-    *aspect = 4.0f / 3.0f;
+    *aspect = RL_GAME.missions[k].aspect;
     return RL_Shot(RL_MissionKey(k));
 }
 
@@ -837,7 +891,7 @@ static const char *RL_SaveMission(const rlSave_t& s)
 {
     const int k = RL_MissionOf(s.map.c_str());
 
-    return k < 0 ? s.map.c_str() : rl_missions[k].name;
+    return k < 0 ? s.map.c_str() : RL_GAME.missions[k].name;
 }
 
 // the saved games read again; a shot made again whose game was saved again
@@ -968,12 +1022,12 @@ static void RL_CampStart(void)
         return;
     }
     uii.Snd_PlaySound("sound/menu/apply.wav");
-    if (!k) {
+    if (RL_IsTraining(k)) {
         Cbuf_AddText("spmap training\n");
     } else {
         static const char *const commands[] = {"difficultyeasy", "difficultymedium", "difficultyhard"};
 
-        Cbuf_AddText(va("%s;spmap briefing/briefing%d\n", commands[rl_camp.diff], k));
+        Cbuf_AddText(va("%s;spmap %s%d\n", commands[rl_camp.diff], RL_GAME.briefing, RL_MissionNumber(k)));
     }
 }
 
@@ -1000,13 +1054,13 @@ std::string RL_MissionLine(const char *map)
 {
     const int k = RL_MissionOf(map), skill = Q_max(0, Q_min(2, Cvar_VariableIntegerValue("skill")));
 
-    if (!k) {
-        return RL_Upper(rl_missions[0].name);
-    }
     if (k < 0) {
         return std::string("SINGLE PLAYER  \xb7  ") + rl_diffs[skill];
     }
-    return std::string(rl_missions[k].tag) + "  \xb7  " + RL_Upper(rl_missions[k].name) + "  \xb7  " + rl_diffs[skill];
+    if (RL_IsTraining(k)) {
+        return RL_Upper(RL_GAME.missions[k].name);
+    }
+    return std::string(RL_GAME.missions[k].tag) + "  \xb7  " + RL_Upper(RL_GAME.missions[k].name) + "  \xb7  " + rl_diffs[skill];
 }
 
 /*
@@ -1254,7 +1308,8 @@ static struct {
 // a slot holding a photo (-1 none)
 static void RL_BgMake(int slot, int photo)
 {
-    byte *pic = NULL;
+    byte *pic    = NULL;
+    float aspect = 4.0f / 3.0f;
     int   pw, ph;
 
     if (rl_bg.made[slot] == photo) {
@@ -1263,12 +1318,13 @@ static void RL_BgMake(int slot, int photo)
     rl_bg.made[slot]   = photo;
     rl_bg.shader[slot] = 0;
     if (photo >= RL_BGPHOTOS) {
-        pic = RL_MissionPhoto(photo - RL_BGPHOTOS, &pw, &ph);
+        pic    = RL_MissionPhoto(photo - RL_BGPHOTOS, &pw, &ph);
+        aspect = RL_GAME.missions[photo - RL_BGPHOTOS].aspect;
     } else if (photo >= 0 && !uii.Rend_LoadRawImage(va("textures/mohmenu/%s.tga", rl_photos[photo]), &pic, &pw, &ph)) {
         pic = NULL;
     }
     if (pic) {
-        rl_bg.shader[slot] = RL_Blur(va("*rl_menublur%d", slot), pic, pw, ph, 54, 0.55f);
+        rl_bg.shader[slot] = RL_Blur(va("*rl_menublur%d", slot), pic, pw, ph, 54, 0.55f, aspect);
         uii.Rend_FreeRawImage(pic);
     }
 }
@@ -1352,12 +1408,11 @@ static void RL_Background(const rlView_t& v)
 ================
 The rail: 440 units, dark, fading out past 400; the star and the wordmark
 (92 high) at its head, level with the screens' top and the buttons' left
-edge; PLAY / CAMPAIGN / HOST / OPTIONS (the page shown filled brass;
-CAMPAIGN in Allied Assault only: Spearhead's and Breakthrough's missions
-aren't known here); QUIT at its foot, level with the screens' foot row,
-its label under the buttons' and its icon ending at their edge;
-DISCONNECT (LEAVE MISSION in single player) over it while in a game
-(level with the browser's status row)
+edge; PLAY / CAMPAIGN / HOST / OPTIONS (the page shown filled brass); QUIT
+at its foot, level with the screens' foot row, its label under the
+buttons' and its icon ending at their edge; DISCONNECT (LEAVE MISSION in
+single player) over it while in a game (level with the browser's status
+row)
 ================
 */
 static const char *const rl_pages[] = {"PLAY", "CAMPAIGN", "HOST", "OPTIONS"};
@@ -1366,7 +1421,6 @@ static void RL_Rail(UIReloadedMenu *m, const rlView_t& v)
 {
     const float qy = v.dh - RL_EDGE - RL_FOOT / 2;
     const bool  connected = clc.state > CA_PRIMED;
-    int         slot      = 0;
 
     RL_Box(v, 0, 0, 400, v.dh, RL_Rgb(10, 11, 12, 232));
     RL_HGradient(v, 400, 0, 240, v.dh, RL_Rgb(10, 11, 12, 232), RL_Rgb(10, 11, 12, 0));
@@ -1382,10 +1436,7 @@ static void RL_Rail(UIReloadedMenu *m, const rlView_t& v)
         }
     }
     for (int i = 0; i < (int)ARRAY_LEN(rl_pages); i++) {
-        if (i == PAGE_CAMPAIGN && !RL_HasCampaign()) {
-            continue;
-        }
-        const float y = 380 + slot++ * 78;
+        const float y = 380 + i * 78;
         const bool  on = rl_mm.page == i, hot = m->Hot(ID_PLAY + i);
 
         if (on || hot) {
@@ -1696,7 +1747,8 @@ static void RL_Host(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
 ================
 CAMPAIGN: the MISSIONS tab, load screen A's cards (the name and its tag
 over the photo, a bar and two words under it), Continue first, four across
-while a card is 300 wide (else three), the one picked framed brass, a
+while a card is 300 wide (else three; Spearhead's and Breakthrough's four
+two across), the one picked framed brass, a
 locked one grey with a padlock; the difficulty and START on the foot row.
 The SAVED GAMES tab: Host's list and the one picked large, its mission,
 kind and time; DELETE, SAVE (in a mission) and LOAD. The game's name on
@@ -1742,11 +1794,12 @@ static void RL_Card(UIReloadedMenu *m, const rlView_t& v, const rlCard_t& c, flo
 
 static void RL_CampMissions(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float foot)
 {
+    const int   cards = 1 + RL_GAME.n;
     const float gap = 24, top = y + 49 + RL_PAD, bot = foot - RL_PAD;
-    const int   cols = (w - 2 * RL_PAD - 3 * gap) / 4 >= 300 ? 4 : 3, rows = (RL_MISSIONS + cols) / cols;
+    const int   cols = cards <= 4 ? 2 : (w - 2 * RL_PAD - 3 * gap) / 4 >= 300 ? 4 : 3, rows = (cards + cols - 1) / cols;
     const float cw = floorf((w - 2 * RL_PAD - (cols - 1) * gap) / cols), ph = floorf((bot - top - (rows - 1) * gap) / rows - 96);
 
-    for (int k = 0; k <= RL_MISSIONS; k++) {
+    for (int k = 0; k < cards; k++) {
         rlCard_t c;
 
         c.aspect = 4.0f / 3.0f;
@@ -1762,14 +1815,16 @@ static void RL_CampMissions(UIReloadedMenu *m, const rlView_t& v, float x, float
             c.dim    = !s;
             c.locked = false;
         } else {
-            const int  i    = k - 1;
-            const bool open = RL_MissionOpen(i);
+            const rlMission_t& mi   = RL_GAME.missions[k - 1];
+            const bool         open = RL_MissionOpen(k - 1);
+            const int          before = RL_MissionNumber(k - 1) - 1;
 
-            c.name   = rl_missions[i].name;
-            c.tag    = rl_missions[i].tag;
-            c.photo  = RL_Shot(RL_MissionKey(i));
-            c.left   = open ? rl_missions[i].place : i == 1 ? "Finish Training to unlock" : va("Finish Mission %d to unlock", i - 1);
-            c.right  = open ? rl_missions[i].year : "";
+            c.name   = mi.name;
+            c.tag    = mi.tag;
+            c.photo  = RL_Shot(RL_MissionKey(k - 1));
+            c.aspect = mi.aspect;
+            c.left   = open ? mi.place : before ? va("Finish Mission %d to unlock", before) : "Finish Training to unlock";
+            c.right  = open ? mi.year : "";
             c.dim = c.locked = !open;
         }
         RL_Card(m, v, c, x + RL_PAD + (k % cols) * (cw + gap), top + (k / cols) * (ph + 96 + gap), cw, ph, k == rl_camp.card, ID_CARD + k);
@@ -1777,11 +1832,10 @@ static void RL_CampMissions(UIReloadedMenu *m, const rlView_t& v, float x, float
     // the foot row: the difficulty (Continue's the saved game's, Training's none) and its meaning, START
     {
         const float by   = RL_FootRow(v, x, foot, w);
-        const bool  none = rl_camp.card < 2;
-        const float lw   = RL_TextW(v, "DIFFICULTY", 14, true, 1.6f);
-        const float ex   = RL_Segments(m, v, x + RL_PAD + lw + 16, by, RL_CTRL, rl_diffs, 3, rl_camp.diff, ID_DIFF, false, none);
-        const char *says = !rl_camp.card ? "The saved game keeps its own." : rl_camp.card == 1 ? "Training is the same for everyone."
-                                                                                              : rl_diffSays[rl_camp.diff];
+        const bool  training = rl_camp.card > 0 && RL_IsTraining(rl_camp.card - 1);
+        const float lw       = RL_TextW(v, "DIFFICULTY", 14, true, 1.6f);
+        const float ex = RL_Segments(m, v, x + RL_PAD + lw + 16, by, RL_CTRL, rl_diffs, 3, rl_camp.diff, ID_DIFF, false, !rl_camp.card || training);
+        const char *says = !rl_camp.card ? "The saved game keeps its own." : training ? "Training is the same for everyone." : rl_diffSays[rl_camp.diff];
 
         RL_Label(v, x + RL_PAD, foot + RL_FOOT / 2, "DIFFICULTY");
         RL_Text(v, ex + 16, foot + RL_FOOT / 2, RL_Ellipsize(v, says, 17, false, x + w - RL_PAD - 190 - 16 - (ex + 16)).c_str(), 17, RL_SOFT,
@@ -1862,7 +1916,7 @@ static void RL_Campaign(UIReloadedMenu *m, const rlView_t& v, float x, float y, 
     RL_Panel(v, x, y, w, h, RL_PANEL);
     RL_Head(v, x, y, w, 48);
     RL_Tabs(m, v, x + 4, y, rl_campTabs, 2, rl_camp.tab, ID_CTAB, 17, 22);
-    RL_Text(v, x + w - RL_PAD, y + 24, "ALLIED ASSAULT", 15, RL_MUTED, true, RL_RIGHT, 2.6f, RL_MID);
+    RL_Text(v, x + w - RL_PAD, y + 24, RL_GAME.title, 15, RL_MUTED, true, RL_RIGHT, 2.6f, RL_MID);
     if (rl_camp.tab == CT_MISSIONS) {
         RL_CampMissions(m, v, x, y, w, y + h - RL_FOOT);
     } else {
@@ -2781,15 +2835,11 @@ static void RL_OptChoose(int id)
     uii.Snd_PlaySound("sound/menu/apply.wav");
 }
 
-bool RL_MainShow(int what)
+void RL_MainShow(int what)
 {
-    if (what != RL_SHOW_OPTIONS && !RL_HasCampaign()) {
-        return false;
-    }
     rl_mm.page  = what == RL_SHOW_OPTIONS ? PAGE_OPTIONS : PAGE_CAMPAIGN;
     rl_camp.tab = what == RL_SHOW_SAVES ? CT_SAVES : CT_MISSIONS;
     RL_Changed();
-    return true;
 }
 
 /*
@@ -3036,7 +3086,7 @@ void UIReloadedMenu::ChooseMain(int id)
         uii.Snd_PlaySound("sound/menu/apply.wav");
         return;
     }
-    if (id >= ID_CARD && id < ID_CARD + 1 + RL_MISSIONS) {
+    if (id >= ID_CARD && id < ID_CARD + 1 + RL_GAME.n) {
         // a card picked; clicked again (a double click), started
         const bool again = rl_camp.card == id - ID_CARD && cls.realtime - rl_camp.clickAt < 400;
 
@@ -3372,7 +3422,7 @@ void UIReloadedMenu::MainTick(bool opened)
             RL_CampScan();
             RL_Changed();
         }
-        for (int k = 0; k < RL_MISSIONS; k++) {
+        for (int k = 0; k < RL_GAME.n; k++) {
             if (RL_Shot(RL_MissionKey(k)) < 0) {
                 RL_MissionShot(k);
                 RL_Changed();

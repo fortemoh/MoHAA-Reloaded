@@ -1268,9 +1268,9 @@ static struct {
 // a screen filled with it shows), blurred, dimmed and darker to the corners:
 // stretched over the screen, a blur that costs nothing a frame (the load
 // screen's, the main menu's background)
-qhandle_t RL_Blur(const char *name, const byte *pic, int pw, int ph, int rows, float dim)
+qhandle_t RL_Blur(const char *name, const byte *pic, int pw, int ph, int rows, float dim, float photo)
 {
-    const float aspect = (float)uid.vidWidth / (float)uid.vidHeight, photo = 4.0f / 3.0f;
+    const float aspect = (float)uid.vidWidth / (float)uid.vidHeight;
     const int   bh = rows, bw = Q_max(1, Q_min(4 * rows, (int)(bh * aspect + 0.5f)));
     float       sx0 = 0, sx1 = (float)pw, sy0 = 0, sy1 = (float)ph;
 
@@ -2325,8 +2325,9 @@ void UIReloadedMenu::Choose(int id)
             cmd = "popmenu 0;savegame\n";
             break;
         case ID_LOAD:
-            // Campaign's saved games (out of Allied Assault, the stock list)
-            cmd = RL_MainShow(RL_SHOW_SAVES) ? "popmenu 0;wait 250;pushmenu main\n" : "popmenu 0;wait 250;pushmenu loadsave\n";
+            // Campaign's saved games
+            RL_MainShow(RL_SHOW_SAVES);
+            cmd = "popmenu 0;wait 250;pushmenu main\n";
             break;
         }
         break;
