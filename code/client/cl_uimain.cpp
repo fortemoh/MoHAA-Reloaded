@@ -56,7 +56,6 @@ static const rlColor_t RL_PANEL = {10 / 255.0f, 11 / 255.0f, 12 / 255.0f, 218 / 
 static const rlColor_t RL_HEAD  = {0, 0, 0, 70 / 255.0f};
 static const rlColor_t RL_LINE  = {1, 1, 1, 24 / 255.0f};
 static const rlColor_t RL_SOFT  = {200 / 255.0f, 196 / 255.0f, 186 / 255.0f, 1};
-static const rlColor_t RL_INK   = {8 / 255.0f, 9 / 255.0f, 10 / 255.0f, 1};
 static const rlColor_t RL_SEL   = {222 / 255.0f, 178 / 255.0f, 80 / 255.0f, 44 / 255.0f};
 
 #define RL_GLYPH(name) RL_OUTLINES "glyphs/" name ".svg"

@@ -42,6 +42,7 @@ qboolean    UI_Menus_Covering(void);
 void        UI_Menus_ConfigString(void);
 // the menus laid out to bake their faces and shapes (a map's load, a new screen size)
 void        UI_Menus_PreBake(void);
-// a map's load begins (UI_BeginLoad): qtrue, reloaded_loading shows it (the
-// picture the stock load screen's, stock); qfalse: the stock one
-qboolean    UI_Menus_Loading(class Menu *stock, const char *map);
+// a map's load begins (UI_BeginLoad): the Reloaded menu that shows it
+// (reloaded_loading, a mission's level reloaded_mission; the pictures the
+// stock load screen's, stock); NULL: the stock one
+const char *UI_Menus_Loading(class Menu *stock, const char *map);

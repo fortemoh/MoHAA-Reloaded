@@ -40,6 +40,7 @@ static const rlColor_t RL_TEXT  = {238 / 255.0f, 234 / 255.0f, 224 / 255.0f, 1};
 static const rlColor_t RL_MUTED = {160 / 255.0f, 156 / 255.0f, 146 / 255.0f, 1};
 static const rlColor_t RL_FAINT = {110 / 255.0f, 107 / 255.0f, 100 / 255.0f, 1};
 static const rlColor_t RL_BRASS = {222 / 255.0f, 178 / 255.0f, 80 / 255.0f, 1};
+static const rlColor_t RL_INK   = {8 / 255.0f, 9 / 255.0f, 10 / 255.0f, 1}; // on brass
 
 typedef struct {
     int         deep[3], base[3], mid[3], light[3], pale[3];

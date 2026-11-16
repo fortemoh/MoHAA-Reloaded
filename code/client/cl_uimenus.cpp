@@ -1235,9 +1235,12 @@ void UI_Menus_Init(void)
 THE LOAD SCREEN
 
 Shown while a map loads in place of the stock one (the menu named after
-the map, else loading_default), unless ui_classicmenus is 1 or the game is
-single player (the missions keep their paintings and Continue button).
-The map's picture as a 4:3 card in the middle, over a dimmed, blurred copy
+the map, else loading_default), unless ui_classicmenus is 1. A mission's
+level (single player): its orders letter, the stock screen's pictures,
+unstretched, full height, black beside it; in the stock CONTINUE's place
+what loads and how far, then CONTINUE (reloaded_mission: the game waits
+for its continuebutton). Else the map's picture as a 4:3 card in the
+middle, over a dimmed, blurred copy
 of it filling the screen; the map's name above it on the left, the mode on
 the right (the name made smaller, then cut, to leave it room), a brass
 bar and what loads under it. The picture is the stock screen's: the dm
@@ -1393,15 +1396,19 @@ static void RL_LoadPictures(void)
     uii.Rend_FreeRawImage(pic);
 }
 
-qboolean UI_Menus_Loading(Menu *stock, const char *map)
+const char *UI_Menus_Loading(Menu *stock, const char *map)
 {
     // (a local server's own: its configstring isn't here yet when it loads a map)
     const char *info = com_sv_running->integer ? Cvar_InfoString(CVAR_SERVERINFO) : CL_ConfigString(CS_SERVERINFO);
+    const char *ours;
     char       *dollar;
 
     rl_ld.gametype = atoi(Info_ValueForKey(info, "g_gametype"));
-    if (!ui_classicmenus || ui_classicmenus->integer || rl_ld.gametype == GT_SINGLE_PLAYER || !menuManager.FindMenuNamed("reloaded_loading")) {
-        return qfalse;
+    // (a mission's level waits for CONTINUE as its stock screen does; loading_default's doesn't)
+    ours = rl_ld.gametype == GT_SINGLE_PLAYER && stock && Q_stricmp(stock->m_name.c_str(), "loading_default") ? "reloaded_mission"
+                                                                                                             : "reloaded_loading";
+    if (!ui_classicmenus || ui_classicmenus->integer || !menuManager.FindMenuNamed(ours)) {
+        return NULL;
     }
     Q_strncpyz(rl_ld.map, map, sizeof(rl_ld.map));
     dollar = strchr(rl_ld.map, '$');
@@ -1409,8 +1416,12 @@ qboolean UI_Menus_Loading(Menu *stock, const char *map)
         *dollar = 0;
     }
     rl_ld.stock = stock;
-    RL_LoadPictures();
-    return qtrue;
+    if (rl_ld.gametype == GT_SINGLE_PLAYER) {
+        rl_ld.shot = rl_ld.blur = 0;
+    } else {
+        RL_LoadPictures();
+    }
+    return ours;
 }
 
 // the stock screen's pictures (not its bar, button and text) in the card
@@ -1459,7 +1470,47 @@ static const char *RL_LoadStage(const char *what)
     }
 }
 
-static void RL_DrawLoading(const rlView_t& v)
+// the load bar, 4 high: the part loaded, or (the map's first load: not known) a dash sweeping across
+static void RL_LoadBar(const rlView_t& v, float x, float y, float w, float frac)
+{
+    RL_Box(v, x, y, w, 4, RL_Rgb(255, 255, 255, 30));
+    if (frac >= 0.0f) {
+        RL_Box(v, x, y, w * Q_min(frac, 1.0f), 4, RL_BRASS);
+    } else {
+        const float dw = w * 0.2f, dx = (w + dw) * (cls.realtime % 1400) / 1400.0f - dw;
+
+        RL_Box(v, x + Q_max(dx, 0.0f), y, Q_min(dx + dw, w) - Q_max(dx, 0.0f), 4, RL_BRASS);
+    }
+}
+
+// a mission's level: its letter 4:3 (the stock screen's 640 x 480), black
+// beside it; in the stock CONTINUE's box (its middle 460 of 480 down) what
+// loads over the bar, then the main menu's brass button (the menu's clear
+// continuebutton placed over it takes the click and Enter)
+static void RL_DrawMission(UIReloadedMenu *m, const rlView_t& v, float frac, const char *what)
+{
+    const float lw = v.dh * 4 / 3, lx = (v.dw - lw) / 2, bw = 260, bh = 48, bx = (v.dw - bw) / 2, by = v.dh * 460 / 480 - bh / 2;
+    UIWidget   *button = m->getParent() ? m->getParent()->FindWidget("continuebutton") : NULL;
+
+    RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0));
+    RL_LoadStockCard(RL_P(v, lx), 0, RL_P(v, lx + lw), RL_P(v, v.dh));
+    if (button && button->isEnabled()) {
+        const bool hot = uid.mouseX >= RL_P(v, bx) && uid.mouseX < RL_P(v, bx + bw) && uid.mouseY >= RL_P(v, by) && uid.mouseY < RL_P(v, by + bh);
+
+        RL_Skew(v, bx, by, bw, bh, 12, 12, hot ? RL_Rgb(236, 196, 106) : RL_BRASS);
+        RL_Text(v, bx + bw / 2, by + bh / 2, "CONTINUE", RL_S1, RL_INK, true, RL_CENTER, 2.4f, RL_MID);
+    } else {
+        RL_Box(v, bx, by, bw, bh, RL_Rgb(10, 11, 12, 228));
+        RL_Text(v, bx + 16, by + (bh - 4) / 2, va("%s\x85", RL_LoadStage(what)), 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+        if (frac >= 0.0f) {
+            RL_Text(v, bx + bw - 16, by + (bh - 4) / 2, va("%d%%", (int)(Q_min(frac, 1.0f) * 100)), 17, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
+        }
+        RL_LoadBar(v, bx, by + bh - 4, bw, frac);
+    }
+    m->PlaceView(v, "continuebutton", bx, by, bw, bh);
+}
+
+static void RL_DrawLoading(UIReloadedMenu *m, const rlView_t& v)
 {
     const char *what;
     const float frac = UI_LoadProgress(&what);
@@ -1468,6 +1519,10 @@ static void RL_DrawLoading(const rlView_t& v)
     const int   x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + cw), y1 = RL_P(v, y + ch);
     const rlColor_t white = RL_Rgb(255, 255, 255), line = RL_Rgb(255, 255, 255, 40);
 
+    if (rl_ld.gametype == GT_SINGLE_PLAYER) {
+        RL_DrawMission(m, v, frac, what);
+        return;
+    }
     // the renderer restarted since: made again; the map's load reset its shaders: looked up again
     if (rl_ld.shot && rl_ld.refSeq != uii.GetRefSequence()) {
         RL_LoadPictures();
@@ -1501,15 +1556,10 @@ static void RL_DrawLoading(const rlView_t& v)
         RL_Text(v, x, y - 26, RL_Ellipsize(v, name, size, true, room).c_str(), size, RL_TEXT, true, RL_LEFT, 0, RL_BASE);
         RL_Text(v, x + cw, y - 26, mode, 16, RL_BRASS, true, RL_RIGHT, 2.6f, RL_BASE);
     }
-    // the bar: the part loaded, or (the map's first load: not known) a dash sweeping across
-    RL_Box(v, x, by, cw, 4, RL_Rgb(255, 255, 255, 30));
+    // the bar, and how far
+    RL_LoadBar(v, x, by, cw, frac);
     if (frac >= 0.0f) {
-        RL_Box(v, x, by, cw * Q_min(frac, 1.0f), 4, RL_BRASS);
         RL_Text(v, x + cw, by + 28, va("%d%%", (int)(Q_min(frac, 1.0f) * 100)), RL_S1, RL_TEXT, true, RL_RIGHT, 0, RL_TOP);
-    } else {
-        const float dw = cw * 0.2f, dx = (cw + dw) * (cls.realtime % 1400) / 1400.0f - dw;
-
-        RL_Box(v, x + Q_max(dx, 0.0f), by, Q_min(dx + dw, cw) - Q_max(dx, 0.0f), 4, RL_BRASS);
     }
     RL_Text(v, x, by + 28, va("%s\x85", RL_LoadStage(what)), RL_S1, RL_MUTED, false, RL_LEFT, 0, RL_TOP);
 }
@@ -1794,7 +1844,7 @@ void UIReloadedMenu::Draw(void)
     rlInfo_t       in;
 
     if (m_screen == SCR_LOADING) {
-        RL_DrawLoading(v);
+        RL_DrawLoading(this, v);
         uii.Rend_SetColor(white);
         return;
     }

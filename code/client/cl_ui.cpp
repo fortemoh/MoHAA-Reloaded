@@ -6313,10 +6313,14 @@ void UI_BeginLoad(const char *pszMapName)
         ui_pLoadingMenu        = menuManager.FindMenu(ui_sCurrentLoadingMenu);
     }
 
-    // Added: the Reloaded load screen, the stock one's picture in it (cl_uimenus.cpp)
-    if (UI_Menus_Loading(ui_pLoadingMenu, pszMapName)) {
-        ui_sCurrentLoadingMenu = "reloaded_loading";
-        ui_pLoadingMenu        = menuManager.FindMenu(ui_sCurrentLoadingMenu);
+    // Added: the Reloaded load screen, the stock one's pictures in it (cl_uimenus.cpp)
+    {
+        const char *ours = UI_Menus_Loading(ui_pLoadingMenu, pszMapName);
+
+        if (ours) {
+            ui_sCurrentLoadingMenu = ours;
+            ui_pLoadingMenu        = menuManager.FindMenu(ui_sCurrentLoadingMenu);
+        }
     }
     ui_loadWhat[0] = 0;
 
