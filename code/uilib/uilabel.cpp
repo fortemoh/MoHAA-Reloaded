@@ -53,7 +53,6 @@ Event EV_UILabel_LoopingSound
 //====
 
 static const char *localizableVars[] = {
-    "cl_langamerefreshstatus",
     "ui_timemessage",
     "cg_obj_axistext1",
     "cg_obj_axistext2",

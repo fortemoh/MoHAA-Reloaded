@@ -469,7 +469,6 @@ extern	cvar_t	*cl_allowDownload;
 extern	cvar_t	*cl_conXOffset;
 
 extern	cvar_t	*cl_lanForcePackets;
-extern	cvar_t	*cl_langamerefreshstatus;
 extern	cvar_t	*cl_autoRecordDemo;
 
 extern	cvar_t	*cl_r_fullscreen;

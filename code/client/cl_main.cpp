@@ -112,7 +112,6 @@ cvar_t	*cl_conXOffset;
 
 cvar_t	*cl_serverStatusResendTime;
 cvar_t	*cl_trn;
-cvar_t	*cl_langamerefreshstatus;
 
 cvar_t	*cl_lanForcePackets;
 
@@ -3558,7 +3557,6 @@ void CL_Init( void ) {
 
 	cl_motdString = Cvar_Get( "cl_motdString", "", CVAR_ROM );
 
-	cl_langamerefreshstatus = Cvar_Get( "cl_langamerefreshstatus", "Ready", 0 );
 	cg_gametype = Cvar_Get( "cg_gametype", "0", 0 );
 
 	cl_lanForcePackets = Cvar_Get ("cl_lanForcePackets", "1", CVAR_ARCHIVE);
@@ -4129,7 +4127,6 @@ void CL_LocalServers_f( void ) {
 	netadr_t	to;
 
 	Com_Printf( "Scanning for servers on the local network...\n");
-	Cvar_Set( "cl_langamerefreshstatus", "Scanning for servers on the local network...\n" );
 
 	// reset the list, waiting for response
 	cls.numlocalservers = 0;
