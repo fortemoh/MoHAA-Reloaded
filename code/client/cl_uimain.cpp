@@ -21,8 +21,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 // cl_uimain.cpp: the Reloaded main menu (Added), ui/reloaded_main.urc, shown
-// for the stock "main" (cl_uimenus.cpp's aliases), and its confirmations
-// (Quit, Disconnect, Delete), ui/reloaded_confirm.urc, shown over it. Project: Omaha's
+// for the stock "main" (cl_uimenus.cpp's aliases), its confirmations (Quit,
+// Disconnect, Delete), ui/reloaded_confirm.urc, shown over it, and the
+// connect's box, ui/reloaded_connect.urc (CONNECTING). Project: Omaha's
 // screens, stripped down, in our look: a side rail (the star and the
 // wordmark, MULTIPLAYER / CAMPAIGN / HOST / OPTIONS, QUIT at its foot) over
 // maps' photos blurred once to the screen's shape (no map loaded behind
@@ -38,6 +39,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "client.h"
 #include "cl_ui.h"
 #include "cl_uiwidget.h"
+#include "cl_uimenus.h"
 #include "../uilib/uibake.h"
 #include "../gamespy/goaceng.h"
 #include "../gamespy/sv_gamespy.h"
@@ -445,6 +447,182 @@ static void RL_SvFavorite(const std::string& addr)
     rl_vis.dirty = true;
 }
 
+/*
+====================================================================
+
+CONNECTING
+
+The connect's box (shown for the stock "connecting" and the menus its end
+opens: cl_uimenus.cpp's aliases): the server's name (its address while
+not known), its map's photo, its mode, players and ping, from the
+browser's row on its JOIN, else asked of the server once as the connect
+begins (getinfo); the steps and CANCEL. A refusal or a drop in the same
+box: what happened in plain words, RETRY and BACK, the password typed
+there when the server wants one. Whatever ends a connect, the main menu
+shows Multiplayer next. Over the main menu's backdrop; black for the
+game's own server (a mission's, Host's), joined in a moment
+
+====================================================================
+*/
+
+// how it ended: refused (the server's word), dropped, no answer, a bad address
+enum { CE_NONE, CE_FULL, CE_PASSWORD, CE_BANNED, CE_KICKED, CE_VERSION, CE_TIMEOUT, CE_ADDRESS, CE_DROPPED, CE_OTHER };
+
+static struct {
+    std::string addr;                      // as connected to
+    std::string name, map, mode;           // the server's name, its map's file ("dm/mohdm6"), its mode: "" not known
+    int         players, maxPlayers, ping; // -1 not known
+    bool        given;                     // the browser's row gave them: not asked
+    bool        joined;                    // a map of it loaded: its end a drop
+    netadr_t    asked;                     // asked for its info there
+    int         askedAt;                   // Sys_Milliseconds then, 0 no answer awaited
+    char        challenge[16];             // the question's, echoed
+    int         end;                       // CE_*
+    std::string said;                      // the server's word (a refusal, a drop's reason)
+    std::string typed;                     // the password typed
+} rl_cn = {"", "", "", "", -1, -1, -1};
+
+// another server: nothing known of it
+static void RL_ConnectTo(const char *addr)
+{
+    rl_cn.addr = addr;
+    rl_cn.name.clear();
+    rl_cn.map.clear();
+    rl_cn.mode.clear();
+    rl_cn.players = rl_cn.maxPlayers = rl_cn.ping = -1;
+    rl_cn.given = rl_cn.joined = false;
+    rl_cn.askedAt = 0;
+}
+
+// what the server says it is: its name, its map (its file's; a spawn point after a $), its mode ("" not said)
+static void RL_ConnectNamed(std::string name, std::string map, const std::string& mode)
+{
+    name.erase(0, name.find_first_not_of(' '));
+    name.erase(name.find_last_not_of(' ') + 1);
+    map.erase(std::min(map.find('$'), map.size()));
+    if (!name.empty()) {
+        rl_cn.name = name;
+    }
+    if (!map.empty()) {
+        rl_cn.map = RL_SvMap(map.c_str()).first;
+    }
+    if (!mode.empty()) {
+        rl_cn.mode = mode;
+    }
+}
+
+void UI_Menus_Connect(const char *server, const netadr_t *adr)
+{
+    // (the stock menus: nothing asked)
+    if (!UI_Menus_Alias("connecting")) {
+        return;
+    }
+    if (rl_cn.addr != server) {
+        RL_ConnectTo(server);
+    }
+    rl_cn.end    = CE_NONE;
+    rl_cn.joined = false;
+    rl_cn.typed.clear();
+    rl_cn.askedAt = 0;
+    // (whatever ends it, the main menu shows Multiplayer next)
+    rl_mm.page = PAGE_PLAY;
+    // its name, map, players and ping asked for once (unless the browser's row gave them; the game's own server not)
+    if (!rl_cn.given && !NET_IsLocalAddress(*adr)) {
+        Com_sprintf(rl_cn.challenge, sizeof(rl_cn.challenge), "%d", rand());
+        rl_cn.asked   = *adr;
+        rl_cn.askedAt = Q_max(1, Sys_Milliseconds());
+        CL_NET_OutOfBandPrint(*adr, "getinfo %s", rl_cn.challenge);
+    }
+    rl_cn.given = false;
+    RL_Changed();
+}
+
+qboolean UI_Menus_ServerInfo(const netadr_t *from, const char *info)
+{
+    if (!rl_cn.askedAt || !NET_CompareAdr(*from, rl_cn.asked) || strcmp(Info_ValueForKey(info, "challenge"), rl_cn.challenge)) {
+        return qfalse;
+    }
+    // (copied one at a time: Info_ValueForKey's buffers are two)
+    const std::string name = Info_ValueForKey(info, "hostname"), map = Info_ValueForKey(info, "mapname");
+
+    RL_ConnectNamed(name, map, Info_ValueForKey(info, "gametypestring"));
+    rl_cn.players    = atoi(Info_ValueForKey(info, "clients"));
+    rl_cn.maxPlayers = atoi(Info_ValueForKey(info, "sv_maxclients"));
+    rl_cn.ping       = Sys_Milliseconds() - rl_cn.askedAt;
+    rl_cn.askedAt    = 0;
+    RL_Changed();
+    return qtrue;
+}
+
+void RL_ConnectLoaded(const char *info, const char *map)
+{
+    const std::string name = Info_ValueForKey(info, "sv_hostname"), mode = Info_ValueForKey(info, "g_gametypestring");
+
+    // (a local game's server: localhost)
+    if (rl_cn.addr != clc.servername) {
+        RL_ConnectTo(clc.servername);
+    }
+    rl_cn.joined = true;
+    RL_ConnectNamed(name, map, mode);
+}
+
+void RL_ConnectDropped(const char *reason)
+{
+    rl_cn.said = reason;
+}
+
+// the server's word: the refusal or the drop it names, else other
+static int RL_ConnectKind(const char *said, int other)
+{
+    static const struct {
+        const char *start;
+        int         end;
+    } kinds[] = {
+        {"Server is full",       CE_FULL    },
+        {"Invalid password",     CE_PASSWORD},
+        {"You are banned",       CE_BANNED  },
+        {"You have been banned", CE_BANNED  },
+        {"Banned",               CE_BANNED  },
+        {"Kicked",               CE_KICKED  },
+        {"was kicked",           CE_KICKED  },
+        {"Server uses protocol", CE_VERSION },
+        {"Server is version",    CE_VERSION },
+    };
+
+    for (const auto& k : kinds) {
+        if (!Q_stricmpn(said, k.start, strlen(k.start))) {
+            return k.end;
+        }
+    }
+    return other;
+}
+
+void RL_ConnectError(const char *stock)
+{
+    if (!Q_stricmp(stock, "badserveraddy")) {
+        // (no connect began: the address the game was given)
+        if (rl_cn.addr != clc.servername) {
+            RL_ConnectTo(clc.servername);
+        }
+        rl_cn.end = CE_ADDRESS;
+    } else if (!Q_stricmp(stock, "servertimeout")) {
+        rl_cn.end = CE_TIMEOUT;
+    } else if (!Q_stricmp(stock, "serverdisconnected")) {
+        rl_cn.said.clear();
+        rl_cn.end = CE_DROPPED;
+    } else if (!Q_stricmp(stock, "disconnected")) {
+        // (the server's command's reason: RL_ConnectDropped)
+        rl_cn.end = RL_ConnectKind(rl_cn.said.c_str(), CE_DROPPED);
+    } else {
+        // errormessage, wrongversion: the server's word
+        rl_cn.said = Cvar_VariableString("com_errorMessage");
+        rl_cn.end  = RL_ConnectKind(rl_cn.said.c_str(), CE_OTHER);
+    }
+    rl_cn.typed.clear();
+    rl_mm.page = PAGE_PLAY;
+    RL_Changed();
+}
+
 static void RL_SvJoin(void)
 {
     const int at = RL_SvPicked();
@@ -460,9 +638,15 @@ static void RL_SvJoin(void)
         return;
     }
     RL_SvHalt();
-    // (back here should the server drop the player)
-    UI_SetReturnMenuToCurrent();
-    RL_Joining(r.addr.c_str(), r.name.c_str(), r.file.c_str());
+    // (the connect's box shows the row: nothing asked of the server)
+    RL_ConnectTo(r.addr.c_str());
+    rl_cn.name       = r.name;
+    rl_cn.map        = r.file;
+    rl_cn.mode       = r.mode;
+    rl_cn.players    = r.players;
+    rl_cn.maxPlayers = r.maxPlayers;
+    rl_cn.ping       = r.ping;
+    rl_cn.given      = true;
     Cbuf_AddText(va("connect %s\n", r.addr.c_str()));
 }
 
@@ -2914,6 +3098,201 @@ void UIReloadedMenu::DrawConfirm(const rlView_t& v)
 }
 
 /*
+================
+DrawConnect: the connect's box (CONNECTING), Omaha's confirmation's
+frame 640 wide: the head (what goes on), the server (its map's photo
+176 by 132, its name over its address, its map, its mode, players and
+ping, the last line on the photo's foot), then the steps over what goes
+on beside CANCEL, or what happened (the password's field under it) over
+BACK and RETRY (JOIN); 24 in from its edges, 24 between its parts
+================
+*/
+
+// the server's word on one line, without the spaces round it
+static std::string RL_OneLine(std::string s)
+{
+    std::replace(s.begin(), s.end(), '\n', ' ');
+    s.erase(0, s.find_first_not_of(' '));
+    s.erase(s.find_last_not_of(' ') + 1);
+    return s;
+}
+
+// what the server's word gives as its reason ("Reason: ...", "for:\n...", "was kicked for ..."), "" none
+static std::string RL_Reason(const std::string& said)
+{
+    for (const char *mark : {"Reason: ", ":\n", " for "}) {
+        const size_t at = said.find(mark);
+
+        if (at != std::string::npos) {
+            return RL_OneLine(said.substr(at + strlen(mark)));
+        }
+    }
+    return "";
+}
+
+// the game's own server (a mission's, Host's): joined in a moment, nothing to show
+static bool RL_ConnectOwn(void)
+{
+    return rl_cn.end == CE_NONE && com_sv_running->integer;
+}
+
+// what the box says of the connect's end: its head, what happened, a word more
+static const char *RL_ConnectWords(std::string& what, std::string& more)
+{
+    const std::string said = RL_OneLine(rl_cn.said);
+
+    switch (rl_cn.end) {
+    case CE_FULL:
+        what = "Server is full";
+        more = rl_cn.maxPlayers > 1    ? va("All %d places are taken. Try again in a moment.", rl_cn.maxPlayers)
+             : rl_cn.maxPlayers == 1 ? "Its one place is taken. Try again in a moment."
+                                     : "Try again in a moment.";
+        break;
+    case CE_PASSWORD:
+        // (one sent already: the launcher's, or typed here)
+        what = Cvar_VariableString("password")[0] ? "Wrong password" : "This server needs a password";
+        more = "Type it and press JOIN.";
+        return "PASSWORD";
+    case CE_BANNED:
+        what = "You are banned from this server";
+        more = RL_Reason(rl_cn.said);
+        break;
+    case CE_KICKED:
+        what = "Kicked from the server";
+        more = RL_Reason(rl_cn.said);
+        break;
+    case CE_VERSION:
+        what = "Wrong version";
+        more = said;
+        break;
+    case CE_TIMEOUT:
+        what = "Timed out";
+        more = rl_cn.joined ? "The server stopped answering." : va("No answer from %s.", rl_cn.addr.c_str());
+        break;
+    case CE_ADDRESS:
+        what = "Bad address";
+        more = va("Couldn't find %s.", rl_cn.addr.c_str());
+        break;
+    case CE_DROPPED:
+        what = "Disconnected";
+        more = said.empty()                       ? "The server dropped the connection."
+             : !Q_stricmp(said.c_str(), "Server quit") || !Q_stricmp(said.c_str(), "killserver")
+                     || !Q_stricmp(said.c_str(), "Server was killed")
+                                                  ? "The server shut down."
+                                                  : said;
+        break;
+    default:
+        // (its first line, then the rest)
+        what = RL_OneLine(rl_cn.said.substr(0, rl_cn.said.find('\n')));
+        more = rl_cn.said.find('\n') == std::string::npos ? "" : RL_OneLine(rl_cn.said.substr(rl_cn.said.find('\n') + 1));
+        if (what.empty()) {
+            what = "The server refused the connection";
+        }
+        break;
+    }
+    return rl_cn.joined ? "DISCONNECTED" : "CAN'T JOIN";
+}
+
+void UIReloadedMenu::DrawConnect(const rlView_t& v)
+{
+    static const char *const steps[] = {"CONTACT", "JOIN", "WAIT FOR THE SERVER"};
+    const bool  ended = rl_cn.end != CE_NONE, password = rl_cn.end == CE_PASSWORD;
+    const float w = Q_min(640.0f, v.dw - 2 * RL_EDGE), pad = 24, pw = 176, ph = 132;
+    const float part = ended ? (password ? 152.0f : 92.0f) : 30.0f;
+    const float h = 56 + pad + ph + pad + part + pad + 48 + pad, x = (v.dw - w) / 2, y = (v.dh - h) / 2;
+    const float top = y + 56 + pad, ix = x + pad + pw + 20, iw = x + w - pad - ix, sy = top + ph + pad, by = y + h - pad - 48;
+    const rlColor_t red = RL_Rgb(226, 104, 84);
+    std::string what, more;
+    const char *head = ended ? RL_ConnectWords(what, more) : "CONNECTING";
+
+    if (RL_ConnectOwn()) {
+        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0));
+        return;
+    }
+    RL_Background(v);
+    RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 90));
+    RL_Panel(v, x, y, w, h, RL_Rgb(12, 13, 15, 250));
+    RL_Head(v, x, y, w, 56);
+    RL_Text(v, x + pad, y + 28, head, 22, ended && !password ? red : RL_TEXT, true, RL_LEFT, 2, RL_MID);
+
+    // the server: its map's photo (none known yet: a frame), its name over its address (none: the address), its map, the rest
+    if (!rl_cn.map.empty()) {
+        RL_Photo(v, RL_Shot(rl_cn.map), x + pad, top, pw, ph);
+    } else {
+        RL_Box(v, x + pad, top, pw, ph, RL_Rgb(255, 255, 255, 10));
+        RL_Text(v, x + pad + pw / 2, top + ph / 2, ended ? "MAP NOT KNOWN" : "MAP NOT KNOWN YET", 12, RL_FAINT, true, RL_CENTER, 2, RL_MID);
+    }
+    RL_Frame(v, x + pad, top, pw, ph, 1, RL_Rgb(255, 255, 255, 30));
+    {
+        const bool named = !rl_cn.name.empty();
+        float      fx    = ix;
+
+        RL_Text(v, ix, top, RL_Ellipsize(v, (named ? rl_cn.name : rl_cn.addr).c_str(), 28, true, iw).c_str(), 28, RL_TEXT, true, RL_LEFT, 0,
+                RL_TOP);
+        if (named || (rl_cn.askedAt && !ended)) {
+            RL_Text(v, ix, top + 42, named ? rl_cn.addr.c_str() : "Asking the server for its name and map\x85", 16, RL_MUTED, false,
+                    RL_LEFT, 0, RL_TOP, iw);
+        }
+        if (!rl_cn.map.empty()) {
+            RL_Text(v, ix, top + 80, RL_MapName(rl_cn.map.c_str()), 20, RL_TEXT, false, RL_LEFT, 0, RL_TOP, iw);
+        }
+        // the mode, players and ping (a drop's: its mode, the rest of then)
+        if (!rl_cn.mode.empty()) {
+            fx += RL_Text(v, fx, top + ph, RL_Upper(rl_cn.mode.c_str()).c_str(), 14, RL_MUTED, true, RL_LEFT, 1.5f, RL_BASE);
+        }
+        if (!rl_cn.joined && rl_cn.maxPlayers > 0) {
+            fx += fx > ix ? RL_Text(v, fx, top + ph, "  \xb7  ", 14, RL_MUTED, true, RL_LEFT, 1.5f, RL_BASE) : 0.0f;
+            fx += RL_Text(v, fx, top + ph, va("%d / %d", rl_cn.players, rl_cn.maxPlayers), 14, rl_cn.end == CE_FULL ? red : RL_MUTED, true,
+                          RL_LEFT, 1.5f, RL_BASE);
+        }
+        if (!rl_cn.joined && rl_cn.ping >= 0) {
+            fx += fx > ix ? RL_Text(v, fx, top + ph, "  \xb7  ", 14, RL_MUTED, true, RL_LEFT, 1.5f, RL_BASE) : 0.0f;
+            RL_Text(v, fx, top + ph, va("%d MS", rl_cn.ping), 14, RL_MUTED, true, RL_LEFT, 1.5f, RL_BASE);
+        }
+    }
+
+    if (!ended) {
+        // the steps: done brass, the one going on a dash sweeping, the rest faint; what goes on (the server's word) beside CANCEL
+        const int   at = clc.state >= CA_CONNECTED ? 2 : clc.state == CA_CHALLENGING ? 1 : 0;
+        const float sw = (w - 2 * pad - 16) / 3;
+        std::string said = RL_OneLine(clc.serverMessage);
+
+        for (int i = 0; i < 3; i++) {
+            const float sx = x + pad + i * (sw + 8);
+
+            RL_Text(v, sx, sy, steps[i], 13, i < at ? RL_TEXT : i == at ? RL_BRASS : RL_FAINT, true, RL_LEFT, 2, RL_TOP);
+            RL_Box(v, sx, sy + 26, sw, 4, RL_Rgb(255, 255, 255, 30));
+            if (i < at) {
+                RL_Box(v, sx, sy + 26, sw, 4, RL_BRASS);
+            } else if (i == at) {
+                const float dw = sw * 0.3f, dx = (sw + dw) * (cls.realtime % 1400) / 1400.0f - dw;
+
+                RL_Box(v, sx + Q_max(dx, 0.0f), sy + 26, Q_min(dx + dw, sw) - Q_max(dx, 0.0f), 4, RL_BRASS);
+            }
+        }
+        if (said.empty()) {
+            said = at == 0 ? "Contacting the server\x85" : at == 1 ? "Asking to join\x85" : "Waiting for the server\x85";
+        }
+        RL_Text(v, x + pad, by + 24, RL_Ellipsize(v, said.c_str(), 18, false, w - 3 * pad - 150).c_str(), 18,
+                clc.serverMessage[0] ? RL_TEXT : RL_MUTED, false, RL_LEFT, 0, RL_MID);
+        RL_Button(v, x + w - pad - 150, by, 150, 48, "CANCEL", false, 12, 0, Hot(ID_CANCEL));
+        Hit(v, x + w - pad - 150, by, 150, 48, ID_CANCEL);
+        return;
+    }
+    // what happened, a word more; the password's field
+    RL_Box(v, x + pad, sy, w - 2 * pad, 1, RL_LINE);
+    RL_Text(v, x + pad, sy + 24, RL_Ellipsize(v, what.c_str(), 24, true, w - 2 * pad).c_str(), 24, RL_TEXT, true, RL_LEFT, 0, RL_TOP);
+    RL_Text(v, x + pad, sy + 62, RL_Ellipsize(v, more.c_str(), 17, false, w - 2 * pad).c_str(), 17, RL_SOFT, false, RL_LEFT, 0, RL_TOP);
+    if (password) {
+        RL_Field(v, x + pad, sy + 96, w - 2 * pad, 44, 0, 0, std::string(rl_cn.typed.size(), '\x95'), "Password", true, false);
+    }
+    RL_Button(v, x + w - pad - 328, by, 150, 48, "BACK", false, 0, 12, Hot(ID_CANCEL));
+    RL_Button(v, x + w - pad - 170, by, 170, 48, password ? "JOIN" : "RETRY", true, 12, 0, Hot(ID_CONFIRM));
+    Hit(v, x + w - pad - 328, by, 150, 48, ID_CANCEL);
+    Hit(v, x + w - pad - 170, by, 170, 48, ID_CONFIRM);
+}
+
+/*
 ====================================================================
 
 INPUT
@@ -2966,6 +3345,19 @@ static void RL_SvPick(int at)
 
 void UIReloadedMenu::ChooseMain(int id)
 {
+    if (m_screen == SCR_CONNECT) {
+        if (id == ID_CANCEL) {
+            // CANCEL, BACK: out of the game, the main menu's Multiplayer
+            Cbuf_AddText("popmenu 0\ndisconnect\npushmenu main\n");
+        } else if (id == ID_CONFIRM && rl_cn.end != CE_NONE) {
+            // RETRY, JOIN (the password typed sent with it)
+            if (rl_cn.end == CE_PASSWORD) {
+                Cvar_Set("password", rl_cn.typed.c_str());
+            }
+            Cbuf_AddText("reconnect\n");
+        }
+        return;
+    }
     if (m_screen == SCR_CONFIRM) {
         if (id == ID_CONFIRM) {
             if (rl_mm.confirm == ID_CDELETE) {
@@ -3210,7 +3602,12 @@ qboolean UIReloadedMenu::MainKey(int key)
 {
     const int step = key == K_MWHEELUP ? -3 : key == K_MWHEELDOWN ? 3 : 0;
 
-    if (m_screen == SCR_CONFIRM) {
+    if (m_screen == SCR_CONFIRM || m_screen == SCR_CONNECT) {
+        if (m_screen == SCR_CONNECT && key == K_BACKSPACE && !rl_cn.typed.empty()) {
+            rl_cn.typed.erase(rl_cn.typed.size() - 1);
+            RL_Changed();
+            return qtrue;
+        }
         if (key == K_ENTER || key == K_KP_ENTER) {
             ChooseMain(ID_CONFIRM);
             return qtrue;
@@ -3293,6 +3690,14 @@ qboolean UIReloadedMenu::MainKey(int key)
 
 void UIReloadedMenu::MainChar(int ch)
 {
+    // the connect's password (what a userinfo value can hold)
+    if (m_screen == SCR_CONNECT) {
+        if (rl_cn.end == CE_PASSWORD && ch >= ' ' && ch <= '~' && ch != '\\' && ch != '"' && ch != ';' && rl_cn.typed.size() < 48) {
+            rl_cn.typed += (char)ch;
+            RL_Changed();
+        }
+        return;
+    }
     std::string *text = RL_Edited();
     // (the printable ones; the player's name as long as the game keeps it, a
     // server's as the stock host menu's, Host's numbers three digits, a
@@ -3334,6 +3739,17 @@ games to be read again
 */
 void UIReloadedMenu::MainTick(bool opened)
 {
+    if (m_screen == SCR_CONNECT) {
+        // the connect's box: the backdrop, its map's photo made
+        if (!RL_ConnectOwn()) {
+            RL_BgTick(opened);
+            if (!rl_cn.map.empty() && RL_Shot(rl_cn.map) < 0) {
+                RL_ShotMake(rl_cn.map);
+                RL_Changed();
+            }
+        }
+        return;
+    }
     if (m_back) {
         RL_BgTick(opened);
         return;
@@ -3435,6 +3851,11 @@ void UIReloadedMenu::MainTick(bool opened)
 
 int UIReloadedMenu::MainDrawKey(void)
 {
+    if (m_screen == SCR_CONNECT) {
+        // (the backdrop's photos and fade; while it connects, its step and the dash sweeping; the caret's blink)
+        return rl_mm.serial * 31 + ((RL_BgFade() * 2 + rl_bg.cur) * 4099 + rl_bg.shader[0] * 31 + rl_bg.shader[1]) * 7
+             + (rl_cn.end == CE_NONE ? clc.state * 65599 + cls.realtime / 16 : rl_cn.end == CE_PASSWORD ? (cls.realtime / 530) % 2 : 0);
+    }
     if (m_back) {
         // the photos (made, faded; Campaign's), the profile's page, Options' layout (the crosshair's preview)
         if (RL_BgCampaign()) {
