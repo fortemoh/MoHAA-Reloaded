@@ -1299,7 +1299,7 @@ static void RL_Divider(const rlView_t& v, float x, float y, float h)
 
 void RL_Button(const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, float kl, float kr, bool hot, bool off)
 {
-    const rlColor_t fill = primary ? (hot ? RL_Rgb(236, 196, 106) : RL_BRASS) : RL_Rgb(255, 255, 255, hot ? 44 : 26);
+    const rlColor_t fill = primary ? (hot ? RL_BRASS_HOT : RL_BRASS) : RL_Rgb(255, 255, 255, hot ? 44 : 26);
 
     RL_Skew(v, x, y, w, h, kl, kr, off ? RL_Rgb(255, 255, 255, 14) : fill);
     RL_Text(v, x + w / 2 + (kl - kr) * 0.25f * RL_SLANT, y + h / 2, label, 18, off ? RL_FAINT : primary ? RL_INK : RL_TEXT, true,
@@ -1629,14 +1629,17 @@ void RL_Rail(UIReloadedMenu *m, const rlView_t& v, const rlRailItem_t *items, in
     RL_Box(v, 0, 0, 400, v.dh, RL_Rgb(10, 11, 12, 232));
     RL_HGradient(v, 400, 0, 240, v.dh, RL_Rgb(10, 11, 12, 232), RL_Rgb(10, 11, 12, 0));
     {
-        // the lockup: the star 92 across, a gap of a fifth, the wordmark as high
-        float sw, sh;
+        // the lockup, the game's: its icon 92 across (Allied Assault's star), a gap of a fifth, its wordmark as high
+        static const char *const icons[3] = {RL_GLYPH("star"), RL_GLYPH("spearhead"), RL_GLYPH("breakthrough")};
+        static const char *const marks[3] = {RL_GLYPH("wordmark"), RL_GLYPH("wordmark-spearhead"), RL_GLYPH("wordmark-breakthrough")};
+        const int                g        = Q_max(0, Q_min(2, com_target_game->integer));
+        float                    sw, sh;
 
-        RL_Outline(v, RL_GLYPH("star"), RL_RAILX + 46, RL_EDGE + 46, 92, 92, RL_Rgb(255, 255, 255));
-        if (UI_OutlineSize(RL_GLYPH("wordmark"), &sw, &sh)) {
+        RL_Outline(v, icons[g], RL_RAILX + 46, RL_EDGE + 46, 92, 92, RL_Rgb(255, 255, 255));
+        if (UI_OutlineSize(marks[g], &sw, &sh)) {
             const float ww = 92 * sw / sh;
 
-            RL_Outline(v, RL_GLYPH("wordmark"), RL_RAILX + 92 * 1.2f + ww / 2, RL_EDGE + 46, ww, 92, RL_Rgb(255, 255, 255));
+            RL_Outline(v, marks[g], RL_RAILX + 92 * 1.2f + ww / 2, RL_EDGE + 46, ww, 92, RL_Rgb(255, 255, 255));
         }
     }
     if (head) {
@@ -3031,7 +3034,7 @@ static void RL_Cycle(UIReloadedMenu *m, const rlView_t& v, float x, float y, con
 
 static void RL_Toggle(const rlView_t& v, float x, float y, bool on, bool hot)
 {
-    RL_Round(v, x, y, 56, 28, 14, on ? (hot ? RL_Rgb(236, 196, 106) : RL_BRASS) : RL_Rgb(255, 255, 255, hot ? 64 : 40));
+    RL_Round(v, x, y, 56, 28, 14, on ? (hot ? RL_BRASS_HOT : RL_BRASS) : RL_Rgb(255, 255, 255, hot ? 64 : 40));
     RL_Round(v, x + (on ? 31 : 3), y + 3, 22, 22, 11, on ? RL_INK : RL_Rgb(220, 216, 206));
 }
 

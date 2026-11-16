@@ -1262,9 +1262,21 @@ static const byte *RL_Cursor(int *w, int *h, uihandle_t *shader)
     return rl_cur.texels.data();
 }
 
+rlColor_t RL_BRASS = {222 / 255.0f, 178 / 255.0f, 80 / 255.0f, 1}, RL_BRASS_HOT = {236 / 255.0f, 196 / 255.0f, 106 / 255.0f, 1};
+
 void UI_Menus_Init(void)
 {
     extern const char *(*ui_menuAlias)(const char *name);
+    // the game's accent and, under the mouse, a lighter one (the logos' badges the same)
+    static const int accents[3][2][3] = {
+        {{222, 178, 80},  {236, 196, 106}},
+        {{98, 176, 118},  {126, 196, 144}},
+        {{130, 120, 224}, {156, 148, 236}},
+    };
+    const int(&a)[2][3] = accents[com_target_game ? Q_max(0, Q_min(2, com_target_game->integer)) : TG_MOH];
+
+    RL_BRASS     = RL_Rgb(a[0][0], a[0][1], a[0][2]);
+    RL_BRASS_HOT = RL_Rgb(a[1][0], a[1][1], a[1][2]);
 
     ui_classicmenus    = Cvar_Get("ui_classicmenus", "0", CVAR_ARCHIVE);
     ui_dm_primary      = Cvar_Get("ui_dm_primary", "", CVAR_ARCHIVE);
@@ -1551,7 +1563,7 @@ static void RL_DrawMission(UIReloadedMenu *m, const rlView_t& v, float frac, con
     if (button && button->isEnabled()) {
         const bool hot = uid.mouseX >= RL_P(v, bx) && uid.mouseX < RL_P(v, bx + bw) && uid.mouseY >= RL_P(v, by) && uid.mouseY < RL_P(v, by + bh);
 
-        RL_Skew(v, bx, by, bw, bh, 12, 12, hot ? RL_Rgb(236, 196, 106) : RL_BRASS);
+        RL_Skew(v, bx, by, bw, bh, 12, 12, hot ? RL_BRASS_HOT : RL_BRASS);
         RL_Text(v, bx + bw / 2, by + bh / 2, "CONTINUE", RL_S1, RL_INK, true, RL_CENTER, 2.4f, RL_MID);
     } else {
         RL_Box(v, bx, by, bw, bh, RL_Rgb(10, 11, 12, 228));
