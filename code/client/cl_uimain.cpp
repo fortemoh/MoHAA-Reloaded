@@ -24,12 +24,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // for the stock "main" (cl_uimenus.cpp's aliases), and its confirmations
 // (Quit, Disconnect, Delete), ui/reloaded_confirm.urc, shown over it. Project: Omaha's
 // screens, stripped down, in our look: a side rail (the star and the
-// wordmark, PLAY / CAMPAIGN / HOST / OPTIONS, QUIT at its foot) over maps'
-// photos blurred once to the screen's shape (no map loaded behind it); PLAY
-// is Omaha's server browser (the game's master server lists, queried only
-// while the menu is up) and its profile (the name, each side's model in a
-// 3D view, the views being the menu's labels "allies" and "axis"); CAMPAIGN
-// the single player missions and saved games.
+// wordmark, MULTIPLAYER / CAMPAIGN / HOST / OPTIONS, QUIT at its foot) over
+// maps' photos blurred once to the screen's shape (no map loaded behind
+// it); MULTIPLAYER is Omaha's server browser (the game's master server
+// lists, queried only while the menu is up) and its profile (the name, each
+// side's model in a 3D view, the views being the menu's labels "allies" and
+// "axis"); CAMPAIGN the single player missions and saved games.
 //
 // Sizes are design units (cl_uidraw.h): a 1080-line screen, the width what
 // the screen's shape gives; the screens beside the rail from x 480 (420
@@ -1408,14 +1408,14 @@ static void RL_Background(const rlView_t& v)
 ================
 The rail: 440 units, dark, fading out past 400; the star and the wordmark
 (92 high) at its head, level with the screens' top and the buttons' left
-edge; PLAY / CAMPAIGN / HOST / OPTIONS (the page shown filled brass); QUIT
-at its foot, level with the screens' foot row, its label under the
-buttons' and its icon ending at their edge; DISCONNECT (LEAVE MISSION in
-single player) over it while in a game (level with the browser's status
+edge; MULTIPLAYER / CAMPAIGN / HOST / OPTIONS (the page shown filled
+brass); QUIT at its foot, level with the screens' foot row, its label under
+the buttons' and its icon ending at their edge; DISCONNECT (LEAVE MISSION
+in single player) over it while in a game (level with the browser's status
 row)
 ================
 */
-static const char *const rl_pages[] = {"PLAY", "CAMPAIGN", "HOST", "OPTIONS"};
+static const char *const rl_pages[] = {"MULTIPLAYER", "CAMPAIGN", "HOST", "OPTIONS"};
 
 static void RL_Rail(UIReloadedMenu *m, const rlView_t& v)
 {
@@ -1459,7 +1459,7 @@ static void RL_Rail(UIReloadedMenu *m, const rlView_t& v)
 
 /*
 ================
-PLAY: Omaha's server browser. The gametype tabs, the columns (the one
+MULTIPLAYER: Omaha's server browser. The gametype tabs, the columns (the one
 sorted by marked, clicked again for the other way), a row a server (a
 star to keep it a favourite; picked: brass; joined with a double click
 or JOIN), the status row (servers and players shown, the lists' state),
@@ -1597,7 +1597,7 @@ static void RL_Browser(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
 
 /*
 ================
-PLAY's profile: the name (APPLY sets it), each side's model in a 3D view
+MULTIPLAYER's profile: the name (APPLY sets it), each side's model in a 3D view
 (the back layer places the views over the columns) and a list to pick it
 from (open: over the view, in the front layer), the pickers on the foot
 row's line
