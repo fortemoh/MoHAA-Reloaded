@@ -112,9 +112,17 @@ static const PMPickerModel_t pickerModels[] = {
     {NULL,                                      NULL                             }
 };
 
+// Allied Assault never named its models: its paratrooper is "Airborne" there,
+// not Spearhead's "501st Paratrooper 3" (the third beside its own 1 and 2)
+static const char pmAirborneAA[] = "US - Airborne";
+
 const char *PM_FilenameToDisplayname(const char *fileName)
 {
     int i;
+
+    if (com_target_game->integer == target_game_e::TG_MOH && !Q_stricmp(fileName, "allied_airborne")) {
+        return pmAirborneAA;
+    }
 
     for (i = 0; pickerModels[i].fileName; i++) {
         const PMPickerModel_t& model = pickerModels[i];
@@ -130,6 +138,10 @@ const char *PM_FilenameToDisplayname(const char *fileName)
 const char *PM_DisplaynameToFilename(const char *displayName)
 {
     int i;
+
+    if (com_target_game->integer == target_game_e::TG_MOH && !Q_stricmp(displayName, pmAirborneAA)) {
+        return "allied_airborne";
+    }
 
     for (i = 0; pickerModels[i].fileName; i++) {
         const PMPickerModel_t& model = pickerModels[i];
