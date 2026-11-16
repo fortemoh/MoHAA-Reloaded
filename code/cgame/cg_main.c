@@ -838,9 +838,6 @@ player models and the precache scripts, 2 the map's models, 4 cgame's own.
 */
 static void CG_PrecacheMatch(void)
 {
-    static const char *shaders[] = {
-        "blastmark"
-    };
     static const char *sprites[] = {
         "textures/hud/talking_headicon.spr", "textures/hud/inmenu_headicon.spr",
         // Added: the Competitive HUD's (CG_TeamHeadIcon)
@@ -881,9 +878,7 @@ static void CG_PrecacheMatch(void)
     }
 
     if (cg_precache->integer & 4) {
-        for (i = 0; i < ARRAY_LEN(shaders); i++) {
-            cgi.R_RegisterShader(shaders[i]);
-        }
+        cgi.R_RegisterShader("blastmark");
         for (i = 0; i < ARRAY_LEN(sprites); i++) {
             cgi.R_RegisterModel(sprites[i]);
         }
