@@ -1270,8 +1270,8 @@ void UI_Menus_Init(void)
     // the game's accent and, under the mouse, a lighter one (the logos' badges the same)
     static const int accents[3][2][3] = {
         {{222, 178, 80},  {236, 196, 106}},
-        {{98, 176, 118},  {126, 196, 144}},
-        {{130, 120, 224}, {156, 148, 236}},
+        {{150, 168, 96},  {172, 190, 122}},
+        {{198, 134, 74},  {216, 158, 104}},
     };
     const int(&a)[2][3] = accents[com_target_game ? Q_max(0, Q_min(2, com_target_game->integer)) : TG_MOH];
 
