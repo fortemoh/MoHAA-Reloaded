@@ -31,6 +31,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #define RL_OUTLINES "ui/outlines/"
 
+// the menus' slant (Project: Omaha's): 0 their buttons, tabs, fields and
+// highlights square, 1 their sides leaning as designed
+#define RL_SLANT 0
+
 typedef struct {
     float r, g, b, a;
 } rlColor_t;
@@ -83,7 +87,7 @@ void RL_Shape(int x, int y, int w, int h, const char *text, rlColor_t c, float s
 // a box rounded r; its frame, width thick inside its edge
 void RL_Round(const rlView_t& v, float x, float y, float w, float h, float r, rlColor_t c);
 void RL_RoundFrame(const rlView_t& v, float x, float y, float w, float h, float r, float width, rlColor_t c);
-// a box slanted as Omaha's tabs: its left edge kl, its right edge kr leaning right at the top
+// a box slanted as Omaha's tabs: its left edge kl, its right edge kr leaning right at the top (RL_SLANT 0: square)
 void RL_Skew(const rlView_t& v, float x, float y, float w, float h, float kl, float kr, rlColor_t c);
 // a horizontal gradient from a to b (under: a black layer under it, as one)
 void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b, float under = 0.0f);
