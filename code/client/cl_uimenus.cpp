@@ -2742,6 +2742,30 @@ static void RL_SbHeader(const rlView_t& v, float x, float y, float w, float h, c
     RL_Box(v, x + w / 2, y + h - 4, w / 2, 4, RL_T(rl_teams[1].mid));
 }
 
+// an objective map's objectives, each side's as one line (the server's g_obj_alliedtext1-5, g_obj_axistext1-5:
+// the stock scoreboard's narrow lines joined again, a "-" starting each objective, the objectives dot-separated)
+static void RL_MapObjectives(std::string objs[2])
+{
+    static const char *const names[2] = {"g_obj_alliedtext%d", "g_obj_axistext%d"};
+    const char              *info     = CL_ConfigString(CS_SERVERINFO);
+
+    for (int t = 0; t < 2; t++) {
+        objs[t].clear();
+        for (int i = 1; i <= 5; i++) {
+            std::string piece = Info_ValueForKey(info, va(names[t], i));
+            bool        next;
+
+            piece.erase(0, piece.find_first_not_of(' '));
+            next = !piece.empty() && piece[0] == '-';
+            piece.erase(0, next ? piece.find_first_not_of(' ', 1) : 0);
+            piece.erase(piece.find_last_not_of(' ') + 1);
+            if (!piece.empty()) {
+                objs[t] += objs[t].empty() ? piece : (next ? "  \xb7  " : " ") + piece;
+            }
+        }
+    }
+}
+
 // the numeric columns, right-aligned, from the right
 static const struct {
     const char *label;
@@ -2838,7 +2862,8 @@ static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, con
 }
 
 // a team's section: its band, then its players; over most, its lowest-ranked fold into "+ N more"; its height
-static float RL_SbTeam(const rlView_t& v, float x, float y, float w, int t, const std::vector<rlRow_t>& rows, bool rounds, float rh, int most, int self)
+static float RL_SbTeam(const rlView_t& v, float x, float y, float w, int t, const std::vector<rlRow_t>& rows, bool rounds, float rh, int most, int self,
+                       const std::string& objective)
 {
     const rlTeam_t& T  = rl_teams[t];
     const float     bh = 46;
@@ -2859,10 +2884,18 @@ static float RL_SbTeam(const rlView_t& v, float x, float y, float w, int t, cons
         Q_strcat(info, sizeof(info), va("  \xb7  %d ALIVE", alive));
     }
     {
-        const float iw = RL_TextW(v, T.name, RL_S1, true, 2);
+        const float iw = RL_TextW(v, T.name, RL_S1, true, 2), end = x + 52 + iw + 16 + RL_TextW(v, info, RL_S2, false, 2);
+        const float cols = x + w - 16 - RL_ColsW() - 12;
 
-        if (x + 52 + iw + 16 + RL_TextW(v, info, RL_S2, false, 2) <= x + w - 16 - RL_ColsW() - 12) {
+        if (end <= cols) {
             RL_Text(v, x + 52 + iw + 16, y + bh / 2, info, RL_S2, RL_T(T.pale, 220), false, RL_LEFT, 2, RL_MID);
+        }
+        // an objective game's: the side's objectives after a hairline, the two sides' level when they fit
+        if (!objective.empty() && end <= cols) {
+            const float ox = Q_max(x + 320, end + 24);
+
+            RL_Box(v, ox, y + 12, 1, bh - 24, RL_Rgb(255, 255, 255, 64));
+            RL_Text(v, ox + 18, y + bh / 2, objective.c_str(), 18, RL_T(T.pale), false, RL_LEFT, 0, RL_MID, cols - ox - 18);
         }
     }
     RL_SbLabels(v, x, y + bh / 2, w, RL_T(T.pale, 200));
@@ -3013,11 +3046,104 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
             UI_Extras_DrawBanner(v, top);
         }
         RL_SbHeader(v, x, top + over, w, hdrH, in, ffaRows);
+        // (an objective game's objectives in the bands: the other modes' maps may set the same lines)
+        std::string objs[2];
+        if (in.gametype == GT_OBJECTIVE || in.gametype == GT_TOW) {
+            RL_MapObjectives(objs);
+        }
         for (int k = 0; k < 2; k++) {
-            y += RL_SbTeam(v, x, y, w, order[k], teams[order[k]], rounds, rh, caps[k], in.self) + gapT;
+            y += RL_SbTeam(v, x, y, w, order[k], teams[order[k]], rounds, rh, caps[k], in.self, objs[order[k]]) + gapT;
         }
         spectators(y + 4);
     }
+}
+
+/*
+================
+UI_Menus_DrawObjectives
+
+A mission's objectives while TAB is held (the cgame's call), as the
+scoreboard's card: its header (the level, the mission's line, how many
+are done) over a row each, the box ticked when done, the current one
+marked in brass. qfalse with ui_classicmenus 1: the stock list
+================
+*/
+qboolean UI_Menus_DrawObjectives(qboolean shown)
+{
+    struct rlObj_t {
+        std::string text;
+        bool        done, now;
+    };
+    std::vector<rlObj_t> objs;
+    int                  done = 0, current;
+    char                 map[MAX_QPATH], *dollar;
+    const char          *level;
+
+    if (!ui_classicmenus || ui_classicmenus->integer) {
+        return qfalse;
+    }
+    if (!shown || !uii.IsRendererLoaded()) {
+        return qtrue;
+    }
+    current = atoi(CL_ConfigString(CS_CURRENT_OBJECTIVE));
+    for (int i = 0; i < MAX_OBJECTIVES; i++) {
+        const char *cs    = CL_ConfigString(CS_OBJECTIVES + i);
+        const int   flags = atoi(Info_ValueForKey(cs, "flags"));
+        std::string text;
+
+        if (flags == OBJ_FLAG_NONE || (flags & OBJ_FLAG_HIDDEN)) {
+            continue;
+        }
+        text = Info_ValueForKey(cs, "text");
+        text = Sys_LV_CL_ConvertString(text.c_str());
+        std::replace(text.begin(), text.end(), '\n', ' ');
+        objs.push_back({text, (flags & OBJ_FLAG_COMPLETED) != 0, i == current && !(flags & OBJ_FLAG_COMPLETED)});
+        done += objs.back().done;
+    }
+    Q_strncpyz(map, Info_ValueForKey(CL_ConfigString(CS_SERVERINFO), "mapname"), sizeof(map));
+    dollar = strchr(map, '$');
+    if (dollar) {
+        *dollar = 0;
+    }
+    level = CL_ConfigString(CS_MESSAGE);
+    {
+        const rlView_t v = RL_View();
+        const float    w = Q_min(900.0f, v.dw - 64), x = (v.dw - w) / 2, head = 104, band = 40, rh = 52;
+        const float    y0 = Q_max(48.0f, (v.dh - (head + 14 + band + 4 + objs.size() * rh)) / 2);
+        const float    count = objs.empty() ? 0.0f : RL_TextW(v, "OBJECTIVES DONE", RL_S2, false, 2.4f) + 28;
+        float          y = y0 + head + 14;
+
+        RL_HeaderPanel(v, x, y0, w, head, level[0] ? level : map, RL_H3, -1, RL_MissionLine(map).c_str(), NULL, 1.0f, w - 56 - count);
+        RL_Box(v, x, y0 + head - 4, w, 4, RL_BRASS);
+        if (objs.empty()) {
+            return qtrue;
+        }
+        RL_Text(v, x + w - 28, y0 + 32, va("%d / %d", done, (int)objs.size()), RL_H3, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
+        RL_Text(v, x + w - 28, y0 + 68, "OBJECTIVES DONE", RL_S2, RL_MUTED, false, RL_RIGHT, 2.4f, RL_MID);
+        RL_Round(v, x, y, w, band, 4, RL_Rgb(30, 33, 36, 235));
+        RL_Text(v, x + 14, y + band / 2, "MISSION OBJECTIVES", RL_S2, RL_MUTED, true, RL_LEFT, 1.5f, RL_MID);
+        y += band + 4;
+        for (size_t i = 0; i < objs.size(); i++, y += rh) {
+            const rlObj_t&  o   = objs[i];
+            const float     cy  = y + rh / 2 - 1;
+            const rlColor_t row = RL_Rgb(22, 24, 26, 232);
+
+            // (every other row a little lighter, as the scoreboard's)
+            RL_Box(v, x, y, w, rh - 2, i % 2 == 0 ? RL_Over(RL_Rgb(255, 255, 255, 9), row) : row);
+            if (o.now) {
+                RL_Box(v, x, y, 4, rh - 2, RL_BRASS);
+            }
+            if (o.done) {
+                RL_Box(v, x + 22, cy - 10, 20, 20, RL_BRASS);
+                RL_Outline(v, RL_OUTLINES "glyphs/check.svg", x + 32, cy, 14, 14, RL_INK);
+            } else {
+                RL_RoundFrame(v, x + 22, cy - 10, 20, 20, 2, 2, o.now ? RL_BRASS : RL_Rgb(120, 117, 110));
+            }
+            RL_Text(v, x + 58, cy, o.text.c_str(), RL_S1, o.done ? RL_MUTED : o.now ? RL_TEXT : RL_Rgb(200, 196, 186), false, RL_LEFT, 0,
+                    RL_MID, w - 80);
+        }
+    }
+    return qtrue;
 }
 
 /*

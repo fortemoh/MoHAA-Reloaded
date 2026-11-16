@@ -1690,6 +1690,7 @@ void CG_Draw2D(void)
     // Added: no HUD under the Reloaded weapon and Esc menus (the client's
     // ui_menucover); a scope's mask stays, being the view
     static cvar_t *ui_menucover = cgi.Cvar_Get("ui_menucover", "0", 0);
+    bool           card;
 
     CG_UpdateCountdown();
     CG_DrawZoomOverlay();
@@ -1698,7 +1699,12 @@ void CG_Draw2D(void)
     }
     CG_DrawLagometer();
     CG_HudDrawElements();
-    CG_DrawObjectives();
+    // Added: a mission's objectives on TAB as the Reloaded menus' card (the
+    // client's, at once as their scoreboard; no crosshair over it), else the stock list
+    card = cgi.UI_DrawObjectives && cgi.UI_DrawObjectives(cg.ObjectivesDesiredAlpha > 0.0f ? qtrue : qfalse);
+    if (!card) {
+        CG_DrawObjectives();
+    }
     CG_DrawIcons();
     // Added: the Competitive HUD's URC menus (cg_hudstyle 1 or 2, the client's
     // cl_uicomp.cpp) show the stopwatch, the spectator's keys, the team, the
@@ -1713,5 +1719,7 @@ void CG_Draw2D(void)
         CG_DrawVote();
     }
     CG_DrawInstantMessageMenu();
-    CG_DrawCrosshair();
+    if (!card || cg.ObjectivesDesiredAlpha <= 0.0f) {
+        CG_DrawCrosshair();
+    }
 }

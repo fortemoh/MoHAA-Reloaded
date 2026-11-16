@@ -47,6 +47,9 @@ qboolean    UI_Menus_Covering(void);
 void        UI_Menus_ConfigString(void);
 // the menus laid out to bake their faces and shapes (a map's load, a new screen size)
 void        UI_Menus_PreBake(void);
+// a mission's objectives as the scoreboard's card while TAB is held (shown; the cgame's
+// call each frame); qfalse with ui_classicmenus 1: the stock list
+qboolean    UI_Menus_DrawObjectives(qboolean shown);
 // a map's load begins (UI_BeginLoad): the Reloaded menu that shows it
 // (reloaded_loading, a mission's level reloaded_mission; the pictures the
 // stock load screen's, stock); NULL: the stock one

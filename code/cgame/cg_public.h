@@ -482,6 +482,11 @@ functions exported to the main executable
         // the same. qfalse: the stock one is to be drawn
         qboolean (*UI_DrawInstaMessage)(const char *title, const char *const *lines, int count);
 
+        // Added: a mission's objectives drawn by the client while TAB is held
+        // (shown; the Reloaded menus' card), called each frame. qfalse: the
+        // stock list is to be drawn
+        qboolean (*UI_DrawObjectives)(qboolean shown);
+
     } clientGameImport_t;
 
     /*
