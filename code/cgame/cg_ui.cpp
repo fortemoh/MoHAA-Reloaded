@@ -193,6 +193,12 @@ void CG_HudPrint_f(void)
     cgi.Printf("\x1%s", cgi.Argv(1));
 }
 
+// the quick messages' groups: 1.11's five, Spearhead's five, Breakthrough's six (Liberation's)
+int CG_InstaMessageGroups(void)
+{
+    return cg_protocol >= PROTOCOL_MOHTA_MIN && cg_target_game >= TG_MOHTT ? 6 : 5;
+}
+
 qboolean CG_CheckCaptureKey(int key, qboolean down, unsigned int time)
 {
     char minKey = '1', maxKey = '9';
@@ -214,9 +220,8 @@ qboolean CG_CheckCaptureKey(int key, qboolean down, unsigned int time)
     }
 
     if (cg.iInstaMessageMenu == -1) {
-        // Changed: a group there is (1.11 has five, the stock took a sixth)
-        if (key - '0'
-            > (int)(cg_protocol >= PROTOCOL_MOHTA_MIN ? ARRAY_LEN(pInstantMsgEng) : ARRAY_LEN(pInstantMsgEng_ver6))) {
+        // Changed: a group there is (the stock took a sixth on 1.11 and Spearhead)
+        if (key - '0' > CG_InstaMessageGroups()) {
             cg.iInstaMessageMenu = 0;
         } else {
             cg.iInstaMessageMenu = key - '0';

@@ -423,7 +423,7 @@ int BG_MapCGMToProtocol(int protocol, int messageNumber)
 ================
 The quick messages (the V key's: "dmmessage 0 *<group><line>"), moved here
 from player.cpp to be the cgame's too: what the server says in the chat
-(the localization's keys), and 1.11's groups' names (the stock pictures')
+(the localization's keys), and the groups' names (the stock pictures')
 ================
 */
 //
@@ -494,6 +494,10 @@ const char *pInstantMsgEng_ver6[5][9] = {
      "That guy is going to get us all killed!", "Hey buddy, get down!",
      "Stay out of my foxhole, pal!", "Find your own hiding place!",
      "Get out of my way!", ""}
+};
+
+const char *const pInstantMsgGroupsEng[6] = {
+    "Goal Messages", "Squad Commands", "Individual Commands", "Statements and Responses", "Taunts", "Liberation Messages"
 };
 
 const char *const pInstantMsgGroupsEng_ver6[5] = {

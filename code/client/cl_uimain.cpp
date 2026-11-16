@@ -106,7 +106,7 @@ enum {
     ID_CANCEL = ID_SELECT + 2,
     ID_CONFIRM,
     ID_MODE,               // + Host's game type
-    ID_FIELD = ID_MODE + 4, // + Host's field
+    ID_FIELD = ID_MODE + 6, // + Host's field
     ID_LOCAL = ID_FIELD + HF_NUM,
     ID_ONLINE,
     ID_START,
@@ -662,7 +662,8 @@ Omaha's host panel: a map for the game type, as the stock host menu offers
 them (cl_uimpmappicker.cpp: Allied Assault's dm maps for the deathmatch
 types and its obj maps for objective; Spearhead's and Breakthrough's dm,
 obj and lib maps but obj_team2 and obj_team4 for the deathmatch types,
-the obj and lib maps named with an obj or ship part for objective), the
+the obj and lib maps named with an obj or ship part for objective, a tow
+part for Tug of War, a lib part for Liberation), the
 limits, the players and bots, the server's name, who can join. START sets
 the stock host menu's cvars (as it left them, read the first time) and
 runs its ui_startdmmap, the map the rotation's only one; the bots as
@@ -671,11 +672,18 @@ sv_maxbots and sv_numbots
 ====================================================================
 */
 
-static const char *const rl_modeLabels[] = {"FFA", "TDM", "ROUNDS", "OBJECTIVE"};
+// (Allied Assault's first four, Spearhead's five, Breakthrough's six: RL_HostModes)
+static const char *const rl_modeLabels[] = {"FFA", "TDM", "RBM", "OBJ", "TOW", "LIB"};
 // (g_gametype, g_gametypestring as the stock host menu names them)
-static const int         rl_modeTypes[]  = {GT_FFA, GT_TEAM, GT_TEAM_ROUNDS, GT_OBJECTIVE};
-static const char *const rl_modeNames[]  = {"Free-For-All", "Team-Match", "Round-Based-Match", "Objective-Based-Match"};
+static const int         rl_modeTypes[]  = {GT_FFA, GT_TEAM, GT_TEAM_ROUNDS, GT_OBJECTIVE, GT_TOW, GT_LIBERATION};
+static const char *const rl_modeNames[]  = {"Free-For-All", "Team-Match", "Round-Based-Match", "Objective-Based-Match", "Tug-Of-War",
+                                            "Liberation"};
 static const char *const rl_joinLabels[] = {"LOCAL", "ONLINE"};
+
+static int RL_HostModes(void)
+{
+    return com_target_game->integer >= TG_MOHTT ? 6 : com_target_game->integer >= TG_MOHTA ? 5 : 4;
+}
 
 static struct {
     bool                     ready;  // read from the cvars
@@ -687,33 +695,40 @@ static struct {
     bool                     online;
 } rl_host;
 
-// a map fits the mode (dir: its folder in maps/, name: its file's)
-static bool RL_HostFits(const char *dir, const char *name, bool objective)
+// a map's file's name has the part (between underscores)
+static bool RL_NamePart(const char *name, const char *part)
 {
-    if (com_target_game->integer < TG_MOHTA) {
-        return !strcmp(dir, objective ? "obj" : "dm");
-    }
-    if (!objective) {
-        return !strcmp(dir, "dm") || (Q_stricmp(name, "obj_team2") && Q_stricmp(name, "obj_team4"));
-    }
-    if (!strcmp(dir, "dm")) {
-        return false;
-    }
-    // (a part between underscores obj or ship)
+    const size_t n = strlen(part);
+
     for (const char *p = name; p; p = strchr(p, '_')) {
         p += *p == '_';
-        if ((!Q_stricmpn(p, "obj", 3) && (!p[3] || p[3] == '_')) || (!Q_stricmpn(p, "ship", 4) && (!p[4] || p[4] == '_'))) {
+        if (!Q_stricmpn(p, part, n) && (!p[n] || p[n] == '_')) {
             return true;
         }
     }
     return false;
 }
 
+// a map fits the game type (dir: its folder in maps/, name: its file's)
+static bool RL_HostFits(const char *dir, const char *name, int gametype)
+{
+    if (com_target_game->integer < TG_MOHTA) {
+        return !strcmp(dir, gametype == GT_OBJECTIVE ? "obj" : "dm");
+    }
+    if (gametype < GT_OBJECTIVE) {
+        return !strcmp(dir, "dm") || (Q_stricmp(name, "obj_team2") && Q_stricmp(name, "obj_team4"));
+    }
+    return strcmp(dir, "dm")
+        && (gametype == GT_TOW          ? RL_NamePart(name, "tow")
+            : gametype == GT_LIBERATION ? RL_NamePart(name, "lib")
+                                        : RL_NamePart(name, "obj") || RL_NamePart(name, "ship"));
+}
+
 // the mode's maps listed (those with a screen of their own, the stock ones,
 // first, by the names shown); the one picked kept if it fits, else the first
 static void RL_HostList(void)
 {
-    const bool objective = rl_modeTypes[rl_host.mode] == GT_OBJECTIVE;
+    const int gametype = rl_modeTypes[rl_host.mode];
 
     rl_host.maps.clear();
     for (const char *dir : {"dm", "obj", "lib"}) {
@@ -724,7 +739,7 @@ static void RL_HostList(void)
             std::string name = files[i];
 
             name.erase(name.size() - 4);
-            if (RL_HostFits(dir, name.c_str(), objective)) {
+            if (RL_HostFits(dir, name.c_str(), gametype)) {
                 rl_host.maps.push_back(std::string(dir) + "/" + name);
             }
         }
@@ -759,7 +774,7 @@ static void RL_HostRead(void)
 
     rl_host.ready  = true;
     rl_host.mode   = 1;
-    for (int i = 0; i < (int)ARRAY_LEN(rl_modeTypes); i++) {
+    for (int i = 0; i < RL_HostModes(); i++) {
         if (rl_modeTypes[i] == gametype) {
             rl_host.mode = i;
         }
@@ -1951,7 +1966,7 @@ static void RL_Host(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
                rl_host.map.empty() ? NULL : RL_MapName(rl_host.map.c_str()));
     // the settings
     RL_Label(v, rx, fy, "GAMETYPE");
-    RL_Segments(m, v, rx, fy + 16, 40, rl_modeLabels, 4, rl_host.mode, ID_MODE);
+    RL_Segments(m, v, rx, fy + 16, 40, rl_modeLabels, RL_HostModes(), rl_host.mode, ID_MODE);
     fy += 74;
     for (int f = HF_TIME; f < HF_NUM; f++) {
         static const char *const labels[HF_NUM] = {"TIME LIMIT", "FRAG LIMIT", "PLAYERS", "BOTS", "SERVER NAME"};
@@ -3415,8 +3430,18 @@ static void RL_OptChoose(int id)
 
 void RL_MainShow(int what)
 {
-    rl_mm.page  = what == RL_SHOW_PLAY ? PAGE_PLAY : PAGE_CAMPAIGN;
-    rl_camp.tab = what == RL_SHOW_SAVES ? CT_SAVES : CT_MISSIONS;
+    if (what != RL_SHOW_KEYS) {
+        rl_mm.page  = what == RL_SHOW_PLAY ? PAGE_PLAY : PAGE_CAMPAIGN;
+        rl_camp.tab = what == RL_SHOW_SAVES ? CT_SAVES : CT_MISSIONS;
+    } else {
+        rl_opt.tab = OT_KEYS;
+        rl_opt.search.clear();
+        rl_opt.scroll = 0;
+        // (in a game the Options over the Esc menu's: the main menu's page kept, unless it is up)
+        if (clc.state <= CA_PRIMED || menuManager.CurrentMenu() == menuManager.FindMenu("main")) {
+            rl_mm.page = PAGE_OPTIONS;
+        }
+    }
     RL_Changed();
 }
 
@@ -3907,7 +3932,7 @@ void UIReloadedMenu::ChooseMain(int id)
         rl_vis.dirty = true;
         return;
     }
-    if (id >= ID_MODE && id < ID_MODE + (int)ARRAY_LEN(rl_modeTypes)) {
+    if (id >= ID_MODE && id < ID_MODE + RL_HostModes()) {
         rl_host.mode = id - ID_MODE;
         RL_HostList();
         return;
