@@ -2736,6 +2736,25 @@ void R_CreateBuiltinImages(void) {
 	tr.scratchImage = R_CreateImageOld("*scratch", (byte*)data, DEFAULT_SIZE, DEFAULT_SIZE, 0, 1, r_picmip->integer, qfalse, qfalse, qfalse, WRAP_CLAMP, WRAP_CLAMP);
 	tr.scratchImage->r_sequence = -1;
 
+	// the frame blurred (the Reloaded menus' backdrop), about a 16th of the screen's size (each side the nearest
+	// power of two: uploaded unscaled), filled where it is drawn
+	tr.frameBlurImage = NULL;
+	if ( vk_frame_blur_supported() ) {
+		const int	w = 1 << Q_max( 0, (int)( log2f( glConfig.vidWidth / (float)VK_FRAME_BLUR ) + 0.5f ) );
+		const int	h = 1 << Q_max( 0, (int)( log2f( glConfig.vidHeight / (float)VK_FRAME_BLUR ) + 0.5f ) );
+		byte		*black = ri.Malloc( w * h * 4 );
+		int			i;
+
+		// (opaque: an RGB texture, its alpha 1 whatever the frame's is)
+		for ( i = 0; i < w * h; i++ ) {
+			black[i * 4 + 0] = black[i * 4 + 1] = black[i * 4 + 2] = 0;
+			black[i * 4 + 3] = 255;
+		}
+		tr.frameBlurImage = R_CreateImageOld("*frameblur.tga", black, w, h, 0, 1, qfalse, qtrue, qfalse, qfalse, WRAP_CLAMP, WRAP_CLAMP);
+		tr.frameBlurImage->r_sequence = -1;
+		ri.Free( black );
+	}
+
 	R_CreateDlightImage();
 }
 

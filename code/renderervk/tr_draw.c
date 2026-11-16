@@ -358,6 +358,10 @@ void R_Begin2D( shader_t *shader, int numVertexes, int numIndexes ) {
 		R_End2DBatch();
 	}
 
+	// "*frameblur": the frame as drawn so far blurred into it first (once a frame)
+	if ( tr.frameBlurImage && shader->numUnfoggedPasses && shader->unfoggedStages[0]->bundle[0].image[0] == tr.frameBlurImage ) {
+		vk_frame_blur( tr.frameBlurImage );
+	}
 	R_2DScissor( qfalse );
 	RB_BeginSurface( shader );
 	tess.colors2D = qtrue;

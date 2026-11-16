@@ -32,14 +32,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <vector>
 
 /*
-ReloadedMenu: "screen weapon|esc|scoreboard|loading|main|confirm|end|connect", "layer
+ReloadedMenu: "screen weapon|esc|scoreboard|loading|main|confirm|end|connect|options", "layer
 back|front". The back layer draws what is under the 3D model views and
 places them (labels the menu names); the front layer draws what is over
 them and takes the mouse and the keys. Both lay the screen out alike from
 the same data
 */
 
-enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD, SCR_LOADING, SCR_MAIN, SCR_CONFIRM, SCR_END, SCR_CONNECT, SCR_NUM };
+enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD, SCR_LOADING, SCR_MAIN, SCR_CONFIRM, SCR_END, SCR_CONNECT, SCR_OPTIONS, SCR_NUM };
 
 
 typedef struct {
@@ -96,8 +96,10 @@ public:
     void DrawScoreboard(const rlView_t& v, const rlInfo_t& in);
     void DrawEnd(const rlView_t& v, const rlInfo_t& in);
 
-    // the main menu, its confirmations and the connect's box (cl_uimain.cpp)
+    // the main menu, its confirmations, the connect's box and Options over the game (cl_uimain.cpp)
+    bool     Main(void) const { return m_screen == SCR_MAIN || m_screen == SCR_CONFIRM || m_screen == SCR_CONNECT || m_screen == SCR_OPTIONS; }
     void     DrawMain(const rlView_t& v);
+    void     DrawOptions(const rlView_t& v);
     void     DrawConfirm(const rlView_t& v);
     void     DrawConnect(const rlView_t& v);
     void     ChooseMain(int id);
@@ -108,9 +110,21 @@ public:
     int      MainDrawKey(void);
 };
 
-// the main menu shown next on a page (the Esc menu's OPTIONS, LOAD, MAIN MENU in a mission; cl_uimain.cpp)
-enum { RL_SHOW_OPTIONS, RL_SHOW_MISSIONS, RL_SHOW_SAVES };
+// Options over the Esc menu clicked off its page, at x y (a ReloadedMenu's, all of them the screen's): the Esc menu's
+// item there chosen, Options closed first (cl_uimenus.cpp); false: none there
+bool        RL_EscClick(int x, int y);
+// the main menu shown next on a page (the Esc menu's LOAD, MAIN MENU in a mission; cl_uimain.cpp)
+enum { RL_SHOW_MISSIONS, RL_SHOW_SAVES };
 void        RL_MainShow(int what);
+// the rail (the main menu's, the Esc menu's; cl_uimain.cpp): the lockup at its head (head: the match under it, a title
+// over two lines), the items from 380 down (on: the id of the one filled brass, -1 none), the foot's up from its foot (a
+// glyph before each; the last muted, those over it red)
+typedef struct {
+    int         id;
+    const char *label, *glyph;
+} rlRailItem_t;
+void        RL_Rail(UIReloadedMenu *m, const rlView_t& v, const rlRailItem_t *items, int n, int on, const rlRailItem_t *foot, int nf,
+                    const std::string *head = NULL);
 // the Esc menu's caption in a mission ("MISSION 2  ·  SCUTTLING THE U-529  ·  MEDIUM")
 std::string RL_MissionLine(const char *map);
 // the main menu's slanted button (primary: brass; off: dimmed), kl kr its edges' lean

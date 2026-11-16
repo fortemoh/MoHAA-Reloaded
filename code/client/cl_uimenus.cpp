@@ -1138,7 +1138,7 @@ qboolean UI_Menus_Scoreboard(const char *name)
 
 qboolean UI_Menus_Covering(void)
 {
-    static const char *const covering[] = {"reloaded_weapon", "reloaded_esc"};
+    static const char *const covering[] = {"reloaded_weapon", "reloaded_esc", "reloaded_options"};
     Menu *const              m          = menuManager.CurrentMenu();
 
     // (asked each frame: most menus' names don't start with r)
@@ -1630,10 +1630,18 @@ ReloadedMenu (cl_uiwidget.h)
 ====================================================================
 */
 
-// the front layer's hot item, for the back layer (a frame later)
-static int rl_hot[SCR_NUM] = {-1, -1, -1, -1, -1, -1, -1, -1};
+// Options shown over the Esc menu (ui/reloaded_options.urc)
+static int RL_OptionsOver(void)
+{
+    Menu *const o = menuManager.FindMenu("reloaded_options");
 
-Event EV_ReloadedMenu_Screen("screen", EV_DEFAULT, "s", "screen", "weapon, esc, scoreboard, loading, main, confirm, end or connect");
+    return o && o->isVisible();
+}
+
+// the front layer's hot item, for the back layer (a frame later)
+static int rl_hot[SCR_NUM] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
+
+Event EV_ReloadedMenu_Screen("screen", EV_DEFAULT, "s", "screen", "weapon, esc, scoreboard, loading, main, confirm, end, connect or options");
 Event EV_ReloadedMenu_Layer("layer", EV_DEFAULT, "s", "layer", "back (under the model views) or front");
 
 CLASS_DECLARATION(UIWidget, UIReloadedMenu, NULL) {
@@ -1655,6 +1663,7 @@ void UIReloadedMenu::SetScreen(Event *ev)
              : !str::icmp(s, "confirm")    ? SCR_CONFIRM
              : !str::icmp(s, "end")        ? SCR_END
              : !str::icmp(s, "connect")    ? SCR_CONNECT
+             : !str::icmp(s, "options")    ? SCR_OPTIONS
                                            : SCR_WEAPON;
     AllowActivate(m_screen != SCR_SCOREBOARD && m_screen != SCR_LOADING);
 }
@@ -1692,7 +1701,7 @@ void UIReloadedMenu::MouseUp(Event *ev)
     if (m_back) {
         return;
     }
-    if (m_screen == SCR_MAIN || m_screen == SCR_CONFIRM || m_screen == SCR_CONNECT) {
+    if (Main()) {
         // (a click on nothing too: it closes what is open)
         ChooseMain(id);
     } else if (id >= 0) {
@@ -1700,17 +1709,17 @@ void UIReloadedMenu::MouseUp(Event *ev)
     }
 }
 
-// the mouse's buttons as they changed (the buttons down): the main menu's KEYS take one as a key
+// the mouse's buttons as they changed (the buttons down): Options' KEYS take one as a key
 void UIReloadedMenu::MouseButtons(Event *ev)
 {
-    if (!m_back && m_screen == SCR_MAIN) {
+    if (!m_back && (m_screen == SCR_MAIN || m_screen == SCR_OPTIONS)) {
         MainButtons(ev->GetInteger(3));
     }
 }
 
 void UIReloadedMenu::CharEvent(int ch)
 {
-    if (!m_back && (m_screen == SCR_MAIN || m_screen == SCR_CONNECT)) {
+    if (!m_back && (m_screen == SCR_MAIN || m_screen == SCR_CONNECT || m_screen == SCR_OPTIONS)) {
         MainChar(ch);
     }
 }
@@ -1719,7 +1728,7 @@ qboolean UIReloadedMenu::KeyEvent(int key, unsigned int time)
 {
     int at, n = (int)m_order.size();
 
-    if (!m_back && (m_screen == SCR_MAIN || m_screen == SCR_CONFIRM || m_screen == SCR_CONNECT)) {
+    if (!m_back && Main()) {
         return MainKey(key);
     }
     if (m_back || m_screen == SCR_SCOREBOARD || !n) {
@@ -1826,7 +1835,7 @@ void UIReloadedMenu::Tick(void)
         }
     }
     m_tick = cls.framecount;
-    if (m_screen == SCR_MAIN || m_screen == SCR_CONNECT) {
+    if (m_screen == SCR_MAIN || m_screen == SCR_CONNECT || m_screen == SCR_OPTIONS) {
         MainTick(opened);
     }
     if (m_back) {
@@ -1838,12 +1847,13 @@ void UIReloadedMenu::Tick(void)
         return;
     }
     if (!menuManager.CurrentMenu() || !getParent() || menuManager.CurrentMenu()->GetContainerWidget() != getParent()) {
-        // another menu over it
-        m_focus = rl_hot[m_screen] = -1;
-        return;
-    }
-    // the keys come here while the menu is up
-    if (uWinMan.ActiveControl() != this) {
+        // another menu over it (Options over the Esc menu: its rail still hot under the mouse, RL_EscClick)
+        if (m_screen != SCR_ESC || menuManager.CurrentMenu() != menuManager.FindMenu("reloaded_options")) {
+            m_focus = rl_hot[m_screen] = -1;
+            return;
+        }
+    } else if (uWinMan.ActiveControl() != this) {
+        // the keys come here while the menu is up
         uWinMan.ActivateControl(this);
     }
     // the mouse moved: what it is over is hot
@@ -1863,6 +1873,7 @@ int UIReloadedMenu::DrawKey(void)
         int cs, scores, seconds, focus, self, team, gametype, banner;
         int wtab, wpick[2], wserial; // the weapon menu's preview
         int main;                    // the main menu's
+        int over;                    // the Esc menu's: Options over it
     } k;
     int h = 0;
 
@@ -1891,8 +1902,11 @@ int UIReloadedMenu::DrawKey(void)
         // (the round's end banner over the header)
         k.banner = UI_Extras_BannerKey();
     }
-    if (m_screen == SCR_MAIN || m_screen == SCR_CONFIRM || m_screen == SCR_CONNECT) {
+    if (Main()) {
         k.main = MainDrawKey();
+    }
+    if (m_screen == SCR_ESC) {
+        k.over = RL_OptionsOver();
     }
     for (size_t i = 0; i + 4 <= sizeof(k); i += 4) {
         int w;
@@ -1934,6 +1948,9 @@ void UIReloadedMenu::Draw(void)
         break;
     case SCR_CONNECT:
         DrawConnect(v);
+        break;
+    case SCR_OPTIONS:
+        DrawOptions(v);
         break;
     case SCR_WEAPON:
         RL_Info(&in);
@@ -1993,7 +2010,7 @@ static void RL_HeaderPanel(const rlView_t& v, float x, float y, float w, float h
 ================
 Weapon select: one menu for the side, the model and the weapon. The header
 panel's emblem and side tabs (ALLIES, AXIS: the one previewed underlined in
-its colour) and the time left; the Esc menu's grid, two tiles a row (rifle
+its colour) and the time left; the menus' grid, two tiles a row (rifle
 and sniper, SMG and MG, anti-tank and shotgun; Breakthrough's mine detector
 a row of its own), each the weapon's name in its corner, the nation's
 outline, the class as its label, the last pick marked, a banned class
@@ -2006,7 +2023,7 @@ preview: a weapon picked sends them (Choose)
 // the weapon menu's items past its tiles (WC_*)
 enum { ID_WTAB = 10, ID_WTAB_AXIS, ID_WPREV, ID_WNEXT };
 
-// the Esc menu's grid: its tiles' size and its width
+// the menus' grid (the weapon menu's, the end of a level's column): three tiles' size and its width
 static void RL_Grid(const rlView_t& v, float *tw, float *th, float *gap, float *gw)
 {
     *gap = 14;
@@ -2037,7 +2054,7 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
 
         th = Q_min(th, fit);
     }
-    const float wtw   = (gw - gap) / 2; // two a row, as wide as the Esc menu's three
+    const float wtw   = (gw - gap) / 2; // two a row, as wide as three
     const float total = head + foot + rows * th + (rows + 1) * gap;
     // the block centred, then 150 units right as far as the model's slot stays
     // on screen: the figure is narrower than his slot and lighter than the
@@ -2171,136 +2188,84 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
 
 /*
 ================
-The Esc menu: the map, mode and players, the time left; two rows of
-tiles (Main menu, Team & weapon, as the weapon menu picks the side too,
-Options; Spectate, Disconnect, Quit) and Resume under them. In a mission
-(single player): the level's name, the mission and the difficulty; Main
-menu, Save, Load (Campaign's saved games); Options, Leave mission, Quit
+The Esc menu: the main menu's rail over the game, blurred (the renderer's
+"*frameblur", made where it is drawn: nothing while the menu is closed) and
+dimmed; under the lockup the map, the mode and players, the time left;
+RESUME, MAIN MENU, TEAM & WEAPON (the weapon menu picks the side too),
+OPTIONS (shown over it, lit while it is: ui/reloaded_options.urc),
+SPECTATE; DISCONNECT and QUIT at its foot. In a mission (single player):
+the level's name, the mission and the difficulty; RESUME, MAIN MENU, SAVE,
+LOAD (Campaign's saved games), OPTIONS; LEAVE MISSION and QUIT
 ================
 */
 
 enum { ID_MAINMENU, ID_WEAPON, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_QUIT, ID_RESUME, ID_SAVE, ID_LOAD, ID_CONTINUE };
 
-typedef struct {
-    int         id, col, row, span; // span: the columns it takes
-    const char *label;
-} rlEscTile_t;
-
-// multiplayer's, single player's (in the grid's order, row by row: the keys step through them so)
-static const rlEscTile_t rl_escTiles[2][6] = {
-    {{ID_MAINMENU,   0, 0, 1, "MAIN MENU"    },
-     {ID_WEAPON,     1, 0, 1, "TEAM & WEAPON"},
-     {ID_OPTIONS,    2, 0, 1, "OPTIONS"      },
-     {ID_SPECTATOR,  0, 1, 1, "SPECTATE"     },
-     {ID_DISCONNECT, 1, 1, 1, "DISCONNECT"   },
-     {ID_QUIT,       2, 1, 1, "QUIT"         }},
-    {{ID_MAINMENU,   0, 0, 1, "MAIN MENU"    },
-     {ID_SAVE,       1, 0, 1, "SAVE"         },
-     {ID_LOAD,       2, 0, 1, "LOAD"         },
-     {ID_OPTIONS,    0, 1, 1, "OPTIONS"      },
-     {ID_DISCONNECT, 1, 1, 1, "LEAVE MISSION"},
-     {ID_QUIT,       2, 1, 1, "QUIT"         }},
+// multiplayer's, single player's
+static const rlRailItem_t rl_escItems[2][5] = {
+    {{ID_RESUME, "RESUME", NULL}, {ID_MAINMENU, "MAIN MENU", NULL}, {ID_WEAPON, "TEAM & WEAPON", NULL}, {ID_OPTIONS, "OPTIONS", NULL},
+     {ID_SPECTATOR, "SPECTATE", NULL}},
+    {{ID_RESUME, "RESUME", NULL}, {ID_MAINMENU, "MAIN MENU", NULL}, {ID_SAVE, "SAVE", NULL}, {ID_LOAD, "LOAD", NULL},
+     {ID_OPTIONS, "OPTIONS", NULL}},
 };
+
+// the game under it blurred: the renderer's "*frameblur", 0 without one (the dim alone: the Metal renderer for now)
+static qhandle_t RL_FrameBlur(void)
+{
+    static qhandle_t shader;
+    static int       stamp = -1, refSeq = -1;
+
+    if (stamp != UI_BakeStamp() || refSeq != uii.GetRefSequence()) {
+        stamp  = UI_BakeStamp();
+        refSeq = uii.GetRefSequence();
+        shader = uii.Rend_ImageExists("*frameblur.tga") ? uii.Rend_RegisterMaterial("*frameblur") : 0;
+    }
+    return shader;
+}
 
 void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
 {
-    const int          team  = in.selfTeam == TEAM_AXIS ? 1 : 0;
-    const rlTeam_t&    T     = rl_teams[team];
-    const bool         sp    = in.gametype == GT_SINGLE_PLAYER;
-    const rlEscTile_t *tiles = rl_escTiles[sp];
-    float              tw, th, gap, gw;
-
-    RL_Grid(v, &tw, &th, &gap, &gw);
-    const float    head = 104, rb = 56;
-    const float    total = head + gap + 2 * th + gap + 22 + rb;
-    const float    x0 = (v.dw - gw) / 2, y0 = (v.dh - total) / 2;
-    const float    gy = y0 + head + gap;
+    const bool         sp      = in.gametype == GT_SINGLE_PLAYER;
+    const qhandle_t    blur    = RL_FrameBlur();
+    const rlRailItem_t foot[2] = {{ID_DISCONNECT, sp ? "LEAVE MISSION" : "DISCONNECT", RL_OUTLINES "glyphs/disconnect.svg"},
+                                  {ID_QUIT, "QUIT", RL_OUTLINES "glyphs/quit.svg"}};
+    std::string        head[3];
 
     if (m_back) {
         return;
     }
+    if (blur && !rl_bakeOnly) {
+        RL_SetColor(RL_Rgb(255, 255, 255));
+        uii.Rend_DrawPicStretched(0, 0, uid.vidWidth, uid.vidHeight, 0, 0, 1, 1, blur);
+    }
     RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
     if (sp) {
-        const char *level = CL_ConfigString(CS_MESSAGE);
+        // (the mission's line, its difficulty under it)
+        const char        *level = CL_ConfigString(CS_MESSAGE);
+        const std::string  line  = RL_MissionLine(in.map);
+        const size_t       cut   = line.rfind("  \xb7  ");
 
-        RL_HeaderPanel(v, x0, y0, gw, head, level[0] ? level : in.map, RL_H3, -1, RL_MissionLine(in.map).c_str(), NULL);
+        head[0] = level[0] ? level : in.map;
+        head[1] = line.substr(0, cut);
+        head[2] = cut == std::string::npos ? "" : line.substr(cut + 5);
     } else {
-        char line[128];
+        const char *left = RL_TimeLeft(in.gametype);
 
+        head[0] = RL_MapName(in.map);
+        head[1] = RL_ModeName(in.gametype, true);
         // (bots take slots past sv_maxclients, which the client isn't told: then no limit shown)
-        if (in.connected <= in.maxClients) {
-            Com_sprintf(line, sizeof(line), "%s  \xb7  %d / %d PLAYERS", RL_ModeName(in.gametype, true), in.connected, in.maxClients);
-        } else {
-            Com_sprintf(line, sizeof(line), "%s  \xb7  %d PLAYERS", RL_ModeName(in.gametype, true), in.connected);
+        head[2] = in.connected <= in.maxClients ? va("%d / %d PLAYERS", in.connected, in.maxClients) : va("%d PLAYERS", in.connected);
+        if (left[0]) {
+            head[2] += va("  \xb7  %s LEFT", left);
         }
-        RL_HeaderPanel(v, x0, y0, gw, head, RL_MapName(in.map), RL_H3, -1, line, RL_TimeLeft(in.gametype));
     }
-    for (int k = 0; k < (int)ARRAY_LEN(rl_escTiles[0]); k++) {
-        const rlEscTile_t& t = tiles[k];
-        const int          i = t.id;
-        const float x = x0 + t.col * (tw + gap), y = gy + t.row * (th + gap), w = t.span * tw + (t.span - 1) * gap;
-        const bool  hot = Hot(i);
-        const rlColor_t gc = hot ? RL_TEXT : RL_Rgb(200, 196, 186);
-        const float gcx = x + w / 2, gcy = y + th * 0.44f, S = th * 0.30f;
-
-        RL_Round(v, x, y, w, th, 4, hot ? RL_T(T.mid, 150) : RL_Rgb(14, 16, 18, 226));
-        if (hot) {
-            RL_RoundFrame(v, x, y, w, th, 4, 2, RL_BRASS);
-        }
-        switch (i) {
-        case ID_WEAPON:
-            {
-                // both emblems, then the nation's SMG
-                const int nation = in.target < TG_MOHTA ? (team ? NAT_DE : NAT_US) : RL_Nation();
-
-                RL_TeamIcon(v, 0, gcx - S * 1.12f, gcy, S * 0.62f);
-                RL_TeamIcon(v, 1, gcx - S * 0.72f, gcy, S * 0.62f);
-                RL_Outline(v, va(RL_OUTLINES "weapons/%s.svg", RL_WeaponFor(nation, WC_SMG, in.target, in.dmflags).svg), gcx + S * 0.68f, gcy,
-                           S * 1.5f, S * 0.8f, gc);
-            }
-            break;
-        case ID_MAINMENU:
-            RL_Outline(v, RL_OUTLINES "glyphs/mainmenu.svg", gcx, gcy, S, S, gc);
-            break;
-        case ID_QUIT:
-            RL_Outline(v, RL_OUTLINES "glyphs/quit.svg", gcx, gcy, S, S, gc);
-            break;
-        case ID_OPTIONS:
-            RL_Outline(v, RL_OUTLINES "glyphs/options.svg", gcx, gcy, S, S, gc);
-            break;
-        case ID_SPECTATOR:
-            RL_Outline(v, RL_OUTLINES "glyphs/spectate.svg", gcx, gcy, S, S, gc);
-            break;
-        case ID_SAVE:
-            RL_Outline(v, RL_OUTLINES "glyphs/save.svg", gcx, gcy, S, S, gc);
-            break;
-        case ID_LOAD:
-            RL_Outline(v, RL_OUTLINES "glyphs/load.svg", gcx, gcy, S, S, gc);
-            break;
-        default:
-            RL_Outline(v, RL_OUTLINES "glyphs/disconnect.svg", gcx, gcy, S, S, gc);
-            break;
-        }
-        RL_Text(v, x + w / 2, y + th - 30, t.label, RL_S1, RL_TEXT, true, RL_CENTER, 1.6f, RL_MID, w - 20);
-        Hit(v, x, y, w, th, i);
+    RL_Rail(this, v, rl_escItems[sp], 5, RL_OptionsOver() ? ID_OPTIONS : -1, foot, 2, head);
+    // the keys: down the items, then the foot's
+    for (const rlRailItem_t& item : rl_escItems[sp]) {
+        m_order.push_back(item.id);
     }
-    {
-        const float ry = gy + 2 * th + gap + 22;
-        const bool  hot = Hot(ID_RESUME);
-
-        RL_Round(v, x0, ry, gw, rb, 4, RL_Rgb(255, 255, 255, hot ? 26 : 16));
-        RL_RoundFrame(v, x0, ry, gw, rb, 4, hot ? 2 : 1, hot ? RL_BRASS : RL_Rgb(255, 255, 255, 50));
-        RL_Text(v, x0 + gw / 2, ry + rb / 2, "RESUME", RL_S1, RL_TEXT, true, RL_CENTER, 2, RL_MID);
-        Hit(v, x0, ry, gw, rb, ID_RESUME);
-    }
-    // the keys: the tiles three a row, then Resume (the whole row)
-    for (int k = 0; k < (int)ARRAY_LEN(rl_escTiles[0]); k++) {
-        m_order.push_back(tiles[k].id);
-    }
-    m_order.push_back(ID_RESUME);
-    m_order.push_back(ID_RESUME);
-    m_order.push_back(ID_RESUME);
-    m_cols = 3;
+    m_order.push_back(ID_DISCONNECT);
+    m_order.push_back(ID_QUIT);
 }
 
 /*
@@ -2310,7 +2275,7 @@ screens the cgame shows at the intermission (StatsScreen_Success and
 _Failed; Spearhead's and Breakthrough's mission_success_N and
 mission_failed_N): the stock screen's painting, unstretched, full height,
 black beside it (not the photos Spearhead's fade in over it), dimmed as
-the Esc menu dims the game; on it the Esc menu's column: the level's name,
+the Esc menu dims the game; on it a column as wide as the grid: the level's name,
 the mission and the difficulty, the outcome; the stock screen's numbers
 (the ui_* cvars of the stats the cgame asks for: CG_ParseStats); the
 weapon most hits came from and where they landed; the medal won, if one
@@ -2448,7 +2413,7 @@ void UIReloadedMenu::DrawEnd(const rlView_t& v, const rlInfo_t& in)
     const float       lw = v.dh * 4 / 3, lx = (v.dw - lw) / 2;
     const float       th = 112, mh = 76, bh = 48, head = 104;
     int               medal = -1;
-    float             tw, wh, gap, gw; // (the Esc menu's grid; wh its tiles' height)
+    float             tw, wh, gap, gw; // (the grid; wh its tiles' height)
 
     // the medal won: the first whose cvar the level set (as the game tells, g_gotmedal: ui_gotmedal)
     for (int i = 0; medal < 0 && i < (int)ARRAY_LEN(rl_medals) && Cvar_VariableIntegerValue("ui_gotmedal"); i++) {
@@ -2617,8 +2582,8 @@ void UIReloadedMenu::Choose(int id)
             cmd = "quit\n";
             break;
         case ID_OPTIONS:
-            RL_MainShow(RL_SHOW_OPTIONS);
-            cmd = "popmenu 0;wait 250;pushmenu main\n";
+            // Options over it (BACK and Esc back to it)
+            menuManager.ShowMenu("reloaded_options");
             break;
         case ID_SPECTATOR:
             cmd = "popmenu 0;wait 250;spectator\n";
@@ -2666,6 +2631,23 @@ void UIReloadedMenu::Choose(int id)
     if (cmd) {
         Cbuf_AddText(cmd);
     }
+}
+
+bool RL_EscClick(int x, int y)
+{
+    Menu *const     esc = menuManager.FindMenu("reloaded_esc");
+    UIWidget *const w   = esc && esc->GetContainerWidget() ? esc->GetContainerWidget()->FindWidget("front") : NULL;
+    const int       id  = w && w->isSubclassOf(UIReloadedMenu) ? static_cast<UIReloadedMenu *>(w)->HitAt(x, y) : -1;
+
+    if (id < 0) {
+        return false;
+    }
+    // (OPTIONS, lit: Options closed only)
+    Cbuf_AddText("popmenu 0\n");
+    if (id != ID_OPTIONS) {
+        static_cast<UIReloadedMenu *>(w)->Choose(id);
+    }
+    return true;
 }
 
 /*
@@ -3157,7 +3139,7 @@ shapes it draws are baked then, not when it opens
 */
 void UI_Menus_PreBake(void)
 {
-    static const char *const menus[] = {"reloaded_weapon", "reloaded_esc", "reloaded_scoreboard"};
+    static const char *const menus[] = {"reloaded_weapon", "reloaded_esc", "reloaded_options", "reloaded_scoreboard"};
 
     if (!ui_classicmenus || ui_classicmenus->integer || clc.state < CA_PRIMED || !uii.IsRendererLoaded()) {
         return;

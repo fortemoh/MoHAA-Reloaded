@@ -590,6 +590,12 @@ typedef struct {
 	VkFramebuffer		framebuffer;
 	VkRenderPass		depthResolvePass;	// multisampling: resolves the depth/stencil buffer for readbacks
 	VkFramebuffer		depthResolveFramebuffer;
+	// the frame blurred (vk_frame_blur): the color target halved down its mip
+	// levels; made at its first use, its contents only the blur's
+	VkImage				blurImage;
+	VkDeviceMemory		blurMemory;
+	VkImageView			blurView;
+	uint64_t			blurSerial;		// the frame it was last blurred in
 
 	// shared objects
 	VkDescriptorSetLayout textureSetLayout;
