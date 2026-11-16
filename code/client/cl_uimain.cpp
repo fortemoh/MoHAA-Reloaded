@@ -77,7 +77,7 @@ enum { CT_MISSIONS, CT_SAVES }; // Campaign's tabs
 enum { HF_TIME, HF_FRAG, HF_PLAYERS, HF_BOTS, HF_NAME, HF_NUM }; // Host's fields
 // the field typed in: the browser's search, the name, Options' search, a crosshair code, a slider's value, Host's (F_HOST + its)
 enum { F_NONE, F_SEARCH, F_NAME, F_OSEARCH, F_CODE, F_VALUE, F_HOST };
-enum { OT_INPUT, OT_VIDEO, OT_AUDIO, OT_GAMEPLAY, OT_HUD, OT_NUM }; // Options' tabs
+enum { OT_INPUT, OT_KEYS, OT_VIDEO, OT_AUDIO, OT_GAMEPLAY, OT_HUD, OT_NUM }; // Options' tabs
 
 // the browser's gametype tabs (Omaha's) and sortable columns
 enum { TAB_ALL, TAB_FFA, TAB_TDM, TAB_OBJ, TAB_ROUNDS, TAB_OTHER, TAB_NUM };
@@ -119,12 +119,14 @@ enum {
     ID_CDELETE,
     ID_CSAVE,
     ID_CLOAD,
+    ID_KEYMOVE, // (what the confirmation asks: a key another command has, moved)
     ID_ROW  = 1000, // + the row shown
     ID_FAV  = ID_ROW + 1000,
     ID_PICK = ID_FAV + 1000, // + the model
     ID_MAP  = ID_PICK + 1000, // + Host's map shown
     ID_SAVE = ID_MAP + 1000,  // + the saved game shown
     ID_OPT  = ID_SAVE + 1000, // + Options' setting * 16 + its control's part
+    ID_KEY  = ID_OPT + 2000,  // + the action * 2 + its box (KEYS)
 };
 
 /*
@@ -171,7 +173,7 @@ static struct {
     int         pick; // the side whose model list is open, -1 none
     int         pickTop;
     std::string note; // a word on the status row in place of the lists' state
-    int         confirm; // what the confirmation asks: ID_QUIT, ID_DISCONNECT or ID_CDELETE
+    int         confirm; // what the confirmation asks: ID_QUIT, ID_DISCONNECT, ID_CDELETE or ID_KEYMOVE
     int         clickAt;
     int         serial; // changes with all of the above
 } rl_mm = {PAGE_PLAY, F_NONE, "", "", TAB_ALL, COL_PING, true, "", 0, 1, -1, 0, "", ID_QUIT, 0, 0};
@@ -1941,11 +1943,11 @@ APPLY; DEFAULTS resets the settings shown
 ====================================================================
 */
 
-static const char *const rl_optTabs[OT_NUM] = {"INPUT", "VIDEO", "AUDIO", "GAMEPLAY", "HUD"};
+static const char *const rl_optTabs[OT_NUM] = {"INPUT", "KEYS", "VIDEO", "AUDIO", "GAMEPLAY", "HUD"};
 
-enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW, OC_CODE };
+enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW, OC_CODE, OC_KEYS };
 
-#define OF_RIGHT   1   // a section in the right column
+#define OF_RIGHT   1   // a section in the right column (the second)
 #define OF_PCT     2   // a slider's value shown as a percentage
 #define OF_GUN     4   // the gun's position: the preset sets the offsets, an offset not the preset's makes it custom
 #define OF_NOT     8   // a switch on at 0
@@ -1954,6 +1956,7 @@ enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW
 #define OF_DISPLAY 64  // r_fullscreen and r_noborder: fullscreen, windowed, borderless
 #define OF_ANISO   128 // r_ext_texture_filter_anisotropic and r_ext_max_anisotropy: off, or how much
 #define OF_RES     256 // r_mode: the desktop's, or a size of the display's (r_customwidth, r_customheight)
+#define OF_THIRD   512 // a section in the third column (keys alone have three; else the right one)
 
 typedef struct {
     int                kind, tab, flags; // the tab: a section's
@@ -1970,6 +1973,8 @@ typedef struct {
 #define O_SLIDER(label, desc, cvar, def, lo, hi, step, flags)    {OC_SLIDER, 0, flags, label, desc, cvar, def, NULL, NULL, lo, hi, step}
 #define O_TOGGLE(label, desc, cvar, def, flags)                  {OC_TOGGLE, 0, flags, label, desc, cvar, def, NULL, NULL, 0, 0, 0}
 #define O_SWATCH(label, desc, cvar, def, colours)                {OC_SWATCH, 0, 0, label, desc, cvar, def, colours, NULL, 0, 0, 0}
+// a row of keys a stock action (ui/bind.scr's), from the action of command from up to the next O_KEYS's
+#define O_KEYS(from)                                             {OC_KEYS, 0, 0, from, "", NULL, NULL, NULL, NULL, 0, 0, 0}
 
 static const char *const rl_oAccelStyles[] = {"LINEAR", "POWER", NULL};
 static const char *const rl_oDisplay[]     = {"FULLSCREEN", "WINDOWED", "BORDERLESS", NULL};
@@ -2008,6 +2013,16 @@ static const rlOpt_t rl_opts[] = {
     O_SLIDER("Acceleration", "Faster moves turn further. 0: off.", "cl_mouseAccel", "0", 0, 5, 0.05f, 0),
     O_SEG("Style", "How it grows with the speed.", "cl_mouseAccelStyle", "0", rl_oAccelStyles, NULL, 0),
     O_SLIDER("Offset", "Power: the speed that doubles the turn.", "cl_mouseAccelOffset", "5", 1, 50, 1, 0),
+    O_SECTION(OT_KEYS, "ATTACK", 0),
+    O_KEYS("+attackprimary"),
+    O_SECTION(OT_KEYS, "MOVEMENT", 0),
+    O_KEYS("+forward"),
+    O_SECTION(OT_KEYS, "WEAPONS", OF_RIGHT),
+    O_KEYS("+use"),
+    O_SECTION(OT_KEYS, "GAME", OF_RIGHT),
+    O_KEYS("+scores"),
+    O_SECTION(OT_KEYS, "MULTIPLAYER", OF_THIRD),
+    O_KEYS("weapdrop"),
     O_SECTION(OT_VIDEO, "DISPLAY", 0),
     O_SEG("Display Mode", "Borderless: a window without its frame.", "r_fullscreen", "1", rl_oDisplay, NULL, OF_DISPLAY),
     O_CYCLE("Resolution", "Desktop: the display's own.", "r_mode", "-2", NULL, NULL, OF_RES),
@@ -2080,6 +2095,7 @@ static const rlOpt_t rl_opts[] = {
 };
 
 #define RL_OPTS ((int)ARRAY_LEN(rl_opts))
+static_assert(ID_OPT + RL_OPTS * 16 <= ID_KEY, "the settings' ids reach the keys'");
 
 // what the renderer (and, the last, the sound) takes at a restart, APPLY's: the latched settings, and the
 // brightness but on Windows (elsewhere it brightens the textures)
@@ -2110,13 +2126,37 @@ static struct {
     std::vector<std::string> sizes;   // the resolutions offered: "DESKTOP", then the display's ("1920 x 1080")
 } rl_opt = {false, OT_INPUT, "", "", "", 0, 0, 0, -1, false, "", {}, {}, {}, -1, {}};
 
-// a place in the layout: the setting, its box (the content's top y 0)
+// a place in the layout: the setting (a row of keys: its O_KEYS and its action), its box (the content's top y 0)
 typedef struct {
-    int   opt;
+    int   opt, act; // act: a row of keys' action, -1 none
     float x, y, w, h;
 } rlOptPlace_t;
 
 static std::vector<rlOptPlace_t> rl_optPlaces; // as last drawn
+
+/*
+----------------
+KEYS: the stock list's actions (ui/bind.scr, the game's or an expansion's),
+two boxes each. A box keeps its key while it stays bound to the action's
+command; an empty one takes another key bound to it, in the keys' order. A
+box clicked waits for a key: the keys come to the menu (as to the stock
+list's buttons, SetBindActive), Esc's too, and the mouse's buttons
+(MainButtons)
+----------------
+*/
+typedef struct {
+    std::string name, cmd; // its name (the stock list's "DM " dropped), its command
+    int         key[2];    // its boxes' keys: the primary, the alternate (-1 none)
+} rlAct_t;
+
+static struct {
+    std::vector<rlAct_t> acts;
+    int                  from[RL_OPTS], to[RL_OPTS]; // an O_KEYS's actions
+    int                  synced;  // the bindings (key_serial) the boxes were synced to
+    int                  wait;    // the box waiting for a key: its action * 2 + the box, -1 none
+    int                  ask[2];  // the move KEY IN USE asks about: the box, the key
+    bool                 swallow; // the left button bound: its release no click
+} rl_keys = {{}, {}, {}, -1, -1, {0, 0}, false};
 
 // a cvar's value: the one waiting for a restart, else its own
 static const char *RL_Latched(const cvar_t *cv)
@@ -2133,6 +2173,62 @@ static cvar_t *RL_OptOther(const char *name)
     return cv;
 }
 
+// a config file's lines, each tokenized as a command (Cmd_Argv) for fn
+template <typename F>
+static void RL_EachLine(const char *file, F fn)
+{
+    char *text;
+
+    if (FS_ReadFile(file, (void **)&text) <= 0) {
+        return;
+    }
+    for (const char *p = text; *p;) {
+        const size_t n = strcspn(p, "\r\n");
+        char         line[MAX_STRING_CHARS];
+
+        Q_strncpyz(line, p, (int)Q_min(n + 1, sizeof(line)));
+        Cmd_TokenizeString(line);
+        fn();
+        p += n + (p[n] != 0);
+    }
+    FS_FreeFile(text);
+}
+
+// the stock list read; an O_KEYS's actions: from its command's to the next O_KEYS's found (the first found from the list's start)
+static void RL_KeysRead(void)
+{
+    std::vector<rlAct_t>& acts  = rl_keys.acts;
+    int                   first = INT_MAX;
+
+    RL_EachLine("ui/bind.scr", [&acts] {
+        const char *name = Cmd_Argv(1);
+
+        if (Cmd_Argc() >= 3 && !Q_stricmp(Cmd_Argv(0), "binditem")) {
+            acts.push_back({Q_stricmpn(name, "DM ", 3) ? name : name + 3, Cmd_Argv(2), {-1, -1}});
+        }
+    });
+    for (int i = 0; i < RL_OPTS; i++) {
+        rl_keys.from[i] = -1;
+        for (int a = 0; rl_opts[i].kind == OC_KEYS && a < (int)acts.size() && rl_keys.from[i] < 0; a++) {
+            if (!Q_stricmp(acts[a].cmd.c_str(), rl_opts[i].label)) {
+                rl_keys.from[i] = a;
+                first           = Q_min(first, a);
+            }
+        }
+    }
+    for (int i = 0; i < RL_OPTS; i++) {
+        rl_keys.to[i] = rl_keys.from[i] < 0 ? 0 : (int)acts.size();
+        for (int j = 0; j < RL_OPTS; j++) {
+            if (rl_keys.from[j] > rl_keys.from[i] && rl_keys.from[i] >= 0) {
+                rl_keys.to[i] = Q_min(rl_keys.to[i], rl_keys.from[j]);
+            }
+        }
+    }
+    for (int i = 0; i < RL_OPTS; i++) {
+        rl_keys.from[i] = rl_keys.from[i] == first ? 0 : Q_max(rl_keys.from[i], 0);
+    }
+}
+
 /*
 ----------------
 RL_OptRead
@@ -2140,13 +2236,16 @@ RL_OptRead
 The first time Options shows (and after a renderer's start): the cvars
 (the game's own made before it does), the resolutions offered (the
 display's, r_availableModes, and the one set if not one of them), the
-restart's settings as taken
+restart's settings as taken; the stock list of keys, once
 ----------------
 */
 static void RL_OptRead(void)
 {
     const char *modes = Cvar_VariableString("r_availableModes");
 
+    if (rl_keys.acts.empty()) {
+        RL_KeysRead();
+    }
     rl_opt.ready = true;
     for (int i = 0, sec = 0; i < RL_OPTS; i++) {
         sec           = rl_opts[i].kind == OC_SECTION ? i : sec;
@@ -2186,12 +2285,28 @@ static bool RL_OptHas(const char *text)
     return !rl_opt.search.empty() && Q_stristr(text, rl_opt.search.c_str());
 }
 
-// a setting shown: its tab's, or what the search finds (its section's preview with what it finds there)
+// an O_KEYS's action shown: its tab's, or what the search finds (its section's title, its name)
+static bool RL_KeyShown(int i, int a)
+{
+    const int s = rl_opt.sec[i];
+
+    return rl_opt.search.empty() ? rl_opts[s].tab == rl_opt.tab : RL_OptHas(rl_opts[s].label) || RL_OptHas(rl_keys.acts[a].name.c_str());
+}
+
+// a setting shown: its tab's, or what the search finds (its section's preview with what it finds there; an O_KEYS with an action shown)
 static bool RL_OptShown(int i)
 {
     const rlOpt_t& o = rl_opts[i];
     const int      s = rl_opt.sec[i];
 
+    if (o.kind == OC_KEYS) {
+        for (int a = rl_keys.from[i]; a < rl_keys.to[i]; a++) {
+            if (RL_KeyShown(i, a)) {
+                return true;
+            }
+        }
+        return false;
+    }
     if (rl_opt.search.empty()) {
         return rl_opts[s].tab == rl_opt.tab;
     }
@@ -2213,48 +2328,73 @@ static bool RL_OptShown(int i)
 ----------------
 RL_OptLayout
 
-The settings shown placed: the sections in their column (the right one
-under the left in one column), a section's title 40 high, 14 over it past
-the first, a row 66, the preview 0.32 of its column (220 at most) and 12
-under it. The content's height
+The settings shown placed: the sections in their column (fewer columns:
+the later ones' in the last), a section's title 40 high, 14 over it past
+the first, a row 66 (keys 44), the preview 0.32 of its column (220 at
+most) and 12 under it. The columns: keys alone alike, three as the width
+has room for (two, one); else 0.55 and 0.45 of it, one below 1100. The
+content's height; the columns' lines (their x)
 ----------------
 */
-static float RL_OptLayout(float x, float w, std::vector<rlOptPlace_t>& out)
+static float RL_OptLayout(float x, float w, std::vector<rlOptPlace_t>& out, std::vector<float>& lines)
 {
-    const bool  one = w < 1100;
-    const float lw  = floorf(w * 0.55f + 0.5f);
-    const float cx[2] = {x + RL_PAD, one ? x + RL_PAD : x + lw + RL_PAD}, cw[2] = {one ? w - 2 * RL_PAD : lw - 2 * RL_PAD, w - lw - 2 * RL_PAD};
-    float       cy[2] = {0, 0};
+    std::vector<int> secs; // the sections shown
+    bool             alone = true; // keys alone
+    float            cx[3], cw[3], cy[3] = {0, 0, 0};
 
+    for (int s = 0; s < RL_OPTS; s++) {
+        bool any = false;
+
+        for (int i = s + 1; rl_opts[s].kind == OC_SECTION && i < RL_OPTS && rl_opts[i].kind != OC_SECTION && !any; i++) {
+            any = RL_OptShown(i);
+        }
+        if (any) {
+            secs.push_back(s);
+            alone = alone && rl_opts[s + 1].kind == OC_KEYS;
+        }
+    }
+    alone = alone && !secs.empty();
+    const int   n  = alone ? (w >= 1300 ? 3 : w >= 860 ? 2 : 1) : w < 1100 ? 1 : 2;
+    const float lw = floorf(w * 0.55f + 0.5f);
+
+    lines.clear();
+    for (int c = 0; c < n; c++) {
+        const float l = alone ? floorf(w * c / n + 0.5f) : c ? lw : 0, r = alone ? floorf(w * (c + 1) / n + 0.5f) : c || n == 1 ? w : lw;
+
+        cx[c] = x + l + RL_PAD;
+        cw[c] = r - l - 2 * RL_PAD;
+        if (c) {
+            lines.push_back(x + l);
+        }
+    }
     out.clear();
-    for (int right = 0; right < 2; right++) {
-        for (int s = 0; s < RL_OPTS; s++) {
-            const int c = one ? 0 : right;
-            bool      any = false;
+    for (int col = 0; col < 3; col++) {
+        for (const int s : secs) {
+            const int c = Q_min(col, n - 1);
 
-            if (rl_opts[s].kind != OC_SECTION || (rl_opts[s].flags & OF_RIGHT) != right * OF_RIGHT) {
-                continue;
-            }
-            for (int i = s + 1; i < RL_OPTS && rl_opts[i].kind != OC_SECTION && !any; i++) {
-                any = RL_OptShown(i);
-            }
-            if (!any) {
+            if ((rl_opts[s].flags & OF_THIRD ? 2 : rl_opts[s].flags & OF_RIGHT ? 1 : 0) != col) {
                 continue;
             }
             cy[c] += cy[c] > 0 ? 14 : 0;
-            out.push_back({s, cx[one ? 0 : right], cy[c], cw[one ? 0 : right], 40});
+            out.push_back({s, -1, cx[c], cy[c], cw[c], 40});
             cy[c] += 40;
             for (int i = s + 1; i < RL_OPTS && rl_opts[i].kind != OC_SECTION; i++) {
-                const float h = rl_opts[i].kind == OC_PREVIEW ? floorf(Q_min(cw[one ? 0 : right] * 0.32f, 220.0f)) + 12 : 66;
+                const float h = rl_opts[i].kind == OC_PREVIEW ? floorf(Q_min(cw[c] * 0.32f, 220.0f)) + 12 : 66;
 
-                if (RL_OptShown(i)) {
-                    out.push_back({i, cx[one ? 0 : right], cy[c], cw[one ? 0 : right], h});
+                for (int a = rl_keys.from[i]; rl_opts[i].kind == OC_KEYS && a < rl_keys.to[i]; a++) {
+                    if (RL_KeyShown(i, a)) {
+                        out.push_back({i, a, cx[c], cy[c], cw[c], 44});
+                        cy[c] += 44;
+                    }
+                }
+                if (rl_opts[i].kind != OC_KEYS && RL_OptShown(i)) {
+                    out.push_back({i, -1, cx[c], cy[c], cw[c], h});
                     cy[c] += h;
                 }
             }
         }
     }
-    return Q_max(cy[0], cy[1]);
+    return Q_max(cy[0], Q_max(cy[1], cy[2]));
 }
 
 static const char *RL_OptValue(int i)
@@ -2450,7 +2590,151 @@ static void RL_OptImport(void)
     rl_mm.edit = F_NONE;
 }
 
-// DEFAULTS: the settings shown back to their defaults (and the cvars a choice stands for with them)
+// the boxes synced to the bindings when they changed (key_serial): a box's key bound to another command let go, an
+// empty box given another key bound to its action
+static void RL_KeysSync(void)
+{
+    if (rl_keys.synced == key_serial) {
+        return;
+    }
+    rl_keys.synced = key_serial;
+    for (rlAct_t& a : rl_keys.acts) {
+        for (int& k : a.key) {
+            if (k >= 0 && (!keys[k].binding || Q_stricmp(keys[k].binding, a.cmd.c_str()))) {
+                k = -1;
+            }
+        }
+    }
+    for (int k = 0; k < MAX_KEYS; k++) {
+        const char *on = keys[k].binding;
+
+        for (size_t i = 0; on && *on && i < rl_keys.acts.size(); i++) {
+            rlAct_t& a = rl_keys.acts[i];
+
+            if (!Q_stricmp(on, a.cmd.c_str())) {
+                if (a.key[0] != k && a.key[1] != k && (a.key[0] < 0 || a.key[1] < 0)) {
+                    a.key[a.key[0] < 0 ? 0 : 1] = k;
+                }
+                break;
+            }
+        }
+    }
+}
+
+// a key's name as the boxes show it ("W", "MOUSE1")
+static const char *RL_KeyName(int key)
+{
+    static char name[32];
+
+    Q_strncpyz(name, Key_KeynumToString(key), sizeof(name));
+    return Q_strupr(name);
+}
+
+// the box waiting for a key no more: the keys to the menus as before
+static void RL_KeyStop(void)
+{
+    rl_keys.wait = -1;
+    uWinMan.SetBindActive(NULL);
+}
+
+// a key bound to a box (the key it had let go)
+static void RL_KeyBind(int box, int key)
+{
+    rlAct_t& a = rl_keys.acts[box / 2];
+    int&     k = a.key[box % 2];
+
+    if (k >= 0 && k != key) {
+        Key_SetBinding(k, "");
+    }
+    Key_SetBinding(key, a.cmd.c_str());
+    k = key;
+}
+
+// the key pressed for the box waiting: Esc (and Pause, as for the stock list) none, Backspace or Delete the box
+// cleared, the action's other box's key the two swapped; one another command has, asked about first (KEY IN USE)
+static void RL_KeyPressed(int key)
+{
+    const int   box   = rl_keys.wait;
+    rlAct_t&    a     = rl_keys.acts[box / 2];
+    int&        k     = a.key[box % 2];
+    int&        other = a.key[1 - box % 2];
+    const char *on    = keys[key].binding;
+
+    RL_KeyStop();
+    RL_KeysSync();
+    if (key == K_ESCAPE || key == K_PAUSE) {
+        return;
+    }
+    if (key == K_BACKSPACE || key == K_DEL) {
+        if (k >= 0) {
+            Key_SetBinding(k, "");
+        }
+        k = -1;
+    } else if (key == other) {
+        std::swap(k, other);
+    } else if (on && *on && Q_stricmp(on, a.cmd.c_str())) {
+        rl_keys.ask[0] = box;
+        rl_keys.ask[1] = key;
+        rl_mm.confirm  = ID_KEYMOVE;
+        menuManager.ShowMenu("reloaded_confirm");
+    } else {
+        RL_KeyBind(box, key);
+    }
+}
+
+// what KEY IN USE asks: "CTRL is on Crouch. Move it to Jump/Stand Up?" (a command not listed as it is)
+static std::string RL_KeyQuestion(void)
+{
+    const char *on   = keys[rl_keys.ask[1]].binding;
+    std::string what = on ? on : "";
+
+    for (const rlAct_t& a : rl_keys.acts) {
+        if (!Q_stricmp(a.cmd.c_str(), what.c_str())) {
+            what = a.name;
+            break;
+        }
+    }
+    return std::string(RL_KeyName(rl_keys.ask[1])) + " is on " + what + ". Move it to " + rl_keys.acts[rl_keys.ask[0] / 2].name + "?";
+}
+
+// DEFAULTS' keys: the actions shown bound as the game's default.cfg binds them (their keys let go first; other
+// commands' keys stay, but for those it binds)
+static void RL_KeysDefaults(void)
+{
+    std::vector<int> shown;
+    const auto       is = [&shown](const char *cmd) {
+        for (const int a : shown) {
+            if (!Q_stricmp(rl_keys.acts[a].cmd.c_str(), cmd)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    for (int i = 0; i < RL_OPTS; i++) {
+        for (int a = rl_keys.from[i]; rl_opts[i].kind == OC_KEYS && a < rl_keys.to[i]; a++) {
+            if (RL_KeyShown(i, a)) {
+                shown.push_back(a);
+                rl_keys.acts[a].key[0] = rl_keys.acts[a].key[1] = -1;
+            }
+        }
+    }
+    if (shown.empty()) {
+        return;
+    }
+    for (int k = 0; k < MAX_KEYS; k++) {
+        if (keys[k].binding && is(keys[k].binding)) {
+            Key_SetBinding(k, "");
+        }
+    }
+    RL_EachLine("default.cfg", [&is] {
+        if (Cmd_Argc() >= 3 && !Q_stricmp(Cmd_Argv(0), "bind") && is(Cmd_ArgsFrom(2))) {
+            Key_SetBinding(Key_StringToKeynum(Cmd_Argv(1)), Cmd_ArgsFrom(2));
+        }
+    });
+}
+
+// DEFAULTS: the settings shown back to their defaults (and the cvars a choice stands for with them), the keys shown too
 static void RL_OptDefaults(void)
 {
     for (int i = 0; i < RL_OPTS; i++) {
@@ -2464,6 +2748,7 @@ static void RL_OptDefaults(void)
             Cvar_Reset(flags & OF_DISPLAY ? "r_noborder" : "r_ext_max_anisotropy");
         }
     }
+    RL_KeysDefaults();
     rl_opt.note = "DEFAULTS SET";
 }
 
@@ -2609,6 +2894,41 @@ static void RL_Crosshair(const rlView_t& v, float x, float y, float w, float h)
     }
 }
 
+// a row of keys' box (the primary 0, the alternate 1): its left edge, 110 wide, 6 between the two at the right edge
+static float RL_KeyX(float x, float w, int box)
+{
+    return x + w - (2 - box) * 110 - (1 - box) * 6;
+}
+
+// an action's row (44 high): its name, its boxes (32 high; waiting: brass, the row marked), a line under it
+static void RL_KeyRow(UIReloadedMenu *m, const rlView_t& v, int a, float x, float y, float w, float h)
+{
+    const rlAct_t& act = rl_keys.acts[a];
+    const float    mid = y + h / 2;
+
+    if (rl_keys.wait >= 0 && rl_keys.wait / 2 == a) {
+        RL_Box(v, x - RL_PAD + 2, y, w + 2 * RL_PAD - 3, h - 1, RL_SEL);
+        RL_Box(v, x - RL_PAD + 2, y, 3, h - 1, RL_BRASS);
+    }
+    RL_Text(v, x, mid, act.name.c_str(), 19, RL_TEXT, false, RL_LEFT, 0, RL_MID, RL_KeyX(x, w, 0) - x - 18);
+    for (int k = 0; k < 2; k++) {
+        const float bx = RL_KeyX(x, w, k);
+        const int   id = ID_KEY + a * 2 + k;
+        const bool  wait = rl_keys.wait == a * 2 + k, hot = m->Hot(id);
+
+        RL_Box(v, bx, mid - 16, 110, 32, RL_Rgb(0, 0, 0, wait ? 160 : 120));
+        RL_Frame(v, bx, mid - 16, 110, 32, wait ? RL_P(v, 2) : 1, wait ? RL_BRASS : hot ? RL_Rgb(255, 255, 255, 70) : RL_LINE);
+        if (wait) {
+            RL_Text(v, bx + 55, mid, "PRESS A KEY", 13, RL_BRASS, true, RL_CENTER, 1.2f, RL_MID);
+        } else {
+            RL_Text(v, bx + 55, mid, act.key[k] >= 0 ? RL_KeyName(act.key[k]) : "\x97", 16, hot ? RL_BRASS : act.key[k] >= 0 ? RL_TEXT : RL_FAINT,
+                    false, RL_CENTER, 0, RL_MID, 98);
+        }
+        m->Hit(v, bx, mid - 16, 110, 32, id);
+    }
+    RL_Box(v, x, y + h - 2, w, 1, RL_LINE);
+}
+
 // a setting's row: its label (and its description), its control at the right edge, a line under it
 static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, float y, float w, float h)
 {
@@ -2619,9 +2939,12 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
     if (o.kind == OC_SECTION) {
         const char *tab = rl_optTabs[o.tab];
 
-        // (found by the search: the tab's name too)
+        // (found by the search: the tab's name too; keys: their boxes' names over them)
         RL_Text(v, x, y + 18, rl_opt.search.empty() || !Q_stricmp(tab, o.label) ? o.label : va("%s  \xb7  %s", tab, o.label), 15, RL_BRASS,
                 true, RL_LEFT, 2.6f, RL_MID);
+        for (int k = 0; rl_opts[i + 1].kind == OC_KEYS && k < 2; k++) {
+            RL_Text(v, RL_KeyX(x, w, k) + 55, y + 18, k ? "ALTERNATE" : "PRIMARY", 12, RL_MUTED, true, RL_CENTER, 1.4f, RL_MID);
+        }
         return;
     }
     if (o.kind == OC_PREVIEW) {
@@ -2718,7 +3041,8 @@ static void RL_Options(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
     if (!rl_opt.ready || rl_opt.refSeq != uii.GetRefSequence()) {
         RL_OptRead();
     }
-    const float height = RL_OptLayout(x, w, places);
+    std::vector<float> lines;
+    const float        height = RL_OptLayout(x, w, places, lines);
 
     rl_opt.most = 0;
     for (const rlOptPlace_t& p : places) {
@@ -2745,18 +3069,21 @@ static void RL_Options(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         RL_Field(v, x + w - RL_PAD - sw, y + 7, sw, 34, 12, 12, rl_opt.search, "Search settings\x85", rl_mm.edit == F_OSEARCH, m->Hot(ID_OSEARCH));
         m->Hit(v, x + w - RL_PAD - sw, y + 7, sw, 34, ID_OSEARCH);
     }
-    if (w >= 1100) {
-        // (the columns' line)
-        const float lw = floorf(w * 0.55f + 0.5f);
-
-        RL_Box(v, x + lw, y + 49, 1, foot - (y + 49), RL_LINE);
+    for (const float lx : lines) {
+        RL_Box(v, lx, y + 49, 1, foot - (y + 49), RL_LINE);
     }
+    RL_KeysSync();
     for (size_t k = 0; k < places.size(); k++) {
         const rlOptPlace_t& p = places[k];
 
         // (a section's title with its first row, never alone at the foot)
-        if (p.y >= scroll && p.y + p.h <= scroll + band
-            && (rl_opts[p.opt].kind != OC_SECTION || places[k + 1].y + places[k + 1].h <= scroll + band)) {
+        if (p.y < scroll || p.y + p.h > scroll + band
+            || (rl_opts[p.opt].kind == OC_SECTION && places[k + 1].y + places[k + 1].h > scroll + band)) {
+            continue;
+        }
+        if (p.act >= 0) {
+            RL_KeyRow(m, v, p.act, p.x, top + p.y - scroll, p.w, p.h);
+        } else {
             RL_OptRow(m, v, p.opt, p.x, top + p.y - scroll, p.w, p.h);
         }
     }
@@ -2770,9 +3097,11 @@ static void RL_Options(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         const float by = RL_FootRow(v, x, foot, w);
         const int   pending = RL_OptPending();
         const char *restart[4] = {rl_opt.note.c_str(), "APPLY RESTARTS THE VIDEO", "APPLY RESTARTS THE SOUND", "APPLY RESTARTS THE VIDEO AND THE SOUND"};
+        const char *say = rl_keys.wait >= 0 ? "PRESS A KEY  \xb7  ESC CANCELS  \xb7  BACKSPACE CLEARS" : restart[pending];
 
         RL_Button(v, x + RL_PAD, by, 150, RL_CTRL, "DEFAULTS", false, 0, 12, m->Hot(ID_DEFAULTS));
-        RL_Text(v, x + w / 2, foot + RL_FOOT / 2, restart[pending], 15, RL_BRASS, true, RL_CENTER, 2, RL_MID);
+        // (between the buttons)
+        RL_Text(v, x + w / 2, foot + RL_FOOT / 2, say, 15, RL_BRASS, true, RL_CENTER, 2, RL_MID, w - 2 * (RL_PAD + 190 + 16));
         RL_Button(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "APPLY", true, 12, 0, m->Hot(ID_OAPPLY) && pending, !pending);
         m->Hit(v, x + RL_PAD, by, 150, RL_CTRL, ID_DEFAULTS);
         m->Hit(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, ID_OAPPLY);
@@ -2884,20 +3213,21 @@ void UIReloadedMenu::DrawMain(const rlView_t& v)
 ================
 DrawConfirm: Omaha's confirmation, over the main menu: Quit's,
 Disconnect's in a game (Leave mission's in single player), Campaign's
-Delete
+Delete, KEYS' move of a key another command has
 ================
 */
 void UIReloadedMenu::DrawConfirm(const rlView_t& v)
 {
     const float w = 560, h = 230, x = (v.dw - w) / 2, y = (v.dh - h) / 2, by = y + h - 24 - 48;
     // (the title, the question, the button)
-    const char *const says[4][3] = {
+    const char *const says[5][3] = {
         {"QUIT",          "Close the game?",         "QUIT"      },
         {"DISCONNECT",    "Leave the game?",         "DISCONNECT"},
         {"LEAVE MISSION", "Leave the mission?",      "LEAVE"     },
         {"DELETE",        "Delete this saved game?", "DELETE"    },
+        {"KEY IN USE",    "",                        "MOVE"      },
     };
-    const int k = rl_mm.confirm == ID_QUIT ? 0 : rl_mm.confirm == ID_CDELETE ? 3 : RL_InMission() ? 2 : 1;
+    const int k = rl_mm.confirm == ID_QUIT ? 0 : rl_mm.confirm == ID_CDELETE ? 3 : rl_mm.confirm == ID_KEYMOVE ? 4 : RL_InMission() ? 2 : 1;
 
     if (m_back) {
         return;
@@ -2906,7 +3236,7 @@ void UIReloadedMenu::DrawConfirm(const rlView_t& v)
     RL_Panel(v, x, y, w, h, RL_Rgb(12, 13, 15, 250));
     RL_Head(v, x, y, w, 56);
     RL_Text(v, x + 24, y + 28, says[k][0], 22, RL_TEXT, true, RL_LEFT, 2, RL_MID);
-    RL_Text(v, x + 24, y + 100, says[k][1], 22, RL_SOFT, false, RL_LEFT, 0, RL_MID);
+    RL_Text(v, x + 24, y + 100, k == 4 ? RL_KeyQuestion().c_str() : says[k][1], 22, RL_SOFT, false, RL_LEFT, 0, RL_MID, w - 48);
     RL_Button(v, x + w - 24 - 328, by, 150, 48, "CANCEL", false, 0, 12, Hot(ID_CANCEL));
     RL_Button(v, x + w - 24 - 170, by, 170, 48, says[k][2], true, 12, 0, Hot(ID_CONFIRM));
     Hit(v, x + w - 24 - 328, by, 150, 48, ID_CANCEL);
@@ -2966,14 +3296,23 @@ static void RL_SvPick(int at)
 
 void UIReloadedMenu::ChooseMain(int id)
 {
+    // (the left button's release, bound to a box: no click)
+    if (rl_keys.swallow) {
+        rl_keys.swallow = false;
+        return;
+    }
     if (m_screen == SCR_CONFIRM) {
         if (id == ID_CONFIRM) {
             if (rl_mm.confirm == ID_CDELETE) {
                 RL_CampDelete();
                 RL_Changed();
+            } else if (rl_mm.confirm == ID_KEYMOVE) {
+                RL_KeyBind(rl_keys.ask[0], rl_keys.ask[1]);
             }
             // (the confirmation closed first: the main menu stays, out of the game)
-            Cbuf_AddText(rl_mm.confirm == ID_QUIT ? "quit\n" : rl_mm.confirm == ID_CDELETE ? "popmenu 0\n" : "popmenu 0\ndisconnect\n");
+            Cbuf_AddText(rl_mm.confirm == ID_QUIT                                        ? "quit\n"
+                         : rl_mm.confirm == ID_CDELETE || rl_mm.confirm == ID_KEYMOVE ? "popmenu 0\n"
+                                                                                       : "popmenu 0\ndisconnect\n");
         } else if (id == ID_CANCEL) {
             Cbuf_AddText("popmenu 0\n");
         }
@@ -2997,6 +3336,13 @@ void UIReloadedMenu::ChooseMain(int id)
         rl_mm.edit = F_NONE;
     }
     rl_opt.note.clear();
+    if (id >= ID_KEY) {
+        // a box: it waits for a key (the keys to the menu, Esc's too, as to the stock list's buttons)
+        rl_keys.wait = id - ID_KEY;
+        rl_mm.edit   = F_NONE;
+        uWinMan.SetBindActive(this);
+        return;
+    }
     if (id >= ID_OPT) {
         RL_OptChoose(id);
         return;
@@ -3217,6 +3563,12 @@ qboolean UIReloadedMenu::MainKey(int key)
         }
         return qfalse;
     }
+    if (rl_keys.wait >= 0) {
+        // (the wheel too: a key for the box waiting)
+        RL_KeyPressed(key);
+        RL_Changed();
+        return qtrue;
+    }
     if (step) {
         // the wheel: the model list open, else the page's list
         if (rl_mm.pick >= 0) {
@@ -3291,6 +3643,19 @@ qboolean UIReloadedMenu::MainKey(int key)
     return qfalse;
 }
 
+// the mouse's buttons down (a bit each, MOUSE1's the first): one a key for the box waiting (the left one's release
+// then no click)
+void UIReloadedMenu::MainButtons(int buttons)
+{
+    for (int j = 0; rl_keys.wait >= 0 && j < 5; j++) {
+        if (buttons & (1 << j)) {
+            rl_keys.swallow = j == 0;
+            RL_KeyPressed(K_MOUSE1 + j);
+            RL_Changed();
+        }
+    }
+}
+
 void UIReloadedMenu::MainChar(int ch)
 {
     std::string *text = RL_Edited();
@@ -3349,6 +3714,10 @@ void UIReloadedMenu::MainTick(bool opened)
         rl_mm.edit = F_NONE;
         rl_mm.pick = -1;
         rl_mm.note.clear();
+        rl_keys.swallow = false;
+        if (rl_keys.wait >= 0) {
+            RL_KeyStop();
+        }
         rl_favs.clear();
         favs = ui_favoriteservers->string;
         while (*favs) {
@@ -3376,7 +3745,7 @@ void UIReloadedMenu::MainTick(bool opened)
         // the slider pressed dragged to the mouse while its button is down
         const bool down = (uid.mouseFlags & 1) != 0;
 
-        if (down && !rl_opt.down && m_focus >= ID_OPT && rl_opts[(m_focus - ID_OPT) / 16].kind == OC_SLIDER && (m_focus - ID_OPT) % 16 == 0) {
+        if (down && !rl_opt.down && m_focus >= ID_OPT && m_focus < ID_KEY && rl_opts[(m_focus - ID_OPT) / 16].kind == OC_SLIDER && (m_focus - ID_OPT) % 16 == 0) {
             rl_opt.drag = m_focus;
         }
         rl_opt.down = down;
@@ -3443,6 +3812,7 @@ int UIReloadedMenu::MainDrawKey(void)
         return (RL_BgFade() * 2 + rl_bg.cur) * 4099 + rl_bg.shader[0] * 31 + rl_bg.shader[1] * 7 + rl_mm.page
              + (rl_mm.page == PAGE_OPTIONS ? rl_mm.serial * 131 : 0);
     }
-    // (the caret's blink while typed in; in a game, DISCONNECT)
-    return rl_mm.serial * 31 + rl_sv.serial * 7 + (rl_mm.edit != F_NONE ? (cls.realtime / 530) % 2 : 0) * 3 + (clc.state > CA_PRIMED);
+    // (the caret's blink while typed in; in a game, DISCONNECT; the bindings, KEYS')
+    return rl_mm.serial * 31 + rl_sv.serial * 7 + (rl_mm.edit != F_NONE ? (cls.realtime / 530) % 2 : 0) * 3 + (clc.state > CA_PRIMED)
+         + key_serial * 131;
 }

@@ -72,6 +72,7 @@ public:
     void SetScreen(Event *ev);
     void SetLayer(Event *ev) { m_back = !str::icmp(ev->GetString(1), "back"); }
     void MouseUp(Event *ev);
+    void MouseButtons(Event *ev);
     void Draw(void) override;
     qboolean KeyEvent(int key, unsigned int time) override;
     void CharEvent(int ch) override;
@@ -100,6 +101,7 @@ public:
     void     DrawConfirm(const rlView_t& v);
     void     ChooseMain(int id);
     qboolean MainKey(int key);
+    void     MainButtons(int buttons);
     void     MainChar(int ch);
     void     MainTick(bool opened);
     int      MainDrawKey(void);

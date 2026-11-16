@@ -41,6 +41,7 @@ qboolean key_overstrikeMode;
 
 int    anykeydown;
 qkey_t keys[MAX_KEYS];
+int    key_serial; // Added: changes with every binding set (the Reloaded menu's KEYS draw again)
 qkey_t altkeys[MAX_KEYS];
 qkey_t ctrlkeys[MAX_KEYS];
 
@@ -543,6 +544,7 @@ void Key_SetBinding(int keynum, const char *binding)
 
     // allocate memory for new binding
     keys[keynum].binding = CopyString(binding);
+    key_serial++;
 
     // consider this like modifying an archived cvar, so the
     // file write will be triggered at the next oportunity
