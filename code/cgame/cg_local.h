@@ -383,8 +383,6 @@ extern "C" {
         qhandle_t     shadowMarkShader;
         qhandle_t     footShadowMarkShader;
         qhandle_t     wakeMarkShader;
-        qhandle_t     pausedShader;
-        qhandle_t     levelExitShader;
         fontheader_t *hudDrawFont;
     } media_t;
 

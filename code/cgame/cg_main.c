@@ -840,7 +840,7 @@ player models and the precache scripts, 2 the map's models, 4 cgame's own.
 static void CG_PrecacheMatch(void)
 {
     static const char *shaders[] = {
-        "blastmark", "textures/hud/radar_allies.tga", "textures/hud/radar_axis.tga", "gfx/2d/net.tga"
+        "blastmark"
     };
     static const char *sprites[] = {
         "textures/hud/talking_headicon.spr", "textures/hud/inmenu_headicon.spr",
@@ -930,8 +930,6 @@ void CG_PrepRefresh(void)
     cgs.media.footShadowMarkShader     = cgi.R_RegisterShader("footShadow");
     cgs.media.wakeMarkShader           = cgi.R_RegisterShader("ripple.spr");
     cgs.media.lagometerShader          = cgi.R_RegisterShaderNoMip("gfx/2d/blank");
-    cgs.media.levelExitShader          = cgi.R_RegisterShaderNoMip("textures/menu/exit");
-    cgs.media.pausedShader             = cgi.R_RegisterShaderNoMip("textures/menu/paused");
     cgs.media.backTileShader           = cgi.R_RegisterShader("gfx/2d/backtile");
     cgs.media.hudDrawFont              = cgi.R_LoadFont("verdana-14");
 

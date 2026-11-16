@@ -171,10 +171,7 @@ CG_DrawDisconnect
 */
 void CG_DrawDisconnect(void)
 {
-    float     x, y;
-    float     w, h;
     int       cmdNum;
-    qhandle_t handle;
     usercmd_t cmd;
 
     // draw the phone jack if we are completely past our buffers
@@ -190,13 +187,8 @@ void CG_DrawDisconnect(void)
         return;
     }
 
-    handle = cgi.R_RegisterShader("gfx/2d/net.tga");
-    w      = cgi.R_GetShaderWidth(handle) * cgs.uiHiResScale[0];
-    h      = cgi.R_GetShaderHeight(handle) * cgs.uiHiResScale[1];
-    x      = ((float)cgs.glconfig.vidWidth - w) * 0.5;
-    y      = (float)cgs.glconfig.vidHeight - h;
-
-    cgi.R_DrawStretchPic(x, y, w, h, 0, 0, 1, 1, handle);
+    // Changed: the client's, in the HUD's style
+    cgi.UI_DrawStatusIcon(UI_ICON_NOSNAPSHOTS, qfalse);
 }
 
 #define MAX_LAGOMETER_PING  900
@@ -305,41 +297,27 @@ void CG_DrawLagometer(void)
 
 static void CG_DrawPauseIcon()
 {
-    qhandle_t handle;
-    float     x, y, w, h;
+    int icon;
 
     if (paused->integer) {
-        handle = cgs.media.pausedShader;
+        icon = UI_ICON_PAUSED;
     } else {
         if (cg.predicted_player_state.pm_flags & PMF_LEVELEXIT) {
             // blink it
             if ((cg.time >> 9) & 1) {
                 return;
             }
-            handle = cgs.media.levelExitShader;
+            icon = UI_ICON_EXIT;
         } else {
             return;
         }
     }
-    w = cgi.R_GetShaderWidth(handle);
-    h = cgi.R_GetShaderHeight(handle);
-    if (cg.snap && cg.snap->ps.blend[3] > 0) {
-        y = cgs.glconfig.vidHeight * 0.45f - h / 2.f;
-    } else {
-        y = cgs.glconfig.vidHeight * 0.75f - h / 2.f;
-    }
-    x = (cgs.glconfig.vidWidth - w) / 2.f;
-
-    cgi.R_SetColor(colorWhite);
-    cgi.R_DrawStretchPic(x, y, w * cgs.uiHiResScale[0], h * cgs.uiHiResScale[1], 0, 0, 1, 1, handle);
+    // Changed: the client's, in the HUD's style (higher over a faded screen)
+    cgi.UI_DrawStatusIcon(icon, cg.snap && cg.snap->ps.blend[3] > 0 ? qtrue : qfalse);
 }
 
 static void CG_DrawServerLag()
 {
-    float     x, y;
-    float     w, h;
-    qhandle_t handle;
-
     if (cgs.gametype == GT_SINGLE_PLAYER) {
         // Fixed in 2.0
         //  Don't draw server lag in single-player mode
@@ -369,12 +347,8 @@ static void CG_DrawServerLag()
         return;
     }
 
-    handle = cgi.R_RegisterShader("gfx/2d/slowserver");
-    w      = (float)cgi.R_GetShaderWidth(handle) * cgs.uiHiResScale[0] / 4;
-    h      = (float)cgi.R_GetShaderHeight(handle) * cgs.uiHiResScale[1] / 4;
-    x      = ((float)cgs.glconfig.vidWidth - w) / 2;
-    y      = (float)cgs.glconfig.vidHeight - h;
-    cgi.R_DrawStretchPic(x, y, w, h, 0.0, 0.0, 1.0, 1.0, handle);
+    // Changed: the client's, in the HUD's style
+    cgi.UI_DrawStatusIcon(UI_ICON_SLOWSERVER, qfalse);
 }
 
 /*

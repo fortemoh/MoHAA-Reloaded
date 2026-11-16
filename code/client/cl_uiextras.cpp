@@ -39,7 +39,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //   emblem, "ALLIES WIN THE ROUND", the teams' score. On the Reloaded
 //   scoreboard (with either HUD) it sits above its header (cl_uimenus.cpp);
 // - the quick messages' menu (the V key's): the group's name, its lines
-//   numbered in the accent, in a dark box on the left.
+//   numbered in the accent, in a dark box on the left;
+// - the status icons (the cgame's): PAUSED, EXIT, CONNECTION INTERRUPTED
+//   and SLOW SERVER, an icon and the name in a dark box.
 //
 // Sizes are design units (cl_uidraw.h): the prints and the banner the
 // menus' (1080 lines), the typing line and the quick messages the HUD's
@@ -479,6 +481,77 @@ static void EX_EdgedBox(const rlView_t& v, float x, float y, float w, float h, f
     RL_BoxPx(x0, y0 + e, x1, y1 - e, EX_Fade(EX_FILL, alpha));
     RL_BoxPx(x0, y0, x1, y0 + e, EX_Fade(EX_Accent(), alpha));
     RL_BoxPx(x0, y1 - e, x1, y1, EX_Fade(EX_Accent(), alpha));
+}
+
+/*
+====================================================================
+
+STATUS ICONS
+
+The cgame's (CG_DrawIcons, CG_DrawDisconnect: when, and their blinking):
+a dark box, its left edge and its icon in the state's colour, the name in
+capitals. PAUSED (the Pause key in a mission) and EXIT (a map's
+trigger_exit: none of the three games' maps has one) in the middle at
+three quarters of the screen's height (0.45 over a faded screen);
+CONNECTION INTERRUPTED (nothing from the server for the commands' backup)
+at the bottom's middle, SLOW SERVER (developer) over it. The icons are
+Phosphor's, filled (MIT, ui/outlines/glyphs/PHOSPHOR-LICENSE.txt). The
+HUD's units
+
+====================================================================
+*/
+
+static const struct {
+    const char *glyph, *name;
+    rlColor_t   color; // 0 alpha: the accent's
+} ex_icons[UI_ICON_NUM] = {
+    {RL_OUTLINES "glyphs/pause.svg",     "PAUSED",                 {0, 0, 0, 0}                                 },
+    {RL_OUTLINES "glyphs/door-open.svg", "EXIT",                   {0, 0, 0, 0}                                 },
+    {RL_OUTLINES "glyphs/plugs.svg",     "CONNECTION INTERRUPTED", {226 / 255.0f, 104 / 255.0f, 88 / 255.0f, 1} },
+    {RL_OUTLINES "glyphs/hourglass.svg", "SLOW SERVER",            {232 / 255.0f, 170 / 255.0f, 72 / 255.0f, 1}},
+};
+
+#define EX_ICON_H    40.0f // the box's height
+#define EX_ICON_SIZE 20.0f // the icon's
+#define EX_ICON_TEXT 17.0f // the name's (bold)
+
+// the HUD's units (cg_hud_scale)
+static rlView_t EX_HudView(void)
+{
+    rlView_t v = RL_View();
+
+    v.s  = UI_DesignScale(1920.0f, 1080.0f);
+    v.dw = uid.vidWidth / v.s;
+    v.dh = uid.vidHeight / v.s;
+    return v;
+}
+
+void UI_DrawStatusIcon(int icon, qboolean raised)
+{
+    const rlView_t v = EX_HudView();
+    float          w, x, y;
+    rlColor_t      c;
+
+    if (icon < 0 || icon >= UI_ICON_NUM) {
+        return;
+    }
+    c = ex_icons[icon].color.a > 0 ? ex_icons[icon].color : EX_Accent();
+    w = 14.0f + EX_ICON_SIZE + 10.0f + RL_TextW(v, ex_icons[icon].name, EX_ICON_TEXT, true, 1.6f) + 18.0f;
+    x = floorf((v.dw - w) * 0.5f);
+    if (icon == UI_ICON_PAUSED || icon == UI_ICON_EXIT) {
+        y = v.dh * (raised ? 0.45f : 0.75f) - EX_ICON_H * 0.5f;
+    } else {
+        y = v.dh - 24.0f - EX_ICON_H - (icon == UI_ICON_SLOWSERVER ? EX_ICON_H + 8.0f : 0.0f);
+    }
+    y = floorf(y);
+    {
+        const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + EX_ICON_H);
+
+        RL_BoxPx(x0, y0, x1, y1, EX_FILL);
+        RL_BoxPx(x0, y0, x0 + Q_max(1, RL_P(v, 3.0f)), y1, c);
+    }
+    RL_Outline(v, ex_icons[icon].glyph, x + 14.0f + EX_ICON_SIZE * 0.5f, y + EX_ICON_H * 0.5f, EX_ICON_SIZE, EX_ICON_SIZE, c);
+    RL_Text(v, x + 14.0f + EX_ICON_SIZE + 10.0f, y + EX_ICON_H * 0.5f, ex_icons[icon].name, EX_ICON_TEXT, EX_TEXT, true, RL_LEFT, 1.6f, RL_MID);
 }
 
 /*
@@ -939,7 +1012,7 @@ void UI_Extras_PreBake(qboolean ahead)
     }
     masks = Sys_Milliseconds();
 
-    // the faces and the emblems the prints, the banner and the typing line draw
+    // the faces and the emblems the prints, the banner, the typing line and the status icons draw
     {
         const rlView_t v = RL_View();
         const float    s = UI_DesignScale(1920.0f, 1080.0f);
@@ -958,6 +1031,9 @@ void UI_Extras_PreBake(qboolean ahead)
         rl_bakeOnly = true;
         RL_TeamIcon(v, 0, 0, 0, 38);
         RL_TeamIcon(v, 1, 0, 0, 38);
+        for (int i = 0; i < UI_ICON_NUM; i++) {
+            RL_Outline(EX_HudView(), ex_icons[i].glyph, 0, 0, EX_ICON_SIZE, EX_ICON_SIZE, EX_TEXT);
+        }
         rl_bakeOnly = false;
     }
     Com_DPrintf("HUD extras: baked in %d ms (the masks registered in %d)\n", Sys_Milliseconds() - start, masks - start);
