@@ -548,26 +548,6 @@ int64_t Sys_Nanoseconds (void)
 }
 
 /*
-================
-Sys_SleepNs
-
-Sleeps for about ns nanoseconds (the frame limiter sleeps in select() on
-the network instead, Com_FrameWait: packets wake it)
-================
-*/
-void Sys_SleepNs (int64_t ns)
-{
-	struct timespec req;
-
-	if (ns <= 0) {
-		return;
-	}
-	req.tv_sec = ns / 1000000000;
-	req.tv_nsec = ns % 1000000000;
-	nanosleep(&req, NULL);
-}
-
-/*
 ==================
 Sys_RandomBytes
 ==================
