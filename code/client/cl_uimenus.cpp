@@ -1719,7 +1719,6 @@ qboolean UIReloadedMenu::KeyEvent(int key, unsigned int time)
         at = to;
     }
     m_focus = m_order[at];
-    uii.Snd_PlaySound("sound/menu/scroll.wav");
     return qtrue;
 }
 
@@ -1799,9 +1798,6 @@ void UIReloadedMenu::Tick(void)
 
         m_mouse[0] = uid.mouseX;
         m_mouse[1] = uid.mouseY;
-        if (id != m_focus && id >= 0 && id < RL_QUIET) {
-            uii.Snd_PlaySound("sound/menu/scroll.wav");
-        }
         m_focus = id;
     }
     rl_hot[m_screen] = m_focus;
@@ -2514,10 +2510,7 @@ void UIReloadedMenu::Choose(int id)
     case SCR_WEAPON:
         if (id == ID_WTAB || id == ID_WTAB_AXIS) {
             // a side previewed
-            if (id - ID_WTAB != rl_wp.tab) {
-                rl_wp.tab = id - ID_WTAB;
-                uii.Snd_PlaySound("sound/menu/apply.wav");
-            }
+            rl_wp.tab = id - ID_WTAB;
         } else if (id == ID_WPREV || id == ID_WNEXT) {
             // its next or previous model previewed (the figure follows)
             const int t = rl_wp.tab, nm = (int)rl_models[t].size();
@@ -2526,7 +2519,6 @@ void UIReloadedMenu::Choose(int id)
             if (nm) {
                 p = p < 0 || p >= nm ? (id == ID_WNEXT ? 0 : nm - 1) : (p + (id == ID_WNEXT ? 1 : nm - 1)) % nm;
                 rl_wp.pick[t] = p;
-                uii.Snd_PlaySound("sound/menu/apply.wav");
             }
         } else if (id >= 0 && id < WC_NUM) {
             // the lot sent: the models cycled to, the side previewed, the weapon
@@ -2614,11 +2606,7 @@ void UIReloadedMenu::Choose(int id)
         break;
     }
     if (cmd) {
-        const std::string text(cmd);
-
-
-        uii.Snd_PlaySound("sound/menu/apply.wav");
-        Cbuf_AddText(text.c_str());
+        Cbuf_AddText(cmd);
     }
 }
 

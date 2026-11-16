@@ -41,8 +41,6 @@ the same data
 
 enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD, SCR_LOADING, SCR_MAIN, SCR_CONFIRM, SCR_END, SCR_NUM };
 
-// items from this id on are hot without a sound (a list's rows)
-#define RL_QUIET 1000
 
 typedef struct {
     int x, y, w, h; // pixels

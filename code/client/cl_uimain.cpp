@@ -84,7 +84,7 @@ static const char *const rl_tabs[TAB_NUM] = {"ALL", "FFA", "TDM", "OBJECTIVE", "
 enum { COL_NAME, COL_MAP, COL_PLAYERS, COL_MODE, COL_PING, COL_NUM };
 static const char *const rl_colNames[COL_NUM] = {"SERVER NAME", "MAP", "PLAYERS", "GAMETYPE", "PING"};
 
-// the items (the hit ids); from RL_QUIET on, a list's rows
+// the items (the hit ids); from ID_ROW on, a list's rows
 enum {
     ID_PLAY,
     ID_CAMPAIGN,
@@ -118,7 +118,7 @@ enum {
     ID_CDELETE,
     ID_CSAVE,
     ID_CLOAD,
-    ID_ROW  = RL_QUIET, // + the row shown
+    ID_ROW  = 1000, // + the row shown
     ID_FAV  = ID_ROW + 1000,
     ID_PICK = ID_FAV + 1000, // + the model
     ID_MAP  = ID_PICK + 1000, // + Host's map shown
@@ -594,7 +594,6 @@ static void RL_HostStart(void)
     if (rl_host.map.empty()) {
         return;
     }
-    uii.Snd_PlaySound("sound/menu/apply.wav");
     // (the name typed without what ends a quoted string or a command)
     Cbuf_AddText(va("set ui_dmmap \"%s\";set ui_dedicated 0;set ui_maxclients %d;set ui_gamespy %d;set ui_timelimit %d;"
                     "set ui_fraglimit %d;set ui_hostname \"%s\";set sv_maxbots %d;set sv_numbots %d;ui_startdmmap %d %s ui_dmmap\n",
@@ -1000,7 +999,6 @@ static std::string RL_When(int time, bool full)
 // (out of a multiplayer game first: no loadgame there)
 static void RL_CampLoad(const std::string& name)
 {
-    uii.Snd_PlaySound("sound/menu/apply.wav");
     if (clc.state != CA_DISCONNECTED && cg_gametype->integer) {
         Cbuf_AddText("disconnect\n");
     }
@@ -1021,7 +1019,6 @@ static void RL_CampStart(void)
     if (!RL_MissionOpen(k)) {
         return;
     }
-    uii.Snd_PlaySound("sound/menu/apply.wav");
     if (RL_IsTraining(k)) {
         Cbuf_AddText("spmap training\n");
     } else {
@@ -2446,7 +2443,6 @@ static void RL_OptImport(void)
     Cmd_ExecuteString(va("crosshair_import %s", rl_opt.code.c_str()));
     rl_opt.note = kept->modificationCount != was || (!rl_opt.code.empty() && !strcmp(kept->string, rl_opt.code.c_str())) ? "CROSSHAIR IMPORTED"
                                                                                                                        : "NOT A CS2 CROSSHAIR CODE";
-    uii.Snd_PlaySound("sound/menu/apply.wav");
     rl_mm.edit = F_NONE;
 }
 
@@ -2695,7 +2691,6 @@ static void RL_OptApply(void)
     if (!pending) {
         return;
     }
-    uii.Snd_PlaySound("sound/menu/apply.wav");
     for (int k = 0; k < RL_RESTARTS; k++) {
         rl_opt.applied[k] = RL_Latched(RL_OptOther(rl_optRestart[k]));
     }
@@ -2822,16 +2817,15 @@ static void RL_OptChoose(int id)
             rl_opt.row   = i;
             rl_opt.value.clear();
         }
-        return;
+        break;
     case OC_CODE:
         if (part) {
             RL_OptImport();
         } else {
             rl_mm.edit = F_CODE;
         }
-        return;
+        break;
     }
-    uii.Snd_PlaySound("sound/menu/apply.wav");
 }
 
 void RL_MainShow(int what)
@@ -2947,7 +2941,6 @@ static void RL_ApplyName(void)
 {
     if (!rl_mm.name.empty()) {
         Cvar_Set("name", rl_mm.name.c_str());
-        uii.Snd_PlaySound("sound/menu/apply.wav");
     }
     rl_mm.edit = F_NONE;
 }
@@ -2971,7 +2964,6 @@ void UIReloadedMenu::ChooseMain(int id)
 {
     if (m_screen == SCR_CONFIRM) {
         if (id == ID_CONFIRM) {
-            uii.Snd_PlaySound("sound/menu/apply.wav");
             if (rl_mm.confirm == ID_CDELETE) {
                 RL_CampDelete();
                 RL_Changed();
@@ -2979,7 +2971,6 @@ void UIReloadedMenu::ChooseMain(int id)
             // (the confirmation closed first: the main menu stays, out of the game)
             Cbuf_AddText(rl_mm.confirm == ID_QUIT ? "quit\n" : rl_mm.confirm == ID_CDELETE ? "popmenu 0\n" : "popmenu 0\ndisconnect\n");
         } else if (id == ID_CANCEL) {
-            uii.Snd_PlaySound("sound/menu/back.wav");
             Cbuf_AddText("popmenu 0\n");
         }
         return;
@@ -3017,8 +3008,6 @@ void UIReloadedMenu::ChooseMain(int id)
             rl_camp.clickAt = cls.realtime;
             if (again) {
                 RL_CampLoad(rl_camp.save);
-            } else {
-                uii.Snd_PlaySound("sound/menu/apply.wav");
             }
         }
         return;
@@ -3026,7 +3015,6 @@ void UIReloadedMenu::ChooseMain(int id)
     if (id >= ID_MAP) {
         if (rl_host.top + id - ID_MAP < (int)rl_host.maps.size()) {
             rl_host.map = rl_host.maps[rl_host.top + id - ID_MAP];
-            uii.Snd_PlaySound("sound/menu/apply.wav");
         }
         return;
     }
@@ -3035,7 +3023,6 @@ void UIReloadedMenu::ChooseMain(int id)
 
         Cvar_Set(t ? "dm_playergermanmodel" : "dm_playermodel", rl_models[t][k].file.c_str());
         rl_mm.pick = -1;
-        uii.Snd_PlaySound("sound/menu/apply.wav");
         return;
     }
     if (id >= ID_FAV) {
@@ -3060,7 +3047,6 @@ void UIReloadedMenu::ChooseMain(int id)
         rl_mm.tab    = id - ID_TAB;
         rl_mm.top    = 0;
         rl_vis.dirty = true;
-        uii.Snd_PlaySound("sound/menu/apply.wav");
         return;
     }
     if (id >= ID_SORT && id < ID_SORT + COL_NUM) {
@@ -3073,7 +3059,6 @@ void UIReloadedMenu::ChooseMain(int id)
     if (id >= ID_MODE && id < ID_MODE + (int)ARRAY_LEN(rl_modeTypes)) {
         rl_host.mode = id - ID_MODE;
         RL_HostList();
-        uii.Snd_PlaySound("sound/menu/apply.wav");
         return;
     }
     if (id >= ID_FIELD && id < ID_FIELD + HF_NUM) {
@@ -3082,7 +3067,6 @@ void UIReloadedMenu::ChooseMain(int id)
     }
     if (id >= ID_CTAB && id < ID_CTAB + 2) {
         rl_camp.tab = id - ID_CTAB;
-        uii.Snd_PlaySound("sound/menu/apply.wav");
         return;
     }
     if (id >= ID_CARD && id < ID_CARD + 1 + RL_GAME.n) {
@@ -3093,14 +3077,11 @@ void UIReloadedMenu::ChooseMain(int id)
         rl_camp.clickAt = cls.realtime;
         if (again) {
             RL_CampStart();
-        } else {
-            uii.Snd_PlaySound("sound/menu/apply.wav");
         }
         return;
     }
     if (id >= ID_DIFF && id < ID_DIFF + 3) {
         rl_camp.diff = id - ID_DIFF;
-        uii.Snd_PlaySound("sound/menu/apply.wav");
         return;
     }
     if (id >= ID_OTAB && id < ID_OTAB + OT_NUM) {
@@ -3108,14 +3089,12 @@ void UIReloadedMenu::ChooseMain(int id)
         rl_opt.tab = id - ID_OTAB;
         rl_opt.search.clear();
         rl_opt.scroll = 0;
-        uii.Snd_PlaySound("sound/menu/apply.wav");
         return;
     }
     switch (id) {
     case ID_LOCAL:
     case ID_ONLINE:
         rl_host.online = id == ID_ONLINE;
-        uii.Snd_PlaySound("sound/menu/apply.wav");
         break;
     case ID_START:
         RL_HostStart();
@@ -3124,7 +3103,6 @@ void UIReloadedMenu::ChooseMain(int id)
         rl_mm.edit = F_OSEARCH;
         break;
     case ID_DEFAULTS:
-        uii.Snd_PlaySound("sound/menu/apply.wav");
         RL_OptDefaults();
         break;
     case ID_OAPPLY:
@@ -3140,7 +3118,6 @@ void UIReloadedMenu::ChooseMain(int id)
         break;
     case ID_CSAVE:
         // (back in the mission: the shot taken of it, not of the menu)
-        uii.Snd_PlaySound("sound/menu/apply.wav");
         Cbuf_AddText("popmenu 0\nsavegame\n");
         break;
     case ID_PLAY:
@@ -3149,7 +3126,6 @@ void UIReloadedMenu::ChooseMain(int id)
     case ID_OPTIONS:
         if (rl_mm.page != id - ID_PLAY) {
             rl_mm.page = id - ID_PLAY;
-            uii.Snd_PlaySound("sound/menu/apply.wav");
             if (rl_mm.page == PAGE_PLAY && !rl_sv.list[0]) {
                 RL_SvRefresh();
             }
@@ -3162,13 +3138,11 @@ void UIReloadedMenu::ChooseMain(int id)
         // fall through
     case ID_QUIT:
     case ID_DISCONNECT:
-        uii.Snd_PlaySound("sound/menu/apply.wav");
         rl_mm.confirm = id;
         menuManager.ShowMenu("reloaded_confirm");
         break;
     case ID_REFRESH:
         if (!RL_SvBusy()) {
-            uii.Snd_PlaySound("sound/menu/apply.wav");
             RL_SvRefresh();
         }
         break;
@@ -3182,7 +3156,6 @@ void UIReloadedMenu::ChooseMain(int id)
         RL_ApplyName();
         break;
     case ID_JOIN:
-        uii.Snd_PlaySound("sound/menu/apply.wav");
         RL_SvJoin();
         break;
     case ID_SELECT:
@@ -3223,7 +3196,6 @@ static qboolean RL_CampKey(int key)
         at           = Q_max(0, Q_min(at + (key == K_UPARROW ? -1 : 1), (int)rl_camp.saves.size() - 1));
         rl_camp.save = rl_camp.saves[at].name;
         rl_camp.top  = Q_max(at - rl_camp.fit + 1, Q_min(rl_camp.top, at));
-        uii.Snd_PlaySound("sound/menu/scroll.wav");
         RL_Changed();
         return qtrue;
     }
