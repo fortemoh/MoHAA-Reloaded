@@ -71,7 +71,6 @@ void     UI_PushMenu(const char *name);
 void     UI_PopMenu(qboolean restore_cvars);
 void     UI_ForceMenu(const char *name);
 qboolean UI_BindActive(void);
-void     UI_SetReturnMenuToCurrent(void);
 void     UI_ActivateView3D(void);
 void     UI_MenuEscape(const char *name);
 void     UI_CreateScoreboard(void);

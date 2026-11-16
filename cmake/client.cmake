@@ -25,7 +25,6 @@ set(CLIENT_SOURCES
     ${SOURCE_DIR}/client/cl_scrn.cpp
     ${SOURCE_DIR}/client/cl_ui.cpp
     ${SOURCE_DIR}/client/cl_uifilepicker.cpp
-    ${SOURCE_DIR}/client/cl_uigamespy.cpp
     ${SOURCE_DIR}/client/cl_uimaprunner.cpp
     ${SOURCE_DIR}/client/cl_uiminicon.cpp
     ${SOURCE_DIR}/client/cl_uicomp.cpp

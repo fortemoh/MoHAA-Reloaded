@@ -33,7 +33,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cl_uicomp.h"
 #include "cl_uimenus.h"
 #include "cl_uiextras.h"
-#include "cl_uigamespy.h"
 
 #include <chrono>
 
@@ -44,7 +43,6 @@ static UIFloatingDMConsole *dm_console;
 static UIFloatingConsole   *developer_console;
 static FakkMiniconsole     *mini_console;
 static View3D              *view3d;
-static Menu                *missionLog;
 qboolean                    server_loading;
 static qboolean             server_loading_waiting;
 static str                 *s_intermediateconsole;
@@ -73,7 +71,6 @@ cvar_t        *ui_NumShotsFired;
 cvar_t        *ui_gotmedal;
 cvar_t        *ui_success;
 cvar_t        *ui_failed;
-cvar_t        *ui_returnmenu;
 cvar_t        *ui_drawcoords;
 cvar_t        *ui_minicon;
 cvar_t        *ui_consoleposition;
@@ -2393,54 +2390,6 @@ qboolean UI_BindActive(void)
 
 /*
 ====================
-UI_SetReturnMenuToCurrent
-====================
-*/
-void UI_SetReturnMenuToCurrent(void)
-{
-    Menu *currentMenu = menuManager.CurrentMenu();
-
-    if (currentMenu) {
-        Cvar_Set("ui_returnmenu", currentMenu->m_name);
-    } else {
-        Cvar_Set("ui_returnmenu", "");
-    }
-}
-
-/*
-====================
-UI_PushReturnMenu
-====================
-*/
-qboolean UI_PushReturnMenu()
-{
-    str sMenuName;
-
-    if (!ui_returnmenu->string || !*ui_returnmenu->string) {
-        return qfalse;
-    }
-
-    sMenuName = ui_returnmenu->string;
-
-    UI_PushMenu(sMenuName);
-    Cvar_Set("ui_returnmenu", "");
-    UI_FocusMenuIfExists();
-
-    return menuManager.CurrentMenu() ? qtrue : qfalse;
-}
-
-/*
-====================
-UI_PushReturnMenu_f
-====================
-*/
-void UI_PushReturnMenu_f(void)
-{
-    UI_PushReturnMenu();
-}
-
-/*
-====================
 UI_MenuEscape
 ====================
 */
@@ -3657,42 +3606,7 @@ void UI_TestListCtrl_f(void)
     }
 }
 
-class StatsUpdater : public Listener
-{
-public:
-    CLASS_PROTOTYPE(StatsUpdater);
-
-    void UpdateStats(Event *ev);
-};
-
-Event EV_StatsUpdater_UpdateStats("updatestats", EV_DEFAULT, NULL, NULL, "Update the stats on the missionLog");
-
-CLASS_DECLARATION(Listener, StatsUpdater, NULL) {
-    {NULL, NULL}
-};
-
-static StatsUpdater statsUpdater;
-static str          loadName;
-
-void StatsUpdater::UpdateStats(Event *ev)
-{
-    cvar_t *pMaxClients = Cvar_Get("sv_maxclients", "1", 0);
-
-    if (!com_sv_running->integer || pMaxClients->integer > 1) {
-        return;
-    }
-
-    if (paused && !paused->integer) {
-        CL_AddReliableCommand("stats", qfalse);
-    }
-
-    Event *event = new Event(EV_StatsUpdater_UpdateStats);
-    PostEvent(event, 2.0);
-}
-
-static int  statsRequestTime;
-static bool intermission_stats_up;
-static bool isMissionLogVisible;
+static str loadName;
 
 /*
 ====================
@@ -4115,85 +4029,6 @@ static void LoadConsoleRectangle(void)
 
 /*
 ====================
-UI_StartServer_f
-====================
-*/
-void UI_StartServer_f(void)
-{
-    const char *map = Cmd_Argv(1);
-
-    if (strlen(map)) {
-        Cbuf_AddText(va("map %s\n", map));
-    }
-}
-
-/*
-====================
-UI_ShowStatistics_f
-====================
-*/
-void UI_ShowStatistics_f()
-{
-    cvar_t *pMaxClients = Cvar_Get("sv_maxclients", "1", 0);
-
-    if (!com_sv_running->integer || pMaxClients->integer > 1) {
-        return;
-    }
-
-    if (missionLog && !isMissionLogVisible) {
-        isMissionLogVisible = true;
-        missionLog->ShowMenu(NULL);
-        IN_MouseOn();
-    }
-
-    if (statsRequestTime + 2000 <= cls.realtime) {
-        if (paused && !paused->integer) {
-            statsRequestTime = cls.realtime;
-            CL_AddReliableCommand("stats", qfalse);
-            Event *event = new Event(EV_StatsUpdater_UpdateStats);
-            statsUpdater.PostEvent(event, 2.0);
-        }
-    }
-}
-
-/*
-====================
-UI_HideStatistics_f
-====================
-*/
-void UI_HideStatistics_f()
-{
-    cvar_t *pMaxClients = Cvar_Get("sv_maxclients", "1", 0);
-
-    if (!com_sv_running->integer || pMaxClients->integer > 1) {
-        return;
-    }
-
-    if (missionLog) {
-        isMissionLogVisible = false;
-        missionLog->HideMenu(&EV_HideMenu);
-        IN_MouseOff();
-    }
-
-    statsUpdater.CancelEventsOfType(EV_StatsUpdater_UpdateStats);
-}
-
-/*
-====================
-UI_SalesScreen_f
-====================
-*/
-void UI_SalesScreen_f()
-{
-    if (random() > 0.5) {
-        Cbuf_AddText("pushmenu sales_splash1\n");
-    } else {
-        Cbuf_AddText("pushmenu sales_splash2\n");
-    }
-}
-
-/*
-====================
 CL_ShutdownUI
 ====================
 */
@@ -4238,12 +4073,9 @@ void CL_ShutdownUI(void)
     Cmd_RemoveCommand("ui_checkrestart");
     Cmd_RemoveCommand("centerprint");
     Cmd_RemoveCommand("locationprint");
-    Cmd_RemoveCommand("startserver");
     Cmd_RemoveCommand("finishloadingscreen");
     Cmd_RemoveCommand("ui_getplayermodel");
     Cmd_RemoveCommand("devcon");
-    Cmd_RemoveCommand("+statistics");
-    Cmd_RemoveCommand("-statistics");
 
     ui_pConnectingMenu = menuManager.FindMenu("connecting");
 
@@ -4407,7 +4239,6 @@ void CL_InitializeUI(void)
     ui_gotmedal            = Cvar_Get("ui_gotmedal", "0", 0);
     ui_success             = Cvar_Get("ui_success", "0", 0);
     ui_failed              = Cvar_Get("ui_failed", "0", 0);
-    ui_returnmenu          = Cvar_Get("ui_returnmenu", "0", 0);
     cl_greenfps            = Cvar_Get("cl_greenfps", "0", 1);
     Cvar_Get("ui_startmap", "", 1);
     Cvar_Get("dlg_badsave", "This save game is invalid", 0);
@@ -4462,15 +4293,8 @@ void CL_InitializeUI(void)
     Cmd_AddCommand("ui_checkrestart", UI_CheckRestart);
     Cmd_AddCommand("centerprint", UI_CenterPrint_f);
     Cmd_AddCommand("locationprint", UI_LocationPrint_f);
-    Cmd_AddCommand("startserver", UI_StartServer_f);
     Cmd_AddCommand("finishloadingscreen", UI_FinishLoadingScreen_f);
     Cmd_AddCommand("ui_getplayermodel", UI_GetPlayerModel_f);
-    Cmd_AddCommand("+statistics", UI_ShowStatistics_f);
-    Cmd_AddCommand("-statistics", UI_HideStatistics_f);
-    Cmd_AddCommand("setreturnmenu", UI_SetReturnMenuToCurrent);
-    Cmd_AddCommand("gotoreturnmenu", UI_PushReturnMenu_f);
-    Cmd_AddCommand("salesscreen", UI_SalesScreen_f);
-    Cmd_AddCommand("launchgamespy", UI_LaunchGameSpy_f);
 
     if (developer->integer) {
         UColor bgColor;
@@ -4540,8 +4364,6 @@ void CL_InitializeUI(void)
 
     uWinMan.CreateMenus();
 
-    // find the stats screen
-    missionLog = menuManager.FindMenu("StatsScreen");
     // find the connection menu
     ui_pConnectingMenu = menuManager.FindMenu("connecting");
 
