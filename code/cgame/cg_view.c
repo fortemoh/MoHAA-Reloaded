@@ -1227,11 +1227,6 @@ void CG_DrawActiveFrame(int serverTime, int frameTime, stereoFrame_t stereoView,
     // update audio positions
     cgi.S_Respatialize(cg.snap->ps.clientNum, cg.SoundOrg, cg.SoundAxis);
 
-    // make sure the lagometerSample and frame timing isn't done twice when in stereo
-    if (stereoView != STEREO_RIGHT) {
-        CG_AddLagometerFrameInfo();
-    }
-
     CG_UpdateTestEmitter();
     CG_AddPendingEffects();
 

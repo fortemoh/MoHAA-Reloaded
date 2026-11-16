@@ -2286,6 +2286,7 @@ static const char *const rl_oMoveRates[]   = {"STOCK", "100", "125", NULL};
 static const char *const rl_oMoveValues[]  = {"0", "100", "125", NULL};
 static const char *const rl_oHudStyles[]   = {"CS:GO", "CS2", NULL};
 static const char *const rl_oHudValues[]   = {"1", "2", NULL};
+static const char *const rl_oLagometer[]   = {"OFF", "GRAPH", "COMPACT", NULL};
 static const char *const rl_oAccents[]     = {"f6f67a", "deb250", "78c8f0", "96dc8c", "f0f0f0", NULL};
 static const char *const rl_oPresets[]     = {"CUSTOM", "DESKTOP", "COUCH", "CLASSIC", NULL};
 // (the launcher's)
@@ -2353,6 +2354,7 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Left-Handed", "The weapon in the left hand.", "cg_righthand", "1", OF_NOT),
     O_TOGGLE("Always Run", "Walk while the walk key is held.", "cl_run", "1", 0),
     O_TOGGLE("Server Lag Icon", "Shown while the server stops answering.", "cg_drawsvlag", "1", 0),
+    O_SEG("Lagometer", "The connection: ping, loss, updates.", "cg_lagometer", "0", rl_oLagometer, NULL, 0),
     O_SECTION(OT_GAMEPLAY, "MOVEMENT", OF_RIGHT),
     O_SEG("Movement Rate", "Moves a second, apart from the frame rate.", "cl_movefps", "100", rl_oMoveRates, rl_oMoveValues, 0),
     O_TOGGLE("Shots and Jumps Sooner", "Sent half a move sooner.", "cl_movesubgrid", "1", 0),

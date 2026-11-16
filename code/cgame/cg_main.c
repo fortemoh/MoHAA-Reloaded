@@ -164,7 +164,7 @@ void CG_RegisterCvars(void)
     cg_hidetempmodels             = cgi.Cvar_Get("cg_hidetempmodels", "0", 0);
     cg_synchronousClients         = cgi.Cvar_Get("g_synchronousClients", "0", 0);
     cg_stereoSeparation           = cgi.Cvar_Get("cg_stereosep", "0.4", CVAR_ARCHIVE);
-    cg_lagometer                  = cgi.Cvar_Get("cg_lagometer", "0", 0);
+    cg_lagometer                  = cgi.Cvar_Get("cg_lagometer", "0", CVAR_ARCHIVE);
     paused                        = cgi.Cvar_Get("paused", "0", 0);
     r_lerpmodels                  = cgi.Cvar_Get("r_lerpmodels", "1", 0);
     cg_3rd_person                 = cgi.Cvar_Get("cg_3rd_person", "0", CVAR_CHEAT);
@@ -929,7 +929,6 @@ void CG_PrepRefresh(void)
     cgs.media.shadowMarkShader         = cgi.R_RegisterShader("markShadow");
     cgs.media.footShadowMarkShader     = cgi.R_RegisterShader("footShadow");
     cgs.media.wakeMarkShader           = cgi.R_RegisterShader("ripple.spr");
-    cgs.media.lagometerShader          = cgi.R_RegisterShaderNoMip("gfx/2d/blank");
     cgs.media.backTileShader           = cgi.R_RegisterShader("gfx/2d/backtile");
     cgs.media.hudDrawFont              = cgi.R_LoadFont("verdana-14");
 

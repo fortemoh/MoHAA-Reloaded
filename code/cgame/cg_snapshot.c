@@ -368,7 +368,6 @@ static snapshot_t *CG_ReadNextSnapshot(void)
 
         // if it succeeded, return
         if (r) {
-            CG_AddLagometerSnapshotInfo(dest);
             return dest;
         }
 
@@ -376,9 +375,6 @@ static snapshot_t *CG_ReadNextSnapshot(void)
         // never arrived, or  is so old that its entities
         // have been shoved off the end of the circular
         // buffer in the client system.
-
-        // record as a dropped packet
-        CG_AddLagometerSnapshotInfo(NULL);
 
         // If there are additional snapshots, continue trying to
         // read them.

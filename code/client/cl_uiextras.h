@@ -31,6 +31,8 @@ void UI_Extras_Init(void);
 void UI_DrawZoomOverlay(int type, float alpha);
 // a status icon (the cgame's: UI_ICON_*), PAUSED raised over a faded screen
 void UI_DrawStatusIcon(int icon, qboolean raised);
+// the lagometer (the cgame's cg_lagometer: 1 the graph, 2 compact)
+void UI_DrawLagometer(int style);
 // the quick messages' menu (the cgame's: its title, NULL the groups', its
 // lines, the localization's keys)
 void UI_DrawInstaMessage(const char *title, const char *const *lines, int count);

@@ -41,7 +41,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // - the quick messages' menu (the V key's): the group's name, its lines
 //   numbered in the accent, in a dark box on the left;
 // - the status icons (the cgame's): PAUSED, CONNECTION INTERRUPTED and SLOW
-//   SERVER, an icon and the name in a dark box.
+//   SERVER, an icon and the name in a dark box;
+// - the lagometer (the cgame's cg_lagometer): Project: Omaha's netgraph, its
+//   graph or its compact pill, its data cl_lagometer.cpp's.
 //
 // Sizes are design units (cl_uidraw.h): the prints and the banner the
 // menus' (1080 lines), the typing line and the quick messages the HUD's
@@ -49,6 +51,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // with the map's load.
 
 #include "client.h"
+#include "cl_lagometer.h"
 #include "cl_ui.h"
 #include "cl_uicomp.h"
 #include "cl_uiextras.h"
@@ -493,8 +496,9 @@ a dark box, its left edge and its icon in the state's colour, the name in
 capitals. PAUSED (the Pause key in a mission) in the middle at three
 quarters of the screen's height (0.45 over a faded screen); CONNECTION
 INTERRUPTED (nothing from the server for the commands' backup) at the
-bottom's middle, SLOW SERVER (developer) over it. The icons are Phosphor's,
-filled (MIT, ui/outlines/glyphs/PHOSPHOR-LICENSE.txt). The HUD's units
+bottom's middle (over CS2's strip, over the lagometer while it is up), SLOW
+SERVER (developer) over it. The icons are Phosphor's, filled (MIT,
+ui/outlines/glyphs/PHOSPHOR-LICENSE.txt). The HUD's units
 
 ====================================================================
 */
@@ -512,6 +516,10 @@ static const struct {
 #define EX_ICON_SIZE 20.0f // the icon's
 #define EX_ICON_TEXT 17.0f // the name's (bold)
 
+// the lagometer's top this frame (UI_DrawLagometer, drawn before the icons)
+static float ex_lagTop;
+static int   ex_lagFrame = -1;
+
 // the HUD's units (cg_hud_scale)
 static rlView_t EX_HudView(void)
 {
@@ -521,6 +529,18 @@ static rlView_t EX_HudView(void)
     v.dw = uid.vidWidth / v.s;
     v.dh = uid.vidHeight / v.s;
     return v;
+}
+
+// the bottom's middle free up to: over CS2's strip (cg_hudstyle 2: its health,
+// badge and ammo, 80 units high), else the HUD's margin (24)
+static float EX_Bottom(const rlView_t& v)
+{
+    static cvar_t *style;
+
+    if (!style) {
+        style = Cvar_Get("cg_hudstyle", "1", CVAR_ARCHIVE);
+    }
+    return v.dh - (style->integer == 2 ? 88.0f : 24.0f);
 }
 
 void UI_DrawStatusIcon(int icon, qboolean raised)
@@ -538,7 +558,8 @@ void UI_DrawStatusIcon(int icon, qboolean raised)
     if (icon == UI_ICON_PAUSED) {
         y = v.dh * (raised ? 0.45f : 0.75f) - EX_ICON_H * 0.5f;
     } else {
-        y = v.dh - 24.0f - EX_ICON_H - (icon == UI_ICON_SLOWSERVER ? EX_ICON_H + 8.0f : 0.0f);
+        y = (ex_lagFrame == cls.framecount ? ex_lagTop - 8.0f : EX_Bottom(v)) - EX_ICON_H
+          - (icon == UI_ICON_SLOWSERVER ? EX_ICON_H + 8.0f : 0.0f);
     }
     y = floorf(y);
     {
@@ -549,6 +570,346 @@ void UI_DrawStatusIcon(int icon, qboolean raised)
     }
     RL_Outline(v, ex_icons[icon].glyph, x + 14.0f + EX_ICON_SIZE * 0.5f, y + EX_ICON_H * 0.5f, EX_ICON_SIZE, EX_ICON_SIZE, c);
     RL_Text(v, x + 14.0f + EX_ICON_SIZE + 10.0f, y + EX_ICON_H * 0.5f, ex_icons[icon].name, EX_ICON_TEXT, EX_TEXT, true, RL_LEFT, 1.6f, RL_MID);
+}
+
+/*
+====================================================================
+
+THE LAGOMETER
+
+The cgame's cg_lagometer: 1 the graph, 2 compact. Project: Omaha's
+netgraph: its data (cl_lagometer.cpp) and its look (its colours and
+layout), drawn with the HUD's dark box, Oswald and boxes, the boxes of a
+colour in one re.DrawBoxes. At the bottom's middle in the HUD's units (over
+CS2's strip), the connection's status icons over it.
+
+- the graph: the ping (the last 1 s) and its jitter; the frame rate, the
+  share held back for the rate and the share lost (the last 5 s), and NO
+  UPDATE while nothing comes; 6 s of the buffer (orange up: the client ran
+  past the newest update, blue down: what was left of it) over 6 s of ping
+  (blue; amber: held back for the rate, a short tick: one held back; red:
+  lost or overdue), with lines a second apart and at 50/100/200 ms; a legend
+- compact: the signal (4 bars), the ping, 3 s of ping and one word, the
+  frame rate under it when it is under the moves' rate (cl_movefps)
+
+====================================================================
+*/
+
+// the boxes' colours (Omaha's; the panel the HUD's dark box), in the order drawn
+enum { LG_PANEL, LG_LINE, LG_LEFT, LG_AHEAD, LG_PING, LG_RATE, LG_LOST, LG_OFF, LG_ON, LG_KINDS };
+
+static const rlColor_t lg_colors[LG_KINDS] = {
+    EX_FILL,
+    {1, 1, 1, 0.14f},                              // the lines
+    {60 / 255.0f, 95 / 255.0f, 143 / 255.0f, 1},   // the buffer left
+    {255 / 255.0f, 138 / 255.0f, 61 / 255.0f, 1},  // ran ahead of the updates
+    {111 / 255.0f, 177 / 255.0f, 255 / 255.0f, 1}, // ping
+    {240 / 255.0f, 192 / 255.0f, 32 / 255.0f, 1},  // held back for the rate; a warning
+    {255 / 255.0f, 90 / 255.0f, 78 / 255.0f, 1},   // lost; bad
+    {1, 1, 1, 0.18f},                              // a signal bar off
+    EX_TEXT,                                       // on
+};
+static const rlColor_t LG_MUTED = {167 / 255.0f, 173 / 255.0f, 182 / 255.0f, 1};
+static const rlColor_t LG_LABEL = {1, 1, 1, 0.62f};
+
+#define LG_BIG   22.0f // the ping (bold)
+#define LG_SMALL 11.0f // the rest
+
+static float lg_boxes[LG_KINDS][LG_COLUMNS + 8][4];
+static int   lg_count[LG_KINDS];
+
+// the text, laid out again only when what it says or where it goes changes (the
+// numbers every 100 ms, an outage's tenths, the screen, the HUD's style); each
+// frame only drawn, a Rend_DrawString a line
+static struct {
+    int      key[8];
+    rlFace_t face[2]; // LG_SMALL, LG_BIG (bold)
+    struct {
+        char      text[32];
+        rlColor_t color;
+        int       big;
+        float     x, y; // Rend_DrawString's: the face's page units
+    } line[16];
+    int   n;
+    float swatch[5]; // the graph's legend: its swatches' left
+} lgt;
+
+// a box in pixels (x1, y1 past its edge), drawn with its colour's
+static void LG_Box(int kind, int x0, int y0, int x1, int y1)
+{
+    float *b;
+
+    if (x1 <= x0 || y1 <= y0 || lg_count[kind] >= (int)ARRAY_LEN(lg_boxes[0])) {
+        return;
+    }
+    b    = lg_boxes[kind][lg_count[kind]++];
+    b[0] = x0;
+    b[1] = y0;
+    b[2] = x1 - x0;
+    b[3] = y1 - y0;
+}
+
+// the boxes, then the text over them
+static void LG_Draw(void)
+{
+    for (int k = 0; k < LG_KINDS; k++) {
+        if (lg_count[k]) {
+            const vec4_t c = {lg_colors[k].r, lg_colors[k].g, lg_colors[k].b, lg_colors[k].a};
+
+            re.DrawBoxes(lg_boxes[k], lg_count[k], c);
+            lg_count[k] = 0;
+        }
+    }
+    for (int i = 0; i < lgt.n; i++) {
+        const auto&    l    = lgt.line[i];
+        const rlFace_t face = lgt.face[l.big];
+        const float    vs[2] = {face.page, face.page};
+
+        if (!i || memcmp(&l.color, &lgt.line[i - 1].color, sizeof(l.color))) {
+            RL_SetColor(l.color);
+        }
+        uii.Rend_DrawString(face.f, l.text, l.x, l.y, -1, vs);
+    }
+}
+
+// whether the text is to be laid out again (then emptied)
+static bool LG_Changed(const rlView_t& v, const lgStats_t *st, int style, float bottom)
+{
+    const int key[8] = {st->serial, st->interrupted ? st->sinceUpdateMs / 100 : -1, uid.vidWidth, uid.vidHeight,
+                        (int)(v.s * 4096.0f), style, (int)bottom, UI_BakeStamp()};
+
+    if (!memcmp(key, lgt.key, sizeof(key))) {
+        return false;
+    }
+    memcpy(lgt.key, key, sizeof(key));
+    lgt.n       = 0;
+    lgt.face[0] = RL_Face(v, LG_SMALL, false);
+    lgt.face[1] = RL_Face(v, LG_BIG, true);
+    return true;
+}
+
+// a line laid out at x (anchor), its baseline at y (as RL_Text); its width in units
+static float LG_Text(const rlView_t& v, float x, float y, const char *text, int big, rlColor_t c, int anchor = RL_LEFT)
+{
+    const rlFace_t& f = lgt.face[big];
+    float           w, lineH, capH;
+
+    if (!f.f || f.page <= 0.0f || lgt.n >= (int)ARRAY_LEN(lgt.line)) {
+        return 0.0f;
+    }
+    auto& l = lgt.line[lgt.n++];
+    Q_strncpyz(l.text, text, sizeof(l.text));
+    w       = RL_WidthPx(f, l.text, 0.0f);
+    lineH   = f.f->sgl[0]->height * f.page;
+    capH    = f.px * 0.81f; // Oswald's capitals
+    l.x     = floorf(x * v.s - (anchor == RL_CENTER ? w * 0.5f : anchor == RL_RIGHT ? w : 0.0f) + 0.5f) / f.page;
+    l.y     = floorf(y * v.s - floorf(lineH * 0.5f + capH * 0.5f + 0.5f) + 0.5f) / f.page;
+    l.color = c;
+    l.big   = big;
+    return w / v.s;
+}
+
+static int LG_Severity(int sev)
+{
+    return sev == LG_SEV_BAD ? LG_LOST : sev == LG_SEV_WARN ? LG_RATE : LG_ON;
+}
+
+static int LG_PingKind(int ping)
+{
+    return LG_Severity(ping > 150 ? LG_SEV_BAD : ping > 100 ? LG_SEV_WARN : LG_SEV_OK);
+}
+
+/*
+ * The left of slot s's column in the box x0..x1 (pixels) of count columns:
+ * slot s covers the server time from s * 50 ms; the box's right is the
+ * client's time plus a column, so the newest update is in view and the graph
+ * slides with the client's time
+ */
+static float LG_ColumnX(int s, int count, int x0, int x1)
+{
+    return x1 - (float)(cl.serverTime + LG_SLOT_MS - s * LG_SLOT_MS) / LG_SLOT_MS * (x1 - x0) / count;
+}
+
+/*
+ * The columns' bars in a box (pixels), scaleMs at its top: ping (amber held
+ * back for the rate, a tick for one held back, red lost or overdue); with
+ * buf (the buffer's middle, then its heights up and down) the buffer too,
+ * but for the client time's own column, still filling. A pixel's gap between
+ * bars 3 pixels wide or more
+ */
+static void LG_Bars(const rlView_t& v, const lgStats_t *st, int count, int scaleMs, int x0, int y0, int x1, int y1, const int *buf)
+{
+    const float colW = (float)(x1 - x0) / count, barW = colW >= 3.0f ? colW - 1.0f : colW;
+    const int   tick = Q_max(1, RL_P(v, 3.0f)), filling = LG_Slot(cl.serverTime);
+    float       x    = LG_ColumnX(st->edge - count, count, x0, x1);
+
+    for (int s = st->edge - count; s <= st->edge; s++, x += colW) {
+        const lgColumn_t *c = CL_Lagometer_Column(s);
+        const int         l = (int)(x + 0.5f), a = Q_max(x0, l), b = Q_min(x1, Q_max(l + 1, (int)(x + barW + 0.5f)));
+
+        if (b <= a) {
+            continue;
+        }
+        if (c && (c->flags & LG_F_LOST)) {
+            LG_Box(LG_LOST, a, y0, b, y1);
+        } else if (c && (c->flags & LG_F_UPDATE)) {
+            const int h = Q_max(1, (int)(Q_min(1.0f, (float)c->ping / scaleMs) * (y1 - y0) + 0.5f));
+
+            LG_Box((c->flags & LG_F_LATE) ? LG_RATE : LG_PING, a, y1 - h, b, y1);
+        } else if (c && (c->flags & LG_F_HELD)) {
+            LG_Box(LG_RATE, a, y1 - tick, b, y1);
+        } else if (CL_Lagometer_Missing(st, s)) {
+            LG_Box(LG_LOST, a, y0, b, y1);
+        }
+        if (buf && c && (c->flags & LG_F_BUFFER) && s < filling) {
+            if (c->buffer > 0) {
+                LG_Box(LG_AHEAD, a, buf[0] - Q_max(1, (int)(Q_min(1.0f, c->buffer / 150.0f) * buf[1] + 0.5f)), b, buf[0]);
+            } else if (c->buffer < 0) {
+                LG_Box(LG_LEFT, a, buf[0] + buf[3], b, buf[0] + buf[3] + Q_max(1, (int)(Q_min(1.0f, -c->buffer / 60.0f) * buf[2] + 0.5f)));
+            }
+        }
+    }
+}
+
+static void LG_Graph(const rlView_t& v, const lgStats_t *st, float bottom)
+{
+    static const struct {
+        int         kind;
+        const char *label;
+    } legend[] = {
+        {LG_PING, "Ping"}, {LG_RATE, "Rate limited"}, {LG_LOST, "Lost"}, {LG_AHEAD, "Ran ahead of updates"}, {LG_LEFT, "Buffer"},
+    };
+    static const int marks[] = {50, 100, 200, 300, 400};
+    const float      w = 400.0f, h = 192.0f, pad = 14.0f;
+    const float      x = floorf((v.dw - w) * 0.5f), y = floorf(bottom - h);
+    const float      gy = y + 46.0f; // the buffer's top; the ping's 30 under it, 84 high
+    const int        px0 = RL_P(v, x + pad), px1 = RL_P(v, x + w - pad);
+    const int        py0 = RL_P(v, gy + 30.0f), py1 = RL_P(v, gy + 114.0f), mid = RL_P(v, gy + 14.0f);
+    const int        line = Q_max(1, RL_P(v, 1.0f));
+
+    ex_lagTop   = y;
+    ex_lagFrame = cls.framecount;
+    LG_Box(LG_PANEL, RL_P(v, x), RL_P(v, y), RL_P(v, x + w), RL_P(v, y + h));
+
+    if (LG_Changed(v, st, 1, bottom)) {
+        const float base  = y + 34.0f;
+        float       right = x + w - pad, lx;
+
+        // the ping and its jitter; the numbers from the right
+        lx = LG_Text(v, x + pad, base, va("%d", st->ping), 1, lg_colors[st->interrupted ? LG_LOST : LG_PingKind(st->ping)]);
+        LG_Text(v, x + pad + lx + 4.0f, base, va("ms \xB1%d", st->jitter), 0, LG_MUTED);
+        right -= LG_Text(v, right, base, va("%d FPS", st->fps), 0, LG_MUTED, RL_RIGHT) + 10.0f;
+        right -= LG_Text(v, right, base, va("RATE LIMITED %d%%", (int)(st->ratePct + 0.5f)), 0, st->ratePct > 0.0f ? lg_colors[LG_RATE] : LG_MUTED,
+                         RL_RIGHT)
+               + 10.0f;
+        right -= LG_Text(v, right, base, va("LOSS %.1f%%", st->lossPct), 0,
+                         st->lossPct >= 3.0f ? lg_colors[LG_LOST] : st->lossPct > 0.0f ? lg_colors[LG_RATE] : LG_MUTED, RL_RIGHT)
+               + 10.0f;
+        if (st->interrupted) {
+            LG_Text(v, right, base, va("NO UPDATE %.1f s", st->sinceUpdateMs / 1000.0f), 0, lg_colors[LG_LOST], RL_RIGHT);
+        }
+        for (int ms : marks) {
+            if (ms < st->scaleMs) {
+                LG_Text(v, x + pad + 3.0f, gy + 112.0f - 84.0f * ms / st->scaleMs, va("%d", ms), 0, LG_LABEL);
+            }
+        }
+        lx = x + pad;
+        for (size_t i = 0; i < ARRAY_LEN(legend); i++) {
+            lgt.swatch[i] = lx;
+            lx += 24.0f + LG_Text(v, lx + 12.0f, gy + 134.0f, legend[i].label, 0, LG_MUTED);
+        }
+    }
+
+    // lines a second apart, at the ping marks under the top, and the buffer's middle
+    {
+        const int sec = 1000 / LG_SLOT_MS, first = st->edge - LG_COLUMNS, m = (first % sec + sec) % sec;
+
+        for (int s = m ? first + sec - m : first; s <= st->edge; s += sec) {
+            const int a = (int)(LG_ColumnX(s, LG_COLUMNS, px0, px1) + 0.5f);
+
+            if (a >= px0) {
+                LG_Box(LG_LINE, a, py0, a + line, py1);
+            }
+        }
+    }
+    for (int ms : marks) {
+        if (ms < st->scaleMs) {
+            const int my = RL_P(v, gy + 114.0f - 84.0f * ms / st->scaleMs);
+
+            LG_Box(LG_LINE, px0, my, px1, my + line);
+        }
+    }
+    LG_Box(LG_LINE, px0, mid, px1, mid + line);
+
+    // the buffer (up for running past the newest update, 150 ms full; down for
+    // what was left, 60 ms full) over the ping
+    {
+        const int buf[4] = {mid, RL_P(v, 12.0f), RL_P(v, 8.0f), line};
+
+        LG_Bars(v, st, LG_COLUMNS, st->scaleMs, px0, py0, px1, py1, buf);
+    }
+    for (size_t i = 0; i < ARRAY_LEN(legend); i++) {
+        LG_Box(legend[i].kind, RL_P(v, lgt.swatch[i]), RL_P(v, gy + 126.5f), RL_P(v, lgt.swatch[i] + 7.0f), RL_P(v, gy + 133.5f));
+    }
+    LG_Draw();
+}
+
+static void LG_Compact(const rlView_t& v, const lgStats_t *st, float bottom)
+{
+    const float w = 306.0f, h = 47.0f, side = 99.0f;
+    const float x = floorf((v.dw - w) * 0.5f), y = floorf(bottom - h), base = y + 31.5f;
+    const int   baseline = RL_P(v, base);
+    int         sev;
+    const int   status = CL_Lagometer_Status(st, &sev);
+    const int   bars   = CL_Lagometer_Bars(st, sev);
+
+    ex_lagTop   = y;
+    ex_lagFrame = cls.framecount;
+    LG_Box(LG_PANEL, RL_P(v, x), RL_P(v, y), RL_P(v, x + w), RL_P(v, y + h));
+
+    if (LG_Changed(v, st, 2, bottom)) {
+        static const char *const words[] = {"STABLE", "HIGH PING", "JITTER", "RATE LIMITED", "LOSS", "NO UPDATE"};
+        const char              *word    = words[status];
+        const int                moveFps = Cvar_VariableIntegerValue("cl_movefps");
+        const float              pw = LG_Text(v, x + 40.0f, base, va("%d", st->ping), 1, lg_colors[LG_PingKind(st->ping)]);
+
+        LG_Text(v, x + 43.0f + pw, base, "ms", 0, LG_MUTED);
+        if (status == LG_STATUS_LOSS) {
+            word = va("LOSS %.1f%%", st->lossPct);
+        } else if (status == LG_STATUS_JITTER) {
+            word = va("JITTER \xB1%d", st->jitter);
+        } else if (status == LG_STATUS_INTERRUPTED) {
+            word = va("NO UPDATE %.1f s", st->sinceUpdateMs / 1000.0f);
+        }
+        // the frame rate under the word when it is under the moves' rate
+        if (st->fps > 0 && st->fps < (moveFps > 0 ? Q_min(Q_max(moveFps, 85), 125) : 100)) {
+            LG_Text(v, x + w - side * 0.5f, base - 12.5f, word, 0, lg_colors[LG_Severity(sev)], RL_CENTER);
+            LG_Text(v, x + w - side * 0.5f, base, va("%d FPS", st->fps), 0, lg_colors[LG_RATE], RL_CENTER);
+        } else {
+            LG_Text(v, x + w - side * 0.5f, base, word, 0, lg_colors[LG_Severity(sev)], RL_CENTER);
+        }
+    }
+
+    // the signal; 3 s of ping, 200 ms at the top
+    for (int i = 0; i < 4; i++) {
+        const float bx = x + 12.5f + i * 4.5f;
+
+        LG_Box(i < bars ? LG_Severity(sev) : LG_OFF, RL_P(v, bx), baseline - RL_P(v, 3.5f + 3.5f * i), RL_P(v, bx + 3.0f), baseline);
+    }
+    LG_Bars(v, st, 60, 200, RL_P(v, x + side), RL_P(v, base - 20.0f), RL_P(v, x + w - side), baseline, NULL);
+    LG_Draw();
+}
+
+void UI_DrawLagometer(int style)
+{
+    const rlView_t   v  = EX_HudView();
+    const lgStats_t *st = CL_Lagometer_Frame();
+
+    if (style == 2) {
+        LG_Compact(v, st, EX_Bottom(v));
+    } else {
+        LG_Graph(v, st, EX_Bottom(v));
+    }
 }
 
 /*
@@ -1009,7 +1370,7 @@ void UI_Extras_PreBake(qboolean ahead)
     }
     masks = Sys_Milliseconds();
 
-    // the faces and the emblems the prints, the banner, the typing line and the status icons draw
+    // the faces and the emblems the prints, the banner, the typing line, the status icons and the lagometer draw
     {
         const rlView_t v = RL_View();
         const float    s = UI_DesignScale(1920.0f, 1080.0f);
@@ -1024,6 +1385,10 @@ void UI_Extras_PreBake(qboolean ahead)
         RL_Face(hv, 15, true); // (the quick messages' title)
         RL_Face(hv, 17, false);
         RL_Face(hv, 17, true);
+        if (Cvar_VariableIntegerValue("cg_lagometer")) {
+            RL_Face(hv, LG_BIG, true);
+            RL_Face(hv, LG_SMALL, false);
+        }
         UI_BakeBatch(false);
         rl_bakeOnly = true;
         RL_TeamIcon(v, 0, 0, 0, 38);

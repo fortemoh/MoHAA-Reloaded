@@ -492,6 +492,9 @@ functions exported to the main executable
         // style; PAUSED raised over a faded screen
         void (*UI_DrawStatusIcon)(int icon, qboolean raised);
 
+        // Added: the lagometer drawn by the client (1 the graph, 2 compact)
+        void (*UI_DrawLagometer)(int style);
+
     } clientGameImport_t;
 
     /*

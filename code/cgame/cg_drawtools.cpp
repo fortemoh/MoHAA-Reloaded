@@ -111,59 +111,6 @@ LAGOMETER
 ===============================================================================
 */
 
-#define LAG_SAMPLES 128
-
-typedef struct {
-    int frameSamples[LAG_SAMPLES];
-    int frameCount;
-    int snapshotFlags[LAG_SAMPLES];
-    int snapshotSamples[LAG_SAMPLES];
-    int snapshotCount;
-} lagometer_t;
-
-lagometer_t lagometer;
-
-/*
-==============
-CG_AddLagometerFrameInfo
-
-Adds the current interpolate / extrapolate bar for this frame
-==============
-*/
-void CG_AddLagometerFrameInfo(void)
-{
-    int offset;
-
-    offset                                                           = cg.time - cg.latestSnapshotTime;
-    lagometer.frameSamples[lagometer.frameCount & (LAG_SAMPLES - 1)] = offset;
-    lagometer.frameCount++;
-}
-
-/*
-==============
-CG_AddLagometerSnapshotInfo
-
-Each time a snapshot is received, log its ping time and
-the number of snapshots that were dropped before it.
-
-Pass NULL for a dropped packet.
-==============
-*/
-void CG_AddLagometerSnapshotInfo(snapshot_t *snap)
-{
-    // dropped packet
-    if (!snap) {
-        lagometer.snapshotSamples[lagometer.snapshotCount & (LAG_SAMPLES - 1)] = -1;
-        lagometer.snapshotCount++;
-        return;
-    }
-
-    // add this snapshot's info
-    lagometer.snapshotSamples[lagometer.snapshotCount & (LAG_SAMPLES - 1)] = snap->ping;
-    lagometer.snapshotFlags[lagometer.snapshotCount & (LAG_SAMPLES - 1)]   = snap->snapFlags;
-    lagometer.snapshotCount++;
-}
-
 /*
 ==============
 CG_DrawDisconnect
@@ -191,9 +138,6 @@ void CG_DrawDisconnect(void)
     cgi.UI_DrawStatusIcon(UI_ICON_NOSNAPSHOTS, qfalse);
 }
 
-#define MAX_LAGOMETER_PING  900
-#define MAX_LAGOMETER_RANGE 300
-
 /*
 ==============
 CG_DrawLagometer
@@ -201,97 +145,11 @@ CG_DrawLagometer
 */
 void CG_DrawLagometer(void)
 {
-    int   a, i;
-    float v;
-    float ax, ay, aw, ah, mid, range;
-    int   color;
-    float vscale;
-
-    if (!cg_lagometer->integer) {
-        CG_DrawDisconnect();
-        return;
+    // Changed: the client's (Project: Omaha's netgraph in the HUD's style):
+    // 1 the graph, 2 compact
+    if (cg_lagometer->integer) {
+        cgi.UI_DrawLagometer(cg_lagometer->integer);
     }
-
-    //
-    // draw the graph
-    //
-    ax = 272.0;
-    ay = 432.0;
-    aw = 96.0;
-    ah = 48.0;
-    CG_AdjustFrom640(&ax, &ay, &aw, &ah);
-
-    cgi.R_SetColor(NULL);
-    cgi.R_DrawStretchPic(ax, ay, aw, ah, 0, 0, 1, 1, cgs.media.lagometerShader);
-
-    color = -1;
-    range = ah / 3;
-    mid   = ay + range;
-
-    vscale = range / MAX_LAGOMETER_RANGE;
-
-    // draw the frame interpoalte / extrapolate graph
-    for (a = 0; a < aw; a++) {
-        i = (lagometer.frameCount - 1 - a) & (LAG_SAMPLES - 1);
-        v = lagometer.frameSamples[i];
-        v *= vscale;
-        if (v > 0) {
-            if (color != 1) {
-                color = 1;
-                cgi.R_SetColor(g_color_table[ColorIndex(COLOR_YELLOW)]);
-            }
-            if (v > range) {
-                v = range;
-            }
-            cgi.R_DrawBox(ax + aw - a, mid - v, 1, v);
-        } else if (v < 0) {
-            if (color != 2) {
-                color = 2;
-                cgi.R_SetColor(g_color_table[ColorIndex(COLOR_BLUE)]);
-            }
-            v = -v;
-            if (v > range) {
-                v = range;
-            }
-            cgi.R_DrawBox(ax + aw - a, mid, 1, v);
-        }
-    }
-
-    // draw the snapshot latency / drop graph
-    range  = ah / 2;
-    vscale = range / MAX_LAGOMETER_PING;
-
-    for (a = 0; a < aw; a++) {
-        i = (lagometer.snapshotCount - 1 - a) & (LAG_SAMPLES - 1);
-        v = lagometer.snapshotSamples[i];
-        if (v > 0) {
-            if (lagometer.snapshotFlags[i] & SNAPFLAG_RATE_DELAYED) {
-                if (color != 5) {
-                    color = 5; // YELLOW for rate delay
-                    cgi.R_SetColor(g_color_table[ColorIndex(COLOR_YELLOW)]);
-                }
-            } else {
-                if (color != 3) {
-                    color = 3;
-                    cgi.R_SetColor(g_color_table[ColorIndex(COLOR_GREEN)]);
-                }
-            }
-            v = v * vscale;
-            if (v > range) {
-                v = range;
-            }
-            cgi.R_DrawBox(ax + aw - a, ay + ah - v, 1, v);
-        } else if (v < 0) {
-            if (color != 4) {
-                color = 4; // RED for dropped snapshots
-                cgi.R_SetColor(g_color_table[ColorIndex(COLOR_RED)]);
-            }
-            cgi.R_DrawBox(ax + aw - a, ay + ah - range, 1, range);
-        }
-    }
-
-    cgi.R_SetColor(NULL);
-
     CG_DrawDisconnect();
 }
 

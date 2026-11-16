@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "client.h"
 #include "../server/server.h"
+#include "cl_lagometer.h"
 #include "cl_ui.h"
 #include "cl_uicomp.h"
 #include "cl_uimenus.h"
@@ -917,6 +918,9 @@ void CL_ClearState( void )
 
     // Added in OPM
     CL_CleanupUserInfo();
+
+	// Added: the lagometer starts again with the new state
+	CL_Lagometer_Reset();
 }
 
 /*

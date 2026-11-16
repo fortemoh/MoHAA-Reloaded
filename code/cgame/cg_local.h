@@ -379,7 +379,6 @@ extern "C" {
 
     typedef struct {
         qhandle_t     backTileShader;
-        qhandle_t     lagometerShader;
         qhandle_t     shadowMarkShader;
         qhandle_t     footShadowMarkShader;
         qhandle_t     wakeMarkShader;
@@ -670,8 +669,6 @@ extern "C" {
     //
     // cg_draw.c
     //
-    void CG_AddLagometerFrameInfo(void);
-    void CG_AddLagometerSnapshotInfo(snapshot_t *snap);
     void CG_CenterPrint(const char *str, int y, int charWidth);
     void CG_DrawHead(float x, float y, float w, float h, int clientNum, vec3_t headAngles);
     void CG_DrawActive(stereoFrame_t stereoView);
