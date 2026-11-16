@@ -32,14 +32,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <vector>
 
 /*
-ReloadedMenu: "screen weapon|esc|scoreboard|loading|main|confirm|end", "layer
+ReloadedMenu: "screen weapon|esc|scoreboard|loading|main|confirm|end|connect", "layer
 back|front". The back layer draws what is under the 3D model views and
 places them (labels the menu names); the front layer draws what is over
 them and takes the mouse and the keys. Both lay the screen out alike from
 the same data
 */
 
-enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD, SCR_LOADING, SCR_MAIN, SCR_CONFIRM, SCR_END, SCR_NUM };
+enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD, SCR_LOADING, SCR_MAIN, SCR_CONFIRM, SCR_END, SCR_CONNECT, SCR_NUM };
 
 
 typedef struct {
@@ -96,9 +96,10 @@ public:
     void DrawScoreboard(const rlView_t& v, const rlInfo_t& in);
     void DrawEnd(const rlView_t& v, const rlInfo_t& in);
 
-    // the main menu and its confirmations (cl_uimain.cpp)
+    // the main menu, its confirmations and the connect's box (cl_uimain.cpp)
     void     DrawMain(const rlView_t& v);
     void     DrawConfirm(const rlView_t& v);
+    void     DrawConnect(const rlView_t& v);
     void     ChooseMain(int id);
     qboolean MainKey(int key);
     void     MainButtons(int buttons);
@@ -142,5 +143,9 @@ byte       *RL_MenuPhoto(class Menu *stock, int *width, int *height);
 // a photo (RGBA, shown photo wide a unit high) as a screen-shaped texture rows
 // texels high, blurred, its light times dim, darker to the corners, registered as name
 qhandle_t   RL_Blur(const char *name, const byte *pic, int pw, int ph, int rows, float dim, float photo = 4.0f / 3.0f);
-// the browser joins this server (its address, name and map's file): the connecting screen shows them
-void        RL_Joining(const char *addr, const char *name, const char *map);
+// the connect's box shown for a stock error menu (its name: errormessage, servertimeout, ...)
+void        RL_ConnectError(const char *stock);
+// the server's last word (its "disconnect" command's reason)
+void        RL_ConnectDropped(const char *reason);
+// a map of the server's loads (its serverinfo; the map "dm/mohdm6"): its name and map for a drop's box
+void        RL_ConnectLoaded(const char *info, const char *map);

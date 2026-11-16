@@ -21,9 +21,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 // cl_uimenus.h: the Reloaded menus (Added): team select, weapon select, the
-// Esc menu, the scoreboard, the load screen and the end of a mission's level
-// (ui/reloaded_*.urc), shown in place of the stock menus unless
-// ui_classicmenus is 1, and the cursor
+// Esc menu, the scoreboard, the load screen, the end of a mission's level
+// and the connect's box (ui/reloaded_*.urc), shown in place of the stock
+// menus unless ui_classicmenus is 1, and the cursor
 
 #pragma once
 
@@ -51,3 +51,8 @@ void        UI_Menus_PreBake(void);
 // (reloaded_loading, a mission's level reloaded_mission; the pictures the
 // stock load screen's, stock); NULL: the stock one
 const char *UI_Menus_Loading(class Menu *stock, const char *map);
+// a connect begins (CL_Connect, its address resolved): the connect's box
+// asks the server for its name and map, unless the browser's row gave them (cl_uimain.cpp)
+void        UI_Menus_Connect(const char *server, const netadr_t *adr);
+// a server's info (infoResponse): qtrue, the answer the connect's box asked for
+qboolean    UI_Menus_ServerInfo(const netadr_t *from, const char *info);

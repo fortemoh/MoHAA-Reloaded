@@ -22,13 +22,13 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 // cl_uimenus.cpp: the Reloaded menus (Added). The weapon select (which picks
 // the side and the model too: the team menus show it), the Esc menu, the
-// scoreboard, the load screen (UI_Menus_Loading, connecting too), the end of
-// a mission's level and the main menu (cl_uimain.cpp), each a URC menu
-// (ui/reloaded_*.urc) of a ReloadedMenu widget, which lays the screen out and
-// draws it, and the stock 3D player model views it places. They are shown for
-// the stock menus' names (SelectTeam, ObjSelectTeam, SelectFFAModel,
-// SelectPrimaryWeapon[_<nation>], dm_main, DM_Scoreboard,
-// DM_Round_Scoreboard, Obj_Scoreboard, main, connecting,
+// scoreboard, the load screen (UI_Menus_Loading), the end of a mission's
+// level, the main menu and the connect's box (cl_uimain.cpp), each a URC
+// menu (ui/reloaded_*.urc) of a ReloadedMenu widget, which lays the screen
+// out and draws it, and the stock 3D player model views it places. They are
+// shown for the stock menus' names (SelectTeam, ObjSelectTeam,
+// SelectFFAModel, SelectPrimaryWeapon[_<nation>], dm_main, DM_Scoreboard,
+// DM_Round_Scoreboard, Obj_Scoreboard, main, connecting and its errors,
 // StatsScreen_Success|Failed, mission_success|failed_N: UI_Menus_Alias), so
 // nothing on the server or in the cgame changes;
 // ui_classicmenus 1 shows the stock ones (and the stock cursor: the Reloaded
@@ -193,16 +193,25 @@ static void RL_WantScores(void)
 ================
 UI_Menus_ServerCommand
 
-"scores" (fgame's DM_Manager::Score, read as the cgame's CG_ParseScores
-reads it): its entries, the team games' a header per team (-1, the team,
-[SH/BT: the players], the score, ...) and a row per player (client, team
-negative when dead, kills, deaths, time, ping); free-for-all's rows
-(client, kills, deaths, time, ping)
+"disconnect"'s reason (the connect's box shows it), and "scores"
+(fgame's DM_Manager::Score, read as the cgame's CG_ParseScores reads it):
+its entries, the team games' a header per team (-1, the team, [SH/BT: the
+players], the score, ...) and a row per player (client, team negative when
+dead, kills, deaths, time, ping); free-for-all's rows (client, kills,
+deaths, time, ping)
 ================
 */
 void UI_Menus_ServerCommand(void)
 {
-    if (strcmp(Cmd_Argv(0), "scores") || !ui_classicmenus || ui_classicmenus->integer) {
+    if (!ui_classicmenus || ui_classicmenus->integer) {
+        return;
+    }
+    // (the server drops the player: its reason for the connect's box)
+    if (!strcmp(Cmd_Argv(0), "disconnect")) {
+        RL_ConnectDropped(Cmd_Argv(1));
+        return;
+    }
+    if (strcmp(Cmd_Argv(0), "scores")) {
         return;
     }
     const int  gametype = RL_Gametype();
@@ -1066,7 +1075,14 @@ static const struct {
     {"DM_Round_Scoreboard",         "reloaded_scoreboard"},
     {"Obj_Scoreboard",              "reloaded_scoreboard"},
     {"main",                        "reloaded_main"      },
-    {"connecting",                  "reloaded_loading"   },
+    // a connect and how it ends: the connect's box (cl_uimain.cpp)
+    {"connecting",                  "reloaded_connect"   },
+    {"errormessage",                "reloaded_connect"   },
+    {"servertimeout",               "reloaded_connect"   },
+    {"serverdisconnected",          "reloaded_connect"   },
+    {"disconnected",                "reloaded_connect"   },
+    {"badserveraddy",               "reloaded_connect"   },
+    {"wrongversion",                "reloaded_connect"   },
     // the end of a mission's level (Spearhead's and Breakthrough's a menu a mission)
     {"StatsScreen_Success",         "reloaded_end"       },
     {"StatsScreen_Failed",          "reloaded_end"       },
@@ -1083,7 +1099,7 @@ const char *UI_Menus_Alias(const char *name)
     if (!ui_classicmenus || ui_classicmenus->integer || !name) {
         return NULL;
     }
-    // (every menu lookup asks, the HUD's 13 each frame: the stock names start with s, o, d, m or c)
+    // (every menu lookup asks, the HUD's 13 each frame: the stock names start with s, o, d, m, c, e, b or w)
     switch (name[0]) {
     case 'S':
     case 's':
@@ -1095,6 +1111,12 @@ const char *UI_Menus_Alias(const char *name)
     case 'm':
     case 'C':
     case 'c':
+    case 'E':
+    case 'e':
+    case 'B':
+    case 'b':
+    case 'W':
+    case 'w':
         break;
     default:
         return NULL;
@@ -1136,6 +1158,13 @@ qboolean UI_Menus_Pushing(const char *name)
     const char *alias = UI_Menus_Alias(name);
 
     if (!alias) {
+        return qtrue;
+    }
+    if (!strcmp(alias, "reloaded_connect")) {
+        // a connect's end: what happened, in its box
+        if (Q_stricmp(name, "connecting")) {
+            RL_ConnectError(name);
+        }
         return qtrue;
     }
     if (!strcmp(alias, "reloaded_weapon")) {
@@ -1262,13 +1291,7 @@ and obj maps' photo (a label of its own, its image in textures/mohmenu/
 dmloading/ or objloading/), read from its file in colour (its shader fades
 it to sepia over white with the alpha); without one (loading_default's
 painting, a custom map's own screen) the stock screen's pictures are drawn
-into the card, on black.
-
-Shown too while the game connects (for the stock "connecting"), from the
-click on JOIN: the map's card as the browser had it (RL_Joining), else
-loading_default's painting under the server's address; the dash sweeping,
-what happens (or the server's word) and CANCEL under it. The load takes
-the screen on as it is
+into the card, on black
 
 ====================================================================
 */
@@ -1282,20 +1305,7 @@ static struct {
     Menu     *stock;         // the stock load screen
     qhandle_t shot, blur;    // the photo and its blurred copy, 0 none
     int       stamp, refSeq; // UI_BakeStamp and the renderer's sequence then
-    int       connect;       // the connect shown (its clc.connectStartTime)
 } rl_ld;
-
-// the server the browser joins: its address, name and map (dm/mohdm6), till a connect shows it
-static struct {
-    std::string addr, name, map;
-} rl_join;
-
-void RL_Joining(const char *addr, const char *name, const char *map)
-{
-    rl_join.addr = addr;
-    rl_join.name = name;
-    rl_join.map  = map;
-}
 
 // the photo shrunk to rows texels high in the screen's shape (the part of it
 // a screen filled with it shows), blurred, dimmed and darker to the corners:
@@ -1429,24 +1439,6 @@ static void RL_LoadPictures(void)
     uii.Rend_FreeRawImage(pic);
 }
 
-// a connect's pictures: the map the browser joined (its stock load screen's), else loading_default's
-static void RL_LoadConnecting(void)
-{
-    // (the browser's word, for this connect only)
-    if (rl_join.addr != clc.servername) {
-        rl_join.name.clear();
-        rl_join.map.clear();
-    }
-    rl_join.addr.clear();
-    rl_ld.connect = clc.connectStartTime;
-    Q_strncpyz(rl_ld.map, rl_join.map.c_str(), sizeof(rl_ld.map));
-    rl_ld.stock = rl_ld.map[0] ? menuManager.FindMenu(rl_ld.map) : NULL;
-    if (!rl_ld.stock) {
-        rl_ld.stock = menuManager.FindMenu("loading_default");
-    }
-    RL_LoadPictures();
-}
-
 const char *UI_Menus_Loading(Menu *stock, const char *map)
 {
     // (a local server's own: its configstring isn't here yet when it loads a map)
@@ -1470,12 +1462,16 @@ const char *UI_Menus_Loading(Menu *stock, const char *map)
         Q_strncpyz(rl_ld.map, name, sizeof(rl_ld.map));
         rl_ld.stock = stock;
         rl_ld.shot = rl_ld.blur = 0;
-    } else if (stock != rl_ld.stock || Q_stricmp(name, rl_ld.map)) {
-        // (the connecting screen's pictures kept: the same map's)
+        return ours;
+    }
+    if (stock != rl_ld.stock || Q_stricmp(name, rl_ld.map)) {
+        // (the same map's pictures kept)
         Q_strncpyz(rl_ld.map, name, sizeof(rl_ld.map));
         rl_ld.stock = stock;
         RL_LoadPictures();
     }
+    // (the server's name and map, should it drop the player)
+    RL_ConnectLoaded(info, name);
     return ours;
 }
 
@@ -1566,52 +1562,19 @@ static void RL_DrawMission(UIReloadedMenu *m, const rlView_t& v, float frac, con
     m->PlaceView(v, "continuebutton", bx, by, bw, bh);
 }
 
-enum { ID_CANCEL };
-
-// connecting: what happens (the server's word, should it have sent one) on
-// the stage's line, CANCEL on its middle at the card's right edge
-static void RL_DrawConnecting(UIReloadedMenu *m, const rlView_t& v, float x, float my, float cw)
-{
-    const float bw = 150, bh = 42, room = cw - bw - 24;
-    const char *what = clc.state < CA_CONNECTED ? "Connecting" : "Joining";
-    std::string said = clc.serverMessage;
-    rlColor_t   c    = RL_TEXT;
-
-    // (the server's word has a newline at its end)
-    std::replace(said.begin(), said.end(), '\n', ' ');
-    said.erase(said.find_last_not_of(' ') + 1);
-    if (said.empty()) {
-        // (the server's name from the browser; else the title's its address)
-        said = rl_join.name.empty() ? va("%s\x85", what) : va("%s to %s\x85", what, rl_join.name.c_str());
-        c    = RL_MUTED;
-    }
-    RL_Text(v, x, my, RL_Ellipsize(v, said.c_str(), RL_S1, false, room).c_str(), RL_S1, c, false, RL_LEFT, 0, RL_MID);
-    RL_Button(v, x + cw - bw, my - bh / 2, bw, bh, "CANCEL", false, 12, 0, m->Hot(ID_CANCEL));
-    m->Hit(v, x + cw - bw, my - bh / 2, bw, bh, ID_CANCEL);
-}
-
 static void RL_DrawLoading(UIReloadedMenu *m, const rlView_t& v)
 {
-    const bool  connecting = !server_loading;
-    const char *what       = "";
-    const float frac       = connecting ? -1.0f : UI_LoadProgress(&what);
+    const char *what = "";
+    const float frac = UI_LoadProgress(&what);
     const float cw = Q_min(720.0f, v.dw * 0.88f), ch = cw * 0.75f, head = 80, foot = 70;
     const float x = (v.dw - cw) / 2, y = (v.dh - head - ch - foot) / 2 + head, by = y + ch + 22;
     const int   x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + cw), y1 = RL_P(v, y + ch);
     const rlColor_t white = RL_Rgb(255, 255, 255), line = RL_Rgb(255, 255, 255, 40);
 
-    // a mission: its letter as it loads; black the moment it connects to its own server
-    if (connecting ? com_sv_running->integer && Cvar_VariableIntegerValue("g_gametype") == GT_SINGLE_PLAYER
-                   : rl_ld.gametype == GT_SINGLE_PLAYER) {
-        if (connecting) {
-            RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0));
-        } else {
-            RL_DrawMission(m, v, frac, what);
-        }
+    // a mission: its letter as it loads
+    if (rl_ld.gametype == GT_SINGLE_PLAYER) {
+        RL_DrawMission(m, v, frac, what);
         return;
-    }
-    if (connecting && rl_ld.connect != clc.connectStartTime) {
-        RL_LoadConnecting();
     }
     // the renderer restarted since: made again; the map's load reset its shaders: looked up again
     if (rl_ld.shot && rl_ld.refSeq != uii.GetRefSequence()) {
@@ -1639,26 +1602,20 @@ static void RL_DrawLoading(UIReloadedMenu *m, const rlView_t& v)
     RL_BoxPx(x1 - 1, y0 + 1, x1, y1 - 1, line);
     {
         // the name in what the mode leaves: smaller (to H2 at least), then cut
-        // (connecting: no mode yet; no map known, the server's address)
-        const char *mode = connecting ? "" : RL_ModeName(rl_ld.gametype, true);
-        const char *name = rl_ld.map[0] ? RL_MapName(rl_ld.map) : clc.servername;
+        const char *mode = RL_ModeName(rl_ld.gametype, true);
+        const char *name = RL_MapName(rl_ld.map);
         const float room = cw - RL_TextW(v, mode, 16, true, 2.6f) - 32, w = RL_TextW(v, name, RL_H1, true);
         const float size = w > room ? Q_max(RL_H2, floorf(RL_H1 * room / w)) : RL_H1;
 
         RL_Text(v, x, y - 26, RL_Ellipsize(v, name, size, true, room).c_str(), size, RL_TEXT, true, RL_LEFT, 0, RL_BASE);
         RL_Text(v, x + cw, y - 26, mode, 16, RL_BRASS, true, RL_RIGHT, 2.6f, RL_BASE);
     }
-    // the bar, and how far (connecting, the map's first load: not known, a dash sweeping across)
+    // the bar, and how far (the map's first load: not known, a dash sweeping across)
     RL_LoadBar(v, x, by, cw, frac);
     if (frac >= 0.0f) {
         RL_Text(v, x + cw, by + 28, va("%d%%", (int)(Q_min(frac, 1.0f) * 100)), RL_S1, RL_TEXT, true, RL_RIGHT, 0, RL_TOP);
     }
-    if (connecting) {
-        // (the stage's middle)
-        RL_DrawConnecting(m, v, x, by + 28 + RL_S1 * 0.405f, cw);
-    } else {
-        RL_Text(v, x, by + 28, va("%s\x85", RL_LoadStage(what)), RL_S1, RL_MUTED, false, RL_LEFT, 0, RL_TOP);
-    }
+    RL_Text(v, x, by + 28, va("%s\x85", RL_LoadStage(what)), RL_S1, RL_MUTED, false, RL_LEFT, 0, RL_TOP);
 }
 
 /*
@@ -1672,9 +1629,9 @@ ReloadedMenu (cl_uiwidget.h)
 */
 
 // the front layer's hot item, for the back layer (a frame later)
-static int rl_hot[SCR_NUM] = {-1, -1, -1, -1, -1, -1, -1};
+static int rl_hot[SCR_NUM] = {-1, -1, -1, -1, -1, -1, -1, -1};
 
-Event EV_ReloadedMenu_Screen("screen", EV_DEFAULT, "s", "screen", "weapon, esc, scoreboard, loading, main or confirm");
+Event EV_ReloadedMenu_Screen("screen", EV_DEFAULT, "s", "screen", "weapon, esc, scoreboard, loading, main, confirm, end or connect");
 Event EV_ReloadedMenu_Layer("layer", EV_DEFAULT, "s", "layer", "back (under the model views) or front");
 
 CLASS_DECLARATION(UIWidget, UIReloadedMenu, NULL) {
@@ -1695,6 +1652,7 @@ void UIReloadedMenu::SetScreen(Event *ev)
              : !str::icmp(s, "main")       ? SCR_MAIN
              : !str::icmp(s, "confirm")    ? SCR_CONFIRM
              : !str::icmp(s, "end")        ? SCR_END
+             : !str::icmp(s, "connect")    ? SCR_CONNECT
                                            : SCR_WEAPON;
     AllowActivate(m_screen != SCR_SCOREBOARD && m_screen != SCR_LOADING);
 }
@@ -1732,7 +1690,7 @@ void UIReloadedMenu::MouseUp(Event *ev)
     if (m_back) {
         return;
     }
-    if (m_screen == SCR_MAIN || m_screen == SCR_CONFIRM) {
+    if (m_screen == SCR_MAIN || m_screen == SCR_CONFIRM || m_screen == SCR_CONNECT) {
         // (a click on nothing too: it closes what is open)
         ChooseMain(id);
     } else if (id >= 0) {
@@ -1750,7 +1708,7 @@ void UIReloadedMenu::MouseButtons(Event *ev)
 
 void UIReloadedMenu::CharEvent(int ch)
 {
-    if (!m_back && m_screen == SCR_MAIN) {
+    if (!m_back && (m_screen == SCR_MAIN || m_screen == SCR_CONNECT)) {
         MainChar(ch);
     }
 }
@@ -1759,7 +1717,7 @@ qboolean UIReloadedMenu::KeyEvent(int key, unsigned int time)
 {
     int at, n = (int)m_order.size();
 
-    if (!m_back && (m_screen == SCR_MAIN || m_screen == SCR_CONFIRM)) {
+    if (!m_back && (m_screen == SCR_MAIN || m_screen == SCR_CONFIRM || m_screen == SCR_CONNECT)) {
         return MainKey(key);
     }
     if (m_back || m_screen == SCR_SCOREBOARD || !n) {
@@ -1866,7 +1824,7 @@ void UIReloadedMenu::Tick(void)
         }
     }
     m_tick = cls.framecount;
-    if (m_screen == SCR_MAIN) {
+    if (m_screen == SCR_MAIN || m_screen == SCR_CONNECT) {
         MainTick(opened);
     }
     if (m_back) {
@@ -1931,7 +1889,7 @@ int UIReloadedMenu::DrawKey(void)
         // (the round's end banner over the header)
         k.banner = UI_Extras_BannerKey();
     }
-    if (m_screen == SCR_MAIN || m_screen == SCR_CONFIRM) {
+    if (m_screen == SCR_MAIN || m_screen == SCR_CONFIRM || m_screen == SCR_CONNECT) {
         k.main = MainDrawKey();
     }
     for (size_t i = 0; i + 4 <= sizeof(k); i += 4) {
@@ -1950,17 +1908,13 @@ void UIReloadedMenu::Draw(void)
     rlInfo_t       in;
 
     if (m_screen == SCR_LOADING) {
-        // (connecting: CANCEL hot under the mouse)
-        if (!server_loading && !rl_bakeOnly) {
-            Tick();
-        }
         m_hits.clear();
         RL_DrawLoading(this, v);
         uii.Rend_SetColor(white);
         return;
     }
-    // (the main menu's before any map)
-    if (clc.state < CA_PRIMED && m_screen != SCR_MAIN && m_screen != SCR_CONFIRM) {
+    // (the main menu's and the connect's before any map)
+    if (clc.state < CA_PRIMED && m_screen != SCR_MAIN && m_screen != SCR_CONFIRM && m_screen != SCR_CONNECT) {
         return;
     }
     if (!rl_bakeOnly) {
@@ -1975,6 +1929,9 @@ void UIReloadedMenu::Draw(void)
         break;
     case SCR_CONFIRM:
         DrawConfirm(v);
+        break;
+    case SCR_CONNECT:
+        DrawConnect(v);
         break;
     case SCR_WEAPON:
         RL_Info(&in);
@@ -2703,12 +2660,6 @@ void UIReloadedMenu::Choose(int id)
             cmd = "+attackprimary\n-attackprimary\n";
         }
         break;
-    case SCR_LOADING:
-        // CANCEL, connecting: the stock screen's BACK
-        if (id == ID_CANCEL) {
-            Cbuf_AddText("popmenu 0;disconnect;wait 50;gotoreturnmenu\n");
-        }
-        return;
     }
     if (cmd) {
         Cbuf_AddText(cmd);
