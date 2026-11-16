@@ -824,6 +824,12 @@ movement on the server game.
 
     int BG_MapCGMToProtocol(int protocol, int messageNumber);
 
+    // the quick messages' lines (2.0's and later's, 1.11's: what the chat
+    // says) and 1.11's groups' names; the localization's keys (bg_misc.cpp)
+    extern const char       *pInstantMsgEng[6][9];
+    extern const char       *pInstantMsgEng_ver6[5][9];
+    extern const char *const pInstantMsgGroupsEng_ver6[5];
+
 #ifdef __cplusplus
 }
 #endif

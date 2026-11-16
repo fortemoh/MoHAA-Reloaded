@@ -1140,6 +1140,19 @@ void CG_DrawInstantMessageMenu()
         return;
     }
 
+    // Added: the client's list (the Competitive HUD's) with 1.11's groups and
+    // lines; 2.0's and later's groups' names aren't known (their pictures')
+    if (cg_protocol < PROTOCOL_MOHTA_MIN && cgi.UI_DrawInstaMessage
+        && (cg.iInstaMessageMenu < 0
+                ? cgi.UI_DrawInstaMessage(NULL, pInstantMsgGroupsEng_ver6, ARRAY_LEN(pInstantMsgGroupsEng_ver6))
+                : cgi.UI_DrawInstaMessage(
+                      pInstantMsgGroupsEng_ver6[cg.iInstaMessageMenu - 1],
+                      pInstantMsgEng_ver6[cg.iInstaMessageMenu - 1],
+                      ARRAY_LEN(pInstantMsgEng_ver6[0])
+                  ))) {
+        return;
+    }
+
     if (cg.iInstaMessageMenu > 0) {
         handle = cgi.R_RegisterShader(va("textures/hud/instamsg_group_%c", cg.iInstaMessageMenu + 96));
     } else {
