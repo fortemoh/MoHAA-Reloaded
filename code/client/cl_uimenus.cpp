@@ -30,8 +30,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // SelectFFAModel, SelectPrimaryWeapon[_<nation>], dm_main, DM_Scoreboard,
 // DM_Round_Scoreboard, Obj_Scoreboard, Tow_Scoreboard, Lib_Scoreboard,
 // main, connecting and its errors, StatsScreen_Success|Failed,
-// mission_success|failed_N, the vote menus: UI_Menus_Alias; F3's Controls and
-// F4's LoadSave their pages: RL_FKey; F2's mpoptions nothing), so nothing on the
+// mission_success|failed_N, the vote menus: UI_Menus_Alias; F3's Controls,
+// F4's LoadSave and Training's briefingroom their pages: RL_Page; F2's
+// mpoptions nothing), so nothing on the
 // server or in the cgame changes. The cursor is RL_Cursor's.
 //
 // Sizes are design units: a 1080-line screen (900 below 900 lines, so small
@@ -1268,16 +1269,27 @@ qboolean UI_Menus_Covering(void)
 void UI_GetPlayerModel_f(void);
 
 // F3 and F4 (default.cfg's "pushmenu Controls" and "pushmenu_sp LoadSave", the stock menus): Options' KEYS (in a game
-// over the Esc menu, unless the main menu is up), Campaign's saved games (over a game as the Esc menu's LOAD)
-static void RL_FKey(bool keys)
+// over the Esc menu, unless the main menu is up), Campaign's saved games (over a game as the Esc menu's LOAD); the end of
+// Allied Assault's Training (training.scr's "disconnect; pushmenu briefingroom", the stock briefing room): Campaign's
+// missions
+static const struct {
+    const char *stock;
+    int         what; // RL_SHOW_*
+} rl_pages[] = {
+    {"Controls",     RL_SHOW_KEYS    },
+    {"LoadSave",     RL_SHOW_SAVES   },
+    {"briefingroom", RL_SHOW_MISSIONS},
+};
+
+static void RL_Page(int what)
 {
     Menu *const up = menuManager.CurrentMenu();
 
-    RL_MainShow(keys ? RL_SHOW_KEYS : RL_SHOW_SAVES);
+    RL_MainShow(what);
     if (up == menuManager.FindMenu("main")) {
         return;
     }
-    if (keys && clc.state > CA_PRIMED) {
+    if (what == RL_SHOW_KEYS && clc.state > CA_PRIMED) {
         RL_OverShow(RL_OVER_OPTIONS);
     } else if (up && clc.state > CA_PRIMED) {
         Cbuf_AddText("popmenu 0;wait 250;pushmenu main\n");
@@ -1291,9 +1303,11 @@ qboolean UI_Menus_Pushing(const char *name)
     const char *alias = UI_Menus_Alias(name);
 
     if (!alias) {
-        if (name && (!Q_stricmp(name, "Controls") || !Q_stricmp(name, "LoadSave"))) {
-            RL_FKey(*name == 'C' || *name == 'c');
-            return qfalse;
+        for (size_t i = 0; name && i < ARRAY_LEN(rl_pages); i++) {
+            if (!Q_stricmp(name, rl_pages[i].stock)) {
+                RL_Page(rl_pages[i].what);
+                return qfalse;
+            }
         }
         // F2's (default.cfg's "pushmenu_dm mpoptions", the stock Multiplayer Options): nothing
         return name && !Q_stricmp(name, "mpoptions") ? qfalse : qtrue;

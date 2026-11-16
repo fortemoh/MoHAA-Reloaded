@@ -4297,8 +4297,7 @@ own (Allied Assault's, Spearhead's and Breakthrough's pk3s): a map's or a
 mod's menus load. What still loads: the load screens (the Reloaded load
 screen shows their pictures), the end of a level's (StatsScreen_*,
 mission_*: the end screen's), what the game scripts show (the briefings,
-the title cards, credits1, dday1 and 2, the briefing room and its
-difficulty menus) and the developer tools' menus
+the title cards, credits1, dday1 and 2) and the developer tools' menus
 ====================
 */
 static qboolean UI_StockMenuGone(const char *file)
@@ -4321,10 +4320,13 @@ static qboolean UI_StockMenuGone(const char *file)
         "hud_ammo_thompson", "hud_ammo_vickers", "hud_ammo_webleyrevolver", "hud_compass", "hud_fraglimit",
         "hud_fuse", "hud_fuse_wet", "hud_health", "hud_items", "hud_score", "hud_stopwatch", "hud_timelimit",
         "hud_weapons",
-        // the main menu's pages, Options' and the old Campaign's (the Reloaded menus' screens)
+        // the main menu's pages, Options' and the old Campaign's (the Reloaded menus' screens; Training's end, its
+        // briefing room, Campaign's missions)
         "main", "options_main", "advancedoptions", "audio options", "video options", "controls", "calibrate_monitor",
-        "loadsave", "loadsave_mp", "medals", "war_records", "mission1_briefing", "mission2_briefing",
-        "mission3_briefing", "mission4_briefing", "mission5_briefing", "mission6_briefing", "missiont1difficulty",
+        "loadsave", "loadsave_mp", "medals", "war_records", "briefing_room", "mission1difficulty", "mission2difficulty",
+        "mission3difficulty", "mission4difficulty", "mission5difficulty", "mission6difficulty", "missiont1difficulty",
+        "mission1_briefing", "mission2_briefing", "mission3_briefing", "mission4_briefing", "mission5_briefing",
+        "mission6_briefing",
         // Multiplayer's: the browsers, Host, the map rotation, Instant Action
         "multiplayer", "multiplayeroptions", "multiplayerstart", "multiplayerstart_ffa", "multiplayerstart_lib",
         "multiplayerstart_obj", "multiplayerstart_round", "multiplayerstart_team", "multiplayerstart_tow",
