@@ -579,6 +579,12 @@ qboolean	vk_skin_frame_room( int numWords );
 // a number that changes with every frame (the frame data starts empty);
 // starts the frame
 unsigned int vk_frame_serial( void );
+// the frame as drawn so far, blurred into image ("*frameblur", about a
+// VK_FRAME_BLUR-th of the color target's size), once a frame; whether the
+// device can
+#define VK_FRAME_BLUR		16
+void		vk_frame_blur( image_t *image );
+qboolean	vk_frame_blur_supported( void );
 
 #define CLEAR_COLOR		1
 #define CLEAR_DEPTH		2	// to 1.0

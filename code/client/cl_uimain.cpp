@@ -122,6 +122,7 @@ enum {
     ID_CSAVE,
     ID_CLOAD,
     ID_KEYMOVE, // (what the confirmation asks: a key another command has, moved)
+    ID_BACK,    // Options over the game: back to the Esc menu
     ID_ROW  = 1000, // + the row shown
     ID_FAV  = ID_ROW + 1000,
     ID_PICK = ID_FAV + 1000, // + the model
@@ -1602,21 +1603,28 @@ static void RL_Background(const rlView_t& v)
 
 /*
 ================
-The rail: 440 units, dark, fading out past 400; the star and the wordmark
-(92 high) at its head, level with the screens' top and the buttons' left
-edge; MULTIPLAYER / CAMPAIGN / HOST / OPTIONS (the page shown filled
-brass); QUIT at its foot, level with the screens' foot row, its label under
-the buttons' and its icon ending at their edge; DISCONNECT (LEAVE MISSION
-in single player) over it while in a game (level with the browser's status
-row)
+The rail (the main menu's, the Esc menu's): 440 units, dark, fading out
+past 400; the star and the wordmark (92 high) at its head, level with the
+screens' top and the buttons' left edge; the Esc menu's match under them
+(the title, two lines; a title too wide on two lines), on the labels' line;
+the items from 380 down (the main menu's MULTIPLAYER / CAMPAIGN / HOST /
+OPTIONS, the page shown filled brass); the foot's up from its foot, QUIT's
+level with the screens' foot row, their labels under the buttons' and
+their icons ending at their edge (DISCONNECT, LEAVE MISSION in single
+player, over QUIT while in a game: level with the browser's status row)
 ================
 */
-static const char *const rl_pages[] = {"MULTIPLAYER", "CAMPAIGN", "HOST", "OPTIONS"};
+static const rlRailItem_t rl_pages[] = {
+    {ID_PLAY,     "MULTIPLAYER", NULL},
+    {ID_CAMPAIGN, "CAMPAIGN",    NULL},
+    {ID_HOST,     "HOST",        NULL},
+    {ID_OPTIONS,  "OPTIONS",     NULL},
+};
 
-static void RL_Rail(UIReloadedMenu *m, const rlView_t& v)
+void RL_Rail(UIReloadedMenu *m, const rlView_t& v, const rlRailItem_t *items, int n, int on, const rlRailItem_t *foot, int nf,
+             const std::string *head)
 {
-    const float qy = v.dh - RL_EDGE - RL_FOOT / 2;
-    const bool  connected = clc.state > CA_PRIMED;
+    const float qy = v.dh - RL_EDGE - RL_FOOT / 2, room = RL_RAILX + 300 - RL_LABELX;
 
     RL_Box(v, 0, 0, 400, v.dh, RL_Rgb(10, 11, 12, 232));
     RL_HGradient(v, 400, 0, 240, v.dh, RL_Rgb(10, 11, 12, 232), RL_Rgb(10, 11, 12, 0));
@@ -1631,25 +1639,48 @@ static void RL_Rail(UIReloadedMenu *m, const rlView_t& v)
             RL_Outline(v, RL_GLYPH("wordmark"), RL_RAILX + 92 * 1.2f + ww / 2, RL_EDGE + 46, ww, 92, RL_Rgb(255, 255, 255));
         }
     }
-    for (int i = 0; i < (int)ARRAY_LEN(rl_pages); i++) {
-        const float y = 380 + i * 78;
-        const bool  on = rl_mm.page == i, hot = m->Hot(ID_PLAY + i);
+    if (head) {
+        std::string title = head[0], more;
+        float       y     = 218;
 
-        if (on || hot) {
-            RL_Skew(v, RL_RAILX, y, 300, 64, 0, 14, on ? RL_BRASS : RL_Rgb(255, 255, 255, 18));
+        if (RL_TextW(v, title.c_str(), 34, true) > room) {
+            // (at the last space that leaves the first line fitting)
+            for (size_t at = title.rfind(' '); at != std::string::npos && at > 0; at = title.rfind(' ', at - 1)) {
+                if (RL_TextW(v, title.substr(0, at).c_str(), 34, true) <= room) {
+                    more  = title.substr(at + 1);
+                    title = title.substr(0, at);
+                    break;
+                }
+            }
         }
-        RL_Text(v, RL_LABELX, y + 32, rl_pages[i], 28, on ? RL_INK : hot ? RL_TEXT : RL_SOFT, true, RL_LEFT, 3, RL_MID);
-        m->Hit(v, RL_RAILX, y, 300, 64, ID_PLAY + i);
+        if (!more.empty()) {
+            RL_Text(v, RL_LABELX, y - 19, title.c_str(), 34, RL_TEXT, true, RL_LEFT, 0, RL_MID, room);
+            title = more;
+            y += 19;
+        }
+        RL_Text(v, RL_LABELX, y, title.c_str(), 34, RL_TEXT, true, RL_LEFT, 0, RL_MID, room);
+        RL_Text(v, RL_LABELX, y + 44, head[1].c_str(), 15, RL_MUTED, false, RL_LEFT, 2.4f, RL_MID, room);
+        RL_Text(v, RL_LABELX, y + 72, head[2].c_str(), 15, RL_MUTED, false, RL_LEFT, 2.4f, RL_MID, room);
     }
-    for (int i = connected ? 0 : 1; i < 2; i++) {
-        // (DISCONNECT over QUIT)
-        const int       id  = i ? ID_QUIT : ID_DISCONNECT;
-        const float     y   = qy - (1 - i) * 52;
-        const rlColor_t c   = m->Hot(id) ? RL_TEXT : i ? RL_MUTED : RL_Rgb(214, 120, 100);
+    for (int i = 0; i < n; i++) {
+        const float y = 380 + i * 78;
+        const bool  lit = items[i].id == on, hot = m->Hot(items[i].id);
 
-        RL_Outline(v, i ? RL_GLYPH("quit") : RL_GLYPH("disconnect"), RL_RAILX - 12, y, 24, 24, c);
-        RL_Text(v, RL_LABELX, y, i ? "QUIT" : RL_InMission() ? "LEAVE MISSION" : "DISCONNECT", 20, c, true, RL_LEFT, 2.4f, RL_MID);
-        m->Hit(v, RL_RAILX - 24, y - 24, 260, 48, id);
+        if (lit || hot) {
+            RL_Skew(v, RL_RAILX, y, 300, 64, 0, 14, lit ? RL_BRASS : RL_Rgb(255, 255, 255, 18));
+        }
+        RL_Text(v, RL_LABELX, y + 32, items[i].label, 28, lit ? RL_INK : hot ? RL_TEXT : RL_SOFT, true, RL_LEFT, 3, RL_MID);
+        m->Hit(v, RL_RAILX, y, 300, 64, items[i].id);
+    }
+    for (int i = 0; i < nf; i++) {
+        // (the last at the foot, muted; those over it red)
+        const rlRailItem_t& f = foot[i];
+        const float         y = qy - (nf - 1 - i) * 52;
+        const rlColor_t     c = m->Hot(f.id) ? RL_TEXT : i == nf - 1 ? RL_MUTED : RL_Rgb(214, 120, 100);
+
+        RL_Outline(v, f.glyph, RL_RAILX - 12, y, 24, 24, c);
+        RL_Text(v, RL_LABELX, y, f.label, 20, c, true, RL_LEFT, 2.4f, RL_MID);
+        m->Hit(v, RL_RAILX - 24, y - 24, 260, 48, f.id);
     }
 }
 
@@ -3223,8 +3254,9 @@ static void RL_OptApply(void)
 /*
 ================
 OPTIONS: the back layer the panel and, under the crosshair's preview, the
-photos as they are under the panel; the front the rest. The rows wholly
-in the content (between the head and the foot row) drawn
+photos as they are under the panel (over the game: the game, the panel
+round it); the front the rest, BACK before DEFAULTS over the game. The
+rows wholly in the content (between the head and the foot row) drawn
 ================
 */
 static void RL_Options(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h)
@@ -3248,11 +3280,28 @@ static void RL_Options(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
     // (the scroll as far as the layout goes, here: both layers alike)
     const float scroll = Q_max(0.0f, Q_min(rl_opt.scroll, rl_opt.most));
     if (m->m_back) {
-        RL_Panel(v, x, y, w, h, RL_PANEL);
+        const rlOptPlace_t *pv = NULL; // the preview, shown
+
         for (const rlOptPlace_t& p : places) {
             if (rl_opts[p.opt].kind == OC_PREVIEW && p.y >= scroll && p.y + p.h <= scroll + band) {
-                RL_BgDraw(v, p.x, top + p.y - scroll, p.w, p.h - 12);
+                pv = &p;
             }
+        }
+        if (pv && m->m_screen == SCR_OPTIONS) {
+            const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
+            const int px0 = RL_P(v, pv->x), py0 = RL_P(v, top + pv->y - scroll), px1 = RL_P(v, pv->x + pv->w);
+            const int py1 = RL_P(v, top + pv->y - scroll + pv->h - 12);
+
+            RL_BoxPx(x0, y0, x1, py0, RL_PANEL);
+            RL_BoxPx(x0, py1, x1, y1, RL_PANEL);
+            RL_BoxPx(x0, py0, px0, py1, RL_PANEL);
+            RL_BoxPx(px1, py0, x1, py1, RL_PANEL);
+            RL_Frame(v, x, y, w, h, 1, RL_LINE);
+            return;
+        }
+        RL_Panel(v, x, y, w, h, RL_PANEL);
+        if (pv) {
+            RL_BgDraw(v, pv->x, top + pv->y - scroll, pv->w, pv->h - 12);
         }
         return;
     }
@@ -3293,12 +3342,17 @@ static void RL_Options(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         const int   pending = RL_OptPending();
         const char *restart[4] = {rl_opt.note.c_str(), "APPLY RESTARTS THE VIDEO", "APPLY RESTARTS THE SOUND", "APPLY RESTARTS THE VIDEO AND THE SOUND"};
         const char *say = rl_keys.wait >= 0 ? "PRESS A KEY  \xb7  ESC CANCELS  \xb7  BACKSPACE CLEARS" : restart[pending];
+        const float dx  = m->m_screen == SCR_OPTIONS ? 150 + 8 : 0; // (BACK's room)
 
-        RL_Button(v, x + RL_PAD, by, 150, RL_CTRL, "DEFAULTS", false, 0, 12, m->Hot(ID_DEFAULTS));
+        if (dx) {
+            RL_Button(v, x + RL_PAD, by, 150, RL_CTRL, "BACK", false, 0, 12, m->Hot(ID_BACK));
+            m->Hit(v, x + RL_PAD, by, 150, RL_CTRL, ID_BACK);
+        }
+        RL_Button(v, x + RL_PAD + dx, by, 150, RL_CTRL, "DEFAULTS", false, 0, 12, m->Hot(ID_DEFAULTS));
         // (between the buttons)
-        RL_Text(v, x + w / 2, foot + RL_FOOT / 2, say, 15, RL_BRASS, true, RL_CENTER, 2, RL_MID, w - 2 * (RL_PAD + 190 + 16));
+        RL_Text(v, x + w / 2 + dx / 2, foot + RL_FOOT / 2, say, 15, RL_BRASS, true, RL_CENTER, 2, RL_MID, w - 2 * (RL_PAD + 190 + 16) - dx);
         RL_Button(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "APPLY", true, 12, 0, m->Hot(ID_OAPPLY) && pending, !pending);
-        m->Hit(v, x + RL_PAD, by, 150, RL_CTRL, ID_DEFAULTS);
+        m->Hit(v, x + RL_PAD + dx, by, 150, RL_CTRL, ID_DEFAULTS);
         m->Hit(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, ID_OAPPLY);
     }
 }
@@ -3358,7 +3412,7 @@ static void RL_OptChoose(int id)
 
 void RL_MainShow(int what)
 {
-    rl_mm.page  = what == RL_SHOW_OPTIONS ? PAGE_OPTIONS : PAGE_CAMPAIGN;
+    rl_mm.page  = PAGE_CAMPAIGN;
     rl_camp.tab = what == RL_SHOW_SAVES ? CT_SAVES : CT_MISSIONS;
     RL_Changed();
 }
@@ -3370,9 +3424,19 @@ profile's panel) or the crosshair's preview (Options' panel), the front
 the rest
 ================
 */
+// the screens beside the rail: their left edge, their width
+static void RL_PageX(const rlView_t& v, float *x, float *w)
+{
+    *x = v.dw >= 1700 ? 480.0f : 420.0f;
+    *w = Q_min(v.dw - *x - RL_EDGE, 1640.0f);
+}
+
 void UIReloadedMenu::DrawMain(const rlView_t& v)
 {
-    const float ax = v.dw >= 1700 ? 480.0f : 420.0f, ay = RL_EDGE, aw = Q_min(v.dw - ax - RL_EDGE, 1640.0f), ah = v.dh - 2 * RL_EDGE;
+    const float ay = RL_EDGE, ah = v.dh - 2 * RL_EDGE;
+    float       ax, aw;
+
+    RL_PageX(v, &ax, &aw);
     const float pw = Q_max(270.0f, floorf(aw * 0.28f + 0.5f));
 
     // (the cvars it draws from: the cache draws again when one changes)
@@ -3391,7 +3455,14 @@ void UIReloadedMenu::DrawMain(const rlView_t& v)
         }
         return;
     }
-    RL_Rail(this, v);
+    {
+        // (DISCONNECT over QUIT while in a game)
+        const rlRailItem_t foot[2] = {{ID_DISCONNECT, RL_InMission() ? "LEAVE MISSION" : "DISCONNECT", RL_GLYPH("disconnect")},
+                                      {ID_QUIT, "QUIT", RL_GLYPH("quit")}};
+        const int          in      = clc.state > CA_PRIMED;
+
+        RL_Rail(this, v, rl_pages, (int)ARRAY_LEN(rl_pages), ID_PLAY + rl_mm.page, foot + 1 - in, 1 + in);
+    }
     if (rl_mm.page == PAGE_PLAY) {
         RL_Browser(this, v, ax, ay, aw - pw - 20, ah);
         RL_Profile(this, v, ax + aw - pw, ay, pw, ah);
@@ -3402,6 +3473,21 @@ void UIReloadedMenu::DrawMain(const rlView_t& v)
     } else {
         RL_Options(this, v, ax, ay, aw, ah);
     }
+}
+
+/*
+================
+DrawOptions: Options over the game (the Esc menu's OPTIONS, shown over it):
+the page beside the Esc menu's rail where the main menu shows it; the game
+running under them, blurred and dimmed by the Esc menu
+================
+*/
+void UIReloadedMenu::DrawOptions(const rlView_t& v)
+{
+    float x, w;
+
+    RL_PageX(v, &x, &w);
+    RL_Options(this, v, x, RL_EDGE, w, v.dh - 2 * RL_EDGE);
 }
 
 /*
@@ -3691,6 +3777,10 @@ void UIReloadedMenu::ChooseMain(int id)
         rl_keys.swallow = false;
         return;
     }
+    // Options over the Esc menu: a click off its page the Esc menu's
+    if (m_screen == SCR_OPTIONS && id < 0 && RL_EscClick(uid.mouseX - (int)m_screenframe.pos.x, uid.mouseY - (int)m_screenframe.pos.y)) {
+        return;
+    }
     if (m_screen == SCR_CONNECT) {
         if (id == ID_CANCEL) {
             // CANCEL, BACK: out of the game, the main menu's Multiplayer
@@ -3739,6 +3829,11 @@ void UIReloadedMenu::ChooseMain(int id)
         rl_mm.edit = F_NONE;
     }
     rl_opt.note.clear();
+    if (id == ID_BACK) {
+        // Options over the game closed: the Esc menu under it
+        Cbuf_AddText("popmenu 0\n");
+        return;
+    }
     if (id >= ID_KEY) {
         // a box: it waits for a key (the keys to the menu, Esc's too, as to the stock list's buttons)
         rl_keys.wait = id - ID_KEY;
@@ -3958,6 +4053,7 @@ static qboolean RL_CampKey(int key)
 qboolean UIReloadedMenu::MainKey(int key)
 {
     const int step = key == K_MWHEELUP ? -3 : key == K_MWHEELDOWN ? 3 : 0;
+    const int page = m_screen == SCR_OPTIONS ? PAGE_OPTIONS : rl_mm.page;
 
     if (m_screen == SCR_CONFIRM || m_screen == SCR_CONNECT) {
         if (m_screen == SCR_CONNECT && key == K_BACKSPACE && !rl_cn.typed.empty()) {
@@ -3979,13 +4075,13 @@ qboolean UIReloadedMenu::MainKey(int key)
     }
     if (step) {
         // the wheel: the model list open, else the page's list
-        if (rl_mm.pick >= 0) {
-            rl_mm.pickTop += step;
-        } else if (rl_mm.page == PAGE_HOST) {
-            rl_host.top += step;
-        } else if (rl_mm.page == PAGE_OPTIONS) {
+        if (page == PAGE_OPTIONS) {
             RL_OptScroll(step > 0);
-        } else if (rl_mm.page == PAGE_CAMPAIGN) {
+        } else if (rl_mm.pick >= 0) {
+            rl_mm.pickTop += step;
+        } else if (page == PAGE_HOST) {
+            rl_host.top += step;
+        } else if (page == PAGE_CAMPAIGN) {
             rl_camp.top += step;
         } else {
             rl_mm.top += step;
@@ -4023,10 +4119,10 @@ qboolean UIReloadedMenu::MainKey(int key)
             return qtrue;
         }
     }
-    if (rl_mm.page == PAGE_CAMPAIGN) {
+    if (page == PAGE_CAMPAIGN) {
         return RL_CampKey(key);
     }
-    if (rl_mm.page != PAGE_PLAY) {
+    if (page != PAGE_PLAY) {
         return qfalse;
     }
     switch (key) {
@@ -4108,13 +4204,16 @@ MainTick
 
 Each frame the menu shows: the back layer's photos moved on; the front's
 lists' queries run on, Host's maps' photos made, Campaign's saved games
-read and its photos made. Opened: the models listed, the name as it is,
-the favourites read, the servers asked for the first time, the saved
-games to be read again
+read and its photos made, Options' slider dragged. Opened: the models
+listed, the name as it is, the favourites read, the servers asked for the
+first time, the saved games to be read again. Options over the game: its
+slider dragged; opened, nothing typed in or waiting for a key
 ================
 */
 void UIReloadedMenu::MainTick(bool opened)
 {
+    const int page = m_screen == SCR_OPTIONS ? PAGE_OPTIONS : rl_mm.page;
+
     if (m_screen == SCR_CONNECT) {
         // the connect's box: the backdrop, its map's photo made
         if (!RL_ConnectOwn()) {
@@ -4127,10 +4226,23 @@ void UIReloadedMenu::MainTick(bool opened)
         return;
     }
     if (m_back) {
-        RL_BgTick(opened);
+        if (m_screen == SCR_MAIN) {
+            RL_BgTick(opened);
+        }
         return;
     }
     if (opened) {
+        // (nothing typed in, no box waiting for a key)
+        rl_mm.edit = F_NONE;
+        rl_mm.note.clear();
+        rl_opt.note.clear();
+        rl_keys.swallow = false;
+        if (rl_keys.wait >= 0) {
+            RL_KeyStop();
+        }
+        RL_Changed();
+    }
+    if (opened && m_screen == SCR_MAIN) {
         const char *favs;
 
         if (!ui_favoriteservers) {
@@ -4138,13 +4250,7 @@ void UIReloadedMenu::MainTick(bool opened)
         }
         RL_ListModels();
         rl_mm.name = Cvar_VariableString("name");
-        rl_mm.edit = F_NONE;
         rl_mm.pick = -1;
-        rl_mm.note.clear();
-        rl_keys.swallow = false;
-        if (rl_keys.wait >= 0) {
-            RL_KeyStop();
-        }
         rl_favs.clear();
         favs = ui_favoriteservers->string;
         while (*favs) {
@@ -4161,14 +4267,13 @@ void UIReloadedMenu::MainTick(bool opened)
         if (rl_mm.page == PAGE_PLAY && !rl_sv.list[0]) {
             RL_SvRefresh();
         }
-        RL_Changed();
     }
     for (GServerList l : rl_sv.list) {
         if (l && ServerListState(l) != sl_idle) {
             ServerListThink(l);
         }
     }
-    if (rl_mm.page == PAGE_OPTIONS) {
+    if (page == PAGE_OPTIONS) {
         // the slider pressed dragged to the mouse while its button is down
         const bool down = (uid.mouseFlags & 1) != 0;
 
@@ -4186,6 +4291,9 @@ void UIReloadedMenu::MainTick(bool opened)
                 RL_OptSlide(i, rl_opts[i].lo + (rl_opts[i].hi - rl_opts[i].lo) * (uid.mouseX - (int)m_screenframe.pos.x - h.x) / (float)h.w);
             }
         }
+    }
+    if (m_screen == SCR_OPTIONS) {
+        return;
     }
     if (rl_mm.page == PAGE_CAMPAIGN) {
         // the saved games read, the photos made one a frame: the missions', then the saved games' (the newest first)
@@ -4235,6 +4343,10 @@ int UIReloadedMenu::MainDrawKey(void)
         // (the backdrop's photos and fade; while it connects, its step and the dash sweeping; the caret's blink)
         return rl_mm.serial * 31 + ((RL_BgFade() * 2 + rl_bg.cur) * 4099 + rl_bg.shader[0] * 31 + rl_bg.shader[1]) * 7
              + (rl_cn.end == CE_NONE ? clc.state * 65599 + cls.realtime / 16 : rl_cn.end == CE_PASSWORD ? (cls.realtime / 530) % 2 : 0);
+    }
+    if (m_back && m_screen == SCR_OPTIONS) {
+        // (Options' layout: the crosshair's preview)
+        return rl_mm.serial;
     }
     if (m_back) {
         // the photos (made, faded; Campaign's), the profile's page, Options' layout (the crosshair's preview)

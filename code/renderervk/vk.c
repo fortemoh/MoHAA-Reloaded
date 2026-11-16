@@ -2204,6 +2204,7 @@ static void VK_DestroyRenderTargets( void ) {
 	VK_DestroyTargetImage( &vk.depthImage, &vk.depthMemory, &vk.depthView );
 	VK_DestroyTargetImage( &vk.msColorImage, &vk.msColorMemory, &vk.msColorView );
 	VK_DestroyTargetImage( &vk.msDepthImage, &vk.msDepthMemory, &vk.msDepthView );
+	VK_DestroyTargetImage( &vk.blurImage, &vk.blurMemory, &vk.blurView );
 }
 
 /*
@@ -5776,6 +5777,139 @@ void vk_end_scene( void ) {
 
 	// the composite's pipeline, layout and dynamic state replaced the
 	// bindings of the draws
+	Com_Memset( &vkb, 0, sizeof( vkb ) );
+	vk_dirty = VK_DIRTY_ALL;
+}
+
+/*
+===============
+vk_frame_blur
+
+The frame as drawn so far, blurred into image (the Reloaded menus'
+backdrop, "*frameblur": RB_StretchPic, the first time a frame draws it).
+The render pass ends (with multisampling its color resolved into the
+target); the target is halved down the mip levels of vk.blurImage to a 32nd
+of its size, and the last scaled up into the image (a 16th), which is drawn
+stretched: a box filter's pyramid and bilinear steps up, a wide and soft
+blur for six blits. The next render pass loads what was drawn
+===============
+*/
+#define VK_BLUR_LEVELS		5
+
+qboolean vk_frame_blur_supported( void ) {
+	const VkFormatFeatureFlags want = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+	VkFormatProperties color, texture;
+
+	if ( !vk.device ) {
+		return qfalse;
+	}
+	qvkGetPhysicalDeviceFormatProperties( vk.physicalDevice, vk.colorFormat, &color );
+	qvkGetPhysicalDeviceFormatProperties( vk.physicalDevice, VK_FORMAT_R8G8B8A8_UNORM, &texture );
+	return ( color.optimalTilingFeatures & want ) == want && ( texture.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT );
+}
+
+// a blit of src's whole level (its size w h) to dst's (dw dh), filtered
+static void VK_BlurBlit( VkCommandBuffer cmd, VkImage src, int srcLevel, int w, int h, VkImage dst, int dstLevel, int dw, int dh ) {
+	VkImageBlit blit;
+
+	Com_Memset( &blit, 0, sizeof( blit ) );
+	blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	blit.srcSubresource.mipLevel = srcLevel;
+	blit.srcSubresource.layerCount = 1;
+	blit.srcOffsets[1].x = w;
+	blit.srcOffsets[1].y = h;
+	blit.srcOffsets[1].z = 1;
+	blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	blit.dstSubresource.mipLevel = dstLevel;
+	blit.dstSubresource.layerCount = 1;
+	blit.dstOffsets[1].x = dw;
+	blit.dstOffsets[1].y = dh;
+	blit.dstOffsets[1].z = 1;
+	qvkCmdBlitImage( cmd, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR );
+}
+
+// a level of vk.blurImage blitted to: read from now
+static void VK_BlurLevelDone( VkCommandBuffer cmd, int level ) {
+	VkImageMemoryBarrier barrier;
+
+	Com_Memset( &barrier, 0, sizeof( barrier ) );
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = vk.blurImage;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel = level;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.layerCount = 1;
+	qvkCmdPipelineBarrier( cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &barrier );
+}
+
+void vk_frame_blur( image_t *image ) {
+	vkTexture_t *dst;
+	VkCommandBuffer cmd;
+	int level, w, h;
+
+	if ( !vk.device ) {
+		return;
+	}
+	VK_BeginFrameIfNeeded();
+	dst = VK_GetTexture( image->texnum );
+	// (nothing drawn yet: no target to blur)
+	if ( !dst || dst->compressed || vk.blurSerial == vk.frameSerial || vk.target == VK_TARGET_NONE ) {
+		return;
+	}
+	vk.blurSerial = vk.frameSerial;
+	if ( !vk.blurImage ) {
+		// (sampled: what its view needs; never sampled)
+		VK_CreateImage( vk.colorFormat, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			VK_IMAGE_ASPECT_COLOR_BIT, Q_max( vk.width / 2, 1 ), Q_max( vk.height / 2, 1 ), VK_BLUR_LEVELS, &vk.blurImage, &vk.blurMemory,
+			&vk.blurView );
+	}
+	vk_end_scene();
+	VK_EndRenderPass();
+	cmd = vk.frame->mainCmd;
+
+	VK_ImageBarrier( cmd, vk.targetImage, VK_IMAGE_ASPECT_COLOR_BIT,
+		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT );
+	// (its last contents not kept)
+	VK_ImageBarrier( cmd, vk.blurImage, VK_IMAGE_ASPECT_COLOR_BIT,
+		VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT );
+
+	w = vk.width;
+	h = vk.height;
+	for ( level = 0; level < VK_BLUR_LEVELS; level++ ) {
+		const int lw = Q_max( vk.width >> ( level + 1 ), 1 ), lh = Q_max( vk.height >> ( level + 1 ), 1 );
+
+		VK_BlurBlit( cmd, level ? vk.blurImage : vk.targetImage, level ? level - 1 : 0, w, h, vk.blurImage, level, lw, lh );
+		VK_BlurLevelDone( cmd, level );
+		w = lw;
+		h = lh;
+	}
+
+	VK_ImageBarrier( cmd, dst->image, VK_IMAGE_ASPECT_COLOR_BIT,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT );
+	VK_BlurBlit( cmd, vk.blurImage, VK_BLUR_LEVELS - 1, w, h, dst->image, 0, dst->width, dst->height );
+	VK_ImageBarrier( cmd, dst->image, VK_IMAGE_ASPECT_COLOR_BIT,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT );
+	VK_ImageBarrier( cmd, vk.targetImage, VK_IMAGE_ASPECT_COLOR_BIT,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT );
+
+	VK_BeginRenderPass();
+	// (the draws that follow bind everything again)
 	Com_Memset( &vkb, 0, sizeof( vkb ) );
 	vk_dirty = VK_DIRTY_ALL;
 }
