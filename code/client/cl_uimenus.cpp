@@ -2794,7 +2794,8 @@ static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, con
     const bool      me   = r.p->client == self;
     const bool      dead = rounds && r.sc && r.sc->dead;
     const int       a    = dead ? 110 : 255;
-    const rlColor_t col  = me ? RL_Alpha(RL_BRASS, a) : dead ? RL_Rgb(150, 146, 136, a) : RL_TEXT;
+    // (the player's own: the accent's lighter shade, dimmed less while dead, readable on the team's colour in each game)
+    const rlColor_t col  = me ? RL_Alpha(RL_BRASS_HOT, dead ? 150 : 255) : dead ? RL_Rgb(150, 146, 136, a) : RL_TEXT;
     const float     fs   = Q_min(RL_S1, rh * 0.66f);
     const float     cy   = y + rh / 2 - 1;
     float           nx   = x + 14;
