@@ -485,7 +485,6 @@ void CG_ProcessConfigString(int num, qboolean modelOnly)
             }
             return;
         case CS_CURRENT_OBJECTIVE:
-            cg.ObjectivesCurrentIndex = atoi(str);
             return;
         }
 

@@ -406,11 +406,11 @@ of an interpolating one)
 void CG_ProcessSnapshots(void)
 {
     snapshot_t *snap;
-    int         n;
+    int         n, serverTime;
     qboolean    differentServer;
 
     // see what the latest snapshot the client system has is
-    cgi.GetCurrentSnapshotNumber(&n, &cg.latestSnapshotTime);
+    cgi.GetCurrentSnapshotNumber(&n, &serverTime);
     if (n != cg.latestSnapshotNum) {
         if (n < cg.latestSnapshotNum) {
             // this should never happen

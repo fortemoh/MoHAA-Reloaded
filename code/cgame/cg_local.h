@@ -230,7 +230,6 @@ extern "C" {
 
         // there are only one or two snapshot_t that are relevent at a time
         int         latestSnapshotNum;  // the number of snapshots the client system has received
-        int         latestSnapshotTime; // the time from latestSnapshotNum, so we don't need to read the snapshot yet
         snapshot_t *snap;               // cg.snap->serverTime <= cg.time
         snapshot_t *nextSnap;           // cg.nextSnap->serverTime > cg.time, or NULL
         snapshot_t  activeSnapshots[2];
@@ -364,7 +363,6 @@ extern "C" {
 
         // objectives (TAB held: shown)
         float ObjectivesDesiredAlpha;
-        int   ObjectivesCurrentIndex;
 
         // the last shadow trace of each entity
         shadowTrace_t shadowTraces[MAX_GENTITIES];
