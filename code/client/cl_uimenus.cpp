@@ -28,9 +28,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // out and draws it, and the stock 3D player model views it places. They are
 // shown for the stock menus' names (SelectTeam, ObjSelectTeam,
 // SelectFFAModel, SelectPrimaryWeapon[_<nation>], dm_main, DM_Scoreboard,
-// DM_Round_Scoreboard, Obj_Scoreboard, main, connecting and its errors,
-// StatsScreen_Success|Failed, mission_success|failed_N: UI_Menus_Alias), so
-// nothing on the server or in the cgame changes;
+// DM_Round_Scoreboard, Obj_Scoreboard, Tow_Scoreboard, Lib_Scoreboard,
+// main, connecting and its errors, StatsScreen_Success|Failed,
+// mission_success|failed_N: UI_Menus_Alias; F3's Controls and F4's LoadSave
+// their pages: RL_FKey), so nothing on the server or in the cgame changes;
 // ui_classicmenus 1 shows the stock ones (and the stock cursor: the Reloaded
 // one is RL_Cursor's).
 //
@@ -101,6 +102,7 @@ static struct {
     rlScore_t client[MAX_CLIENTS];
     int       seen[MAX_CLIENTS]; // the stamp a client's row came with
     int       teamScore[2];      // the headers', -1 none
+    int       tow[2][5];         // Tug of War: each side's objectives, 1 held
     int       requested;         // when a score was last asked for
 } rl_sb;
 
@@ -226,7 +228,11 @@ void UI_Menus_ServerCommand(void)
     rl_sb.teamScore[0] = rl_sb.teamScore[1] = -1;
     if (gametype > GT_FFA) {
         if (gametype == GT_TOW && v15) {
-            cur += 10; // the objectives' states
+            // the objectives' states: the Allies' five, the Axis' five
+            for (int i = 0; i < 10; i++) {
+                rl_sb.tow[i / 5][i % 5] = atoi(Cmd_Argv(cur + i));
+            }
+            cur += 10;
         }
         if (gametype == GT_LIBERATION && v15) {
             cur += 2;
@@ -1076,6 +1082,8 @@ static const struct {
     {"DM_Scoreboard",               "reloaded_scoreboard"},
     {"DM_Round_Scoreboard",         "reloaded_scoreboard"},
     {"Obj_Scoreboard",              "reloaded_scoreboard"},
+    {"Tow_Scoreboard",              "reloaded_scoreboard"},
+    {"Lib_Scoreboard",              "reloaded_scoreboard"},
     {"main",                        "reloaded_main"      },
     // a connect and how it ends: the connect's box (cl_uimain.cpp)
     {"connecting",                  "reloaded_connect"   },
@@ -1101,7 +1109,7 @@ const char *UI_Menus_Alias(const char *name)
     if (!ui_classicmenus || ui_classicmenus->integer || !name) {
         return NULL;
     }
-    // (every menu lookup asks, the HUD's 13 each frame: the stock names start with s, o, d, m, c, e, b or w)
+    // (every menu lookup asks, the HUD's 13 each frame: the stock names start with s, o, d, t, l, m, c, e, b or w)
     switch (name[0]) {
     case 'S':
     case 's':
@@ -1109,6 +1117,10 @@ const char *UI_Menus_Alias(const char *name)
     case 'o':
     case 'D':
     case 'd':
+    case 'T':
+    case 't':
+    case 'L':
+    case 'l':
     case 'M':
     case 'm':
     case 'C':
@@ -1155,11 +1167,42 @@ qboolean UI_Menus_Covering(void)
 
 void UI_GetPlayerModel_f(void);
 
+// F3 and F4 (default.cfg's "pushmenu Controls" and "pushmenu_sp LoadSave", the stock menus): Options' KEYS (in a game
+// over the Esc menu, unless the main menu is up), Campaign's saved games (over a game as the Esc menu's LOAD).
+// rl_escKeys: the Esc menu pushed for it, Options shown over it once the push's lock is gone (Tick)
+static bool rl_escKeys;
+
+static void RL_FKey(bool keys)
+{
+    Menu *const up = menuManager.CurrentMenu();
+
+    RL_MainShow(keys ? RL_SHOW_KEYS : RL_SHOW_SAVES);
+    if (up == menuManager.FindMenu("main")) {
+        return;
+    }
+    if (keys && clc.state > CA_PRIMED) {
+        if (up == menuManager.FindMenu("dm_main")) {
+            menuManager.ShowMenu("reloaded_options");
+        } else if (up != menuManager.FindMenu("reloaded_options")) {
+            UI_PushMenu("dm_main");
+            rl_escKeys = menuManager.CurrentMenu() == menuManager.FindMenu("dm_main");
+        }
+    } else if (up && clc.state > CA_PRIMED) {
+        Cbuf_AddText("popmenu 0;wait 250;pushmenu main\n");
+    } else {
+        UI_PushMenu("main");
+    }
+}
+
 qboolean UI_Menus_Pushing(const char *name)
 {
     const char *alias = UI_Menus_Alias(name);
 
     if (!alias) {
+        if (name && ui_classicmenus && !ui_classicmenus->integer && (!Q_stricmp(name, "Controls") || !Q_stricmp(name, "LoadSave"))) {
+            RL_FKey(*name == 'C' || *name == 'c');
+            return qfalse;
+        }
         return qtrue;
     }
     if (!strcmp(alias, "reloaded_connect")) {
@@ -1857,6 +1900,9 @@ void UIReloadedMenu::Tick(void)
     if (m_screen == SCR_SCOREBOARD) {
         RL_WantScores();
         return;
+    }
+    if (rl_escKeys && m_screen == SCR_ESC && menuManager.ShowMenu("reloaded_options")) {
+        rl_escKeys = false;
     }
     if (!menuManager.CurrentMenu() || !getParent() || menuManager.CurrentMenu()->GetContainerWidget() != getParent()) {
         // another menu over it (Options over the Esc menu: its rail still hot under the mouse, RL_EscClick)
@@ -2901,6 +2947,69 @@ static float RL_SbTeam(const rlView_t& v, float x, float y, float w, int t, cons
     return bh + 4 + n * rh;
 }
 
+// Tug of War's objectives (the map's g_obj_alliedtext1-5, g_obj_axistext1-5, one each), the sides side by side
+// under the header: a band each (emblem, ALLIED or AXIS OBJECTIVES, how many held), a row each, its box ticked while the side
+// holds it (the "scores" states, rl_sb.tow). RL_TowObjectives: the rows, 0 without objectives
+#define RL_TOWBAND 38.0f
+#define RL_TOWROW  30.0f
+
+static int RL_TowObjectives(std::string text[2][5])
+{
+    static const char *const names[2] = {"g_obj_alliedtext%d", "g_obj_axistext%d"};
+    const char              *info     = CL_ConfigString(CS_SERVERINFO);
+    int                      n        = 0;
+
+    for (int t = 0; t < 2; t++) {
+        for (int i = 0; i < 5; i++) {
+            text[t][i] = Info_ValueForKey(info, va(names[t], i + 1));
+            text[t][i].erase(0, text[t][i].find_first_not_of(' '));
+            text[t][i].erase(text[t][i].find_last_not_of(' ') + 1);
+            if (!text[t][i].empty()) {
+                n = Q_max(n, i + 1);
+            }
+        }
+    }
+    return n;
+}
+
+static void RL_SbTow(const rlView_t& v, float x, float y, float w, const std::string text[2][5], int n)
+{
+    const float cw = (w - 12) / 2;
+
+    for (int t = 0; t < 2; t++) {
+        const rlTeam_t& T  = rl_teams[t];
+        const float     cx = x + t * (cw + 12);
+        int             held = 0, all = 0;
+
+        for (int i = 0; i < n; i++) {
+            all += !text[t][i].empty();
+            held += !text[t][i].empty() && rl_sb.tow[t][i];
+        }
+        RL_HGradient(v, cx, y, cw, RL_TOWBAND, RL_T(T.mid, 235), RL_T(T.base, 235));
+        RL_TeamIcon(v, t, cx + 24, y + RL_TOWBAND / 2, 24);
+        RL_Text(v, cx + 44, y + RL_TOWBAND / 2, t ? "AXIS OBJECTIVES" : "ALLIED OBJECTIVES", RL_S2, RL_TEXT, true, RL_LEFT, 2, RL_MID);
+        RL_Text(v, cx + cw - 16, y + RL_TOWBAND / 2, va("%d / %d HELD", held, all), RL_S2, RL_T(T.pale, 220), false, RL_RIGHT, 2, RL_MID);
+        for (int i = 0; i < n; i++) {
+            const float     ry  = y + RL_TOWBAND + 4 + i * RL_TOWROW, cy = ry + RL_TOWROW / 2 - 1;
+            const bool      on  = rl_sb.tow[t][i] != 0;
+            const rlColor_t row = RL_Rgb(22, 24, 26, 232);
+
+            // (every other row a little lighter, as the scoreboard's)
+            RL_Box(v, cx, ry, cw, RL_TOWROW - 2, i % 2 == 0 ? RL_Over(RL_Rgb(255, 255, 255, 9), row) : row);
+            if (text[t][i].empty()) {
+                continue;
+            }
+            if (on) {
+                RL_Box(v, cx + 14, cy - 9, 18, 18, RL_T(T.light));
+                RL_Outline(v, RL_OUTLINES "glyphs/check.svg", cx + 23, cy, 13, 13, RL_INK);
+            } else {
+                RL_RoundFrame(v, cx + 14, cy - 9, 18, 18, 2, 2, RL_Rgb(120, 117, 110));
+            }
+            RL_Text(v, cx + 46, cy, text[t][i].c_str(), 18, on ? RL_TEXT : RL_MUTED, false, RL_LEFT, 0, RL_MID, cw - 60);
+        }
+    }
+}
+
 // the spectators' names wrapped to the board's width: every one, on as many lines as it takes
 static std::vector<std::string> RL_SpecLines(const rlView_t& v, float w, const std::vector<rlPlayer_t>& names)
 {
@@ -3006,7 +3115,10 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
         const int order[2] = {first, !first};
         const int n1 = Q_max(1, (int)teams[order[0]].size()), n2 = Q_max(1, (int)teams[order[1]].size());
         const float banner = UI_Extras_BannerHeight(v), over = banner > 0.0f ? banner + 16.0f : 0.0f;
-        const float base = availAll - 2 * band - gapT - over;
+        std::string tow[2][5];
+        const int   towN = in.gametype == GT_TOW ? RL_TowObjectives(tow) : 0;
+        const float towH = towN ? RL_TOWBAND + 4 + towN * RL_TOWROW + 14 : 0.0f;
+        const float base = availAll - 2 * band - gapT - over - towH;
         float       avail = base;
         int         caps[2] = {-1, -1};
 
@@ -3029,7 +3141,7 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
             caps[1] = m2;
         }
         const int   rowsUsed = (caps[0] >= 0 ? caps[0] : n1) + (caps[1] >= 0 ? caps[1] : n2);
-        const float used     = over + hdrH + 14 + 2 * band + gapT + rowsUsed * rh + specH;
+        const float used     = over + hdrH + 14 + towH + 2 * band + gapT + rowsUsed * rh + specH;
         const float top      = Q_max(topMin, (v.dh - used) / 2);
         float       y        = top + over + hdrH + 14;
 
@@ -3037,9 +3149,13 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
             UI_Extras_DrawBanner(v, top);
         }
         RL_SbHeader(v, x, top + over, w, hdrH, in, ffaRows);
+        if (towN) {
+            RL_SbTow(v, x, y, w, tow, towN);
+            y += towH;
+        }
         // (an objective game's objectives in the bands: the other modes' maps may set the same lines)
         std::string objs[2];
-        if (in.gametype == GT_OBJECTIVE || in.gametype == GT_TOW) {
+        if (in.gametype == GT_OBJECTIVE) {
             RL_MapObjectives(objs);
         }
         for (int k = 0; k < 2; k++) {

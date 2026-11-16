@@ -999,6 +999,7 @@ qboolean CG_LightStyleColor(int style, int realtime, vec4_t color, qboolean clam
     void CG_InstaMessageGroupE_f(void);
     void CG_HudPrint_f(void);
 
+    int      CG_InstaMessageGroups(void);
     qboolean CG_CheckCaptureKey(int key, qboolean down, unsigned int time);
 
     //
