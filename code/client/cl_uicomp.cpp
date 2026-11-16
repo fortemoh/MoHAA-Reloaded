@@ -926,8 +926,10 @@ void UI_CompHud_Frame(void)
     const qboolean       teams    = gametype >= GT_TEAM;
     const qboolean       rounds   = gametype == GT_TEAM_ROUNDS || gametype == GT_OBJECTIVE;
     const qboolean       spectating = (ps->pm_flags & PMF_SPECTATING) != 0;
-    const qboolean       following = spectating && (ps->pm_flags & PMF_CAMERA_VIEW) && ps->stats[STAT_INFOCLIENT] >= 0
-                                && ps->stats[STAT_INFOCLIENT] < MAX_CLIENTS;
+    // following a player from behind (the camera view) or through their eyes
+    // (g_spectatefollow_firstperson: the snapshot is that player's number)
+    const qboolean       following = spectating && ((ps->pm_flags & PMF_CAMERA_VIEW) || ps->clientNum != clc.clientNum)
+                                && ps->stats[STAT_INFOCLIENT] >= 0 && ps->stats[STAT_INFOCLIENT] < MAX_CLIENTS;
     const char *weapon = ps->activeItems[ITEM_WEAPON] >= 0 && ps->activeItems[ITEM_WEAPON] < MAX_WEAPONS
                            ? CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON])
                            : "";
