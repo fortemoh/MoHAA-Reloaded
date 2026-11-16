@@ -2589,13 +2589,9 @@ void UIReloadedMenu::Choose(int id)
             cmd = "popmenu 0;wait 250;spectator\n";
             break;
         case ID_DISCONNECT:
-            if (RL_Gametype() == GT_SINGLE_PLAYER) {
-                // (a mission left: the main menu, on Campaign)
-                RL_MainShow(RL_SHOW_MISSIONS);
-                cmd = "disconnect;wait 5;popmenu 0;pushmenu main\n";
-            } else {
-                cmd = "disconnect;wait 5;popmenu 0;pushmenu main;pushmenu multiplayer\n";
-            }
+            // (the main menu next: a mission left on Campaign, a match on Multiplayer)
+            RL_MainShow(RL_Gametype() == GT_SINGLE_PLAYER ? RL_SHOW_MISSIONS : RL_SHOW_PLAY);
+            cmd = "disconnect;wait 5;popmenu 0;pushmenu main\n";
             break;
         case ID_RESUME:
             cmd = "popmenu 0\n";

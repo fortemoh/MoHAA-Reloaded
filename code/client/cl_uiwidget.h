@@ -113,8 +113,8 @@ public:
 // Options over the Esc menu clicked off its page, at x y (a ReloadedMenu's, all of them the screen's): the Esc menu's
 // item there chosen, Options closed first (cl_uimenus.cpp); false: none there
 bool        RL_EscClick(int x, int y);
-// the main menu shown next on a page (the Esc menu's LOAD, MAIN MENU in a mission; cl_uimain.cpp)
-enum { RL_SHOW_MISSIONS, RL_SHOW_SAVES };
+// the main menu shown next on a page (the Esc menu's LOAD, MAIN MENU in a mission, DISCONNECT; cl_uimain.cpp)
+enum { RL_SHOW_PLAY, RL_SHOW_MISSIONS, RL_SHOW_SAVES };
 void        RL_MainShow(int what);
 // the rail (the main menu's, the Esc menu's; cl_uimain.cpp): the lockup at its head (head: the match under it, a title
 // over two lines), the items from 380 down (on: the id of the one filled brass, -1 none), the foot's up from its foot (a

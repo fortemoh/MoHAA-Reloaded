@@ -3412,7 +3412,7 @@ static void RL_OptChoose(int id)
 
 void RL_MainShow(int what)
 {
-    rl_mm.page  = PAGE_CAMPAIGN;
+    rl_mm.page  = what == RL_SHOW_PLAY ? PAGE_PLAY : PAGE_CAMPAIGN;
     rl_camp.tab = what == RL_SHOW_SAVES ? CT_SAVES : CT_MISSIONS;
     RL_Changed();
 }
