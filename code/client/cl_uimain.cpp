@@ -2424,10 +2424,32 @@ static const char *RL_Latched(const cvar_t *cv)
     return cv->latchedString ? cv->latchedString : cv->string;
 }
 
+// a setting's cvar, made if it isn't there. Not got again while a value waits for a restart: Cvar_Get takes a
+// latched value at once, and the setting would change before APPLY's restart
+static cvar_t *RL_OptCvar(const char *name, const char *def, int flags)
+{
+    cvar_t *cv = Cvar_FindVar(name);
+
+    return cv && cv->latchedString ? cv : Cvar_Get(name, def, flags);
+}
+
+// a setting's cvar set. One the renderer takes at a restart (latched) keeps its value until APPLY's, the new one
+// waiting: Cvar_Set would force it in at once
+static void RL_OptCvarSet(const char *name, const char *value)
+{
+    const cvar_t *cv = Cvar_FindVar(name);
+
+    if (cv && (cv->flags & CVAR_LATCH)) {
+        Cvar_SetLatched(name, value);
+    } else {
+        Cvar_Set(name, value);
+    }
+}
+
 // another cvar a setting draws from
 static cvar_t *RL_OptOther(const char *name)
 {
-    cvar_t *cv = Cvar_Get(name, "0", 0);
+    cvar_t *cv = RL_OptCvar(name, "0", 0);
 
     UI_DrawDep(cv);
     return cv;
@@ -2511,7 +2533,7 @@ static void RL_OptRead(void)
         sec           = rl_opts[i].kind == OC_SECTION ? i : sec;
         rl_opt.sec[i] = sec;
         if (rl_opts[i].cvar) {
-            rl_opt.cv[i] = Cvar_Get(rl_opts[i].cvar, rl_opts[i].def, CVAR_ARCHIVE);
+            rl_opt.cv[i] = RL_OptCvar(rl_opts[i].cvar, rl_opts[i].def, CVAR_ARCHIVE);
         }
     }
     rl_opt.refSeq = uii.GetRefSequence();
@@ -2747,7 +2769,7 @@ static void RL_OptSet(int i, const char *value)
     if (!strcmp(RL_OptValue(i), value)) {
         return;
     }
-    Cvar_Set(o.cvar, value);
+    RL_OptCvarSet(o.cvar, value);
     if (o.flags & OF_GUN) {
         // (CG_ViewModelSettings's rules, for the menu before any map)
         const int   preset = Cvar_VariableIntegerValue("cg_viewmodel_presetpos");
@@ -2785,20 +2807,20 @@ static void RL_OptPick(int i, int k)
     const rlOpt_t& o = rl_opts[i];
 
     if (o.flags & OF_DISPLAY) {
-        Cvar_Set("r_fullscreen", k ? "0" : "1");
-        Cvar_Set("r_noborder", k == 2 ? "1" : "0");
+        RL_OptCvarSet("r_fullscreen", k ? "0" : "1");
+        RL_OptCvarSet("r_noborder", k == 2 ? "1" : "0");
     } else if (o.flags & OF_ANISO) {
-        Cvar_Set("r_ext_texture_filter_anisotropic", k ? "1" : "0");
+        RL_OptCvarSet("r_ext_texture_filter_anisotropic", k ? "1" : "0");
         if (k) {
-            Cvar_Set("r_ext_max_anisotropy", o.values[k]);
+            RL_OptCvarSet("r_ext_max_anisotropy", o.values[k]);
         }
     } else if (o.flags & OF_RES) {
         int w, h;
 
-        Cvar_Set("r_mode", k ? "-1" : "-2");
+        RL_OptCvarSet("r_mode", k ? "-1" : "-2");
         if (k && sscanf(rl_opt.sizes[k].c_str(), "%d x %d", &w, &h) == 2) {
-            Cvar_Set("r_customwidth", va("%d", w));
-            Cvar_Set("r_customheight", va("%d", h));
+            RL_OptCvarSet("r_customwidth", va("%d", w));
+            RL_OptCvarSet("r_customheight", va("%d", h));
         }
     } else {
         RL_OptSet(i, o.values ? o.values[k] : va("%d", k));
