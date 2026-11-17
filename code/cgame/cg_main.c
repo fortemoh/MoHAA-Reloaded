@@ -125,7 +125,6 @@ cvar_t *cg_righthand;
 cvar_t *voiceChat;
 cvar_t *cg_shadowscount;
 cvar_t *cg_shadowdebug;
-cvar_t *ui_timemessage;
 
 //
 // Added in OPM
@@ -162,7 +161,7 @@ void CG_RegisterCvars(void)
     cg_hidetempmodels             = cgi.Cvar_Get("cg_hidetempmodels", "0", 0);
     cg_synchronousClients         = cgi.Cvar_Get("g_synchronousClients", "0", 0);
     cg_stereoSeparation           = cgi.Cvar_Get("cg_stereosep", "0.4", CVAR_ARCHIVE);
-    cg_lagometer                  = cgi.Cvar_Get("cg_lagometer", "0", 0);
+    cg_lagometer                  = cgi.Cvar_Get("cg_lagometer", "0", CVAR_ARCHIVE);
     paused                        = cgi.Cvar_Get("paused", "0", 0);
     r_lerpmodels                  = cgi.Cvar_Get("r_lerpmodels", "1", 0);
     cg_3rd_person                 = cgi.Cvar_Get("cg_3rd_person", "0", CVAR_CHEAT);
@@ -242,7 +241,6 @@ void CG_RegisterCvars(void)
     cg_righthand                  = cgi.Cvar_Get("cg_righthand", "1", CVAR_ARCHIVE);
     voiceChat                     = cgi.Cvar_Get("cg_voicechat", "1", 0);
 
-    ui_timemessage = cgi.Cvar_Get("ui_timemessage", "", 0);
 
     // see if we are also running the server on this machine
     temp            = cgi.Cvar_Get("sv_running", "0", 0);
@@ -486,15 +484,7 @@ void CG_ProcessConfigString(int num, qboolean modelOnly)
             }
             return;
         case CS_CURRENT_OBJECTIVE:
-            cg.ObjectivesCurrentIndex = atoi(str);
             return;
-        }
-
-        if (num >= CS_OBJECTIVES && num < CS_OBJECTIVES + MAX_OBJECTIVES) {
-            cobjective_t *objective = &cg.Objectives[num - CS_OBJECTIVES];
-
-            objective->flags = atoi(Info_ValueForKey(str, "flags"));
-            Q_strncpyz(objective->text, Info_ValueForKey(str, "text"), sizeof(objective->text));
         }
 
         switch (num) {
@@ -619,20 +609,8 @@ void CG_PrepRefresh(void)
     cgs.media.shadowMarkShader         = cgi.R_RegisterShader("markShadow");
     cgs.media.footShadowMarkShader     = cgi.R_RegisterShader("footShadow");
     cgs.media.wakeMarkShader           = cgi.R_RegisterShader("ripple.spr");
-    cgs.media.lagometerShader          = cgi.R_RegisterShaderNoMip("gfx/2d/blank");
-    cgs.media.levelExitShader          = cgi.R_RegisterShaderNoMip("textures/menu/exit");
-    cgs.media.pausedShader             = cgi.R_RegisterShaderNoMip("textures/menu/paused");
     cgs.media.backTileShader           = cgi.R_RegisterShader("gfx/2d/backtile");
-    cgs.media.zoomOverlayShader        = cgi.R_RegisterShaderNoMip("textures/hud/zoomoverlay");
-    cgs.media.kar98TopOverlayShader    = cgi.R_RegisterShaderNoMip("textures/hud/kartop.tga");
-    cgs.media.kar98BottomOverlayShader = cgi.R_RegisterShaderNoMip("textures/hud/karbottom.tga");
-    cgs.media.binocularsOverlayShader  = cgi.R_RegisterShaderNoMip("textures/hud/binocularsoverlay");
     cgs.media.hudDrawFont              = cgi.R_LoadFont("verdana-14");
-    cgs.media.attackerFont             = cgi.R_LoadFont("facfont-20");
-    cgs.media.objectiveFont            = cgi.R_LoadFont("facfont-20"); // was courier-16 before 2.0
-    cgs.media.objectivesBackShader     = cgi.R_RegisterShaderNoMip("textures/hud/objectives_backdrop");
-    cgs.media.checkedBoxShader         = cgi.R_RegisterShaderNoMip("textures/objectives/filledbox");
-    cgs.media.uncheckedBoxShader       = cgi.R_RegisterShaderNoMip("textures/objectives/emptybox");
 
     // go through all the configstrings and process them
     for (i = CS_SYSTEMINFO + 1; i < MAX_CONFIGSTRINGS; i++) {
@@ -678,9 +656,14 @@ void CG_GameStateReceived(void)
 {
     const char *s;
     int checksum;
+    int clientNum;
 
     // clear everything
+    // Fixed in Reloaded
+    //  Keep our client number (set by CG_Init just before), it was always 0
+    clientNum = cg.clientNum;
     memset(&cg, 0, sizeof(cg));
+    cg.clientNum = clientNum;
     memset(cg_entities, 0, sizeof(cg_entities));
 
     // clear the light styles
@@ -832,7 +815,7 @@ void CG_Shutdown(void)
 {
     L_ShutdownEvents();
     // Shutdown radar
-    cgi.CL_InitRadar(NULL, NULL, -1);
+    cgi.CL_InitRadar(NULL, -1);
 
     // some mods may need to do cleanup work here,
     // like closing files or archiving session data
@@ -848,11 +831,6 @@ void CG_Shutdown(void)
 int CG_GetParent(int entnum)
 {
     return cg_entities[entnum].currentState.parent;
-}
-
-float CG_GetObjectiveAlpha()
-{
-    return cg.ObjectivesCurrentAlpha;
 }
 
 /*
@@ -884,11 +862,9 @@ clientGameExport_t *GetCGameAPI(void)
     cge.CG_ProcessInitCommands      = CG_ProcessInitCommands;
     cge.CG_EndTiki                  = CG_EndTiki;
     cge.CG_GetParent                = CG_GetParent;
-    cge.CG_GetObjectiveAlpha        = CG_GetObjectiveAlpha;
     cge.CG_WeaponCommandButtonBits  = CG_WeaponCommandButtonBits;
     cge.CG_CheckCaptureKey          = CG_CheckCaptureKey;
     cge.CG_ReadNonPVSClient         = CG_ReadNonPVSClient;
-    cge.CG_UpdateRadar              = CG_UpdateRadar;
     cge.CG_SaveStateToBuffer        = CG_SaveStateToBuffer;
     cge.CG_LoadStateToBuffer        = CG_LoadStateToBuffer;
     cge.CG_CleanUpTempModels        = CG_CleanUpTempModels;

@@ -23,8 +23,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "client.h"
 #include "../server/server.h"
+#include "cl_lagometer.h"
 #include "cl_ui.h"
 #include "cl_uicomp.h"
+#include "cl_uimenus.h"
 #include "../corepp/tiki.h"
 #include "../qcommon/cm_terrain.h"
 #include "../qcommon/localization.h"
@@ -109,10 +111,6 @@ cvar_t	*cl_conXOffset;
 
 cvar_t	*cl_serverStatusResendTime;
 cvar_t	*cl_trn;
-cvar_t	*cl_langamerefreshstatus;
-cvar_t	*cl_radar_icon_size;
-cvar_t	*cl_radar_speak_time;
-cvar_t	*cl_radar_blink_time;
 
 cvar_t	*cl_lanForcePackets;
 
@@ -768,7 +766,7 @@ void CL_StartDemoLoop( void ) {
 ==================
 CL_NextDemo
 
-Called when a demo or cinematic finishes
+Called when a demo finishes
 If the "nextdemo" cvar is set, that command will be issued
 ==================
 */
@@ -867,7 +865,7 @@ void CL_MapLoading( qboolean flush, const char *pszMapName ) {
 			clc.lastPacketSentTime = -9999;
 		}
 		else {
-			// clear nextmap so the cinematic shutdown doesn't execute it
+			// (a new game: the last one's nextmap cleared)
 			Cvar_Set("nextmap", "");
 			CL_Disconnect();
 			Q_strncpyz(clc.servername, "localhost", sizeof(clc.servername));
@@ -925,6 +923,9 @@ void CL_ClearState( void )
 
     // Added in OPM
     CL_CleanupUserInfo();
+
+	// Added: the lagometer starts again with the new state
+	CL_Lagometer_Reset();
 }
 
 /*
@@ -963,7 +964,6 @@ void CL_Disconnect() {
 		clc.demofile = 0;
 	}
 
-	SCR_StopCinematic ();
 	S_ClearSoundBuffer();
 
 	// send a disconnect message to the server
@@ -1344,6 +1344,9 @@ void CL_Connect( const char *server, netadrtype_t family ) {
 	}
 	serverString = NET_AdrToStringwPort(clc.serverAddress);
 
+	// Added: the Reloaded connect's box asks the server for its name and map
+	UI_Menus_Connect(server, &clc.serverAddress);
+
 	Com_Printf( "%s resolved to %s\n", clc.servername, serverString );
 
 	// if we aren't playing on a lan, we need to authenticate
@@ -1627,7 +1630,7 @@ void CL_Vid_Restart_f( void ) {
 
     MUSIC_NewSoundtrack(current_soundtrack);
 
-	if (clc.state > CA_CONNECTED && clc.state != CA_CINEMATIC)
+	if (clc.state > CA_CONNECTED)
 	{
 		// send pure checksums
 		CL_SendPureChecksums();
@@ -2456,7 +2459,7 @@ void CL_CheckTimeout( void ) {
 	// check timeout
 	//
 	if ( ( !CL_CheckPaused() || !paused->integer )
-		&& clc.state >= CA_CONNECTED && clc.state != CA_CINEMATIC
+		&& clc.state >= CA_CONNECTED
 	    && cls.realtime - clc.lastPacketTime > cl_timeout->value*1000) {
 		if (++cl.timeoutcount > 5) {	// timeoutcount saves debugger
 			const char* info;
@@ -2564,17 +2567,11 @@ void CL_Frame ( int msec ) {
 		return;
 	}
 
-	if (CL_FinishedIntro()) {
-		if (clc.state == CA_DISCONNECTED) {
-			if (!UI_MenuActive() && !com_sv_running->integer) {
-				// if disconnected, bring up the menu
-				S_StopAllSounds2(qtrue);
-				S_TriggeredMusic_PlayIntroMusic();
-				UI_MenuEscape("main");
-			}
-		} else if (clc.state == CA_CINEMATIC) {
-			UI_ForceMenuOff(qtrue);
-		}
+	if (clc.state == CA_DISCONNECTED && !UI_MenuActive() && !com_sv_running->integer) {
+		// if disconnected, bring up the menu
+		S_StopAllSounds2(qtrue);
+		S_TriggeredMusic_PlayIntroMusic();
+		UI_MenuEscape("main");
 	}
 
 	// if recording an avi, lock to a fixed fps
@@ -2707,9 +2704,6 @@ void CL_Frame ( int msec ) {
 	// update audio
 	S_Update();
 
-	// advance local effects for next frame
-	SCR_RunCinematic();
-
 #ifdef USE_DISCORD
 	CL_Discord_Frame();
 #endif
@@ -2805,7 +2799,7 @@ void CL_StartHunkUsers( qboolean rendererOnly ) {
 	}
 
 	if( !cls.cgameStarted ) {
-		if( clc.state >= CA_LOADING && clc.state != CA_CINEMATIC ) {
+		if( clc.state >= CA_LOADING ) {
 			CL_InitCGame();
 		}
 	}
@@ -2978,14 +2972,6 @@ CL_RefFS_ListFiles
 */
 char** CL_RefFS_ListFiles(const char* name, const char* extension, int* numfilesfound) {
 	return FS_ListFiles(name, extension, qtrue, numfilesfound);
-}
-
-/*
-============
-CL_RefCIN_UploadCinematic
-============
-*/
-void CL_RefCIN_UploadCinematic(int handle) {
 }
 
 /*
@@ -3184,9 +3170,6 @@ void CL_InitRef( void ) {
     ri.Cvar_SetDescription = Cvar_SetDescription;
     ri.Cvar_VariableIntegerValue = Cvar_VariableIntegerValue;
 
-    ri.CIN_UploadCinematic = CL_RefCIN_UploadCinematic;
-    ri.CIN_PlayCinematic = CIN_PlayCinematic;
-    ri.CIN_RunCinematic = CIN_RunCinematic;
     ri.CL_WriteAVIVideoFrame = CL_WriteAVIVideoFrame;
 
     ri.IN_Init = IN_Init;
@@ -3509,10 +3492,6 @@ void CL_Init( void ) {
 
 	cl_motdString = Cvar_Get( "cl_motdString", "", CVAR_ROM );
 
-	cl_langamerefreshstatus = Cvar_Get( "cl_langamerefreshstatus", "Ready", 0 );
-	cl_radar_icon_size = Cvar_Get("cl_radar_icon_size", "10", CVAR_ARCHIVE);
-	cl_radar_speak_time = Cvar_Get("cl_radar_speak_time", "3", CVAR_ARCHIVE);
-	cl_radar_blink_time = Cvar_Get("cl_radar_blink_time", "0.333", CVAR_ARCHIVE);
 	cg_gametype = Cvar_Get( "cg_gametype", "0", 0 );
 
 	cl_lanForcePackets = Cvar_Get ("cl_lanForcePackets", "1", CVAR_ARCHIVE);
@@ -3552,7 +3531,6 @@ void CL_Init( void ) {
 	Cmd_AddCommand ("disconnect", CL_Disconnect_f);
 	Cmd_AddCommand ("record", CL_Record_f);
 	Cmd_AddCommand ("demo", CL_PlayDemo_f);
-	Cmd_AddCommand ("cinematic", CL_PlayCinematic_f);
 	Cmd_AddCommand ("stoprecord", CL_StopRecord_f);
 	Cmd_AddCommand ("connect", CL_Connect_f);
 	Cmd_AddCommand ("menuconnect", CL_MenuConnect_f);
@@ -3647,7 +3625,6 @@ void CL_Shutdown(const char* finalmsg, qboolean disconnect, qboolean quit) {
 	Cmd_RemoveCommand ("disconnect");
 	Cmd_RemoveCommand ("record");
 	Cmd_RemoveCommand ("demo");
-	Cmd_RemoveCommand ("cinematic");
 	Cmd_RemoveCommand ("stoprecord");
 	Cmd_RemoveCommand ("connect");
 	Cmd_RemoveCommand ("localservers");
@@ -3741,6 +3718,11 @@ void CL_ServerInfoPacket( netadr_t from, msg_t *msg ) {
 	qboolean gameMismatch;
 
 	infoString = MSG_ReadString( msg );
+
+	// Added: the answer the Reloaded connect's box asked for (it has no gamename)
+	if (UI_Menus_ServerInfo(&from, infoString)) {
+		return;
+	}
 
 	// if this isn't the correct gamename, ignore it
 	gamename = Info_ValueForKey( infoString, "gamename" );
@@ -4067,7 +4049,6 @@ void CL_LocalServers_f( void ) {
 	netadr_t	to;
 
 	Com_Printf( "Scanning for servers on the local network...\n");
-	Cvar_Set( "cl_langamerefreshstatus", "Scanning for servers on the local network...\n" );
 
 	// reset the list, waiting for response
 	cls.numlocalservers = 0;
@@ -4456,6 +4437,9 @@ void CL_SaveShot_f( void ) {
 	}
 
 	strcat( expanded, "\n" );
+
+	// Added: the Reloaded load screen of a level (its autosave's) without its CONTINUE
+	UI_Menus_SaveShot();
 
 	// hide menus
 	cls.no_menus = qtrue;

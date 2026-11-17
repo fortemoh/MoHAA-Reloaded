@@ -241,6 +241,11 @@ GError ServerListThink(GServerList serverlist);
 Halts the current updates batch  */
 GError ServerListHalt(GServerList serverlist);
 
+/* ServerListGetQueryStats
+--------------------------
+The servers of the current (or last) update that answered and that timed out */
+void ServerListGetQueryStats(GServerList serverlist, int *responsive, int *timedout);
+
 /* ServerListClear
 ------------------
 Clear and free all of the servers from the server list.

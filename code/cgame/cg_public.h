@@ -86,6 +86,14 @@ functions imported from the main executable
 
 #define CGAME_IMPORT_API_VERSION 3
 
+// Added: the status icons the client draws for the cgame (cgi.UI_DrawStatusIcon)
+enum {
+    UI_ICON_PAUSED,      // the game paused (the Pause key)
+    UI_ICON_NOSNAPSHOTS, // nothing from the server for the commands' backup
+    UI_ICON_SLOWSERVER,  // the server behind (developer)
+    UI_ICON_NUM
+};
+
     /*
 ==================================================================
 
@@ -366,7 +374,6 @@ functions exported to the main executable
         void (*UI_HideMenu)(const char *name, qboolean bForce);
         int (*UI_FontStringWidth)(fontheader_t *font, const char *string, int maxLen);
         // Added in 2.0
-        float (*UI_GetObjectivesTop)(void);
         void (*UI_GetHighResolutionScale)(vec2_t scale);
 
         int (*Key_StringToKeynum)(const char *str);
@@ -431,7 +438,7 @@ functions exported to the main executable
         );
         void (*UI_DeleteScoreBoardItems)(int maxIndex);
         void (*UI_ToggleDMMessageConsole)(int consoleMode);
-        void (*CL_InitRadar)(radarClient_t* radars, qhandle_t* shaders, int clientNum); // Added in 2.0
+        void (*CL_InitRadar)(radarClient_t* radars, int clientNum); // Added in 2.0
         dtiki_t *(*TIKI_FindTiki)(const char *path);
         void (*LoadResource)(const char *name);
         void (*FS_CanonicalFilename)(char *name);
@@ -456,10 +463,27 @@ functions exported to the main executable
         // R_DrawBox for count boxes (x, y, width, height) in one draw (Metal port)
         void (*R_DrawBoxes)(const float (*boxes)[4], int count, const float *color);
 
-        // Added: the zoom overlay drawn by the client (the Competitive HUD's,
-        // cg_hudstyle 1): type 0 a scope, 1 the Kar98's, 2 the spy camera's,
-        // 3 the binoculars'; faded by alpha. qfalse: the stock one is to be drawn
-        qboolean (*UI_DrawZoomOverlay)(int type, float alpha);
+        // Added: the zoom overlay drawn by the client (the Competitive HUD's):
+        // type 0 a scope, 1 the Kar98's, 2 the spy camera's, 3 the binoculars';
+        // faded by alpha
+        void (*UI_DrawZoomOverlay)(int type, float alpha);
+
+        // Added: the quick messages' menu drawn by the client (the Competitive
+        // HUD's): its title (NULL: the groups'), its count lines (the
+        // localization's keys, "" not shown, numbered from 1). Static texts:
+        // the client keeps what it made of them while they're the same
+        void (*UI_DrawInstaMessage)(const char *title, const char *const *lines, int count);
+
+        // Added: a mission's objectives drawn by the client while TAB is held
+        // (shown; the Reloaded menus' card), called each frame
+        void (*UI_DrawObjectives)(qboolean shown);
+
+        // Added: a status icon (UI_ICON_*) drawn by the client in the HUD's
+        // style; PAUSED raised over a faded screen
+        void (*UI_DrawStatusIcon)(int icon, qboolean raised);
+
+        // Added: the lagometer drawn by the client (1 the graph, 2 compact)
+        void (*UI_DrawLagometer)(int style);
 
     } clientGameImport_t;
 
@@ -487,7 +511,6 @@ functions exported to the main executable
         void (*CG_HudDrawShader)(int info);
         void (*CG_HudDrawFont)(int info);
         int (*CG_GetParent)(int entNum);
-        float (*CG_GetObjectiveAlpha)();
         int (*CG_PermanentMark)(
             vec3_t          origin,
             vec3_t          dir,
@@ -528,7 +551,6 @@ functions exported to the main executable
         // Added in 2.0
         //
 		void (*CG_ReadNonPVSClient)(radarUnpacked_t* radarUnpacked);
-		void (*CG_UpdateRadar)();
 		size_t (*CG_SaveStateToBuffer)(void** out, int svsTime);
 		qboolean (*CG_LoadStateToBuffer)(void* state, size_t size, int svsTime);
 		void (*CG_CleanUpTempModels)();

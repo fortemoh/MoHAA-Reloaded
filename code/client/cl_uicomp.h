@@ -21,7 +21,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 // cl_uicomp.h: the Competitive HUD's data and widgets (Added, cg_hudstyle 1
-// CS:GO's, 2 CS2's, ui/hud_comp_*.urc)
+// CS:GO's, 2 CS2's, ui/hud_comp_*.urc): the game's HUD
 
 #pragma once
 
@@ -30,7 +30,6 @@ void     UI_CompHud_HeadIcons(void);      // the head icons' pictures, made once
 // a file made while the game runs read as one compiled in (name and data kept until the client quits); qfalse: no room
 qboolean UI_CompHud_AddFile(const char *name, const void *data, int size);
 void     UI_CompHud_Init(void);
-qboolean UI_CompHud_Active(void);         // cg_hudstyle 1 or 2
 void     UI_CompHud_Frame(void);          // the ui_hud_* cvars, before the menus draw
 void     UI_CompHud_Print(const char *msg); // a console line: the chat, the game messages, the kills
 void     UI_CompHud_Clear(void);          // a new map or server
@@ -38,6 +37,10 @@ void     UI_CompHud_Shutdown(void);       // the UI's end
 void     UI_CompHud_ConfigString(void);   // a configstring changed
 void     UI_CompHud_MapLoaded(void);      // the radar's walk and the pictures, at the load
 void     UI_CompHud_PreBake(qboolean ahead); // the pictures (after the renderer's restart); ahead: their texels begun
+// the cgame's teammates (cg.radars, the radar's), the player's place in them; NULL none
+void     CL_InitRadar(radarClient_t *radars, int clientNum);
+// a weapon's outline (ui/outlines/weapons/) by its name (its configstring's, its item name), NULL none
+const char *UI_CompHud_WeaponOutline(const char *name);
 
 // the HUD's menus (ui/hud_comp_*.urc), in the order they are baked (the atlas is filled in it)
 #define UI_COMPHUD_MENUS 14

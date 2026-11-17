@@ -396,12 +396,6 @@ void *Hunk_Alloc( int size, ha_pref preference );
 #define Com_Allocate malloc
 #define Com_Dealloc free
 
-#define CIN_system	1
-#define CIN_loop	2
-#define	CIN_hold	4
-#define CIN_silent	8
-#define CIN_shader	16
-
 /*
 ==============================================================
 
@@ -2077,8 +2071,7 @@ typedef enum {
 	CA_CONNECTED,		// netchan_t established, getting gamestate
 	CA_LOADING,			// only during cgame initialization, never during main loop
 	CA_PRIMED,			// got gamestate, waiting for first frame
-	CA_ACTIVE,			// game views should be displayed
-	CA_CINEMATIC		// playing a cinematic or a static pic, not connected to a server
+	CA_ACTIVE			// game views should be displayed
 } connstate_t;
 
 typedef struct qtime_s {
@@ -2199,17 +2192,6 @@ typedef struct {
 #define AS_GAMESPY			1	// wombat: right now we use AS_GLOBAL for GS, too
 
 
-// cinematic states
-typedef enum {
-	FMV_IDLE,
-	FMV_PLAY,		// play
-	FMV_EOF,		// all other conditions, i.e. stop/EOF/abort
-	FMV_ID_BLT,
-	FMV_ID_IDLE,
-	FMV_LOOPED,
-	FMV_ID_WAIT
-} e_status;
-
 typedef enum _flag_status {
 	FLAG_ATBASE = 0,
 	FLAG_TAKEN,			// CTF
@@ -2223,8 +2205,6 @@ typedef enum _flag_status {
 //
 typedef struct {
 	int time;
-	int lastSpeakTime;
-	int teamShader;
 	float origin[2];
 	float axis[2];
 } radarClient_t;

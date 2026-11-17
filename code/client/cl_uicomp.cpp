@@ -20,7 +20,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
-// cl_uicomp.cpp: the Competitive HUD (Added, cg_hudstyle 1), Project: Omaha's
+// cl_uicomp.cpp: the Competitive HUD (Added, cg_hudstyle 1 or 2), Project: Omaha's
 // design drawn by URC menus (ui/hud_comp_*.urc). What the menus show is
 // published here as cvars (ui_hud_*) their labels link to; what changes in
 // number or width has a widget: the kill feed, the chat and the game
@@ -31,7 +31,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cl_ui.h"
 #include "cl_uicomp.h"
 #include "cl_uiextras.h"
-#include "cl_uiradar.h"
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
 
@@ -42,9 +41,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define COMP_PICTURES "ui/competitive/"
 #define COMP_OUTLINES "ui/outlines/weapons/"
 
-// the stock radar's teammates (cl_uiradar.cpp)
-extern radarClient_t *g_radarClients;
-extern int            g_radarClientNum;
+// the teammates the cgame tracks (CL_InitRadar), and the player's own place in them
+static radarClient_t *g_radarClients;
+static int            g_radarClientNum;
 #define COMP_LINES    8
 #define COMP_KILLS    6
 
@@ -83,14 +82,15 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_charge_on", "ui_hud_clip", "ui_hud_compass_on", "ui_hud_corners", "ui_hud_count_allies",
     "ui_hud_count_axis", "ui_hud_count_on", "ui_hud_dmg_alpha", "ui_hud_dmg_angle", "ui_hud_follow",
     "ui_hud_follow_col", "ui_hud_follow_on", "ui_hud_health", "ui_hud_health_col", "ui_hud_health_frac",
-    "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col", "ui_hud_hurt_on", "ui_hud_killer", "ui_hud_killer_col",
+    "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col", "ui_hud_hurt_on", "ui_hud_jail_allies", "ui_hud_jail_axis",
+    "ui_hud_jail_on", "ui_hud_killer", "ui_hud_killer_col",
     "ui_hud_killer_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
     "ui_hud_north", "ui_hud_obj0", "ui_hud_obj0_on", "ui_hud_obj1", "ui_hud_obj1_on", "ui_hud_obj2", "ui_hud_obj2_on",
     "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
     "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_target", "ui_hud_target_col",
     "ui_hud_target_hp", "ui_hud_target_hpcol", "ui_hud_target_on", "ui_hud_timer", "ui_hud_vote_on",
     "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_weapons_on",
-    "ui_hud_cards_allies", "ui_hud_cards_axis", "ui_hud_cards_on", "ui_hud_never",
+    "ui_hud_cards_allies", "ui_hud_cards_axis", "ui_hud_cards_on", "ui_hud_feed_under", "ui_hud_never",
 };
 
 // the accent (cg_hud_accent, the HUD's pale yellow by default) and its
@@ -238,6 +238,21 @@ static const compWeapon_t *Comp_Weapon(const char *name)
         }
     }
     return NULL;
+}
+
+// the name of the weapon in hand ("": none, the server's -1)
+static const char *Comp_HandWeapon(void)
+{
+    const int w = cl.snap.ps.activeItems[ITEM_WEAPON];
+
+    return w >= 0 && w < MAX_WEAPONS ? CL_ConfigString(CS_WEAPONS + w) : "";
+}
+
+const char *UI_CompHud_WeaponOutline(const char *name)
+{
+    const compWeapon_t *w = Comp_Weapon(name);
+
+    return w ? va(COMP_OUTLINES "%s.svg", w->pic) : NULL;
 }
 
 // the obituaries' English keys (fgame's), the weapon each says: s2 the text
@@ -906,12 +921,6 @@ static const char *const comp_arcAngle[3] = {"ui_hud_arc0_angle", "ui_hud_arc1_a
 static const char *const comp_objOn[3]    = {"ui_hud_obj0_on", "ui_hud_obj1_on", "ui_hud_obj2_on"};
 static const char *const comp_obj[3]      = {"ui_hud_obj0", "ui_hud_obj1", "ui_hud_obj2"};
 
-// the angle on screen (clockwise, up the view) of a world yaw
-static float Comp_ScreenAngle(float viewYaw, float yaw)
-{
-    return AngleSubtract(viewYaw, yaw);
-}
-
 void UI_CompHud_Frame(void)
 {
     const playerState_t *ps       = &cl.snap.ps;
@@ -919,11 +928,11 @@ void UI_CompHud_Frame(void)
     const qboolean       teams    = gametype >= GT_TEAM;
     const qboolean       rounds   = gametype == GT_TEAM_ROUNDS || gametype == GT_OBJECTIVE;
     const qboolean       spectating = (ps->pm_flags & PMF_SPECTATING) != 0;
-    const qboolean       following = spectating && (ps->pm_flags & PMF_CAMERA_VIEW) && ps->stats[STAT_INFOCLIENT] >= 0
-                                && ps->stats[STAT_INFOCLIENT] < MAX_CLIENTS;
-    const char *weapon = ps->activeItems[ITEM_WEAPON] >= 0 && ps->activeItems[ITEM_WEAPON] < MAX_WEAPONS
-                           ? CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON])
-                           : "";
+    // following a player from behind (the camera view) or through their eyes
+    // (g_spectatefollow_firstperson: the snapshot is that player's number)
+    const qboolean       following = spectating && ((ps->pm_flags & PMF_CAMERA_VIEW) || ps->clientNum != clc.clientNum)
+                                && ps->stats[STAT_INFOCLIENT] >= 0 && ps->stats[STAT_INFOCLIENT] < MAX_CLIENTS;
+    const char *weapon = Comp_HandWeapon();
     // the ammo shown for what has a clip or ammo: not for an item with
     // neither (the binoculars, the papers: -1 and 0), as the stock HUD
     const bool  ammo   = weapon[0] && (ps->stats[STAT_CLIPAMMO] >= 0 || ps->stats[STAT_AMMO] > 0);
@@ -975,6 +984,8 @@ void UI_CompHud_Frame(void)
         if (cg_hudstyle->modificationCount != read) {
             read = cg_hudstyle->modificationCount;
             Comp_Layout();
+            // (the zoom overlays' masks begun, unless made: turned on mid-match)
+            UI_Extras_PreBake(qtrue);
         }
     }
     cge->CG_EyeAngles(&angles);
@@ -1005,7 +1016,6 @@ void UI_CompHud_Frame(void)
     Comp_SetI("ui_hud_health", health);
     Comp_SetF("ui_hud_health_frac", Com_Clamp(0.0f, 1.0f, (float)health / maxHealth));
     Comp_Set("ui_hud_health_col", health < Comp_Cvar("cg_hud_lowhealth")->value * maxHealth ? "0.753 0.188 0.129 1" : Comp_Cvar("ui_hud_acc")->string);
-    Comp_Set("ui_hud_ammo_on", ammo ? "1" : "0");
     Comp_SetI("ui_hud_clip", ps->stats[STAT_CLIPAMMO]);
     Comp_SetI("ui_hud_ammo", ps->stats[STAT_AMMO]);
 
@@ -1061,6 +1071,22 @@ void UI_CompHud_Frame(void)
                 alive += *c != 'd';
             }
             Comp_SetI(i ? "ui_hud_count_axis" : "ui_hud_count_allies", alive);
+        }
+        // Liberation's jail: how many of each team are locked up or dead, of
+        // how many, in the count tiles' places (the map script's huddraw text,
+        // global/lib_dm.scr's: "jailed(all)", Axis 101, Allies 102, its lock
+        // 105; the cgame doesn't draw them then: CG_HudDrawElements)
+        {
+            const hdelement_t *e = cls.HudDrawElements;
+            int                j[4];
+            const qboolean     jail = gametype == GT_LIBERATION && !Q_stricmp(e[105].shaderName, "textures/hud/lock_icon")
+                               && sscanf(e[102].string, "%d(%d)", &j[0], &j[1]) == 2 && sscanf(e[101].string, "%d(%d)", &j[2], &j[3]) == 2;
+
+            Comp_Set("ui_hud_jail_on", jail ? "1" : "0");
+            if (jail) {
+                Comp_Set("ui_hud_jail_allies", va("%d/%d", j[0], j[1]));
+                Comp_Set("ui_hud_jail_axis", va("%d/%d", j[2], j[3]));
+            }
         }
     }
     }
@@ -1119,7 +1145,6 @@ void UI_CompHud_Frame(void)
     if (full) {
         const int voteTime = atoi(CL_ConfigString(CS_VOTE_TIME));
 
-        Comp_Set("ui_hud_vote_on", voteTime ? "1" : "0");
         if (voteTime) {
             Comp_Set("ui_hud_vote_time", va("%ds", Q_max(0, (30000 - (cl.serverTime - voteTime)) / 1000 + 1)));
             static UIFont *font, *small;
@@ -1163,17 +1188,18 @@ void UI_CompHud_Frame(void)
         }
         comp.lastDmg    = dmg;
         comp.lastHealth = ps->stats[STAT_HEALTH];
+        // (a world yaw's angle on screen, clockwise from up the view: the view's yaw less it)
         for (i = 0; i < 3; i++) {
             const int age = cls.realtime - comp.arcTime[i];
 
             Comp_SetF(comp_arcAlpha[i], comp.arcTime[i] && age < 1500 ? 1.0f - age / 1500.0f : 0.0f);
             if (comp.arcTime[i] && age < 1500) {
-                Comp_SetF(comp_arcAngle[i], Comp_ScreenAngle(viewYaw, comp.arcStat[i] / 10.0f + 180.0f));
+                Comp_SetF(comp_arcAngle[i], AngleSubtract(viewYaw, comp.arcStat[i] / 10.0f + 180.0f));
             }
         }
         Comp_SetF("ui_hud_dmg_alpha", dmg > 0 && comp.flashTime ? Com_Clamp(0.0f, 1.0f, 1.0f - (cls.realtime - comp.flashTime) / 1500.0f) : 0.0f);
         if (Comp_Cvar("ui_hud_dmg_alpha")->value > 0.0f) {
-            Comp_SetF("ui_hud_dmg_angle", Comp_ScreenAngle(viewYaw, dmg / 10.0f + 180.0f));
+            Comp_SetF("ui_hud_dmg_angle", AngleSubtract(viewYaw, dmg / 10.0f + 180.0f));
         }
     }
 
@@ -1182,7 +1208,7 @@ void UI_CompHud_Frame(void)
         // through the intermission (and with no HUD) only the messages, the
         // chat, the kills and the vote (cl_ui.cpp: the other menus hidden)
         const qboolean show  = !(ps->pm_flags & (PMF_NO_HUD | PMF_INTERMISSION));
-        const qboolean strip = (!(ps->pm_flags & PMF_SPECTATING) || following) && show;
+        const qboolean strip = (!spectating || following) && show;
         const qboolean radar = Comp_Int("cg_hud_radar") != 0;
         const qboolean msgs  = Comp_Int("cg_hud_messages") != 0;
         auto           flag  = [](const char *name, qboolean on) { Comp_Set(name, on ? "1" : "0"); };
@@ -1192,8 +1218,14 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_msgs_r", msgs && radar);
         flag("ui_hud_msgs_c", msgs && !radar);
         flag("ui_hud_score_on", Comp_Int("cg_hud_score") && gametype != GT_SINGLE_PLAYER);
-        // the cards
         flag("ui_hud_cards_on", rounds && Comp_Int("cg_hud_alive"));
+        // the kill feed under the cards where the screen has no room for both in a row (a 4:3 screen, a large
+        // cg_hud_scale): the cards' box ends 476 right of the middle, the feed's is the last 445
+        flag(
+            "ui_hud_feed_under",
+            rounds && Comp_Int("cg_hud_alive") && !Comp_Int("cg_hud_alivecount")
+                && uid.vidWidth / UI_DesignScale(1920.0f, 1080.0f) < 2 * (476.0f + 445.0f)
+        );
         flag("ui_hud_health_on", strip && Comp_Int("cg_hud_health"));
         flag("ui_hud_badge_on", strip && Comp_Int("cg_hud_badge"));
         flag("ui_hud_ammo_on", strip && ammo && Comp_Int("cg_hud_ammo"));
@@ -1216,7 +1248,7 @@ void UI_CompHud_Frame(void)
     }
 
     // the compass: its bearings turn with the view, the objectives' balls on its rim
-    if (Comp_Cvar("ui_hud_compass_on")->integer) {
+    if (Comp_Int("ui_hud_compass_on")) {
         const int stats[3] = {ps->stats[STAT_OBJECTIVECENTER], ps->stats[STAT_OBJECTIVELEFT], ps->stats[STAT_OBJECTIVERIGHT]};
         const int rest[3]  = {1800, 1730, 1870};
 
@@ -1237,19 +1269,7 @@ void UI_CompHud_Files(void)
     FS_SetBuiltinFiles(builtin_files);
 }
 
-/*
-================
-UI_CompHud_HeadIcons
-
-The pictures of the team icons above team mates' heads (scripts/
-reloaded_hud.shader, cgame's with cg_hudstyle 1): the HUD's team outlines
-baked at 128 px into TGAs, given to the filesystem with the files compiled
-in. The discs fill as much of the picture as the game's 32 px allies.tga
-(28 px) and axis.tga (30 px) do; the renderer mipmaps them
-================
-*/
 static std::vector<builtinFile_t> comp_files;
-static std::vector<byte>          comp_headIcons[2];
 
 /*
 ================
@@ -1290,6 +1310,19 @@ qboolean UI_CompHud_AddFile(const char *name, const void *data, int size)
     comp_files[n].name = name;
     return qtrue;
 }
+
+/*
+================
+UI_CompHud_HeadIcons
+
+The pictures of the team icons above team mates' heads (scripts/
+reloaded_hud.shader, cgame's): the HUD's team outlines
+baked at 128 px into TGAs, given to the filesystem with the files compiled
+in. The discs fill as much of the picture as the game's 32 px allies.tga
+(28 px) and axis.tga (30 px) do; the renderer mipmaps them
+================
+*/
+static std::vector<byte> comp_headIcons[2];
 
 void UI_CompHud_HeadIcons(void)
 {
@@ -1332,13 +1365,16 @@ void UI_CompHud_HeadIcons(void)
 
 void UI_CompHud_Init(void)
 {
-    // the HUD: 0 the stock one, 1 this one as CS:GO's (the default), 2 as CS2's
+    // the HUD: 1 as CS:GO's (the default), 2 as CS2's (an old config's 0, the
+    // stock HUD's, made 1)
     cg_hudstyle = Cvar_Get("cg_hudstyle", "1", CVAR_ARCHIVE);
+    Cvar_CheckRange(cg_hudstyle, 1, 2, qtrue);
     for (size_t i = 0; i < ARRAY_LEN(comp_toggles); i++) {
         Cvar_Get(comp_toggles[i], "1", CVAR_ARCHIVE);
     }
     Cvar_Get("cg_hud_lowhealth", "0.4", CVAR_ARCHIVE);
-    // the HUD's size: its 1920x1080 design fitted in the screen, times this (0.25 to 2)
+    // the HUD's size: its 1080 lines fitted in the screen's (a screen narrower than 4:3: its 1440 across), times this
+    // (0.25 to 2)
     Cvar_Get("cg_hud_scale", "1", CVAR_ARCHIVE);
     // the accent: "f6f67a", "#f6f67a" or "R G B" (0 to 1)
     Cvar_Get("cg_hud_accent", "f6f67a", CVAR_ARCHIVE);
@@ -1355,11 +1391,6 @@ void UI_CompHud_Init(void)
     Comp_Accent();
     Comp_Layout();
     UI_CompHud_Clear();
-}
-
-qboolean UI_CompHud_Active(void)
-{
-    return cg_hudstyle && cg_hudstyle->integer > 0;
 }
 
 /*
@@ -1416,7 +1447,7 @@ static void Comp_Fit(const char *pic, float boxW, float boxH, float s, float *w,
 }
 
 // a text's width, smaller to fit a width
-static float Comp_TextW(UIFont *font, const char *text, float fit = 0.0f)
+static float Comp_TextW(UIFont *font, const char *text, float fit)
 {
     const float k = font->FitScale(text, fit);
 
@@ -1448,8 +1479,9 @@ UIHudFeed
 
 The kill feed (feed kills: right aligned pad px before the widget's right
 edge, the newest at the bottom, 6 s, fading in the last 1.5; each line in a
-box reaching pad px either side of it, at least 30 tall, 4 apart: dark, red
-with a red edge for the player's kill or death), the chat (feed chat: from
+box reaching pad px either side of it, KF_ROW tall, KF_SPACE apart: dark,
+dark red for the player's death, black with a red edge for the player's
+kill), the chat (feed chat: from
 the bottom up) and the game messages (feed messages: from the top), 8 s
 fading in the last 2; lines wrapped between words, the newest that fit.
 boldfont: the white game messages'
@@ -1560,7 +1592,7 @@ static void Comp_FeedBox(float x0, float y0, float x1, float y1, float s, qboole
     const float     px[4]  = {floorf(x0 * s + 0.5f), floorf(x0 * s + 0.5f) + c, floorf(x1 * s + 0.5f) - c, floorf(x1 * s + 0.5f)};
     const float     py[4]  = {floorf(y0 * s + 0.5f), floorf(y0 * s + 0.5f) + c, floorf(y1 * s + 0.5f) - c, floorf(y1 * s + 0.5f)};
     // the texture's parts: a corner, the middle texel (its centre: no neighbour bleeds in), the other corner
-    const float     t[4][2] = {{0.0f, (float)c / n}, {(c + 0.5f) / n, (c + 1.5f) / n}, {(c + 2.0f) / n, 1.0f}};
+    const float     t[3][2] = {{0.0f, (float)c / n}, {(c + 0.5f) / n, (c + 1.5f) / n}, {(c + 2.0f) / n, 1.0f}};
 
     if (!shader || px[2] < px[1] || py[2] < py[1]) {
         if (!edge) {
@@ -1897,7 +1929,7 @@ public:
         const playerState_t *ps   = &cl.snap.ps;
         const int            v[7] = {comp.frags, comp.smokes, comp.nation, ps->stats[STAT_WEAPONS], ps->stats[STAT_EQUIPPED_WEAPON],
                                      Comp_Int("cg_hud_grenades"), comp_accentStamp};
-        const char          *hand = CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON]);
+        const char          *hand = Comp_HandWeapon();
         int                  h    = UI_DrawHash(0, v, sizeof(v));
 
         h = UI_DrawHash(h, comp.primary, strlen(comp.primary));
@@ -1946,7 +1978,7 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
         x += pw[i] + (counts ? 8.0f : 0.0f) + 4.0f;
     }
     if (hand >= 0) {
-        const char *name = CL_ConfigString(CS_WEAPONS + cl.snap.ps.activeItems[ITEM_WEAPON]);
+        const char *name = Comp_HandWeapon();
 
         // a long name smaller, to fit 200 px
         Comp_Text(m_font, right - Comp_TextW(m_font, name, 200.0f), top + ph + 2.0f + lineH * 0.5f, name, white, getVirtualScale(), 200.0f);
@@ -1961,7 +1993,7 @@ void UIHudWeapons::Draw(void)
     const int            owned    = ps->stats[STAT_WEAPONS] & 0x3F, equipped = ps->stats[STAT_EQUIPPED_WEAPON] & 0x3F;
     const float          s        = m_vVirtualScale[0];
     const float          right    = m_frame.size.width / s - 18.0f;
-    const compWeapon_t  *inHand   = Comp_Weapon(CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON]));
+    const compWeapon_t  *inHand   = Comp_Weapon(Comp_HandWeapon());
     float                bottom   = m_frame.size.height / s;
     int                  handSlot = 0, primarySlot = 0, i;
 
@@ -2186,7 +2218,7 @@ static void RM_Step(size_t most)
 
 static void RM_Walk(void)
 {
-    const char *p = CM_EntityString();
+    const char *p;
     vec3_t      mins, maxs;
     const int   start = Sys_Milliseconds();
 
@@ -2269,7 +2301,7 @@ static void RM_SeedPlayers(const vec3_t eye)
     // the teammates the snapshot has, on the floor under their feet: the
     // radar's own positions are x and y only (radarClient_t; its origin[2]
     // read past them, into axis[0], a height near 0), the others not known
-    for (int i = 0; g_radarClients && cl.snap.valid && i < cl.snap.numEntities; i++) {
+    for (int i = 0; g_radarClients && i < cl.snap.numEntities; i++) {
         const entityState_t *e = &cl.parseEntities[(cl.snap.parseEntitiesNum + i) & (MAX_PARSE_ENTITIES - 1)];
         const radarClient_t *c;
 
@@ -2378,7 +2410,6 @@ static void RM_PictureDone(void)
     rm.stamp  = UI_BakeStamp();
 }
 
-// an objective's diamond (white for the current one), its box d pixels
 // a mark's shader and size kept while its scale and the baked images stay
 typedef struct {
     int       stamp, d;
@@ -2401,6 +2432,7 @@ static qhandle_t Comp_MarkKeep(compMark_t *m, float k, float s, int d, qhandle_t
     return h;
 }
 
+// an objective's diamond (white for the current one), its box d pixels
 static qhandle_t Comp_ObjectiveShader(qboolean current, float k, float s, int *d)
 {
     static compMark_t kept[2];
@@ -2473,7 +2505,7 @@ void UI_CompHud_PreBake(qboolean ahead)
     int         d;
     size_t      i;
 
-    if (!UI_CompHud_Active() || !uii.IsRendererLoaded()) {
+    if (!uii.IsRendererLoaded()) {
         return;
     }
     UI_BakeAhead(ahead);
@@ -2535,7 +2567,7 @@ void UI_CompHud_MapLoaded(void)
 
     UI_CompHud_PreBake(qfalse);
     UI_BakeRelease();
-    if (!UI_CompHud_Active() || !Comp_Int("cg_hud_radar") || !strcmp(map, rm.map)) {
+    if (!Comp_Int("cg_hud_radar") || !strcmp(map, rm.map)) {
         return;
     }
     if (rm.worker.joinable()) {
@@ -2546,12 +2578,18 @@ void UI_CompHud_MapLoaded(void)
     rm.stamp = -1;
 }
 
+void CL_InitRadar(radarClient_t *radars, int clientNum)
+{
+    g_radarClients   = radars;
+    g_radarClientNum = clientNum;
+}
+
 /*
 ================
 UIHudRadar
 
 The radar: the map turned with the view (up is where the player looks),
-the objectives, the teammates the stock radar knows (the snapshot's and the
+the objectives, the teammates the cgame tracks (the snapshot's and the
 server's radar's: never enemies), the player's arrow, N E S W inside the
 edge. Its disc and ring are its URC shapes
 ================
@@ -2596,7 +2634,8 @@ void UIHudRadar::Draw(void)
         UI_CompHud_MapLoaded();
     }
     if (!rm.nodes.empty()) {
-        const int texels = Q_max(1, Q_min(6, (int)(RM_CELL / upp + 0.5f)));
+        // (a very large map's fewer, its picture at most 4096 across: tested as kept, or it is made again each time)
+        const int texels = Q_min(Q_max(1, Q_min(6, (int)(RM_CELL / upp + 0.5f))), 4096 / Q_max(rm.cw, rm.ch));
 
         // (the walk changes only while no picture is being made of it)
         RM_PictureDone();
@@ -2607,7 +2646,7 @@ void UIHudRadar::Draw(void)
         if (!rm.worker.joinable()
             && (rm.stamp != UI_BakeStamp() || texels != rm.texels || fabsf(eye[2] - 64.0f - rm.focusZ) > 24.0f
                 || (rm.walked != (int)rm.nodes.size() && rm.queue.empty()))) {
-            rm.texels = Q_min(texels, 4096 / Q_max(rm.cw, rm.ch));
+            rm.texels = texels;
             rm.focusZ = eye[2] - 64.0f;
             rm.walked = (int)rm.nodes.size();
             RM_Picture();

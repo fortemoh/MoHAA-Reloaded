@@ -134,7 +134,6 @@ void Menu::ShowMenu(Event *ev)
             wid->ResetMotion(MOTION_IN);
             wid->UpdateUIElement();
             wid->UpdateData();
-            wid->ExecuteShowCommands();
         }
     }
 
@@ -210,7 +209,6 @@ void Menu::ForceHide(void)
     for (i = 1; i <= n; i++) {
         UIWidget *wid = m_itemlist.ObjectAt(i);
 
-        wid->ExecuteHideCommands();
         wid->setShow(false);
     }
 }

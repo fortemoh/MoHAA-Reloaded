@@ -1053,7 +1053,7 @@ qboolean CL_ReadyToSendPacket( void ) {
 	int		delta;
 
 	// don't send anything if playing back a demo
-	if ( clc.demoplaying || clc.state == CA_CINEMATIC ) {
+	if ( clc.demoplaying ) {
 		return qfalse;
 	}
 
@@ -1142,7 +1142,7 @@ void CL_WritePacket( void ) {
 	usereyes_t	eyeInfo;
 
 	// don't send anything if playing back a demo
-	if ( clc.demoplaying || clc.state == CA_CINEMATIC ) {
+	if ( clc.demoplaying ) {
 		return;
 	}
 

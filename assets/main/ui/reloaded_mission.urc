@@ -1,0 +1,36 @@
+// The Reloaded load screen of a mission's level (cl_uimenus.cpp): its orders
+// letter unstretched, the stock continuebutton (finishloadingscreen, its name
+// what makes the game wait for it) clear over the CONTINUE the menu draws,
+// placed by it
+menu "reloaded_mission" 640 480 NONE 0
+align left top
+fgcolor 1.00 1.00 1.00 1.00
+bgcolor 0.00 0.00 0.00 0.00
+borderstyle NONE
+fullscreen 1
+virtualres 1
+
+resource
+ReloadedMenu
+{
+name "front"
+rect 0 0 640 480
+fgcolor 1.00 1.00 1.00 1.00
+bgcolor 0.00 0.00 0.00 0.00
+borderstyle "NONE"
+screen loading
+}
+
+resource
+Button
+{
+name "continuebutton"
+rect 0 0 0 0
+fgcolor 1.00 1.00 1.00 1.00
+bgcolor 0.00 0.00 0.00 0.00
+borderstyle "NONE"
+stuffcommand "finishloadingscreen"
+ordernumber 1
+}
+
+end.

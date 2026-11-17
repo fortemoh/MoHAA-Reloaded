@@ -25,37 +25,25 @@ list(APPEND CLIENT_LIBRARIES "-framework AudioToolbox" "-framework CoreAudio")
 set(CLIENT_SOURCES
     ${SOURCE_DIR}/client/cl_avi.cpp
     ${SOURCE_DIR}/client/cl_cgame.cpp
-    ${SOURCE_DIR}/client/cl_cin.cpp
     ${SOURCE_DIR}/client/cl_consolecmds.cpp
     ${SOURCE_DIR}/client/cl_crosshair.c
     ${SOURCE_DIR}/client/cl_input.cpp
-    ${SOURCE_DIR}/client/cl_instantAction.cpp
-    ${SOURCE_DIR}/client/cl_inv.cpp
     ${SOURCE_DIR}/client/cl_invrender.cpp
     ${SOURCE_DIR}/client/cl_keys.cpp
     ${SOURCE_DIR}/client/cl_latency.cpp
+    ${SOURCE_DIR}/client/cl_lagometer.cpp
     ${SOURCE_DIR}/client/cl_main.cpp
     ${SOURCE_DIR}/client/cl_net_chan.cpp
     ${SOURCE_DIR}/client/cl_parse.cpp
     ${SOURCE_DIR}/client/cl_scrn.cpp
     ${SOURCE_DIR}/client/cl_ui.cpp
-    ${SOURCE_DIR}/client/cl_uibind.cpp
-    ${SOURCE_DIR}/client/cl_uidmbox.cpp
     ${SOURCE_DIR}/client/cl_uifilepicker.cpp
-    ${SOURCE_DIR}/client/cl_uigamespy.cpp
-    ${SOURCE_DIR}/client/cl_uigmbox.cpp
-    ${SOURCE_DIR}/client/cl_uilangame.cpp
-    ${SOURCE_DIR}/client/cl_uiloadsave.cpp
-    ${SOURCE_DIR}/client/cl_uimaprotationsetup.cpp
     ${SOURCE_DIR}/client/cl_uimaprunner.cpp
     ${SOURCE_DIR}/client/cl_uiminicon.cpp
-    ${SOURCE_DIR}/client/cl_uimpmappicker.cpp
-    ${SOURCE_DIR}/client/cl_uiplayermodelpicker.cpp
-    ${SOURCE_DIR}/client/cl_uiradar.cpp
     ${SOURCE_DIR}/client/cl_uicomp.cpp
     ${SOURCE_DIR}/client/cl_uimenus.cpp
+    ${SOURCE_DIR}/client/cl_uimain.cpp
     ${SOURCE_DIR}/client/cl_uiextras.cpp
-    ${SOURCE_DIR}/client/cl_uiserverlist.cpp
     ${SOURCE_DIR}/client/cl_uisoundpicker.cpp
     ${SOURCE_DIR}/client/cl_uistd.cpp
     ${SOURCE_DIR}/client/cl_uiview3d.cpp
@@ -70,6 +58,7 @@ set(CLIENT_SOURCES
     ${SOURCE_DIR}/client/snd_mem_new.cpp
     ${SOURCE_DIR}/client/snd_native_new.cpp
     ${SOURCE_DIR}/client/usignal.cpp
+    ${SOURCE_DIR}/fgame/bg_voteoptions.cpp
     ${CLIENT_INPUT_SOURCES}
     ${CLIENT_SOUND_SOURCES}
     ${CLIENT_PLATFORM_SOURCES}

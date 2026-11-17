@@ -102,7 +102,7 @@ static std::unordered_map<std::string, uiBakedFont_t *> bake_fontNames;
 static std::unordered_map<std::string, uiBaked_t> bake_shapes;
 static thread_local std::vector<uiVertex_t>       bake_path; // the outline being filled
 static int                                        bake_gen;
-static std::mutex                                 bake_lock; // bake_faces, bake_pictures
+static std::mutex                                 bake_lock; // bake_faces, bake_pictures, bake_svgs
 
 static const float SLANT = 0.21256f; // tan 12 degrees: CSS's text-skew -12deg
 
@@ -111,7 +111,8 @@ static int   bake_scaleGen;            // ... its changes
 
 float UI_DesignScale(float w, float h)
 {
-    return Q_min(uid.vidWidth / w, uid.vidHeight / h) * bake_designScale;
+    // the width counted as far as 4:3 of the height: a 4:3 screen's is as large as a 16:9 screen's of its height
+    return Q_min(uid.vidWidth / Q_min(w, h * 4.0f / 3.0f), uid.vidHeight / h) * bake_designScale;
 }
 
 bool UI_SetDesignScale(float scale)
@@ -400,6 +401,8 @@ static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
     const float       s      = spec->absolute ? Q_max(1.0f, floorf(spec->px / 24.0f)) : ds;
     const float       slant  = spec->slant ? SLANT : 0.0f;
     const qboolean    shadow = spec->shadow;
+    // the shadow's offset, read here: a bake thread runs after the caller's spec is gone
+    const float       shOff  = spec->absolute ? 1.0f : s;
     const int         pageW  = Q_max(32, (int)(256.0f * s + 0.001f));
     const uiFace_t   *face   = spec->face;
     fontheader_sgl_t *sgl    = &f->sgl;
@@ -465,7 +468,7 @@ static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
 
                 for (int col = 0; col < w; col++, out += 4) {
                     const float a     = mask[row * w + col] / 255.0f;
-                    const float sh    = shadow ? Bake_ShadowAt(mask.data(), w, m.lineH, col, row, spec->absolute ? 1.0f : s) : 0.0f;
+                    const float sh    = shadow ? Bake_ShadowAt(mask.data(), w, m.lineH, col, row, shOff) : 0.0f;
                     const float alpha = a + sh * (1.0f - a);
 
                     out[0] = out[1] = out[2] = (byte)(alpha > 0.0f ? a / alpha * 255.0f + 0.5f : 255.0f);
@@ -946,7 +949,8 @@ static void Svg_Path(const char *d, std::vector<uiSvgCmd_t>& out)
             continue;
         }
         // the numbers this command takes
-        const int  n   = strchr("MmLlTt", op) ? 2 : strchr("HhVv", op) ? 1 : strchr("Cc", op) ? 6 : strchr("QqSs", op) ? 4 : 0;
+        // (no command yet: strchr would find 0 at a list's end)
+        const int  n   = !op ? 0 : strchr("MmLlTt", op) ? 2 : strchr("HhVv", op) ? 1 : strchr("Cc", op) ? 6 : strchr("QqSs", op) ? 4 : 0;
         const bool rel = op >= 'a';
         float      v[6];
         int        i;
@@ -1317,11 +1321,12 @@ static void Bake_Layer(uiCanvas_t *cv, const char *text)
             for (int y = 0; y < sub.h; y++) {
                 for (int x = 0; x < sub.w; x++) {
                     const float *p = &sub.px[(y * sub.w + x) * 4];
-                    float       *d = &cv->px[((y0 + y) * cv->w + x0 + x) * 4];
 
                     if (x0 + x < 0 || y0 + y < 0 || x0 + x >= cv->w || y0 + y >= cv->h) {
                         continue;
                     }
+                    float *d = &cv->px[((y0 + y) * cv->w + x0 + x) * 4];
+
                     for (int k = 0; k < 4; k++) {
                         d[k] = p[k] + d[k] * (1.0f - p[3]);
                     }
@@ -1536,8 +1541,7 @@ static void Bake_ShapeTexels(const std::vector<std::string>& layers, int w, int 
 
 // what a layer reads, read now (on the main thread): the faces, the
 // pictures and the outlines it names (its tokens "<file>-<px>...", "....png"
-// and "....svg"); an unknown
-// kind told here, as Bake_Layer tells it on the main thread
+// and "....svg"); an unknown kind told here, as Bake_Layer tells it on the main thread
 static void Bake_Prepare(const char *text)
 {
     static const char *const kinds[] = {

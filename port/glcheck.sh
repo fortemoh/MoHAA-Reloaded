@@ -30,6 +30,8 @@ allowed = [
 	(r"^code/renderer_metal/tr_image\.c$", r"\{\"GL_[A-Z_]+\", MB_"),
 	(r"^code/renderer_metal/tr_init\.c$", r"\"gl_linear_mipmap_linear\"|\"GL_BACK\""),
 	(r"^code/renderer_metal/tr_cmds\.c$", r"\"GL_FRONT\""),
+	# the same r_textureMode values, written by the Filtering setting of the Reloaded Options page
+	(r"^code/client/cl_uimain\.cpp$", r"\"GL_LINEAR_MIPMAP_(NEAREST|LINEAR)\""),
 	# false positives: the "sgl" font header type, the glue flag of the game, a UI event of the LAN game list
 	(r"^code/", r"fontheader_sgl_[st]"),
 	(r"^code/fgame/entity\.(h|cpp)$", r"GL_USEANGLES"),

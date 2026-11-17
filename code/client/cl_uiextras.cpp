@@ -20,15 +20,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
-// cl_uiextras.cpp: the Competitive HUD's extras (Added, cg_hudstyle 1).
+// cl_uiextras.cpp: the Competitive HUD's extras (Added).
 // Drawn in place of the stock ones, nothing of them while they don't show:
 //
 // - the zoom overlays: the scopes (a circle, its edge darkening into black,
-//   thin lines: a cross, the Kar98's without its upper half) and the
+//   thin lines: a cross, the Kar98's a post up to the middle) and the
 //   binoculars (two circles, a soft rim, a small range scale). A mask, the
 //   screen's top left quarter at its pixels, is made once a screen size (on
-//   the bake threads, while a map loads) and drawn four times mirrored; the
-//   black around it and the lines are boxes;
+//   the bake threads, while a map loads or as the HUD is turned on), with
+//   what is drawn; drawn four times mirrored, the black around it and the
+//   lines are boxes;
 // - the centre and location prints: a dark box with accent edges above and
 //   below, Oswald, as wide as the text;
 // - the chat's typing line: a slim bar over the HUD's chat, "ALL:", "TEAM:"
@@ -36,20 +37,26 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //   its window isn't drawn);
 // - the round's end banner (the server's g_scoreboardpicover): the winners'
 //   emblem, "ALLIES WIN THE ROUND", the teams' score. On the Reloaded
-//   scoreboard (with either HUD) it sits above its header (cl_uimenus.cpp).
+//   scoreboard (with either HUD) it sits above its header (cl_uimenus.cpp);
+// - the quick messages' menu (the V key's): the group's name, its lines
+//   numbered in the accent, in a dark box on the left;
+// - the status icons (the cgame's): PAUSED, CONNECTION INTERRUPTED and SLOW
+//   SERVER, an icon and the name in a dark box;
+// - the lagometer (the cgame's cg_lagometer): Project: Omaha's netgraph, its
+//   graph or its compact pill, its data cl_lagometer.cpp's.
 //
 // Sizes are design units (cl_uidraw.h): the prints and the banner the
-// menus' (1080 lines), the typing line the HUD's (cg_hud_scale). Text is
-// Oswald baked at the pixel size drawn, baked ahead with the map's load.
+// menus' (1080 lines), the typing line and the quick messages the HUD's
+// (cg_hud_scale). Text is Oswald baked at the pixel size drawn, baked ahead
+// with the map's load.
 
 #include "client.h"
+#include "cl_lagometer.h"
 #include "cl_ui.h"
-#include "cl_uicomp.h"
 #include "cl_uiextras.h"
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
 
-#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -75,6 +82,11 @@ typedef struct {
     int               stamp;          // UI_BakeStamp then: its shader looked up again after a map's load
     int               madeMs;         // how long it took to make (developer)
     qhandle_t         shader;
+    // what is drawn, worked out with the mask: its four draws (x, y, w, h,
+    // s0, t0, s1, t1), the black round it, the lines (the scope's [1] the
+    // Kar98's) and their alpha
+    float             quads[4][8], black[4][4], lines[2][24][4], lineAlpha;
+    int               numBlack, numLines[2];
 } zoomMask_t;
 
 static zoomMask_t zm[ZM_NUM];
@@ -229,6 +241,92 @@ static void ZM_Binoculars(zoomMask_t *m, int w, int h)
     }
 }
 
+static void ZM_Box(float (*boxes)[4], int *n, int x, int y, int w, int h)
+{
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    boxes[*n][0] = x;
+    boxes[*n][1] = y;
+    boxes[*n][2] = w;
+    boxes[*n][3] = h;
+    (*n)++;
+}
+
+/*
+================
+ZM_Layout
+
+What is drawn with a mask, worked out with it: the mask four times
+(mirrored right and down: an odd size's middle column and row once), the
+black round it, and the lines as boxes on whole pixels, the crosshair's
+way. The scope's a pixel at 1080 lines (85 % black): a cross, and the
+Kar98's, the line open 0.047 of the height either side of the middle, a
+post twice as thick from below up to the middle. The binoculars' two
+(90 %): a line 0.5 of the unit across, ticks every 0.05 up from it (the
+middle and the ends twice as tall), and down from its middle a line 0.1
+long crossed every 0.025
+================
+*/
+static void ZM_Layout(zoomMask_t *m, int kind, int w, int h)
+{
+    const int   xm = (w + 1) / 2, ym = (h + 1) / 2, rw = m->qw - (w & 1), bh = m->qh - (h & 1);
+    const float s1 = (float)rw / m->qw, t1 = (float)bh / m->qh;
+    const float quads[4][8] = {
+        {(float)m->xl, (float)m->yt, (float)m->qw, (float)m->qh, 0, 0, 1, 1},
+        {(float)xm, (float)m->yt, (float)rw, (float)m->qh, s1, 0, 0, 1},
+        {(float)m->xl, (float)ym, (float)m->qw, (float)bh, 0, t1, 1, 0},
+        {(float)xm, (float)ym, (float)rw, (float)bh, s1, t1, 0, 0},
+    };
+
+    memcpy(m->quads, quads, sizeof(quads));
+    m->numBlack = m->numLines[0] = m->numLines[1] = 0;
+    ZM_Box(m->black, &m->numBlack, 0, 0, m->xl, h);
+    ZM_Box(m->black, &m->numBlack, w - m->xl, 0, m->xl, h);
+    ZM_Box(m->black, &m->numBlack, m->xl, 0, w - 2 * m->xl, m->yt);
+    ZM_Box(m->black, &m->numBlack, m->xl, h - m->yt, w - 2 * m->xl, m->yt);
+
+    if (kind == ZM_SCOPE) {
+        const int   t  = Q_max(1, (int)floorf(h / 1080.0f + 0.5f));
+        const float R  = 0.46f * h;
+        const int   x0 = (int)floorf(w * 0.5f - R), x1 = (int)ceilf(w * 0.5f + R);
+        const int   y0 = (int)floorf(h * 0.5f - R), y1 = (int)ceilf(h * 0.5f + R);
+        const int   lx = (w - t) / 2, ly = (h - t) / 2;
+        const int   g = (w - 2 * (int)floorf(0.047f * h + 0.5f)) / 2;
+
+        // (the vertical line in two, the crossing drawn once)
+        ZM_Box(m->lines[0], &m->numLines[0], x0, ly, x1 - x0, t);
+        ZM_Box(m->lines[0], &m->numLines[0], lx, y0, t, ly - y0);
+        ZM_Box(m->lines[0], &m->numLines[0], lx, ly + t, t, y1 - ly - t);
+        ZM_Box(m->lines[1], &m->numLines[1], x0, ly, g - x0, t);
+        ZM_Box(m->lines[1], &m->numLines[1], w - g, ly, x1 - (w - g), t);
+        ZM_Box(m->lines[1], &m->numLines[1], (w - 2 * t) / 2, h / 2, 2 * t, y1 - h / 2);
+        m->lineAlpha = 0.85f;
+    } else {
+        const float u  = ZM_BinocularUnit(w, h);
+        const int   t  = Q_max(1, (int)floorf(2.0f * h / 1080.0f + 0.5f));
+        const int   lx = (w - t) / 2, ly = (h - t) / 2;
+        const int   half = (int)floorf(0.25f * u + 0.5f);
+        const int   tick = Q_max(t, (int)floorf(0.015f * u + 0.5f)), big = Q_max(t, (int)floorf(0.03f * u + 0.5f));
+        const int   down = (int)floorf(0.1f * u + 0.5f), cross = Q_max(1, (int)floorf(0.008f * u + 0.5f));
+
+        ZM_Box(m->lines[0], &m->numLines[0], lx - half, ly, 2 * half + t, t);
+        for (int i = -5; i <= 5; i++) {
+            const int x = lx + (int)floorf(i * 0.05f * u + 0.5f), th = i % 5 ? tick : big;
+
+            ZM_Box(m->lines[0], &m->numLines[0], x, ly - th, t, th);
+        }
+        ZM_Box(m->lines[0], &m->numLines[0], lx, ly + t, t, down - t);
+        for (int j = 1; j <= 4; j++) {
+            const int y = ly + (int)floorf(j * 0.025f * u + 0.5f);
+
+            ZM_Box(m->lines[0], &m->numLines[0], lx - cross, y, cross, t);
+            ZM_Box(m->lines[0], &m->numLines[0], lx + t, y, cross, t);
+        }
+        m->lineAlpha = 230.0f / 255.0f;
+    }
+}
+
 static void ZM_Make(zoomMask_t *m, int kind, int w, int h)
 {
     const int start = Sys_Milliseconds();
@@ -238,6 +336,7 @@ static void ZM_Make(zoomMask_t *m, int kind, int w, int h)
     } else {
         ZM_Binoculars(m, w, h);
     }
+    ZM_Layout(m, kind, w, h);
     m->madeMs = Sys_Milliseconds() - start;
 }
 
@@ -291,117 +390,40 @@ static void ZM_Finish(int kind)
     }
 }
 
-static void ZM_Box(float (*boxes)[4], int *n, int x, int y, int w, int h)
-{
-    if (w <= 0 || h <= 0) {
-        return;
-    }
-    boxes[*n][0] = x;
-    boxes[*n][1] = y;
-    boxes[*n][2] = w;
-    boxes[*n][3] = h;
-    (*n)++;
-}
-
 /*
 ================
 UI_DrawZoomOverlay
 
-The cgame's zoom overlay (its fade kept), with cg_hudstyle 1: the mask
-four times (mirrored right and down: an odd size's middle column and row
-once), black boxes round it, then the lines as boxes on whole pixels, the
-crosshair's way: the scopes' a pixel at 1080 lines (85 % black), the
-binoculars' two (90 %): a line 0.5 of the unit across, ticks every 0.05 up
-from it (the middle and the ends twice as tall), and down from its middle a
-line 0.1 long crossed every 0.025
+The cgame's zoom overlay (its fade kept): the mask and its lines as
+ZM_Layout worked them out
 ================
 */
-qboolean UI_DrawZoomOverlay(int type, float alpha)
+void UI_DrawZoomOverlay(int type, float alpha)
 {
     const int   kind = type == 3 ? ZM_BINOCULARS : ZM_SCOPE;
+    const int   kar = type == 1;
     zoomMask_t *m = &zm[kind];
-    const int   w = uid.vidWidth, h = uid.vidHeight;
-    const int   xm = (w + 1) / 2, ym = (h + 1) / 2;
-    float       boxes[24][4];
     vec4_t      color = {1, 1, 1, alpha};
-    int         n = 0;
 
-    if (!UI_CompHud_Active() || alpha <= 0.0f) {
-        return qfalse;
+    if (alpha <= 0.0f) {
+        return;
     }
-    // (made now only if the load didn't: a new size, the HUD turned on)
-    if (m->w != w || m->h != h || (!m->making && (!m->shader || m->refSeq != uii.GetRefSequence()))) {
-        ZM_Begin(kind);
-    }
+    // (made now only if not begun ahead)
+    ZM_Begin(kind);
     ZM_Finish(kind);
     if (!m->shader) {
-        return qfalse;
+        return;
     }
 
-    {
-        const int   rw = m->qw - (w & 1), bh = m->qh - (h & 1);
-        const float s1 = (float)rw / m->qw, t1 = (float)bh / m->qh;
-
-        re.SetColor(color);
-        re.DrawStretchPic(m->xl, m->yt, m->qw, m->qh, 0, 0, 1, 1, m->shader);
-        re.DrawStretchPic(xm, m->yt, rw, m->qh, s1, 0, 0, 1, m->shader);
-        re.DrawStretchPic(m->xl, ym, m->qw, bh, 0, t1, 1, 0, m->shader);
-        re.DrawStretchPic(xm, ym, rw, bh, s1, t1, 0, 0, m->shader);
+    re.SetColor(color);
+    for (const float *q : m->quads) {
+        re.DrawStretchPic(q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7], m->shader);
     }
-
-    // the black round it
-    ZM_Box(boxes, &n, 0, 0, m->xl, h);
-    ZM_Box(boxes, &n, w - m->xl, 0, m->xl, h);
-    ZM_Box(boxes, &n, m->xl, 0, w - 2 * m->xl, m->yt);
-    ZM_Box(boxes, &n, m->xl, h - m->yt, w - 2 * m->xl, m->yt);
     color[0] = color[1] = color[2] = 0.0f;
-    if (n) {
-        re.DrawBoxes((const float (*)[4])boxes, n, color);
-    }
-
-    n = 0;
-    if (kind == ZM_SCOPE) {
-        const int   t  = Q_max(1, (int)floorf(h / 1080.0f + 0.5f));
-        const float R  = 0.46f * h;
-        const int   x0 = (int)floorf(w * 0.5f - R), x1 = (int)ceilf(w * 0.5f + R);
-        const int   y0 = (int)floorf(h * 0.5f - R), y1 = (int)ceilf(h * 0.5f + R);
-        const int   lx = (w - t) / 2, ly = (h - t) / 2;
-
-        ZM_Box(boxes, &n, x0, ly, x1 - x0, t);
-        // (the vertical line in two, the crossing drawn once; the Kar98's without its upper half)
-        if (type != 1) {
-            ZM_Box(boxes, &n, lx, y0, t, ly - y0);
-        }
-        ZM_Box(boxes, &n, lx, ly + t, t, y1 - ly - t);
-        color[3] = 0.85f * alpha;
-    } else {
-        const float u  = ZM_BinocularUnit(w, h);
-        const int   t  = Q_max(1, (int)floorf(2.0f * h / 1080.0f + 0.5f));
-        const int   lx = (w - t) / 2, ly = (h - t) / 2;
-        const int   half = (int)floorf(0.25f * u + 0.5f);
-        const int   tick = Q_max(t, (int)floorf(0.015f * u + 0.5f)), big = Q_max(t, (int)floorf(0.03f * u + 0.5f));
-        const int   down = (int)floorf(0.1f * u + 0.5f), cross = Q_max(1, (int)floorf(0.008f * u + 0.5f));
-
-        ZM_Box(boxes, &n, lx - half, ly, 2 * half + t, t);
-        for (int i = -5; i <= 5; i++) {
-            const int x = lx + (int)floorf(i * 0.05f * u + 0.5f), th = i % 5 ? tick : big;
-
-            ZM_Box(boxes, &n, x, ly - th, t, th);
-        }
-        ZM_Box(boxes, &n, lx, ly + t, t, down - t);
-        for (int j = 1; j <= 4; j++) {
-            const int y = ly + (int)floorf(j * 0.025f * u + 0.5f);
-
-            ZM_Box(boxes, &n, lx - cross, y, cross, t);
-            ZM_Box(boxes, &n, lx + t, y, cross, t);
-        }
-        color[3] = 230.0f / 255.0f * alpha;
-    }
-    if (n) {
-        re.DrawBoxes((const float (*)[4])boxes, n, color);
-    }
+    re.DrawBoxes((const float (*)[4])m->black, m->numBlack, color);
+    color[3] = m->lineAlpha * alpha;
+    re.DrawBoxes((const float (*)[4])m->lines[kar], m->numLines[kar], color);
     re.SetColor(NULL);
-    return qtrue;
 }
 
 /*
@@ -463,6 +485,432 @@ static void EX_EdgedBox(const rlView_t& v, float x, float y, float w, float h, f
 /*
 ====================================================================
 
+STATUS ICONS
+
+The cgame's (CG_DrawIcons, CG_DrawDisconnect: when, and their blinking):
+a dark box, its left edge and its icon in the state's colour, the name in
+capitals. PAUSED (the Pause key in a mission) in the middle at three
+quarters of the screen's height (0.45 over a faded screen); CONNECTION
+INTERRUPTED (nothing from the server for the commands' backup) at the
+bottom's middle (over CS2's strip, over the lagometer while it is up), SLOW
+SERVER (developer) over it. The icons are Phosphor's, filled (MIT,
+ui/outlines/glyphs/PHOSPHOR-LICENSE.txt). The HUD's units
+
+====================================================================
+*/
+
+static const struct {
+    const char *glyph, *name;
+    rlColor_t   color; // 0 alpha: the accent's
+} ex_icons[UI_ICON_NUM] = {
+    {RL_OUTLINES "glyphs/pause.svg",     "PAUSED",                 {0, 0, 0, 0}                                 },
+    {RL_OUTLINES "glyphs/plugs.svg",     "CONNECTION INTERRUPTED", {226 / 255.0f, 104 / 255.0f, 88 / 255.0f, 1} },
+    {RL_OUTLINES "glyphs/hourglass.svg", "SLOW SERVER",            {232 / 255.0f, 170 / 255.0f, 72 / 255.0f, 1}},
+};
+
+#define EX_ICON_H    40.0f // the box's height
+#define EX_ICON_SIZE 20.0f // the icon's
+#define EX_ICON_TEXT 17.0f // the name's (bold)
+
+// the lagometer's top this frame (UI_DrawLagometer, drawn before the icons)
+static float ex_lagTop;
+static int   ex_lagFrame = -1;
+
+// the HUD's units (cg_hud_scale)
+static rlView_t EX_HudView(void)
+{
+    rlView_t v;
+
+    v.s  = UI_DesignScale(1920.0f, 1080.0f);
+    v.dw = uid.vidWidth / v.s;
+    v.dh = uid.vidHeight / v.s;
+    return v;
+}
+
+// the bottom's middle free up to: over CS2's strip (cg_hudstyle 2: its health,
+// badge and ammo, 80 units high), else the HUD's margin (24)
+static float EX_Bottom(const rlView_t& v)
+{
+    static cvar_t *style;
+
+    if (!style) {
+        style = Cvar_Get("cg_hudstyle", "1", CVAR_ARCHIVE);
+    }
+    return v.dh - (style->integer == 2 ? 88.0f : 24.0f);
+}
+
+void UI_DrawStatusIcon(int icon, qboolean raised)
+{
+    const rlView_t v = EX_HudView();
+    float          w, x, y;
+    rlColor_t      c;
+
+    if (icon < 0 || icon >= UI_ICON_NUM) {
+        return;
+    }
+    c = ex_icons[icon].color.a > 0 ? ex_icons[icon].color : EX_Accent();
+    w = 14.0f + EX_ICON_SIZE + 10.0f + RL_TextW(v, ex_icons[icon].name, EX_ICON_TEXT, true, 1.6f) + 18.0f;
+    x = floorf((v.dw - w) * 0.5f);
+    if (icon == UI_ICON_PAUSED) {
+        y = v.dh * (raised ? 0.45f : 0.75f) - EX_ICON_H * 0.5f;
+    } else {
+        y = (ex_lagFrame == cls.framecount ? ex_lagTop - 8.0f : EX_Bottom(v)) - EX_ICON_H
+          - (icon == UI_ICON_SLOWSERVER ? EX_ICON_H + 8.0f : 0.0f);
+    }
+    y = floorf(y);
+    {
+        const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + EX_ICON_H);
+
+        RL_BoxPx(x0, y0, x1, y1, EX_FILL);
+        RL_BoxPx(x0, y0, x0 + Q_max(1, RL_P(v, 3.0f)), y1, c);
+    }
+    RL_Outline(v, ex_icons[icon].glyph, x + 14.0f + EX_ICON_SIZE * 0.5f, y + EX_ICON_H * 0.5f, EX_ICON_SIZE, EX_ICON_SIZE, c);
+    RL_Text(v, x + 14.0f + EX_ICON_SIZE + 10.0f, y + EX_ICON_H * 0.5f, ex_icons[icon].name, EX_ICON_TEXT, EX_TEXT, true, RL_LEFT, 1.6f, RL_MID);
+}
+
+/*
+====================================================================
+
+THE LAGOMETER
+
+The cgame's cg_lagometer: 1 the graph, 2 compact. Project: Omaha's
+netgraph: its data (cl_lagometer.cpp) and its look (its colours and
+layout), drawn with the HUD's dark box, Oswald and boxes, the boxes of a
+colour in one re.DrawBoxes. At the bottom's middle in the HUD's units (over
+CS2's strip), the connection's status icons over it.
+
+- the graph: the ping (the last 1 s) and its jitter; the frame rate, the
+  share held back for the rate and the share lost (the last 5 s), and NO
+  UPDATE while nothing comes; 6 s of the buffer (orange up: the client ran
+  past the newest update, blue down: what was left of it) over 6 s of ping
+  (blue; amber: held back for the rate, a short tick: one held back; red:
+  lost or overdue), with lines a second apart and at 50/100/200 ms; a legend
+- compact: the signal (4 bars), the ping, 3 s of ping and one word, the
+  frame rate under it when it is under the moves' rate (cl_movefps)
+
+====================================================================
+*/
+
+// the boxes' colours (Omaha's; the panel the HUD's dark box), in the order drawn
+enum { LG_PANEL, LG_LINE, LG_LEFT, LG_AHEAD, LG_PING, LG_RATE, LG_LOST, LG_OFF, LG_ON, LG_KINDS };
+
+static const rlColor_t lg_colors[LG_KINDS] = {
+    EX_FILL,
+    {1, 1, 1, 0.14f},                              // the lines
+    {60 / 255.0f, 95 / 255.0f, 143 / 255.0f, 1},   // the buffer left
+    {255 / 255.0f, 138 / 255.0f, 61 / 255.0f, 1},  // ran ahead of the updates
+    {111 / 255.0f, 177 / 255.0f, 255 / 255.0f, 1}, // ping
+    {240 / 255.0f, 192 / 255.0f, 32 / 255.0f, 1},  // held back for the rate; a warning
+    {255 / 255.0f, 90 / 255.0f, 78 / 255.0f, 1},   // lost; bad
+    {1, 1, 1, 0.18f},                              // a signal bar off
+    EX_TEXT,                                       // on
+};
+static const rlColor_t LG_MUTED = {167 / 255.0f, 173 / 255.0f, 182 / 255.0f, 1};
+static const rlColor_t LG_LABEL = {1, 1, 1, 0.62f};
+
+#define LG_BIG   22.0f // the ping (bold)
+#define LG_SMALL 11.0f // the rest
+
+static float lg_boxes[LG_KINDS][LG_COLUMNS + 8][4];
+static int   lg_count[LG_KINDS];
+
+// the text, laid out again only when what it says or where it goes changes (the
+// numbers every 100 ms, an outage's tenths, the screen, the HUD's style); each
+// frame only drawn, a Rend_DrawString a line
+static struct {
+    int      key[8];
+    rlFace_t face[2]; // LG_SMALL, LG_BIG (bold)
+    struct {
+        char      text[32];
+        rlColor_t color;
+        int       big;
+        float     x, y; // Rend_DrawString's: the face's page units
+    } line[16];
+    int   n;
+    float swatch[5]; // the graph's legend: its swatches' left
+} lgt;
+
+// a box in pixels (x1, y1 past its edge), drawn with its colour's
+static void LG_Box(int kind, int x0, int y0, int x1, int y1)
+{
+    float *b;
+
+    if (x1 <= x0 || y1 <= y0 || lg_count[kind] >= (int)ARRAY_LEN(lg_boxes[0])) {
+        return;
+    }
+    b    = lg_boxes[kind][lg_count[kind]++];
+    b[0] = x0;
+    b[1] = y0;
+    b[2] = x1 - x0;
+    b[3] = y1 - y0;
+}
+
+// the boxes, then the text over them
+static void LG_Draw(void)
+{
+    for (int k = 0; k < LG_KINDS; k++) {
+        if (lg_count[k]) {
+            const vec4_t c = {lg_colors[k].r, lg_colors[k].g, lg_colors[k].b, lg_colors[k].a};
+
+            re.DrawBoxes(lg_boxes[k], lg_count[k], c);
+            lg_count[k] = 0;
+        }
+    }
+    for (int i = 0; i < lgt.n; i++) {
+        const auto&    l    = lgt.line[i];
+        const rlFace_t face = lgt.face[l.big];
+        const float    vs[2] = {face.page, face.page};
+
+        if (!i || memcmp(&l.color, &lgt.line[i - 1].color, sizeof(l.color))) {
+            RL_SetColor(l.color);
+        }
+        uii.Rend_DrawString(face.f, l.text, l.x, l.y, -1, vs);
+    }
+}
+
+// whether the text is to be laid out again (then emptied)
+static bool LG_Changed(const rlView_t& v, const lgStats_t *st, int style, float bottom)
+{
+    const int key[8] = {st->serial, st->interrupted ? st->sinceUpdateMs / 100 : -1, uid.vidWidth, uid.vidHeight,
+                        (int)(v.s * 4096.0f), style, (int)bottom, UI_BakeStamp()};
+
+    if (!memcmp(key, lgt.key, sizeof(key))) {
+        return false;
+    }
+    memcpy(lgt.key, key, sizeof(key));
+    lgt.n       = 0;
+    lgt.face[0] = RL_Face(v, LG_SMALL, false);
+    lgt.face[1] = RL_Face(v, LG_BIG, true);
+    return true;
+}
+
+// a line laid out at x (anchor), its baseline at y (as RL_Text); its width in units
+static float LG_Text(const rlView_t& v, float x, float y, const char *text, int big, rlColor_t c, int anchor = RL_LEFT)
+{
+    const rlFace_t& f = lgt.face[big];
+    float           w, lineH, capH;
+
+    if (!f.f || f.page <= 0.0f || lgt.n >= (int)ARRAY_LEN(lgt.line)) {
+        return 0.0f;
+    }
+    auto& l = lgt.line[lgt.n++];
+    Q_strncpyz(l.text, text, sizeof(l.text));
+    w       = RL_WidthPx(f, l.text, 0.0f);
+    lineH   = f.f->sgl[0]->height * f.page;
+    capH    = f.px * 0.81f; // Oswald's capitals
+    l.x     = floorf(x * v.s - (anchor == RL_CENTER ? w * 0.5f : anchor == RL_RIGHT ? w : 0.0f) + 0.5f) / f.page;
+    l.y     = floorf(y * v.s - floorf(lineH * 0.5f + capH * 0.5f + 0.5f) + 0.5f) / f.page;
+    l.color = c;
+    l.big   = big;
+    return w / v.s;
+}
+
+static int LG_Severity(int sev)
+{
+    return sev == LG_SEV_BAD ? LG_LOST : sev == LG_SEV_WARN ? LG_RATE : LG_ON;
+}
+
+static int LG_PingKind(int ping)
+{
+    return LG_Severity(ping > 150 ? LG_SEV_BAD : ping > 100 ? LG_SEV_WARN : LG_SEV_OK);
+}
+
+/*
+ * The left of slot s's column in the box x0..x1 (pixels) of count columns:
+ * slot s covers the server time from s * 50 ms; the box's right is the
+ * client's time plus a column, so the newest update is in view and the graph
+ * slides with the client's time
+ */
+static float LG_ColumnX(int s, int count, int x0, int x1)
+{
+    return x1 - (float)(cl.serverTime + LG_SLOT_MS - s * LG_SLOT_MS) / LG_SLOT_MS * (x1 - x0) / count;
+}
+
+/*
+ * The columns' bars in a box (pixels), scaleMs at its top: ping (amber held
+ * back for the rate, a tick for one held back, red lost or overdue); with
+ * buf (the buffer's middle, then its heights up and down) the buffer too,
+ * but for the client time's own column, still filling. A pixel's gap between
+ * bars 3 pixels wide or more
+ */
+static void LG_Bars(const rlView_t& v, const lgStats_t *st, int count, int scaleMs, int x0, int y0, int x1, int y1, const int *buf)
+{
+    const float colW = (float)(x1 - x0) / count, barW = colW >= 3.0f ? colW - 1.0f : colW;
+    const int   tick = Q_max(1, RL_P(v, 3.0f)), filling = LG_Slot(cl.serverTime);
+    float       x    = LG_ColumnX(st->edge - count, count, x0, x1);
+
+    for (int s = st->edge - count; s <= st->edge; s++, x += colW) {
+        const lgColumn_t *c = CL_Lagometer_Column(s);
+        const int         l = (int)(x + 0.5f), a = Q_max(x0, l), b = Q_min(x1, Q_max(l + 1, (int)(x + barW + 0.5f)));
+
+        if (b <= a) {
+            continue;
+        }
+        if (c && (c->flags & LG_F_LOST)) {
+            LG_Box(LG_LOST, a, y0, b, y1);
+        } else if (c && (c->flags & LG_F_UPDATE)) {
+            const int h = Q_max(1, (int)(Q_min(1.0f, (float)c->ping / scaleMs) * (y1 - y0) + 0.5f));
+
+            LG_Box((c->flags & LG_F_LATE) ? LG_RATE : LG_PING, a, y1 - h, b, y1);
+        } else if (c && (c->flags & LG_F_HELD)) {
+            LG_Box(LG_RATE, a, y1 - tick, b, y1);
+        } else if (CL_Lagometer_Missing(st, s)) {
+            LG_Box(LG_LOST, a, y0, b, y1);
+        }
+        if (buf && c && (c->flags & LG_F_BUFFER) && s < filling) {
+            if (c->buffer > 0) {
+                LG_Box(LG_AHEAD, a, buf[0] - Q_max(1, (int)(Q_min(1.0f, c->buffer / 150.0f) * buf[1] + 0.5f)), b, buf[0]);
+            } else if (c->buffer < 0) {
+                LG_Box(LG_LEFT, a, buf[0] + buf[3], b, buf[0] + buf[3] + Q_max(1, (int)(Q_min(1.0f, -c->buffer / 60.0f) * buf[2] + 0.5f)));
+            }
+        }
+    }
+}
+
+static void LG_Graph(const rlView_t& v, const lgStats_t *st, float bottom)
+{
+    static const struct {
+        int         kind;
+        const char *label;
+    } legend[] = {
+        {LG_PING, "Ping"}, {LG_RATE, "Rate limited"}, {LG_LOST, "Lost"}, {LG_AHEAD, "Ran ahead of updates"}, {LG_LEFT, "Buffer"},
+    };
+    static const int marks[] = {50, 100, 200, 300, 400};
+    const float      w = 400.0f, h = 192.0f, pad = 14.0f;
+    const float      x = floorf((v.dw - w) * 0.5f), y = floorf(bottom - h);
+    const float      gy = y + 46.0f; // the buffer's top; the ping's 30 under it, 84 high
+    const int        px0 = RL_P(v, x + pad), px1 = RL_P(v, x + w - pad);
+    const int        py0 = RL_P(v, gy + 30.0f), py1 = RL_P(v, gy + 114.0f), mid = RL_P(v, gy + 14.0f);
+    const int        line = Q_max(1, RL_P(v, 1.0f));
+
+    ex_lagTop   = y;
+    ex_lagFrame = cls.framecount;
+    LG_Box(LG_PANEL, RL_P(v, x), RL_P(v, y), RL_P(v, x + w), RL_P(v, y + h));
+
+    if (LG_Changed(v, st, 1, bottom)) {
+        const float base  = y + 34.0f;
+        float       right = x + w - pad, lx;
+
+        // the ping and its jitter; the numbers from the right
+        lx = LG_Text(v, x + pad, base, va("%d", st->ping), 1, lg_colors[st->interrupted ? LG_LOST : LG_PingKind(st->ping)]);
+        LG_Text(v, x + pad + lx + 4.0f, base, va("ms \xB1%d", st->jitter), 0, LG_MUTED);
+        right -= LG_Text(v, right, base, va("%d FPS", st->fps), 0, LG_MUTED, RL_RIGHT) + 10.0f;
+        right -= LG_Text(v, right, base, va("RATE LIMITED %d%%", (int)(st->ratePct + 0.5f)), 0, st->ratePct > 0.0f ? lg_colors[LG_RATE] : LG_MUTED,
+                         RL_RIGHT)
+               + 10.0f;
+        right -= LG_Text(v, right, base, va("LOSS %.1f%%", st->lossPct), 0,
+                         st->lossPct >= 3.0f ? lg_colors[LG_LOST] : st->lossPct > 0.0f ? lg_colors[LG_RATE] : LG_MUTED, RL_RIGHT)
+               + 10.0f;
+        if (st->interrupted) {
+            LG_Text(v, right, base, va("NO UPDATE %.1f s", st->sinceUpdateMs / 1000.0f), 0, lg_colors[LG_LOST], RL_RIGHT);
+        }
+        for (int ms : marks) {
+            if (ms < st->scaleMs) {
+                LG_Text(v, x + pad + 3.0f, gy + 112.0f - 84.0f * ms / st->scaleMs, va("%d", ms), 0, LG_LABEL);
+            }
+        }
+        lx = x + pad;
+        for (size_t i = 0; i < ARRAY_LEN(legend); i++) {
+            lgt.swatch[i] = lx;
+            lx += 24.0f + LG_Text(v, lx + 12.0f, gy + 134.0f, legend[i].label, 0, LG_MUTED);
+        }
+    }
+
+    // lines a second apart, at the ping marks under the top, and the buffer's middle
+    {
+        const int sec = 1000 / LG_SLOT_MS, first = st->edge - LG_COLUMNS, m = (first % sec + sec) % sec;
+
+        for (int s = m ? first + sec - m : first; s <= st->edge; s += sec) {
+            const int a = (int)(LG_ColumnX(s, LG_COLUMNS, px0, px1) + 0.5f);
+
+            if (a >= px0) {
+                LG_Box(LG_LINE, a, py0, a + line, py1);
+            }
+        }
+    }
+    for (int ms : marks) {
+        if (ms < st->scaleMs) {
+            const int my = RL_P(v, gy + 114.0f - 84.0f * ms / st->scaleMs);
+
+            LG_Box(LG_LINE, px0, my, px1, my + line);
+        }
+    }
+    LG_Box(LG_LINE, px0, mid, px1, mid + line);
+
+    // the buffer (up for running past the newest update, 150 ms full; down for
+    // what was left, 60 ms full) over the ping
+    {
+        const int buf[4] = {mid, RL_P(v, 12.0f), RL_P(v, 8.0f), line};
+
+        LG_Bars(v, st, LG_COLUMNS, st->scaleMs, px0, py0, px1, py1, buf);
+    }
+    for (size_t i = 0; i < ARRAY_LEN(legend); i++) {
+        LG_Box(legend[i].kind, RL_P(v, lgt.swatch[i]), RL_P(v, gy + 126.5f), RL_P(v, lgt.swatch[i] + 7.0f), RL_P(v, gy + 133.5f));
+    }
+    LG_Draw();
+}
+
+static void LG_Compact(const rlView_t& v, const lgStats_t *st, float bottom)
+{
+    const float w = 306.0f, h = 47.0f, side = 99.0f;
+    const float x = floorf((v.dw - w) * 0.5f), y = floorf(bottom - h), base = y + 31.5f;
+    const int   baseline = RL_P(v, base);
+    int         sev;
+    const int   status = CL_Lagometer_Status(st, &sev);
+    const int   bars   = CL_Lagometer_Bars(st, sev);
+
+    ex_lagTop   = y;
+    ex_lagFrame = cls.framecount;
+    LG_Box(LG_PANEL, RL_P(v, x), RL_P(v, y), RL_P(v, x + w), RL_P(v, y + h));
+
+    if (LG_Changed(v, st, 2, bottom)) {
+        static const char *const words[] = {"STABLE", "HIGH PING", "JITTER", "RATE LIMITED", "LOSS", "NO UPDATE"};
+        const char              *word    = words[status];
+        const int                moveFps = Cvar_VariableIntegerValue("cl_movefps");
+        const float              pw = LG_Text(v, x + 40.0f, base, va("%d", st->ping), 1, lg_colors[LG_PingKind(st->ping)]);
+
+        LG_Text(v, x + 43.0f + pw, base, "ms", 0, LG_MUTED);
+        if (status == LG_STATUS_LOSS) {
+            word = va("LOSS %.1f%%", st->lossPct);
+        } else if (status == LG_STATUS_JITTER) {
+            word = va("JITTER \xB1%d", st->jitter);
+        } else if (status == LG_STATUS_INTERRUPTED) {
+            word = va("NO UPDATE %.1f s", st->sinceUpdateMs / 1000.0f);
+        }
+        // the frame rate under the word when it is under the moves' rate
+        if (st->fps > 0 && st->fps < (moveFps > 0 ? Q_min(Q_max(moveFps, 85), 125) : 100)) {
+            LG_Text(v, x + w - side * 0.5f, base - 12.5f, word, 0, lg_colors[LG_Severity(sev)], RL_CENTER);
+            LG_Text(v, x + w - side * 0.5f, base, va("%d FPS", st->fps), 0, lg_colors[LG_RATE], RL_CENTER);
+        } else {
+            LG_Text(v, x + w - side * 0.5f, base, word, 0, lg_colors[LG_Severity(sev)], RL_CENTER);
+        }
+    }
+
+    // the signal; 3 s of ping, 200 ms at the top
+    for (int i = 0; i < 4; i++) {
+        const float bx = x + 12.5f + i * 4.5f;
+
+        LG_Box(i < bars ? LG_Severity(sev) : LG_OFF, RL_P(v, bx), baseline - RL_P(v, 3.5f + 3.5f * i), RL_P(v, bx + 3.0f), baseline);
+    }
+    LG_Bars(v, st, 60, 200, RL_P(v, x + side), RL_P(v, base - 20.0f), RL_P(v, x + w - side), baseline, NULL);
+    LG_Draw();
+}
+
+void UI_DrawLagometer(int style)
+{
+    const rlView_t   v  = EX_HudView();
+    const lgStats_t *st = CL_Lagometer_Frame();
+
+    if (style == 2) {
+        LG_Compact(v, st, EX_Bottom(v));
+    } else {
+        LG_Graph(v, st, EX_Bottom(v));
+    }
+}
+
+/*
+====================================================================
+
 THE ROUND'S END BANNER
 
 The server names the winners' picture in g_scoreboardpicover (the cgame's
@@ -518,7 +966,7 @@ static const char *EX_BannerText(int winner, bool match)
     return winner ? (match ? "AXIS WIN THE MATCH" : "AXIS WIN THE ROUND") : (match ? "ALLIES WIN THE MATCH" : "ALLIES WIN THE ROUND");
 }
 
-float UI_Extras_BannerHeight(const rlView_t& v)
+float UI_Extras_BannerHeight(void)
 {
     if (EX_Winner() < 0) {
         return 0.0f;
@@ -536,7 +984,7 @@ int UI_Extras_BannerKey(void)
 
 // drawn with its top at y, across the middle (as wide as its line, the
 // emblem in front)
-static void EX_Banner(const rlView_t& v, int winner, float y, float alpha)
+static void EX_Banner(const rlView_t& v, int winner, float y)
 {
     const std::string score = EX_Score();
     const char       *text  = EX_BannerText(winner, EX_MatchWon());
@@ -544,11 +992,11 @@ static void EX_Banner(const rlView_t& v, int winner, float y, float alpha)
     const float       bw = tw + icon + 14 + 48, bh = score.empty() ? 56.0f : 92.0f;
     const float       x  = floorf((v.dw - bw) * 0.5f);
 
-    EX_EdgedBox(v, x, y, bw, bh, alpha);
-    RL_TeamIcon(v, winner, x + 24 + icon * 0.5f, y + 28, icon, alpha);
-    RL_Text(v, x + 24 + icon + 14, y + 28, text, 34, EX_Fade(EX_TEXT, alpha), true, RL_LEFT, 0, RL_MID);
+    EX_EdgedBox(v, x, y, bw, bh, 1.0f);
+    RL_TeamIcon(v, winner, x + 24 + icon * 0.5f, y + 28, icon);
+    RL_Text(v, x + 24 + icon + 14, y + 28, text, 34, EX_TEXT, true, RL_LEFT, 0, RL_MID);
     if (!score.empty()) {
-        RL_Text(v, v.dw * 0.5f, y + 70, score.c_str(), 24, EX_Fade(EX_Accent(), alpha), false, RL_CENTER, 0, RL_MID);
+        RL_Text(v, v.dw * 0.5f, y + 70, score.c_str(), 24, EX_Accent(), false, RL_CENTER, 0, RL_MID);
     }
 }
 
@@ -557,7 +1005,7 @@ void UI_Extras_DrawBanner(const rlView_t& v, float y)
     const int winner = EX_Winner();
 
     if (winner >= 0) {
-        EX_Banner(v, winner, y, 1.0f);
+        EX_Banner(v, winner, y);
     }
 }
 
@@ -589,7 +1037,7 @@ static std::vector<std::string> EX_Lines(const char *text)
         while (!l.empty() && (l.back() == ' ' || l.back() == '\r' || l.back() == '\t')) {
             l.pop_back();
         }
-        if (!l.empty() && l.find_first_not_of(" \t") != std::string::npos) {
+        if (!l.empty()) {
             lines.push_back(l.substr(l.find_first_not_of(" \t")));
         }
         if (!e) {
@@ -610,21 +1058,18 @@ static bool EX_SaysWinners(const std::vector<std::string>& lines, int winner)
 
 static bool EX_BannerOverGame(void);
 
-qboolean UI_Extras_Print(const char *text, float alpha, int x, int y)
+void UI_Extras_Print(const char *text, float alpha, int x, int y)
 {
     const rlView_t                 v = RL_View();
     const std::vector<std::string> lines = EX_Lines(text);
     const float                    size = 24.0f, step = 32.0f;
     float                          tw = 0.0f, bw, bh, bx, by;
 
-    if (!UI_CompHud_Active()) {
-        return qfalse;
-    }
     if (lines.empty() || alpha <= 0.0f) {
-        return qtrue;
+        return;
     }
     if (x == -2 && EX_Winner() >= 0 && EX_SaysWinners(lines, EX_Winner())) {
-        return qtrue;
+        return;
     }
     for (const std::string& l : lines) {
         tw = Q_max(tw, RL_TextW(v, l.c_str(), size, false));
@@ -636,7 +1081,7 @@ qboolean UI_Extras_Print(const char *text, float alpha, int x, int y)
         bx = (v.dw - bw) * 0.5f;
         by = 300.0f - bh * 0.5f;
         if (EX_BannerOverGame()) {
-            by = Q_max(by, EX_BANNER_Y + UI_Extras_BannerHeight(v) + 12.0f);
+            by = Q_max(by, EX_BANNER_Y + UI_Extras_BannerHeight() + 12.0f);
         }
     } else {
         bx = x == -1 ? (v.dw - bw) * 0.5f : x / 640.0f * v.dw - 24.0f;
@@ -651,7 +1096,6 @@ qboolean UI_Extras_Print(const char *text, float alpha, int x, int y)
     for (size_t i = 0; i < lines.size(); i++) {
         RL_Text(v, bx + bw * 0.5f, by + 28.0f + step * i, lines[i].c_str(), size, EX_Fade(EX_TEXT, alpha), false, RL_CENTER, 0, RL_MID);
     }
-    return qtrue;
 }
 
 /*
@@ -678,30 +1122,26 @@ qboolean UI_Extras_Typing(void)
 
 static void EX_TypingLine(void)
 {
-    const float s = UI_DesignScale(1920.0f, 1080.0f);
     const char *line;
     int         mode, caret;
     Menu       *menu;
     UIWidget   *chat;
     float       left, top;
-    rlView_t    v;
     rlColor_t   col;
     std::string label;
 
-    ex_typing = UI_CompHud_Active() && UI_DMConsoleState(&mode, &line, &caret);
+    ex_typing = UI_DMConsoleState(&mode, &line, &caret);
     if (!ex_typing) {
         return;
     }
+    const rlView_t v = EX_HudView();
+    const float    s = v.s;
+
     // over the chat's menu, as it is placed (its own file may move it)
     menu = menuManager.FindMenu("hud_comp_chat");
     chat = menu ? menu->GetContainerWidget() : NULL;
     left = chat ? chat->getFrame().pos.x : 0.0f;
     top  = chat ? chat->getFrame().pos.y : uid.vidHeight - 256.0f * s;
-
-    v.s      = s;
-    v.dw     = uid.vidWidth / s;
-    v.dh     = uid.vidHeight / s;
-    v.layout = 1;
 
     if (mode == 100) {
         label = "ALL:";
@@ -726,7 +1166,7 @@ static void EX_TypingLine(void)
         const float tx  = lx + RL_TextW(v, label.c_str(), 17, true) + 8.0f;
         const float room = x1 / s - 12.0f - tx;
         rlFace_t    face = RL_Face(v, 17, false);
-        size_t      first = 0, last;
+        size_t      first, last;
         float       cw;
 
         RL_BoxPx(x0, y0, x1, y1, EX_FILL);
@@ -762,6 +1202,125 @@ static void EX_TypingLine(void)
 /*
 ====================================================================
 
+THE QUICK MESSAGES' MENU
+
+The V key's (the cgame's keys and commands as before): the title, the
+lines numbered in the accent, "0 Cancel" muted, in the dark box with the
+accent's edge on its left. Left as the radar and the chat, its top 425 of
+the HUD's units down: under the game messages, over the chat (up from it as
+much as it must, smaller if it can't fit under the messages' first line
+and over the chat: a large cg_hud_scale). Its texts translated, measured
+and placed once a page and a HUD scale
+
+====================================================================
+*/
+
+#define IM_LEFT    25.0f
+#define IM_TOP     425.0f // under the game messages (hud_comp_topleft_compass: 289 to 409)
+#define IM_HIGHEST 321.0f // ... at least under their first line
+#define IM_LOWEST  330.0f // up from the bottom: over the chat (CS:GO's corners: 312 up)
+#define IM_EDGE    3.0f
+#define IM_TEXT    19.0f // the numbers' left from the box's
+#define IM_NUMBER  22.0f // the lines' from the numbers'
+#define IM_RIGHT   22.0f
+#define IM_HEAD    45.0f // the title's band, the rule under it
+#define IM_STEP    26.0f
+#define IM_SIZE    17.0f // the lines' (the title 2 smaller)
+
+static struct {
+    const char *const *lines; // the page (the cgame's static texts)
+    float              s;     // ... at the HUD's scale
+    rlView_t           v;     // the HUD's, smaller to fit
+    std::string        head, cancel, text[9];
+    int                count;      // up to the last line shown
+    float              x, y, w, h; // the box (v's units)
+} im;
+
+// a key's text in the game's language, a lone "&" spaced (1.11's "Statements&Responses")
+static std::string IM_Text(const char *key)
+{
+    std::string t = Sys_LV_CL_ConvertString(key);
+
+    for (size_t i = t.find('&'); i != std::string::npos; i = t.find('&', i + 2)) {
+        if (i > 0 && t[i - 1] != ' ') {
+            t.insert(i++, " ");
+        }
+        if (i + 1 < t.size() && t[i + 1] != ' ') {
+            t.insert(i + 1, " ");
+        }
+    }
+    return t;
+}
+
+static void IM_Make(const char *title, const char *const *lines, int count, float s)
+{
+    const float dh = uid.vidHeight / s; // the HUD's units down
+    float       k, tw;
+
+    im.lines = lines;
+    im.s     = s;
+    im.head  = RL_Upper(title ? IM_Text(title).c_str() : "Quick Messages");
+    im.count = 0;
+    for (int i = 0; i < Q_min(count, (int)ARRAY_LEN(im.text)); i++) {
+        im.text[i] = lines[i] && lines[i][0] ? IM_Text(lines[i]) : "";
+        if (!im.text[i].empty()) {
+            im.count = i + 1;
+        }
+    }
+
+    im.h = IM_HEAD + 8.0f + IM_STEP * (im.count + 1) + 12.0f;
+    k    = Com_Clamp(0.5f, 1.0f, (dh - IM_LOWEST - IM_HIGHEST) / im.h);
+    im.v.s  = s * k;
+    im.v.dw = uid.vidWidth / im.v.s;
+    im.v.dh = uid.vidHeight / im.v.s;
+    im.x    = IM_LEFT / k;
+    im.y    = Q_max(IM_HIGHEST, Q_min(IM_TOP, dh - IM_LOWEST - im.h * k)) / k;
+
+    tw = RL_TextW(im.v, im.head.c_str(), IM_SIZE - 2.0f, true, 1.2f);
+    for (int i = 0; i < im.count; i++) {
+        tw = Q_max(tw, IM_NUMBER + RL_TextW(im.v, im.text[i].c_str(), IM_SIZE, false));
+    }
+    im.cancel = Sys_LV_CL_ConvertString("Cancel");
+    im.w      = ceilf(Q_max(240.0f, IM_TEXT + tw + IM_RIGHT));
+}
+
+void UI_DrawInstaMessage(const char *title, const char *const *lines, int count)
+{
+    const float s = UI_DesignScale(1920.0f, 1080.0f);
+
+    if (lines != im.lines || s != im.s) {
+        IM_Make(title, lines, count, s);
+    }
+
+    {
+        const rlView_t& v  = im.v;
+        const rlColor_t ac = EX_Accent();
+        const int       x0 = RL_P(v, im.x), y0 = RL_P(v, im.y), x1 = RL_P(v, im.x + im.w), y1 = RL_P(v, im.y + im.h);
+        const int       rule = RL_P(v, im.y + IM_HEAD);
+        const float     tx = im.x + IM_TEXT;
+        float           cy = im.y + IM_HEAD + 8.0f + IM_STEP * 0.5f;
+
+        RL_BoxPx(x0 + Q_max(1, RL_P(v, IM_EDGE)), y0, x1, y1, EX_FILL);
+        RL_BoxPx(x0, y0, x0 + Q_max(1, RL_P(v, IM_EDGE)), y1, ac);
+        RL_BoxPx(RL_P(v, tx), rule, x1 - RL_P(v, IM_RIGHT), rule + Q_max(1, RL_P(v, 1.0f)), RL_Rgb(255, 255, 255, 38));
+        RL_Text(v, tx, im.y + 12.0f + (IM_HEAD - 12.0f) * 0.5f, im.head.c_str(), IM_SIZE - 2.0f, EX_TEXT, true, RL_LEFT, 1.2f, RL_MID);
+        for (int i = 0; i < im.count; i++, cy += IM_STEP) {
+            const char number[2] = {(char)('1' + i), 0};
+
+            if (!im.text[i].empty()) {
+                RL_Text(v, tx, cy, number, IM_SIZE, ac, true, RL_LEFT, 0, RL_MID);
+                RL_Text(v, tx + IM_NUMBER, cy, im.text[i].c_str(), IM_SIZE, EX_TEXT, false, RL_LEFT, 0, RL_MID);
+            }
+        }
+        cy += 6.0f;
+        RL_Text(v, tx, cy, "0", IM_SIZE, RL_MUTED, true, RL_LEFT, 0, RL_MID);
+        RL_Text(v, tx + IM_NUMBER, cy, im.cancel.c_str(), IM_SIZE, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+    }
+}
+
+/*
+====================================================================
+
 EACH FRAME, BAKED AHEAD
 
 ====================================================================
@@ -775,62 +1334,54 @@ static bool EX_BannerOverGame(void)
 
 void UI_Extras_Draw2D(void)
 {
-    if (!UI_CompHud_Active()) {
-        ex_typing = false;
-        return;
-    }
     if (EX_BannerOverGame()) {
-        EX_Banner(RL_View(), EX_Winner(), EX_BANNER_Y, 1.0f);
+        EX_Banner(RL_View(), EX_Winner(), EX_BANNER_Y);
     }
     EX_TypingLine();
 }
 
 void UI_Extras_PreBake(qboolean ahead)
 {
-    const int  start = Sys_Milliseconds();
-    int        masks;
-    const bool hud = UI_CompHud_Active();
-    // (the banner shows on the Reloaded scoreboard whatever the HUD)
-    const bool board = !Cvar_VariableIntegerValue("ui_classicmenus");
+    const int start = Sys_Milliseconds();
+    int       masks;
 
-    if ((!hud && !board) || !uii.IsRendererLoaded()) {
+    if (!uii.IsRendererLoaded()) {
         return;
     }
-    if (hud) {
-        // the masks made while the map loads, registered at its end; at the
-        // game's start (a screen size, no map yet) only begun, made meanwhile
-        ZM_Begin(ZM_SCOPE);
-        ZM_Begin(ZM_BINOCULARS);
-        if (!ahead && clc.state >= CA_LOADING) {
-            ZM_Finish(ZM_SCOPE);
-            ZM_Finish(ZM_BINOCULARS);
-        }
+    // the masks made while the map loads, registered at its end; at the
+    // game's start (a screen size, no map yet) only begun, made meanwhile
+    ZM_Begin(ZM_SCOPE);
+    ZM_Begin(ZM_BINOCULARS);
+    if (!ahead && clc.state >= CA_LOADING) {
+        ZM_Finish(ZM_SCOPE);
+        ZM_Finish(ZM_BINOCULARS);
     }
     if (ahead) {
         return;
     }
     masks = Sys_Milliseconds();
 
-    // the faces and the emblems the prints, the banner and the typing line draw
+    // the faces and the emblems the prints, the banner, the typing line, the status icons and the lagometer draw
     {
-        const rlView_t v = RL_View();
-        const float    s = UI_DesignScale(1920.0f, 1080.0f);
-        rlView_t       hv = v;
+        const rlView_t v = RL_View(), hv = EX_HudView();
 
-        hv.s  = s;
-        hv.dw = uid.vidWidth / s;
-        hv.dh = uid.vidHeight / s;
         UI_BakeBatch(true);
         RL_Face(v, 24, false);
         RL_Face(v, 34, true);
-        if (hud) {
-            RL_Face(hv, 17, false);
-            RL_Face(hv, 17, true);
+        RL_Face(hv, 15, true); // (the quick messages' title)
+        RL_Face(hv, 17, false);
+        RL_Face(hv, 17, true);
+        if (Cvar_VariableIntegerValue("cg_lagometer")) {
+            RL_Face(hv, LG_BIG, true);
+            RL_Face(hv, LG_SMALL, false);
         }
         UI_BakeBatch(false);
         rl_bakeOnly = true;
         RL_TeamIcon(v, 0, 0, 0, 38);
         RL_TeamIcon(v, 1, 0, 0, 38);
+        for (int i = 0; i < UI_ICON_NUM; i++) {
+            RL_Outline(hv, ex_icons[i].glyph, 0, 0, EX_ICON_SIZE, EX_ICON_SIZE, EX_TEXT);
+        }
         rl_bakeOnly = false;
     }
     Com_DPrintf("HUD extras: baked in %d ms (the masks registered in %d)\n", Sys_Milliseconds() - start, masks - start);
@@ -838,6 +1389,6 @@ void UI_Extras_PreBake(qboolean ahead)
 
 void UI_Extras_Init(void)
 {
-    // the DM console's window drawn (0 with cg_hudstyle 1: the typing line instead)
-    Cvar_Get("ui_hud_dmconsole", "1", 0);
+    // the DM console's window not drawn (its alphacvar): the typing line instead
+    Cvar_Get("ui_hud_dmconsole", "0", 0);
 }

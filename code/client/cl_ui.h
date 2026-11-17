@@ -32,10 +32,7 @@ typedef struct {
 //
 // cvars
 //
-extern cvar_t *ui_health_start;
-extern cvar_t *ui_health_end;
 extern cvar_t *sound_overlay;
-extern cvar_t *cl_movieaudio;
 
 //
 // initialization
@@ -47,8 +44,6 @@ void CL_ShutdownUI(void);
 //
 // general ui stuff
 //
-extern inventory_t  client_inv;
-extern bind_t       client_bind;
 extern cvar_t      *cl_greenfps;
 extern qboolean     server_loading;
 extern const UColor UWhiteChatMessageColor;
@@ -59,7 +54,6 @@ const char *CvarGetForUI(const char *name, const char *defval);
 void        UI_ClearState(void);
 void        CL_BeginRegistration(void);
 void        CL_EndRegistration(void);
-float       UI_GetObjectivesTop(void);
 void        UI_GetHighResolutionScale(vec2_t scale);
 
 //
@@ -73,10 +67,8 @@ void     UI_ForceMenuOff(bool force);
 void     UI_PushMenu(const char *name);
 void     UI_ForceMenu(const char *name);
 qboolean UI_BindActive(void);
-void     UI_SetReturnMenuToCurrent(void);
 void     UI_ActivateView3D(void);
 void     UI_MenuEscape(const char *name);
-void     UI_CreateScoreboard(void);
 qboolean UI_MenuActive(void);
 qboolean UI_MenuUp(void);
 void     UI_FocusMenuIfExists(void);
@@ -145,7 +137,7 @@ void     UI_ToggleConsole(void);
 void     UI_OpenDMConsole(int iMode);
 void     UI_CloseDMConsole(void);
 // Added: the DM console open: its mode (100 all, 200 team, else a client's
-// number + 1), its line and caret (cg_hudstyle 1 draws them as the chat's
+// number + 1), its line and caret (the Competitive HUD draws them as the chat's
 // typing line); closed when it isn't the active control (its window isn't drawn)
 qboolean UI_DMConsoleState(int *mode, const char **line, int *caret);
 // Added: a scoreboard is shown

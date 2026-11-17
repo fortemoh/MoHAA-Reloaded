@@ -111,59 +111,6 @@ LAGOMETER
 ===============================================================================
 */
 
-#define LAG_SAMPLES 128
-
-typedef struct {
-    int frameSamples[LAG_SAMPLES];
-    int frameCount;
-    int snapshotFlags[LAG_SAMPLES];
-    int snapshotSamples[LAG_SAMPLES];
-    int snapshotCount;
-} lagometer_t;
-
-lagometer_t lagometer;
-
-/*
-==============
-CG_AddLagometerFrameInfo
-
-Adds the current interpolate / extrapolate bar for this frame
-==============
-*/
-void CG_AddLagometerFrameInfo(void)
-{
-    int offset;
-
-    offset                                                           = cg.time - cg.latestSnapshotTime;
-    lagometer.frameSamples[lagometer.frameCount & (LAG_SAMPLES - 1)] = offset;
-    lagometer.frameCount++;
-}
-
-/*
-==============
-CG_AddLagometerSnapshotInfo
-
-Each time a snapshot is received, log its ping time and
-the number of snapshots that were dropped before it.
-
-Pass NULL for a dropped packet.
-==============
-*/
-void CG_AddLagometerSnapshotInfo(snapshot_t *snap)
-{
-    // dropped packet
-    if (!snap) {
-        lagometer.snapshotSamples[lagometer.snapshotCount & (LAG_SAMPLES - 1)] = -1;
-        lagometer.snapshotCount++;
-        return;
-    }
-
-    // add this snapshot's info
-    lagometer.snapshotSamples[lagometer.snapshotCount & (LAG_SAMPLES - 1)] = snap->ping;
-    lagometer.snapshotFlags[lagometer.snapshotCount & (LAG_SAMPLES - 1)]   = snap->snapFlags;
-    lagometer.snapshotCount++;
-}
-
 /*
 ==============
 CG_DrawDisconnect
@@ -171,10 +118,7 @@ CG_DrawDisconnect
 */
 void CG_DrawDisconnect(void)
 {
-    float     x, y;
-    float     w, h;
     int       cmdNum;
-    qhandle_t handle;
     usercmd_t cmd;
 
     // draw the phone jack if we are completely past our buffers
@@ -190,17 +134,9 @@ void CG_DrawDisconnect(void)
         return;
     }
 
-    handle = cgi.R_RegisterShader("gfx/2d/net.tga");
-    w      = cgi.R_GetShaderWidth(handle) * cgs.uiHiResScale[0];
-    h      = cgi.R_GetShaderHeight(handle) * cgs.uiHiResScale[1];
-    x      = ((float)cgs.glconfig.vidWidth - w) * 0.5;
-    y      = (float)cgs.glconfig.vidHeight - h;
-
-    cgi.R_DrawStretchPic(x, y, w, h, 0, 0, 1, 1, handle);
+    // Changed: the client's, in the HUD's style
+    cgi.UI_DrawStatusIcon(UI_ICON_NOSNAPSHOTS, qfalse);
 }
-
-#define MAX_LAGOMETER_PING  900
-#define MAX_LAGOMETER_RANGE 300
 
 /*
 ==============
@@ -209,137 +145,25 @@ CG_DrawLagometer
 */
 void CG_DrawLagometer(void)
 {
-    int   a, i;
-    float v;
-    float ax, ay, aw, ah, mid, range;
-    int   color;
-    float vscale;
-
-    if (!cg_lagometer->integer) {
-        CG_DrawDisconnect();
-        return;
+    // Changed: the client's (Project: Omaha's netgraph in the HUD's style):
+    // 1 the graph, 2 compact
+    if (cg_lagometer->integer) {
+        cgi.UI_DrawLagometer(cg_lagometer->integer);
     }
-
-    //
-    // draw the graph
-    //
-    ax = 272.0;
-    ay = 432.0;
-    aw = 96.0;
-    ah = 48.0;
-    CG_AdjustFrom640(&ax, &ay, &aw, &ah);
-
-    cgi.R_SetColor(NULL);
-    cgi.R_DrawStretchPic(ax, ay, aw, ah, 0, 0, 1, 1, cgs.media.lagometerShader);
-
-    color = -1;
-    range = ah / 3;
-    mid   = ay + range;
-
-    vscale = range / MAX_LAGOMETER_RANGE;
-
-    // draw the frame interpoalte / extrapolate graph
-    for (a = 0; a < aw; a++) {
-        i = (lagometer.frameCount - 1 - a) & (LAG_SAMPLES - 1);
-        v = lagometer.frameSamples[i];
-        v *= vscale;
-        if (v > 0) {
-            if (color != 1) {
-                color = 1;
-                cgi.R_SetColor(g_color_table[ColorIndex(COLOR_YELLOW)]);
-            }
-            if (v > range) {
-                v = range;
-            }
-            cgi.R_DrawBox(ax + aw - a, mid - v, 1, v);
-        } else if (v < 0) {
-            if (color != 2) {
-                color = 2;
-                cgi.R_SetColor(g_color_table[ColorIndex(COLOR_BLUE)]);
-            }
-            v = -v;
-            if (v > range) {
-                v = range;
-            }
-            cgi.R_DrawBox(ax + aw - a, mid, 1, v);
-        }
-    }
-
-    // draw the snapshot latency / drop graph
-    range  = ah / 2;
-    vscale = range / MAX_LAGOMETER_PING;
-
-    for (a = 0; a < aw; a++) {
-        i = (lagometer.snapshotCount - 1 - a) & (LAG_SAMPLES - 1);
-        v = lagometer.snapshotSamples[i];
-        if (v > 0) {
-            if (lagometer.snapshotFlags[i] & SNAPFLAG_RATE_DELAYED) {
-                if (color != 5) {
-                    color = 5; // YELLOW for rate delay
-                    cgi.R_SetColor(g_color_table[ColorIndex(COLOR_YELLOW)]);
-                }
-            } else {
-                if (color != 3) {
-                    color = 3;
-                    cgi.R_SetColor(g_color_table[ColorIndex(COLOR_GREEN)]);
-                }
-            }
-            v = v * vscale;
-            if (v > range) {
-                v = range;
-            }
-            cgi.R_DrawBox(ax + aw - a, ay + ah - v, 1, v);
-        } else if (v < 0) {
-            if (color != 4) {
-                color = 4; // RED for dropped snapshots
-                cgi.R_SetColor(g_color_table[ColorIndex(COLOR_RED)]);
-            }
-            cgi.R_DrawBox(ax + aw - a, ay + ah - range, 1, range);
-        }
-    }
-
-    cgi.R_SetColor(NULL);
-
     CG_DrawDisconnect();
 }
 
 static void CG_DrawPauseIcon()
 {
-    qhandle_t handle;
-    float     x, y, w, h;
-
-    if (paused->integer) {
-        handle = cgs.media.pausedShader;
-    } else {
-        if (cg.predicted_player_state.pm_flags & PMF_LEVELEXIT) {
-            // blink it
-            if ((cg.time >> 9) & 1) {
-                return;
-            }
-            handle = cgs.media.levelExitShader;
-        } else {
-            return;
-        }
+    if (!paused->integer) {
+        return;
     }
-    w = cgi.R_GetShaderWidth(handle);
-    h = cgi.R_GetShaderHeight(handle);
-    if (cg.snap && cg.snap->ps.blend[3] > 0) {
-        y = cgs.glconfig.vidHeight * 0.45f - h / 2.f;
-    } else {
-        y = cgs.glconfig.vidHeight * 0.75f - h / 2.f;
-    }
-    x = (cgs.glconfig.vidWidth - w) / 2.f;
-
-    cgi.R_SetColor(colorWhite);
-    cgi.R_DrawStretchPic(x, y, w * cgs.uiHiResScale[0], h * cgs.uiHiResScale[1], 0, 0, 1, 1, handle);
+    // Changed: the client's, in the HUD's style (higher over a faded screen)
+    cgi.UI_DrawStatusIcon(UI_ICON_PAUSED, cg.snap && cg.snap->ps.blend[3] > 0 ? qtrue : qfalse);
 }
 
 static void CG_DrawServerLag()
 {
-    float     x, y;
-    float     w, h;
-    qhandle_t handle;
-
     if (cgs.gametype == GT_SINGLE_PLAYER) {
         // Fixed in 2.0
         //  Don't draw server lag in single-player mode
@@ -369,12 +193,8 @@ static void CG_DrawServerLag()
         return;
     }
 
-    handle = cgi.R_RegisterShader("gfx/2d/slowserver");
-    w      = (float)cgi.R_GetShaderWidth(handle) * cgs.uiHiResScale[0] / 4;
-    h      = (float)cgi.R_GetShaderHeight(handle) * cgs.uiHiResScale[1] / 4;
-    x      = ((float)cgs.glconfig.vidWidth - w) / 2;
-    y      = (float)cgs.glconfig.vidHeight - h;
-    cgi.R_DrawStretchPic(x, y, w, h, 0.0, 0.0, 1.0, 1.0, handle);
+    // Changed: the client's, in the HUD's style
+    cgi.UI_DrawStatusIcon(UI_ICON_SLOWSERVER, qfalse);
 }
 
 /*
@@ -390,106 +210,6 @@ void CG_DrawIcons(void)
 
     CG_DrawPauseIcon();
     CG_DrawServerLag();
-}
-
-void CG_DrawOverlayTopBottom(qhandle_t handleTop, qhandle_t handleBottom, float fAlpha)
-{
-    int    iHalfWidth;
-    int    iWidthOffset;
-    vec4_t color;
-
-    color[0] = 1.0;
-    color[1] = 1.0;
-    color[2] = 1.0;
-    color[3] = fAlpha;
-    cgi.R_SetColor(color);
-
-    iHalfWidth   = cgs.glconfig.vidHeight >> 1;
-    iWidthOffset = (cgs.glconfig.vidWidth - cgs.glconfig.vidHeight) >> 1;
-
-    cgi.R_DrawStretchPic(iWidthOffset, 0.0, iHalfWidth, iHalfWidth, 1.0, 0.0, 0.0, 1.0, handleTop);
-    cgi.R_DrawStretchPic(iWidthOffset + iHalfWidth, 0.0, iHalfWidth, iHalfWidth, 0.0, 0.0, 1.0, 1.0, handleTop);
-    cgi.R_DrawStretchPic(iWidthOffset, iHalfWidth, iHalfWidth, iHalfWidth, 1.0, 0.0, 0.0, 1.0, handleBottom);
-    cgi.R_DrawStretchPic(
-        iWidthOffset + iHalfWidth, iHalfWidth, iHalfWidth, iHalfWidth, 0.0, 0.0, 1.0, 1.0, handleBottom
-    );
-
-    color[0] = 0.0;
-    color[1] = 0.0;
-    color[2] = 0.0;
-    cgi.R_SetColor(color);
-
-    cgi.R_DrawStretchPic(0.0, 0.0, iWidthOffset, cgs.glconfig.vidHeight, 0.0, 0.0, 1.0, 1.0, cgs.media.lagometerShader);
-    cgi.R_DrawStretchPic(
-        cgs.glconfig.vidWidth - iWidthOffset,
-        0.0,
-        iWidthOffset,
-        cgs.glconfig.vidHeight,
-        0.0,
-        0.0,
-        1.0,
-        1.0,
-        cgs.media.lagometerShader
-    );
-}
-
-void CG_DrawOverlayMiddle(qhandle_t handle, float fAlpha)
-{
-    int    iHalfWidth;
-    int    iWidthOffset;
-    vec4_t color;
-
-    color[0] = 1.0;
-    color[1] = 1.0;
-    color[2] = 1.0;
-    color[3] = fAlpha;
-    cgi.R_SetColor(color);
-
-    iHalfWidth   = cgs.glconfig.vidHeight >> 1;
-    iWidthOffset = (cgs.glconfig.vidWidth - cgs.glconfig.vidHeight) >> 1;
-
-    cgi.R_DrawStretchPic(iWidthOffset, 0.0, iHalfWidth, iHalfWidth, 0.0, 0.0, 1.0, 1.0, handle);
-    cgi.R_DrawStretchPic(iWidthOffset + iHalfWidth, 0.0, iHalfWidth, iHalfWidth, 1.0, 0.0, 0.0, 1.0, handle);
-    cgi.R_DrawStretchPic(iWidthOffset, iHalfWidth, iHalfWidth, iHalfWidth, 0.0, 1.0, 1.0, 0.0, handle);
-    cgi.R_DrawStretchPic(iWidthOffset + iHalfWidth, iHalfWidth, iHalfWidth, iHalfWidth, 1.0, 1.0, 0.0, 0.0, handle);
-
-    color[0] = 0.0;
-    color[1] = 0.0;
-    color[2] = 0.0;
-    cgi.R_SetColor(color);
-
-    cgi.R_DrawStretchPic(0.0, 0.0, iWidthOffset, cgs.glconfig.vidHeight, 0.0, 0.0, 1.0, 1.0, cgs.media.lagometerShader);
-    cgi.R_DrawStretchPic(
-        cgs.glconfig.vidWidth - iWidthOffset,
-        0.0,
-        iWidthOffset,
-        cgs.glconfig.vidHeight,
-        .0,
-        0.0,
-        1.0,
-        1.0,
-        cgs.media.lagometerShader
-    );
-}
-
-void CG_DrawOverlayFullScreen(qhandle_t handle, float fAlpha)
-{
-    int    iHalfWidth, iHalfHeight;
-    vec4_t color;
-
-    color[0] = 1.0;
-    color[1] = 1.0;
-    color[2] = 1.0;
-    color[3] = fAlpha;
-    cgi.R_SetColor(color);
-
-    iHalfHeight = cgs.glconfig.vidHeight >> 1;
-    iHalfWidth  = cgs.glconfig.vidWidth >> 1;
-
-    cgi.R_DrawStretchPic(0.0, 0.0, iHalfWidth, iHalfHeight, 0.0, 0.0, 1.0, 1.0, handle);
-    cgi.R_DrawStretchPic(iHalfWidth, 0.0, iHalfWidth, iHalfHeight, 1.0, 0.0, 0.0, 1.0, handle);
-    cgi.R_DrawStretchPic(0.0, iHalfHeight, iHalfWidth, iHalfHeight, 0.0, 1.0, 1.0, 0.0, handle);
-    cgi.R_DrawStretchPic(iHalfWidth, iHalfHeight, iHalfWidth, iHalfHeight, 1.0, 1.0, 0.0, 0.0, handle);
 }
 
 void CG_DrawZoomOverlay()
@@ -542,22 +262,8 @@ void CG_DrawZoomOverlay()
         }
     }
 
-    // Added: the Competitive HUD's (cg_hudstyle 1), drawn by the client
-    if (cgi.UI_DrawZoomOverlay && cgi.UI_DrawZoomOverlay(zoomType, fAlpha)) {
-        return;
-    }
-
-    switch (zoomType) {
-    case 1:
-        CG_DrawOverlayTopBottom(cgs.media.kar98TopOverlayShader, cgs.media.kar98BottomOverlayShader, fAlpha);
-        break;
-    case 3:
-        CG_DrawOverlayFullScreen(cgs.media.binocularsOverlayShader, fAlpha);
-        break;
-    default:
-        CG_DrawOverlayMiddle(cgs.media.zoomOverlayShader, fAlpha);
-        break;
-    }
+    // Changed: drawn by the client (the Competitive HUD's mask and lines)
+    cgi.UI_DrawZoomOverlay(zoomType, fAlpha);
 }
 
 void CG_HudDrawShader(int iInfo)
@@ -590,21 +296,27 @@ void CG_RefreshHudDrawElements()
 
 void CG_HudDrawElements()
 {
-    int    i;
-    float  fX, fY;
-    float  fWidth, fHeight;
-    vec2_t virtualScale;
+    static cvar_t *cg_hud_score = cgi.Cvar_Get("cg_hud_score", "1", CVAR_ARCHIVE);
+    int            i;
+    float          fX, fY;
+    float          fWidth, fHeight;
+    vec2_t         virtualScale;
+    qboolean       jail;
 
     if (!cg_huddraw_force->integer && !cg_hud->integer) {
         return;
     }
+    // Added: Liberation's jail (global/lib_dm.scr's 101-105, its lock 105) the
+    // Competitive HUD's top bar shows (the client's cl_uicomp.cpp): not drawn here
+    jail = cgs.gametype == GT_LIBERATION && cg_hud_score->integer
+        && !Q_stricmp(cgi.HudDrawElements[105].shaderName, "textures/hud/lock_icon");
 
     virtualScale[0] = cgs.glconfig.vidWidth / 640.0;
     virtualScale[1] = cgs.glconfig.vidHeight / 480.0;
 
     for (i = 0; i < MAX_HUDDRAW_ELEMENTS; i++) {
         if ((!cgi.HudDrawElements[i].hShader && !cgi.HudDrawElements[i].string[0])
-            || !cgi.HudDrawElements[i].vColor[3]) {
+            || !cgi.HudDrawElements[i].vColor[3] || (jail && i >= 101 && i <= 105)) {
             // skip invisible elements
             continue;
         }
@@ -680,647 +392,25 @@ void CG_HudDrawElements()
 
 void CG_InitializeObjectives()
 {
-    int i;
-
-    cg.ObjectivesAlphaTime    = 0.0;
-    cg.ObjectivesBaseAlpha    = 0.0;
     cg.ObjectivesDesiredAlpha = 0.0;
-    cg.ObjectivesCurrentAlpha = 0.0;
-
-    // as their configstrings hold them; CG_ProcessConfigString keeps them from here on
-    for (i = CS_OBJECTIVES; i < CS_OBJECTIVES + MAX_OBJECTIVES; ++i) {
-        CG_ProcessConfigString(i, qfalse);
-    }
-}
-
-void CG_DrawObjectives()
-{
-    float        vColor[4];
-    float        fX, fY;
-    int          iNumObjectives;
-    float        fObjectivesTop;
-    static float fWidth;
-    float        fHeight;
-    int          iNumLines[20];
-    int          iTotalNumLines;
-    int          i;
-    int          iCurrentObjective;
-    float        fTimeDelta;
-    const char  *pszLocalizedText;
-    const char  *pszLine;
-
-    iTotalNumLines            = 0;
-    iCurrentObjective         = cg.ObjectivesCurrentIndex;
-    fTimeDelta                = cg.ObjectivesAlphaTime - cg.time;
-    cg.ObjectivesCurrentAlpha = cg.ObjectivesDesiredAlpha;
-    if (fTimeDelta > 0) {
-        cg.ObjectivesCurrentAlpha =
-            (cg.ObjectivesBaseAlpha - cg.ObjectivesDesiredAlpha) * sin(fTimeDelta / (M_PI * 50.f + 2.f))
-            + cg.ObjectivesDesiredAlpha;
-    }
-
-    if (cg.ObjectivesCurrentAlpha < 0.02) {
-        return;
-    }
-
-    // Added in 2.0
-    //  Get the minimum Y value, it should be below the compass
-    fObjectivesTop = cgi.UI_GetObjectivesTop();
-    iNumObjectives = 0;
-
-    for (i = 0; i < MAX_OBJECTIVES; i++) {
-        if ((cg.Objectives[i].flags == OBJ_FLAG_NONE) || (cg.Objectives[i].flags & OBJ_FLAG_HIDDEN)) {
-            continue;
-        }
-
-        iNumObjectives++;
-        iNumLines[i]     = 0;
-        pszLocalizedText = cgi.LV_ConvertString(cg.Objectives[i].text);
-
-        for (pszLine = strchr(pszLocalizedText, '\n'); pszLine; pszLine = strchr(pszLine + 1, '\n')) {
-            iNumLines[i]++;
-        }
-
-        iTotalNumLines += iNumLines[i];
-    }
-
-    fX        = 25.0;
-    fY        = fObjectivesTop + 5;
-    fWidth    = (float)(iTotalNumLines * 12 + fObjectivesTop + iNumObjectives * 25 + 32) - fY;
-    vColor[2] = 0.2f;
-    vColor[1] = 0.2f;
-    vColor[0] = 0.2f;
-    vColor[3] = cg.ObjectivesCurrentAlpha * 0.75;
-    cgi.R_SetColor(vColor);
-    cgi.R_DrawStretchPic(
-        fX,
-        fY,
-        450.0 * cgs.uiHiResScale[0],
-        fWidth * cgs.uiHiResScale[1],
-        0.0,
-        0.0,
-        1.0,
-        1.0,
-        cgs.media.objectivesBackShader
-    );
-
-    fX        = 30.0;
-    fY        = fObjectivesTop + 10;
-    vColor[0] = 1.0;
-    vColor[1] = 1.0;
-    vColor[2] = 1.0;
-    vColor[3] = cg.ObjectivesCurrentAlpha;
-    cgi.R_SetColor(vColor);
-    cgi.R_DrawString(
-        cgs.media.objectiveFont,
-        cgi.LV_ConvertString("Mission Objectives:"),
-        fX,
-        fY / cgs.uiHiResScale[1],
-        -1,
-        cgs.uiHiResScale
-    );
-    fY = fY + 5.0;
-
-    cgi.R_DrawString(
-        cgs.media.objectiveFont,
-        "_______________________________________________________",
-        fX,
-        fY / cgs.uiHiResScale[1],
-        -1,
-        cgs.uiHiResScale
-    );
-    fHeight = fObjectivesTop + 35 * cgs.uiHiResScale[1];
-
-    for (i = 0; i < MAX_OBJECTIVES; ++i) {
-        qhandle_t hBoxShader;
-
-        if ((cg.Objectives[i].flags == OBJ_FLAG_NONE) || (cg.Objectives[i].flags & OBJ_FLAG_HIDDEN)) {
-            continue;
-        }
-
-        if ((cg.Objectives[i].flags & OBJ_FLAG_CURRENT) != 0) {
-            vColor[0]  = 1.0;
-            vColor[1]  = 1.0;
-            vColor[2]  = 1.0;
-            vColor[3]  = cg.ObjectivesCurrentAlpha;
-            hBoxShader = cgs.media.uncheckedBoxShader;
-        } else if ((cg.Objectives[i].flags & OBJ_FLAG_COMPLETED) != 0) {
-            vColor[0]  = 0.75;
-            vColor[1]  = 0.75;
-            vColor[2]  = 0.75;
-            vColor[3]  = cg.ObjectivesCurrentAlpha;
-            hBoxShader = cgs.media.checkedBoxShader;
-        } else {
-            vColor[0]  = 1.0;
-            vColor[1]  = 1.0;
-            vColor[2]  = 1.0;
-            vColor[3]  = cg.ObjectivesCurrentAlpha;
-            hBoxShader = cgs.media.uncheckedBoxShader;
-        }
-        if (i == iCurrentObjective && !(cg.Objectives[i].flags & OBJ_FLAG_COMPLETED)) {
-            vColor[0] = 1.0;
-            vColor[1] = 1.0;
-            vColor[2] = 0.0;
-            vColor[3] = cg.ObjectivesCurrentAlpha;
-        }
-
-        cgi.R_SetColor(vColor);
-        fX = 55.0;
-        fY = fHeight;
-        cgi.R_DrawString(
-            cgs.media.objectiveFont,
-            cgi.LV_ConvertString(cg.Objectives[i].text),
-            55.0,
-            fY / cgs.uiHiResScale[1],
-            -1,
-            cgs.uiHiResScale
-        );
-
-        fX        = 30.0;
-        fY        = fHeight;
-        vColor[0] = 1.0;
-        vColor[1] = 1.0;
-        vColor[2] = 1.0;
-        vColor[3] = cg.ObjectivesCurrentAlpha;
-        cgi.R_SetColor(vColor);
-        cgi.R_DrawStretchPic(
-            fX * cgs.uiHiResScale[0],
-            fY,
-            16.0 * cgs.uiHiResScale[0],
-            16.0 * cgs.uiHiResScale[1],
-            0.0,
-            0.0,
-            1.0,
-            1.0,
-            hBoxShader
-        );
-
-        fHeight += iNumLines[i] * 12 + 25 * cgs.uiHiResScale[1];
-    }
-}
-
-/*
-==============
-CG_TeamHudShader
-
-The team's icon, 0 for no team
-==============
-*/
-static qhandle_t CG_TeamHudShader(int team)
-{
-    int i;
-
-    if (team == TEAM_ALLIES) {
-        i = 0;
-    } else if (team == TEAM_AXIS) {
-        i = 1;
-    } else {
-        return 0;
-    }
-
-    if (!cgs.media.teamHudShaders[i]) {
-        cgs.media.teamHudShaders[i] = cgi.R_RegisterShader(i ? "textures/hud/axis" : "textures/hud/allies");
-    }
-
-    return cgs.media.teamHudShaders[i];
-}
-
-void CG_DrawPlayerEntInfo()
-{
-    int         iClientNum;
-    const char *pszClientInfo;
-    const char *pszName;
-    float       fX, fY;
-    float       color[4];
-    qhandle_t   handle;
-
-    if (!cg_hud->integer) {
-        return;
-    }
-
-    if (!cg.snap || cg.snap->ps.stats[STAT_INFOCLIENT] == -1) {
-        return;
-    }
-
-    iClientNum    = cg.snap->ps.stats[STAT_INFOCLIENT];
-    handle        = 0;
-    pszClientInfo = CG_ConfigString(iClientNum + CS_PLAYERS);
-    pszName       = Info_ValueForKey(pszClientInfo, "name");
-
-    color[0] = 0.5;
-    color[1] = 1.0;
-    color[2] = 0.5;
-    color[3] = 1.0;
-
-    fX = 56.0;
-    fY = (float)cgs.glconfig.vidHeight * 0.5;
-
-    handle = CG_TeamHudShader(cg.clientinfo[iClientNum].team);
-
-    if (handle) {
-        cgi.R_SetColor(0);
-        cgi.R_DrawStretchPic(
-            fX, fY, 16.0 * cgs.uiHiResScale[0], 16.0 * cgs.uiHiResScale[1], 0.0, 0.0, 1.0, 1.0, handle
-        );
-    }
-
-    cgi.R_SetColor(color);
-    cgi.R_DrawString(
-        cgs.media.hudDrawFont,
-        (char *)pszName,
-        fX / cgs.uiHiResScale[0] + 24.0,
-        fY / cgs.uiHiResScale[1],
-        -1,
-        cgs.uiHiResScale
-    );
-    cgi.R_DrawString(
-        cgs.media.hudDrawFont,
-        va("%i", cg.snap->ps.stats[STAT_INFOCLIENT_HEALTH]),
-        fX / cgs.uiHiResScale[0] + 24.0,
-        fY / cgs.uiHiResScale[1] + 20.0,
-        -1,
-        cgs.uiHiResScale
-    );
-}
-
-void CG_UpdateAttackerDisplay()
-{
-    int         iClientNum;
-    const char *pszName;
-    float       fY;
-    float       color[4] = {1.0, 0.5, 0.5, 1.0}; // red, green for a teammate
-    qhandle_t   handle;
-
-    if (!cg_hud->integer) {
-        return;
-    }
-
-    if (!cg.snap || cg.snap->ps.stats[STAT_ATTACKERCLIENT] == -1) {
-        return;
-    }
-
-    iClientNum = cg.snap->ps.stats[STAT_ATTACKERCLIENT];
-    pszName    = Info_ValueForKey(CG_ConfigString(CS_PLAYERS + iClientNum), "name");
-
-    // In the HUD's units, scaled as the rest of the HUD (pixels up to 1920x1080): the team icon at 56, the name at
-    // 88, both 90 above the bottom
-    fY = cgs.glconfig.vidHeight / cgs.uiHiResScale[1] - 90.0;
-
-    if (cgs.gametype > GT_FFA) {
-        handle = CG_TeamHudShader(cg.clientinfo[iClientNum].team);
-
-        if (handle) {
-            cgi.R_SetColor(0);
-            cgi.R_DrawStretchPic(
-                56.0 * cgs.uiHiResScale[0],
-                fY * cgs.uiHiResScale[1],
-                24.0 * cgs.uiHiResScale[0],
-                24.0 * cgs.uiHiResScale[1],
-                0.0,
-                0.0,
-                1.0,
-                1.0,
-                handle
-            );
-        }
-
-        if ((cg.snap->ps.stats[STAT_TEAM] == TEAM_ALLIES || cg.snap->ps.stats[STAT_TEAM] == TEAM_AXIS)
-            && cg.clientinfo[iClientNum].team == cg.snap->ps.stats[STAT_TEAM]) {
-            color[0] = 0.5;
-            color[1] = 1.0;
-        }
-    }
-
-    cgi.R_SetColor(color);
-    cgi.R_DrawString(cgs.media.attackerFont, pszName, 88.0, fY, -1, cgs.uiHiResScale);
-}
-
-void CG_UpdateCountdown()
-{
-    // the time left, formatted when its second changes (the words' translation never changes)
-    static int  iMessageSeconds = -1;
-    static char szMessage[MAX_STRING_CHARS + 32];
-    const char *message = "";
-
-    if (!cg.snap) {
-        return;
-    }
-
-    if (cg.matchStartTime != -1) {
-        if (cgs.gametype != GT_LIBERATION) {
-            int iSecondsLeft, iMinutesLeft;
-
-            iSecondsLeft = (cgs.matchEndTime - cg.time) / 1000;
-            if (iSecondsLeft >= 0) {
-                if (iSecondsLeft != iMessageSeconds) {
-                    iMinutesLeft = iSecondsLeft / 60;
-                    Com_sprintf(
-                        szMessage,
-                        sizeof(szMessage),
-                        "%s %2i:%02i",
-                        cgi.LV_ConvertString("Time Left:"),
-                        iMinutesLeft,
-                        iSecondsLeft % 60
-                    );
-                    iMessageSeconds = iSecondsLeft;
-                }
-                message = szMessage;
-            } else if (!cgs.matchEndTime) {
-                message = "";
-            }
-        } else {
-            // No clock on liberation game mode
-            message = "";
-        }
-    } else {
-        // The match has not started yet
-        message = "Waiting For Players";
-    }
-
-    if (strcmp(ui_timemessage->string, message)) {
-        cgi.Cvar_Set("ui_timemessage", message);
-    }
-}
-
-static void CG_RemoveStopwatch()
-{
-    cgi.Cmd_Execute(EXEC_NOW, "ui_removehud hud_stopwatch\n");
-    cgi.Cmd_Execute(EXEC_NOW, "ui_removehud hud_fuse\n");
-    cgi.Cmd_Execute(EXEC_NOW, "ui_removehud hud_fuse_wet\n");
-}
-
-void CG_DrawStopwatch()
-{
-    int iFraction;
-
-    if (!cg_hud->integer) {
-        CG_RemoveStopwatch();
-        return;
-    }
-
-    if (!cgi.stopWatch->iStartTime) {
-        CG_RemoveStopwatch();
-        return;
-    }
-
-    if (cgi.stopWatch->iStartTime >= cgi.stopWatch->iEndTime) {
-        CG_RemoveStopwatch();
-        return;
-    }
-
-    if (cgi.stopWatch->iEndTime <= cg.time) {
-        CG_RemoveStopwatch();
-        return;
-    }
-
-    if (cg.ObjectivesCurrentAlpha >= 0.02) {
-        CG_RemoveStopwatch();
-        return;
-    }
-
-    if (cg.snap && cg.snap->ps.stats[STAT_HEALTH] <= 0) {
-        CG_RemoveStopwatch();
-        return;
-    }
-    if (cgi.stopWatch->eType >= SWT_FUSE_WET) {
-        iFraction = cgi.stopWatch->iEndTime - cgi.stopWatch->iStartTime;
-    } else {
-        iFraction = cgi.stopWatch->iEndTime - cg.time;
-    }
-
-    cgi.Cvar_Set("ui_stopwatch", va("%i", iFraction));
-
-    switch (cgi.stopWatch->eType) {
-    case SWT_NORMAL:
-    default:
-        cgi.Cmd_Execute(EXEC_NOW, "ui_addhud hud_stopwatch\n");
-        break;
-    case SWT_FUSE:
-        cgi.Cmd_Execute(EXEC_NOW, "ui_addhud hud_fuse\n");
-        break;
-    case SWT_FUSE_WET:
-        cgi.Cmd_Execute(EXEC_NOW, "ui_removehud hud_fuse\n");
-        cgi.Cmd_Execute(EXEC_NOW, "ui_addhud hud_fuse_wet\n");
-        break;
-    }
 }
 
 void CG_DrawInstantMessageMenu()
 {
-    float     w, h;
-    float     x, y;
-    qhandle_t handle;
+    const bool               ta     = cg_protocol >= PROTOCOL_MOHTA_MIN;
+    const int                g      = cg.iInstaMessageMenu - 1;
+    const char *const *const groups = ta ? pInstantMsgGroupsEng : pInstantMsgGroupsEng_ver6;
 
     if (!cg.iInstaMessageMenu) {
         return;
     }
 
-    if (cg.iInstaMessageMenu > 0) {
-        handle = cgi.R_RegisterShader(va("textures/hud/instamsg_group_%c", cg.iInstaMessageMenu + 96));
+    // Changed: the client's list (the Competitive HUD's) with the protocol's
+    // groups and lines (1.11's, or 2.0's and later's)
+    if (g < 0) {
+        cgi.UI_DrawInstaMessage(NULL, groups, CG_InstaMessageGroups());
     } else {
-        handle = cgi.R_RegisterShader("textures/hud/instamsg_main");
-    }
-
-    w = cgi.R_GetShaderWidth(handle);
-    h = cgi.R_GetShaderHeight(handle);
-    x = 8.0;
-    y = ((float)cgs.glconfig.vidHeight - h) * 0.5;
-    cgi.R_SetColor(0);
-    cgi.R_DrawStretchPic(
-        x * cgs.uiHiResScale[0], y, w * cgs.uiHiResScale[0], h * cgs.uiHiResScale[1], 0.0, 0.0, 1.0, 1.0, handle
-    );
-}
-
-void CG_DrawSpectatorView_ver_15()
-{
-    const char *pszString;
-    int         iKey1, iKey2;
-    int         iKey1b, iKey2b;
-    float       fX, fY;
-    qboolean    bOnTeam;
-
-    if (!(cg.predicted_player_state.pm_flags & PMF_SPECTATING)) {
-        return;
-    }
-
-    bOnTeam = qfalse;
-    if (cg.snap->ps.stats[STAT_TEAM] == TEAM_ALLIES || cg.snap->ps.stats[STAT_TEAM] == TEAM_AXIS) {
-        bOnTeam = 1;
-    }
-
-    if (!bOnTeam) {
-        cgi.Key_GetKeysForCommand("+attackprimary", &iKey1, &iKey2);
-        pszString = cgi.LV_ConvertString(va("Press Fire(%s) to join the battle!", cgi.Key_KeynumToBindString(iKey1)));
-        fX        = (float)(cgs.glconfig.vidWidth
-                     - cgi.UI_FontStringWidth(cgs.media.attackerFont, pszString, -1) * cgs.uiHiResScale[0])
-           * 0.5;
-        fY = cgs.glconfig.vidHeight - 64.0 * cgs.uiHiResScale[1];
-        cgi.R_SetColor(NULL);
-        cgi.R_DrawString(
-            cgs.media.attackerFont, pszString, fX / cgs.uiHiResScale[0], fY / cgs.uiHiResScale[1], -1, cgs.uiHiResScale
-        );
-    }
-
-    if (cg.predicted_player_state.pm_flags & PMF_CAMERA_VIEW) {
-        cgi.Key_GetKeysForCommand("+moveup", &iKey1, &iKey2);
-        cgi.Key_GetKeysForCommand("+movedown", &iKey1b, &iKey2b);
-
-        pszString = cgi.LV_ConvertString(
-            va("Press Jump(%s) or Duck(%s) to follow a different player.",
-               cgi.Key_KeynumToBindString(iKey1),
-               cgi.Key_KeynumToBindString(iKey1b))
-        );
-
-        fX = (float)(cgs.glconfig.vidWidth
-                     - cgi.UI_FontStringWidth(cgs.media.attackerFont, pszString, -1) * cgs.uiHiResScale[0])
-           * 0.5;
-        fY = (float)cgs.glconfig.vidHeight - 40.0 * cgs.uiHiResScale[1];
-        cgi.R_SetColor(0);
-        cgi.R_DrawString(
-            cgs.media.attackerFont, pszString, fX / cgs.uiHiResScale[0], fY / cgs.uiHiResScale[1], -1, cgs.uiHiResScale
-        );
-    }
-
-    if (!bOnTeam && (cg.predicted_player_state.pm_flags & PMF_CAMERA_VIEW)) {
-        cgi.Key_GetKeysForCommand("+use", &iKey1, &iKey2);
-        pszString =
-            cgi.LV_ConvertString(va("Press Use(%s) to enter free spectate mode.", cgi.Key_KeynumToBindString(iKey1)));
-
-        fX = (float)(cgs.glconfig.vidWidth
-                     - cgi.UI_FontStringWidth(cgs.media.attackerFont, pszString, -1) * cgs.uiHiResScale[0])
-           * 0.5;
-        fY = (float)cgs.glconfig.vidHeight - 24.0 * cgs.uiHiResScale[1];
-        cgi.R_SetColor(0);
-        cgi.R_DrawString(
-            cgs.media.attackerFont, pszString, fX / cgs.uiHiResScale[0], fY / cgs.uiHiResScale[1], -1, cgs.uiHiResScale
-        );
-    }
-
-    if (!(cg.predicted_player_state.pm_flags & PMF_CAMERA_VIEW)) {
-        cgi.Key_GetKeysForCommand("+use", &iKey1, &iKey2);
-
-        pszString = cgi.LV_ConvertString(
-            va("Press Use(%s) to enter player following spectate mode.", cgi.Key_KeynumToBindString(iKey1))
-        );
-
-        fX = (float)(cgs.glconfig.vidWidth
-                     - cgi.UI_FontStringWidth(cgs.media.attackerFont, pszString, -1) * cgs.uiHiResScale[0])
-           * 0.5;
-        fY = (float)cgs.glconfig.vidHeight - 24.0 * cgs.uiHiResScale[1];
-        cgi.R_SetColor(0);
-        cgi.R_DrawString(
-            cgs.media.attackerFont, pszString, fX / cgs.uiHiResScale[0], fY / cgs.uiHiResScale[1], -1, cgs.uiHiResScale
-        );
-    }
-
-    if ((cg.predicted_player_state.pm_flags & PMF_CAMERA_VIEW) != 0 && cg.snap
-        && cg.snap->ps.stats[STAT_INFOCLIENT] != -1) {
-        int       iClientNum;
-        qhandle_t hShader;
-        vec4_t    color;
-        char      buf[128];
-
-        iClientNum = cg.snap->ps.stats[STAT_INFOCLIENT];
-        Com_sprintf(
-            buf, sizeof(buf), "%s : %i", cg.clientinfo[iClientNum].name, cg.snap->ps.stats[STAT_INFOCLIENT_HEALTH]
-        );
-
-        hShader  = 0;
-        color[0] = 0.5;
-        color[1] = 1.0;
-        color[2] = 0.5;
-        color[3] = 1.0;
-
-        fX = (float)(cgs.glconfig.vidWidth
-                     - (cgi.UI_FontStringWidth(cgs.media.attackerFont, pszString, -1) - 16) * cgs.uiHiResScale[0])
-           * 0.5;
-        fY = (float)cgs.glconfig.vidHeight - 80.0 * cgs.uiHiResScale[1];
-        cgi.R_SetColor(color);
-        cgi.R_DrawString(
-            cgs.media.attackerFont, buf, fX / cgs.uiHiResScale[0], fY / cgs.uiHiResScale[1], -1, cgs.uiHiResScale
-        );
-
-        hShader = CG_TeamHudShader(cg.clientinfo[iClientNum].team);
-
-        if (hShader) {
-            cgi.R_SetColor(NULL);
-            cgi.R_DrawStretchPic(
-                fX - 20.0 * cgs.uiHiResScale[0],
-                fY,
-                16.0 * cgs.uiHiResScale[0],
-                16.0 * cgs.uiHiResScale[1],
-                0.0,
-                0.0,
-                1.0,
-                1.0,
-                hShader
-            );
-        }
-    }
-}
-
-void CG_DrawSpectatorView_ver_6()
-{
-    const char *pszString;
-    int         iKey1, iKey2;
-    int         iKey1b, iKey2b;
-    float       fX, fY;
-    qboolean    bOnTeam;
-
-    if (!(cg.predicted_player_state.pm_flags & PMF_SPECTATING)) {
-        return;
-    }
-
-    bOnTeam = qfalse;
-    if (cg.snap->ps.stats[STAT_TEAM] == TEAM_ALLIES || cg.snap->ps.stats[STAT_TEAM] == TEAM_AXIS) {
-        bOnTeam = 1;
-    }
-
-    // retrieve keys for +use
-    cgi.Key_GetKeysForCommand("+use", &iKey1, &iKey2);
-
-    if (cg.predicted_player_state.pm_flags & PMF_CAMERA_VIEW) {
-        pszString =
-            cgi.LV_ConvertString(va("Press Use(%s) to follow a different player.", cgi.Key_KeynumToBindString(iKey1)));
-    } else {
-        pszString = cgi.LV_ConvertString(va("Press Use(%s) to follow a player.", cgi.Key_KeynumToBindString(iKey1)));
-    }
-
-    fX = (float)(cgs.glconfig.vidWidth
-                 - cgi.UI_FontStringWidth(cgs.media.attackerFont, pszString, -1) * cgs.uiHiResScale[0])
-       * 0.5;
-    fY = (float)cgs.glconfig.vidHeight - 40.0 * cgs.uiHiResScale[1];
-    cgi.R_SetColor(0);
-    cgi.R_DrawString(
-        cgs.media.attackerFont, pszString, fX / cgs.uiHiResScale[0], fY / cgs.uiHiResScale[1], -1, cgs.uiHiResScale
-    );
-
-    if (!bOnTeam && (cg.predicted_player_state.pm_flags & PMF_CAMERA_VIEW)) {
-        cgi.Key_GetKeysForCommand("+moveup", &iKey1, &iKey2);
-        cgi.Key_GetKeysForCommand("+movedown", &iKey1b, &iKey2b);
-        pszString = cgi.LV_ConvertString(
-            va("Press Jump(%s) or Duck(%s) to free spectate.",
-               cgi.Key_KeynumToBindString(iKey1),
-               cgi.Key_KeynumToBindString(iKey1b))
-        );
-
-        fX = (float)(cgs.glconfig.vidWidth
-                     - cgi.UI_FontStringWidth(cgs.media.attackerFont, pszString, -1) * cgs.uiHiResScale[0])
-           * 0.5;
-        fY = (float)cgs.glconfig.vidHeight - 24.0 * cgs.uiHiResScale[1];
-        cgi.R_SetColor(0);
-        cgi.R_DrawString(
-            cgs.media.attackerFont, pszString, fX / cgs.uiHiResScale[0], fY / cgs.uiHiResScale[1], -1, cgs.uiHiResScale
-        );
-    }
-}
-
-void CG_DrawSpectatorView()
-{
-    if (cg_protocol >= PROTOCOL_MOHTA_MIN) {
-        CG_DrawSpectatorView_ver_15();
-    } else {
-        CG_DrawSpectatorView_ver_6();
+        cgi.UI_DrawInstaMessage(groups[g], ta ? pInstantMsgEng[g] : pInstantMsgEng_ver6[g], ARRAY_LEN(pInstantMsgEng[0]));
     }
 }
 
@@ -1561,83 +651,6 @@ void CG_DrawCrosshair()
     }
 }
 
-void CG_DrawVote()
-{
-    const char *text;
-    int         seconds;
-    int         percentYes;
-    int         percentNo;
-    int         percentUndecided;
-    float       x, y;
-    vec4_t      col;
-
-    if (!cgs.voteTime) {
-        return;
-    }
-
-    if (cgs.voteRefreshed) {
-        cgs.voteRefreshed = qfalse;
-    }
-
-    seconds = (30000 - (cg.time - cgs.voteTime)) / 1000 + 1;
-    if (seconds < 0) {
-        seconds = 0;
-    }
-
-    percentYes       = cgs.numVotesYes * 100 / (cgs.numUndecidedVotes + cgs.numVotesNo + cgs.numVotesYes);
-    percentNo        = cgs.numVotesNo * 100 / (cgs.numUndecidedVotes + cgs.numVotesNo + cgs.numVotesYes);
-    percentUndecided = cgs.numUndecidedVotes * 100 / (cgs.numUndecidedVotes + cgs.numVotesNo + cgs.numVotesYes);
-
-    x = 8 * cgs.uiHiResScale[0];
-    y = ((cgs.glconfig.vidHeight > 480) ? (cgs.glconfig.vidHeight * 0.725f) : (cgs.glconfig.vidHeight * 0.75f));
-
-    cgi.R_SetColor(NULL);
-
-    text = va("%s: %s", cgi.LV_ConvertString("Vote Running"), cgs.voteString);
-    cgi.R_DrawString(
-        cgs.media.attackerFont, text, x / cgs.uiHiResScale[0], y / cgs.uiHiResScale[1], -1, cgs.uiHiResScale
-    );
-
-    y += 12 * cgs.uiHiResScale[1];
-
-    text =
-        va("%s: %isec  %s: %i%%  %s: %i%%  %s: %i%%",
-           cgi.LV_ConvertString("Time"),
-           seconds,
-           cgi.LV_ConvertString("Yes"),
-           percentYes,
-           cgi.LV_ConvertString("No"),
-           percentNo,
-           cgi.LV_ConvertString("Undecided"),
-           percentUndecided);
-    cgi.R_DrawString(
-        cgs.media.attackerFont, text, x / cgs.uiHiResScale[0], y / cgs.uiHiResScale[1], -1, cgs.uiHiResScale
-    );
-
-    if (cg.snap && !cg.snap->ps.voted) {
-        col[0] = 0.5;
-        col[1] = 1.0;
-        col[2] = 0.5;
-        col[3] = 1.0;
-        cgi.R_SetColor(col);
-
-        y += 12 * cgs.uiHiResScale[1];
-
-        text = cgi.LV_ConvertString("Vote now, it's your patriotic duty!");
-        cgi.R_DrawString(
-            cgs.media.attackerFont, text, x / cgs.uiHiResScale[0], y / cgs.uiHiResScale[1], -1, cgs.uiHiResScale
-        );
-
-        y += 12 * cgs.uiHiResScale[1];
-
-        text = cgi.LV_ConvertString("To vote Yes, press F1. To vote No, press F2.");
-        cgi.R_DrawString(
-            cgs.media.attackerFont, text, x / cgs.uiHiResScale[0], y / cgs.uiHiResScale[1], -1, cgs.uiHiResScale
-        );
-        cgi.R_SetColor(NULL);
-    }
-}
-
 /*
 ==============
 CG_Draw2D
@@ -1649,26 +662,20 @@ void CG_Draw2D(void)
     // ui_menucover); a scope's mask stays, being the view
     static cvar_t *ui_menucover = cgi.Cvar_Get("ui_menucover", "0", 0);
 
-    CG_UpdateCountdown();
     CG_DrawZoomOverlay();
     if (ui_menucover->integer) {
         return;
     }
     CG_DrawLagometer();
     CG_HudDrawElements();
-    CG_DrawObjectives();
+    // Added: a mission's objectives on TAB as the Reloaded menus' card (the
+    // client's, at once as their scoreboard; no crosshair over it)
+    cgi.UI_DrawObjectives(cg.ObjectivesDesiredAlpha > 0.0f ? qtrue : qfalse);
     CG_DrawIcons();
-    // Added: the Competitive HUD's URC menus (cg_hudstyle 1 or 2, the client's
-    // cl_uicomp.cpp) show the stopwatch, the spectator's keys, the player
-    // aimed at, the attacker and the vote their own way
-    static cvar_t *cg_hudstyle = cgi.Cvar_Get("cg_hudstyle", "1", CVAR_ARCHIVE);
-    if (cg_hudstyle->integer <= 0) {
-        CG_DrawStopwatch();
-        CG_DrawSpectatorView();
-        CG_DrawPlayerEntInfo();
-        CG_UpdateAttackerDisplay();
-        CG_DrawVote();
-    }
+    // (the stopwatch, the spectator's keys, the team, the player aimed at, the
+    // attacker and the vote: the Competitive HUD's, the client's cl_uicomp.cpp)
     CG_DrawInstantMessageMenu();
-    CG_DrawCrosshair();
+    if (cg.ObjectivesDesiredAlpha <= 0.0f) {
+        CG_DrawCrosshair();
+    }
 }

@@ -100,7 +100,7 @@ static const char *CL_XcDecode(const char *code, byte *b)
     for (i = XC_CHARS - 1; i >= 0; i--) {
         const char *digit = strchr(xcDigits, code[2 + i]);
 
-        if (!digit || !*digit) {
+        if (!digit) {
             return "not a crosshair code (a character CS2 never writes: a typo?)";
         }
         // b = b * 57 + digit

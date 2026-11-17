@@ -80,9 +80,6 @@ void S_TriggeredMusic_Volume();
 void S_TriggeredMusic_Pause();
 void S_TriggeredMusic_Unpause();
 void S_TriggeredMusic_PlayIntroMusic();
-void S_StopMovieAudio();
-void S_SetupMovieAudio(const char* pszMovieName);
-int S_CurrentMoviePosition();
 
 const char* S_GetMusicFilename();
 int S_GetMusicLoopCount();

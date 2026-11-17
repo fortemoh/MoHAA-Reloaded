@@ -41,6 +41,7 @@ qboolean key_overstrikeMode;
 
 int    anykeydown;
 qkey_t keys[MAX_KEYS];
+int    key_serial; // Added: changes with every binding set (the Reloaded menu's KEYS draw again)
 qkey_t altkeys[MAX_KEYS];
 qkey_t ctrlkeys[MAX_KEYS];
 
@@ -559,6 +560,7 @@ void Key_SetBinding(int keynum, const char *binding)
     // allocate memory for new binding
     keys[keynum].binding = CopyString(binding);
     keyBindingsGeneration++;
+    key_serial++;
 
     // consider this like modifying an archived cvar, so the
     // file write will be triggered at the next oportunity
@@ -1122,11 +1124,6 @@ void CL_KeyEvent(int key, qboolean down, unsigned time)
         ctrl_down = down;
     }
 
-    if (down && !CL_FinishedIntro()) {
-        UI_StartStageKeyEvent();
-        return;
-    }
-
     if (clc.state > CA_DISCONNECTED && cge && !Key_GetCatcher() && cge->CG_CheckCaptureKey(key, down, time)
         && key != K_ESCAPE) {
         if (key != K_CONSOLE && (!keys[K_SHIFT].down || key != K_ESCAPE)) {
@@ -1185,8 +1182,7 @@ void CL_KeyEvent(int key, qboolean down, unsigned time)
     }
 
     // keys can still be used for bound actions
-    if (down && (key <= K_BACKSPACE || key == K_MOUSE4) && (clc.demoplaying || clc.state == CA_CINEMATIC)
-        && Key_GetCatcher() == 0) {
+    if (down && (key <= K_BACKSPACE || key == K_MOUSE4) && clc.demoplaying && Key_GetCatcher() == 0) {
         Cvar_Set("nextdemo", "");
         key = K_ESCAPE;
     }
@@ -1196,11 +1192,6 @@ void CL_KeyEvent(int key, qboolean down, unsigned time)
         if (down) {
             qboolean wasup = UI_MenuUp();
             UI_DeactiveFloatingWindows();
-
-            if (clc.state == CA_CINEMATIC) {
-                SCR_StopCinematic();
-                return;
-            }
 
             if (cls.realFrametime - last_escape_time <= 1000) {
                 UI_MenuEscape("main");
@@ -1288,33 +1279,6 @@ void CL_KeyEvent(int key, qboolean down, unsigned time)
     }
 
     CL_AddKeyUpCommands(key, keys[key].binding, time);
-}
-
-/*
-===================
-CL_Key_ForceCommand
-===================
-*/
-void CL_Key_ForceCommand(int key, unsigned int time)
-{
-    const char *kb;
-    char        cmd[1024];
-
-    if (clc.state == CA_DISCONNECTED) {
-        return;
-    }
-
-    kb = keys[key].binding;
-    if (kb) {
-        if (*kb == '+') {
-            Com_sprintf(cmd, sizeof(cmd), "%s %i %i\n", kb, key, time);
-        } else {
-            Cbuf_AddText(keys[key].binding);
-            Cbuf_AddText("\n");
-        }
-    } else if (key > K_JOY12) {
-        Com_Printf("%s is unbound, use controls menu to set.\n", Key_KeynumToString(key));
-    }
 }
 
 /*

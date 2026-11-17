@@ -800,6 +800,7 @@ long	FS_FOpenFileRead(const char* filename, fileHandle_t* file, qboolean uniqueF
 // file IO goes through FS_ReadFile, which Does The Right Thing already.
 
 int		FS_FileIsInPAK(const char *filename, int *pChecksum );
+qboolean	FS_FileInGamePak(const char *filename);
 // returns 1 if a file is in the PAK file, otherwise -1
 
 size_t	FS_Write( const void *buffer, size_t len, fileHandle_t f );
@@ -899,7 +900,7 @@ void FS_Remove( const char *osPath );
 void FS_Remove_HomeData( const char *homePath );
 
 void	FS_FilenameCompletion( const char *dir, const char *ext,
-		qboolean stripExt, void(*callback)(const char *s), qboolean allowNonPureFilesOnDisk );
+		qboolean stripExt, void(*callback)(const char *s), qboolean allowNonPureFilesOnDisk, qboolean wantSubs );
 
 const char* FS_GetCurrentGameDir();
 void	FS_GetRelativeFilename( const char *currentDirectory, const char *absoluteFilename, char *out, size_t destlen );
@@ -931,7 +932,7 @@ void Field_Clear( field_t *edit );
 void Field_AutoComplete( field_t *edit );
 void Field_CompleteKeyname( void );
 void Field_CompleteFilename( const char *dir,
-		const char *ext, qboolean stripExt, qboolean allowNonPureFilesOnDisk );
+		const char *ext, qboolean stripExt, qboolean allowNonPureFilesOnDisk, qboolean wantSubs );
 void Field_CompleteCommand( char *cmd,
 		qboolean doCommands, qboolean doCvars );
 void Field_CompletePlayerName( const char **names, int count );
@@ -1215,9 +1216,8 @@ void CL_InitKeyCommands( void );
 void CL_Init( void );
 void CL_Disconnect();
 void CL_AbnormalDisconnect();
+void SCR_AbortUpdate( void );	// Added: an error ended the frame (Com_Error)
 void CL_Shutdown(const char *finalmsg, qboolean disconnect, qboolean quit);
-qboolean CL_FinishedIntro(void);
-void CL_FinishedStartStage(void);
 void CL_SetFrameNumber(int frameNumber);
 void CL_Frame( int msec );
 void CL_WakeGPU( void );
@@ -1225,7 +1225,6 @@ int CL_CmdClock( long long *nextCmdUs );
 qboolean CL_GameCommand( void );
 void CL_KeyEvent (int key, qboolean down, unsigned time);
 
-void CL_Key_ForceCommand(int key, unsigned int time);
 
 void CL_CharEvent( int key );
 // char events are for field typing, not game control

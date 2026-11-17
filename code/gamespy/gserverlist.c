@@ -122,6 +122,10 @@ struct GServerListImplementation
     int maxupdates;
     int nextupdate;
     int abortupdate;
+    // Added: the servers of the current (or last) update that answered and that
+    // timed out (ServerListGetQueryStats)
+    int queryresponsive;
+    int querytimedout;
     ListCallBackFn CallBackFn;
     void *instance;
     char *sortkey;
@@ -189,6 +193,8 @@ GServerList	ServerListNew(const char *gamename, const char *enginename, const ch
     list->sortkey = "";
     // Added in 2.0
     list->auxinsertcount = 0;
+    list->queryresponsive = 0;
+    list->querytimedout = 0;
     // Added in OPM
     list->encryptdata = 1;
     list->async = 0;
@@ -489,6 +495,8 @@ GError ServerListUpdate2(GServerList serverlist, gbool async, char *filter, GQue
 
     serverlist->nextupdate = 0;
     serverlist->abortupdate = 0;
+    serverlist->queryresponsive = 0;
+    serverlist->querytimedout = 0;
     // Added in 2.0
     serverlist->auxinsertcount = ServerListCount(serverlist);
     // Added in 2.0
@@ -534,6 +542,8 @@ GError ServerListLANUpdate(GServerList serverlist, gbool async, int startsearchp
     if (error) return error;
     serverlist->nextupdate = 0;
     serverlist->abortupdate = 0;
+    serverlist->queryresponsive = 0;
+    serverlist->querytimedout = 0;
     if (!async)
         DoSyncLoop(serverlist);
 
@@ -672,6 +682,8 @@ GError ServerListAuxUpdate(GServerList serverlist, const char *ip, int port, gbo
         
         serverlist->nextupdate = ArrayLength(serverlist->servers) - 1;
         serverlist->abortupdate = 0;
+        serverlist->queryresponsive = 0;
+        serverlist->querytimedout = 0;
 
         //chane the mode straight to querying
         ServerListModeChange(serverlist, sl_querying);
@@ -1003,9 +1015,12 @@ static GError ServerListQueryLoop(GServerList serverlist)
                                                     server,
                                                     (void *)((serverlist->nextupdate * 100) / ArrayLength(serverlist->servers))); //percent done
                             serverlist->updatelist[i].currentserver = NULL; //reuse the updatelist
+                            serverlist->queryresponsive++;
                         } 
-                    } else
+                    } else {
                         serverlist->updatelist[i].currentserver = NULL; //reuse the updatelist
+                        serverlist->querytimedout++;
+                    }
                     
                 }
     }
@@ -1020,6 +1035,7 @@ static GError ServerListQueryLoop(GServerList serverlist)
                 (void *)((serverlist->nextupdate * 100) / ArrayLength(serverlist->servers))); //percent done
                 */
             serverlist->updatelist[i].currentserver = NULL; //reuse the updatelist
+            serverlist->querytimedout++;
         }
         
     if (serverlist->abortupdate || (serverlist->nextupdate >= ArrayLength(serverlist->servers) && scount == 0)) 
@@ -1106,6 +1122,16 @@ GError ServerListHalt(GServerList serverlist)
     return 0;
 }
 
+/* ServerListGetQueryStats
+-------------------------
+Added: the servers of the current (or last) update that answered and that
+timed out (the Reloaded server browser's progress) */
+void ServerListGetQueryStats(GServerList serverlist, int *responsive, int *timedout)
+{
+    *responsive = serverlist->queryresponsive;
+    *timedout = serverlist->querytimedout;
+}
+
 /* ServerListClear
 ------------------
 Clear and gsifree all of the servers from the server list.
@@ -1121,6 +1147,8 @@ GError ServerListClear(GServerList serverlist)
     TableFree(serverlist->keylist);
     serverlist->keylist = TableNew2(sizeof(char *),LIST_NUMKEYBUCKETS,LIST_NUMKEYCHAINS,GStringHash, GCaseInsensitiveCompare, GStringFree);
     serverlist->auxinsertcount = 0;
+    serverlist->queryresponsive = 0;
+    serverlist->querytimedout = 0;
     return 0;
 }
 

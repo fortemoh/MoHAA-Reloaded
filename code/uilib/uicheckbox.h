@@ -24,8 +24,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 class UICheckBox : public UIWidget
 {
-    str               m_checked_command;
-    str               m_unchecked_command;
     UIReggedMaterial *m_checked_material;
     UIReggedMaterial *m_unchecked_material;
     bool              m_checked;
@@ -44,8 +42,6 @@ private:
     void UpdateCvar(void);
     void MouseEntered(Event *ev);
     void MouseExited(Event *ev);
-    void SetCheckedCommand(Event *ev);
-    void SetUncheckedCommand(Event *ev);
     void SetCheckedShader(Event *ev);
     void SetUncheckedShader(Event *ev);
 
@@ -56,7 +52,5 @@ public:
     bool isChecked(void);
 };
 
-extern Event EV_UICheckBox_SetCheckedCommand;
-extern Event EV_UICheckBox_SetUncheckedCommand;
 extern Event EV_UICheckBox_SetCheckedShader;
 extern Event EV_UICheckBox_SetUncheckedShader;

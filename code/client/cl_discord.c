@@ -336,8 +336,6 @@ static void Discord_HandleFrame(unsigned int op, const char *payload, int len)
         Com_DPrintf("Discord: closed: %s\n", payload);
         Discord_Disconnect();
         break;
-    default:
-        break;
     }
 }
 

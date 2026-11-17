@@ -358,24 +358,6 @@ Event EV_Layout_NoParentAdjustment
     "Set the widget to not be adjusted by the parent widget"
 );
 
-Event EV_Widget_HideCommand
-(
-    "hidecommand",
-    EV_DEFAULT,
-    "s",
-    "command",
-    "Set a command to be executed when the widget is hidden"
-);
-
-Event EV_Widget_ShowCommand
-(
-    "showcommand",
-    EV_DEFAULT,
-    "s",
-    "command",
-    "Set a command to be executed when the widget is shown"
-);
-
 Event EV_Widget_OrderNumber
 (
     "ordernumber",
@@ -403,15 +385,6 @@ Event EV_Widget_EnabledCvar
     "Set the cvar to check to see if this button is enabled or not"
 );
 
-Event EV_Widget_ScaleCvar
-(
-    "scalecvar",
-    EV_DEFAULT,
-    "s",
-    "cvar_name",
-    "Set the cvar to check to scale this component"
-);
-
 Event EV_Layout_AliasCache
 (
     "aliascache",
@@ -419,15 +392,6 @@ Event EV_Layout_AliasCache
     "ssSSSSSS",
     "alias realPath arg1 arg2 arg3 arg4 arg5 arg6",
     "Create an alias to the specified path and cache the resource"
-);
-
-Event EV_Layout_DontLocalize
-(
-    "dontlocalize",
-    EV_DEFAULT,
-    NULL,
-    NULL,
-    "Disables localization for this widget"
 );
 
 // Added
@@ -632,20 +596,16 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Layout_StuffCommand,       &UIWidget::LayoutStuffCommand      },
     {&EV_Layout_LinkCvar,           &UIWidget::LayoutLinkCvar          },
     {&EV_Layout_AliasCache,         &UIWidget::LayoutAliasCache        },
-    {&EV_Widget_ShowCommand,        &UIWidget::ShowCommand             },
-    {&EV_Widget_HideCommand,        &UIWidget::HideCommand             },
     {&EV_Widget_OrderNumber,        &UIWidget::LayoutOrderNumber       },
     {&EV_Widget_TextAlignment,      &UIWidget::TextAlignment           },
     {&EV_Widget_Enable,             &UIWidget::EnableEvent             },
     {&EV_Widget_Disable,            &UIWidget::DisableEvent            },
     {&EV_Widget_EnabledCvar,        &UIWidget::SetEnabledCvar          },
-    {&EV_Widget_ScaleCvar,          &UIWidget::SetScaleCvar            },
 
     //
     // Added in 2.0
     //
 
-    {&EV_Layout_DontLocalize,       &UIWidget::SetDontLocalize         },
     {&EV_Layout_FadeSequence,       &UIWidget::EventFadeSequence       },
 
     // Added
@@ -862,7 +822,6 @@ UIWidget::UIWidget()
     m_iFontAlignmentHorizontal = FONT_JUSTHORZ_CENTER;
     m_iFontAlignmentVertical   = FONT_JUSTVERT_CENTER;
     m_bVirtual                 = false;
-    m_scaleCvar                = NULL;
     m_enabledCvar              = "";
     m_numEnabled               = -1;
     m_drawCache                = false;
@@ -886,11 +845,15 @@ UIWidget::UIWidget()
     lastShowTime = -1;
 }
 
+static void UI_DrawForget(UIWidget *widget);
+
 UIWidget::~UIWidget()
 {
     //int i;
 
     m_dying = true;
+    // Added: not the widget whose list is being made any more (an error in mid-draw left it there)
+    UI_DrawForget(this);
 
     if (m_drawList && uii.Rend_Free2DList && uii.IsRendererLoaded()) {
         uii.Rend_Free2DList(m_drawList);
@@ -951,12 +914,6 @@ void UIWidget::PropogateCoordinateSystem(void)
     int       i;
     int       n;
     UIWidget *subview;
-
-    if (m_parent) {
-        if (m_parent->m_scaleCvar) {
-            m_scaleCvar = m_parent->m_scaleCvar;
-        }
-    }
 
     if (!m_parent || (m_flags & WF_NOPARENTADJUST)) {
         m_screenorigin  = m_origin;
@@ -1764,7 +1721,6 @@ void UIWidget::Flow(void)
     m_flowing    = false;
     m_designRect = r;
     // the frame as the design's (DesignFrame)
-    frame             = m_frame;
     frame.pos.x       = floorf(r.pos.x * m_vVirtualScale[0] + 0.5f);
     frame.pos.y       = floorf(r.pos.y * m_vVirtualScale[1] + 0.5f);
     frame.size.width  = floorf((r.pos.x + r.size.width) * m_vVirtualScale[0] + 0.5f) - frame.pos.x;
@@ -2420,15 +2376,6 @@ void UIWidget::setPressedMaterial(UIReggedMaterial *mat)
     m_pressedmaterial = mat;
 }
 
-UIPoint2D UIWidget::getLocalPoint(const UIPoint2D& pos)
-{
-    if (m_parent) {
-        return UIPoint2D(pos.x - m_screenframe.pos.x, pos.y - m_screenframe.pos.y);
-    } else {
-        return pos;
-    }
-}
-
 UIPoint2D UIWidget::getGlobalPoint(const UIPoint2D& pos)
 {
     if (m_parent) {
@@ -2472,20 +2419,39 @@ static bool UI_SameRect(const UIRect2D& a, const UIRect2D& b)
     return a.pos.x == b.pos.x && a.pos.y == b.pos.y && a.size.width == b.size.width && a.size.height == b.size.height;
 }
 
-static std::vector<UIWidget *> ui_drawMaking; // the widget whose list is being made
-static int                     ui_drawScope;  // within a drawcache widget
-static int                     ui_drawLive;   // live draws so far
+static UIWidget *ui_drawMaking; // the widget whose list is being made
+static int       ui_drawScope;  // within a drawcache widget
+static int       ui_drawLive;   // live draws so far
 
 void UI_DrawDep(cvar_t *cvar)
 {
-    for (UIWidget *w : ui_drawMaking) {
-        w->AddDrawDep(cvar);
+    if (ui_drawMaking) {
+        ui_drawMaking->AddDrawDep(cvar);
     }
 }
 
 void UI_DrawLive(void)
 {
     ui_drawLive++;
+}
+
+static void UI_DrawForget(UIWidget *widget)
+{
+    if (ui_drawMaking == widget) {
+        ui_drawMaking = NULL;
+    }
+}
+
+// Added: before a frame's UI is drawn, what an error left in mid-draw undone (Com_Error is a longjmp: Display's
+// own undoing didn't run): the scope, the widget whose list was being made (not touched: it may be gone; it
+// makes its list again, not valid), and the renderer's list (ended as it is)
+void UI_DrawReset(void)
+{
+    ui_drawScope = 0;
+    if (ui_drawMaking) {
+        ui_drawMaking = NULL;
+        uii.Rend_End2DList();
+    }
 }
 
 int UI_DrawHash(int h, const void *data, size_t size)
@@ -2582,8 +2548,8 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
     }
     state = DrawState();
     // a class drawing from more than cvars: its state to the list being made
-    if (!ui_drawMaking.empty() && DrawKeyed()) {
-        ui_drawMaking[0]->m_drawKeys.push_back({this, state});
+    if (ui_drawMaking && DrawKeyed()) {
+        ui_drawMaking->m_drawKeys.push_back({this, state});
     }
     if (m_drawValid && m_drawStamp == stamp && m_drawAlpha == parent_alpha && UI_SameRect(m_drawRects[0], drawframe)
         && UI_SameRect(m_drawRects[1], m_screenframe) && UI_SameRect(m_drawRects[2], m_clippedframe) && m_drawKey == state
@@ -2599,8 +2565,8 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
             for (auto& d : m_drawDeps) {
                 UI_DrawDep(d.first);
             }
-            if (!ui_drawMaking.empty()) {
-                ui_drawMaking[0]->m_drawKeys.insert(ui_drawMaking[0]->m_drawKeys.end(), m_drawKeys.begin(), m_drawKeys.end());
+            if (ui_drawMaking) {
+                ui_drawMaking->m_drawKeys.insert(ui_drawMaking->m_drawKeys.end(), m_drawKeys.begin(), m_drawKeys.end());
             }
             uii.Rend_Draw2DList(m_drawList);
             ui_drawScope--;
@@ -2609,7 +2575,7 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
     }
 
     // a list made unless one is being made or it drew live last time
-    make = ui_drawMaking.empty() && !m_drawLive;
+    make = !ui_drawMaking && !m_drawLive;
     if (make) {
         m_drawList = uii.Rend_Begin2DList(m_drawList);
         make       = m_drawList != 0;
@@ -2617,15 +2583,17 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
     if (make) {
         m_drawDeps.clear();
         m_drawKeys.clear();
-        ui_drawMaking.push_back(this);
+        // Added: not valid until made (an error in mid-draw ends it before: UI_DrawReset)
+        m_drawValid   = false;
+        ui_drawMaking = this;
     }
     // (a class drawing from more than its cvars: live while shown)
-    if (!CacheDraw() && isEnabled() && (m_enabledCvar.length() || IsVisible())) {
+    if (!CacheDraw() && Shown()) {
         UI_DrawLive();
     }
     DisplayNow(drawframe, parent_alpha);
     if (make) {
-        ui_drawMaking.pop_back();
+        ui_drawMaking = NULL;
         uii.Rend_End2DList();
     }
     m_drawLive  = ui_drawLive != live;
@@ -2816,26 +2784,6 @@ void UIWidget::LinkCvar(str cvarname)
 void UIWidget::LinkCommand(str cmd)
 {
     m_command = cmd;
-}
-
-void UIWidget::ExecuteShowCommands(void)
-{
-    for (int i = 1; i <= m_showcommands.NumObjects(); i++) {
-        //uii.Cmd_Stuff( m_showcommands.ObjectAt( i )->c_str() );
-        // Fixed in 2.0
-        Event event(m_showcommands.ObjectAt(i)->c_str());
-        ProcessEvent(event);
-    }
-}
-
-void UIWidget::ExecuteHideCommands(void)
-{
-    for (int i = 1; i <= m_hidecommands.NumObjects(); i++) {
-        //uii.Cmd_Stuff( m_hidecommands.ObjectAt( i )->c_str() );
-        // Fixed in 2.0
-        Event event(m_hidecommands.ObjectAt(i)->c_str());
-        ProcessEvent(event);
-    }
 }
 
 void UIWidget::InitializeCommandHandler(void (*fcn)(const char *, void *))
@@ -3044,30 +2992,6 @@ bool UIWidget::SendSignal(Event& event)
     }
 }
 
-void UIWidget::ShowCommand(Event *ev)
-{
-    int  i;
-    str *command = new str;
-
-    for (i = 1; i <= ev->NumArgs(); i++) {
-        *command += ev->GetToken(i);
-    }
-
-    m_showcommands.AddObject(command);
-}
-
-void UIWidget::HideCommand(Event *ev)
-{
-    int  i;
-    str *command = new str;
-
-    for (i = 1; i <= ev->NumArgs(); i++) {
-        *command += ev->GetToken(i);
-    }
-
-    m_hidecommands.AddObject(command);
-}
-
 void UIWidget::AddFlag(int flag)
 {
     m_flags |= flag;
@@ -3183,32 +3107,10 @@ void UIWidget::SetEnabledCvar(Event *ev)
     m_numEnabled  = -1;
 }
 
-void UIWidget::SetScaleCvar(Event *ev)
-{
-    m_scaleCvar = uii.Cvar_Find(ev->GetString(1).c_str());
-}
-
 void UIWidget::SetVirtualScale(vec2_t out)
 {
-    if (m_designSize[0] > 0 && m_designSize[1] > 0) {
-        // Added: a design's size, alike both ways
-        out[0] = out[1] = UI_DesignScale(m_designSize[0], m_designSize[1]);
-    } else if (m_scaleCvar) {
-        const float vidRatio  = (float)uid.vidWidth / (float)uid.vidHeight;
-        const float minHeight = 480;
-        const float minWidth  = minHeight * vidRatio;
-
-        out[0] = uid.vidWidth / minWidth * m_scaleCvar->value;
-        out[1] = uid.vidHeight / minHeight * m_scaleCvar->value;
-    } else {
-        out[0] = uid.vidWidth / 640.0;
-        out[1] = uid.vidHeight / 480.0;
-    }
-}
-
-void UIWidget::SetDontLocalize(Event *ev)
-{
-    SetDontLocalize();
+    out[0] = uid.vidWidth / 640.0;
+    out[1] = uid.vidHeight / 480.0;
 }
 
 void UIWidget::EventFadeSequence(Event *ev)

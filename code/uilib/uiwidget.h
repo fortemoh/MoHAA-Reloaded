@@ -105,6 +105,7 @@ typedef enum {
 // drawn that changes by itself (not to be kept)
 void UI_DrawDep(cvar_t *cvar);
 void UI_DrawLive(void);
+void UI_DrawReset(void);
 // ... a hash of what a widget draws from (DrawKey), h the hash so far
 int UI_DrawHash(int h, const void *data, size_t size);
 
@@ -140,8 +141,6 @@ protected:
     str                   m_cvarname;
     str                   m_cvarvalue;
     str                   m_command;
-    Container<str *>      m_showcommands;
-    Container<str *>      m_hidecommands;
     str                   m_title;
     float                 m_indent;
     float                 m_bottomindent;
@@ -180,11 +179,6 @@ protected:
     str                   m_enabledNames[8];
     cvar_t               *m_enabledVars[8];
     int                   m_numEnabled; // -1: not split yet
-    //
-    // Added in 2.0
-    //
-    cvar_t *m_scaleCvar;
-
     //
     // Added in OPM
     //
@@ -312,7 +306,6 @@ public:
     void TextAlignment(Event *ev);
     void LayoutAliasCache(Event *ev);
     void SetEnabledCvar(Event *ev);
-    void SetScaleCvar(Event *ev);
     // Added
     void LayoutShape(Event *ev);
     void LayoutRotateCvar(Event *ev);
@@ -340,7 +333,6 @@ public:
 
     // Added in 2.0
     //====
-    void SetDontLocalize(Event *ev);
     void EventFadeSequence(Event *ev);
     //====
 
@@ -398,7 +390,6 @@ public:
     UIReggedMaterial  *getMaterial(void);
     void               setHoverMaterial(UIReggedMaterial *mat);
     void               setPressedMaterial(UIReggedMaterial *mat);
-    class UIPoint2D    getLocalPoint(const UIPoint2D& pos);
     class UIPoint2D    getGlobalPoint(const UIPoint2D& pos);
     virtual void       setBackgroundAlpha(float f);
     float              getBackgroundAlpha(void);
@@ -424,8 +415,6 @@ public:
     bool               IsVisible(void);
     virtual void       LinkCvar(str cvarname);
     void               LinkCommand(str cmd);
-    void               ExecuteShowCommands(void);
-    void               ExecuteHideCommands(void);
     void               InitializeCommandHandler(void (*fcn)(const char *, void *));
     class UIWidget    *FindWidget(str name);
     void               ResetMotion(motion_t type);
@@ -439,8 +428,6 @@ public:
     bool               getAlwaysOnBottom(void);
     bool               getAlwaysOnTop(void);
     bool               SendSignal(Event& event);
-    void               ShowCommand(Event *ev);
-    void               HideCommand(Event *ev);
     void               AddFlag(int flag);
     void               SetHovermaterialActive(bool a);
     void               SetPressedmaterialActive(bool a);
@@ -531,8 +518,6 @@ extern Event EV_Layout_StuffCommand;
 extern Event EV_Layout_LinkCvar;
 extern Event EV_Layout_NoParentClipping;
 extern Event EV_Layout_NoParentAdjustment;
-extern Event EV_Widget_HideCommand;
-extern Event EV_Widget_ShowCommand;
 extern Event EV_Widget_OrderNumber;
 extern Event EV_Widget_TextAlignment;
 extern Event EV_Widget_EnabledCvar;

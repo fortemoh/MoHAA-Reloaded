@@ -179,11 +179,6 @@ extern "C" {
         char name[64];
     } clientInfo_t;
 
-    typedef struct cobjective_s {
-        char text[MAX_STRING_CHARS];
-        int  flags;
-    } cobjective_t;
-
 #define MAX_RAIN_SHADERS 16
 
     typedef struct crain_s {
@@ -213,7 +208,6 @@ extern "C" {
 
         // there are only one or two snapshot_t that are relevent at a time
         int         latestSnapshotNum;  // the number of snapshots the client system has received
-        int         latestSnapshotTime; // the time from latestSnapshotNum, so we don't need to read the snapshot yet
         snapshot_t *snap;               // cg.snap->serverTime <= cg.time
         snapshot_t *nextSnap;           // cg.nextSnap->serverTime > cg.time, or NULL
         snapshot_t  activeSnapshots[2];
@@ -345,41 +339,22 @@ extern "C" {
         float viewkickMinDecay;
         float viewkickMaxDecay;
 
-        // objectives
-        cobjective_t Objectives[20];
-        float        ObjectivesAlphaTime;
-        float        ObjectivesBaseAlpha;
-        float        ObjectivesDesiredAlpha;
-        float        ObjectivesCurrentAlpha;
-        int          ObjectivesCurrentIndex;
+        // objectives (TAB held: shown)
+        float ObjectivesDesiredAlpha;
 
         // misc
         crain_t      rain;
 		clientInfo_t clientinfo[MAX_CLIENTS];
 		radarClient_t radars[MAX_CLIENTS];
-		qhandle_t radarShaders[2];
     } cg_t;
 
     typedef struct {
         qhandle_t     backTileShader;
-        qhandle_t     lagometerShader;
         qhandle_t     shadowMarkShader;
         qhandle_t     footShadowMarkShader;
         qhandle_t     wakeMarkShader;
-        qhandle_t     pausedShader;
-        qhandle_t     levelExitShader;
-        qhandle_t     zoomOverlayShader;
-        qhandle_t     kar98TopOverlayShader;
-        qhandle_t     kar98BottomOverlayShader;
-        qhandle_t     binocularsOverlayShader;
         fontheader_t *hudDrawFont;
-        fontheader_t *attackerFont;
-        fontheader_t *objectiveFont;
-        qhandle_t     objectivesBackShader;
-        qhandle_t     checkedBoxShader;
-        qhandle_t     uncheckedBoxShader;
         // looked up by name at their first use in the level
-        qhandle_t     teamHudShaders[2]; // allies, axis
         qhandle_t     headIconModels[7]; // CG_PlayerTeamIcon's
     } media_t;
 
@@ -532,7 +507,6 @@ extern "C" {
     extern cvar_t *voiceChat;
     extern cvar_t *cg_shadowscount;
     extern cvar_t *cg_shadowdebug;
-    extern cvar_t *ui_timemessage;
 
     //
     // Added in OPM
@@ -657,24 +631,18 @@ extern "C" {
     //
     void CG_AdjustFrom640(float *x, float *y, float *w, float *h);
     void CG_TileClear(void);
-    void CG_DrawOverlayTopBottom(qhandle_t handleTop, qhandle_t handleBottom, float fAlpha);
-    void CG_DrawOverlayMiddle(qhandle_t handle, float fAlpha);
-    void CG_DrawOverlayFullScreen(qhandle_t handle, float fAlpha);
     void CG_DrawZoomOverlay();
     void CG_HudDrawShader(int iInfo);
     void CG_HudDrawFont(int iInfo);
     void CG_RefreshHudDrawElements();
     void CG_HudDrawElements();
     void CG_InitializeObjectives();
-    void CG_DrawObjectives();
     void CG_UpdateCrosshair(void);
     void CG_Draw2D(void);
 
     //
     // cg_draw.c
     //
-    void CG_AddLagometerFrameInfo(void);
-    void CG_AddLagometerSnapshotInfo(snapshot_t *snap);
     void CG_CenterPrint(const char *str, int y, int charWidth);
     void CG_DrawHead(float x, float y, float w, float h, int clientNum, vec3_t headAngles);
     void CG_DrawActive(stereoFrame_t stereoView);
@@ -975,6 +943,7 @@ qboolean CG_LightStyleColor(int style, int realtime, vec4_t color, qboolean clam
     void CG_InstaMessageGroupE_f(void);
     void CG_HudPrint_f(void);
 
+    int      CG_InstaMessageGroups(void);
     qboolean CG_CheckCaptureKey(int key, qboolean down, unsigned int time);
 
     //

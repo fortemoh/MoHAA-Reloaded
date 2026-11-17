@@ -33,18 +33,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cl_uicomp.h"
 #include "cl_uimenus.h"
 #include "cl_uiextras.h"
-#include "cl_uigamespy.h"
 
 #include <chrono>
-
-typedef struct {
-    float             fadetime;
-    float             starttime;
-    float             endtime;
-    float             alpha_start;
-    float             alpha_end;
-    UIReggedMaterial *material;
-} intro_stage_t;
 
 static qboolean             ui_hud;
 static class UIFont        *globalFont;
@@ -52,25 +42,10 @@ static UIFloatingConsole   *fakk_console;
 static UIFloatingDMConsole *dm_console;
 static UIFloatingConsole   *developer_console;
 static FakkMiniconsole     *mini_console;
-static UIGMBox             *gmbox;
-static UIDMBox             *dmbox;
 static View3D              *view3d;
-static Menu                *mainmenu;
-static Menu                *hud_weapons;
-static Menu                *hud_items;
-static Menu                *hud_health;
-static Menu                *hud_ammo;
-static Menu                *hud_compass;
-static Menu                *hud_boss;
-static Menu                *crosshairhud;
-static Menu                *missionLog;
 qboolean                    server_loading;
 static qboolean             server_loading_waiting;
 static str                 *s_intermediateconsole;
-static int                  ui_lastWeapHudState_Owned;
-static int                  ui_lastWeapHudState_Equipped = 0xFFFF;
-static int                  ui_weapHudTime;
-static int                  ui_itemHudTime;
 Menu                       *ui_pLoadingMenu;
 static Menu                *ui_pConnectingMenu;
 
@@ -96,70 +71,32 @@ cvar_t        *ui_NumShotsFired;
 cvar_t        *ui_gotmedal;
 cvar_t        *ui_success;
 cvar_t        *ui_failed;
-cvar_t        *ui_returnmenu;
-cvar_t        *ui_skip_eamovie;
-cvar_t        *ui_skip_titlescreen;
-cvar_t        *ui_skip_legalscreen;
-cvar_t        *ui_titlescreen_fadein;
-cvar_t        *ui_titlescreen_fadeout;
-cvar_t        *ui_titlescreen_stay;
-cvar_t        *ui_legalscreen_fadein;
-cvar_t        *ui_legalscreen_fadeout;
-cvar_t        *ui_legalscreen_stay;
 cvar_t        *ui_drawcoords;
 cvar_t        *ui_minicon;
-cvar_t        *ui_gmbox;
 cvar_t        *ui_consoleposition;
-cvar_t        *ui_inventoryfile;
 cvar_t        *ui_console;
+// Added: the lines the ~ console keeps
+static cvar_t *con_scrollback;
 cvar_t        *ui_newvidmode;
-cvar_t        *ui_crosshair;
-cvar_t        *ui_compass;
-cvar_t        *ui_weaponsbar;
-cvar_t        *ui_weaponsbartime;
-cvar_t        *ui_itemsbar;
-cvar_t        *ui_health_start;
-cvar_t        *ui_health_end;
-cvar_t        *ui_gmboxspam;
 cvar_t        *ui_debugload;
 cvar_t        *sound_overlay;
-cvar_t        *ui_compass_scale;
 
-static intro_stage_t intro_stage;
 static char          server_mapname[64];
-static UIListCtrl   *scoreboardlist;
 static Menu         *scoreboard_menu;
-// Added: the scoreboard is up (the Reloaded scoreboard: the stock list isn't shown)
+// Added: the scoreboard is up (the Reloaded scoreboard)
 static qboolean      scoreboard_up;
-static float         scoreboard_x;
-static float         scoreboard_y;
-static float         scoreboard_w;
-static float         scoreboard_h;
-static qboolean      scoreboard_header;
-cvar_t              *cl_playintro;
-cvar_t              *cl_movieaudio;
 
 unsigned char        UIListCtrlItem[8];
 
 static const float maxWidthRes  = 1920;
 static const float maxHeightRes = 1080;
 
-inventory_t              client_inv;
-bind_t                   client_bind;
 static str               scoreboard_menuname;
 static str               ui_sCurrentLoadingMenu;
-static Container<Menu *> hudList;
 
 const UColor UWhiteChatMessageColor(0.75, 0.75, 0.75);
 const UColor URedChatMessageColor(1.0, 0.333, 0.333);
 const UColor UGreenChatMessageColor(0.0, 1.0, 0.333, 1.0);
-
-void UI_MultiplayerMenuWidgetsUpdate(void);
-void UI_MultiplayerMainMenuWidgetsUpdate(void);
-void UI_MainMenuWidgetsUpdate(void);
-
-static UIRect2D getDefaultGMBoxRectangle(void);
-static UIRect2D getDefaultDMBoxRectangle(void);
 
 class ConsoleHider : public Listener
 {
@@ -886,6 +823,54 @@ static void CL_GetClipboardData(char *buf, int buflen)
 
 /*
 ====================
+UI_CompleteLine
+
+Added: Tab in the ~ console. The engine's completion (Field_AutoComplete, as in the
+dedicated server's console): the line's last word, a command's argument by the command's
+own completion (set and the others a cvar, exec a config, map and the others a map); the
+matches listed when more than one; a cvar's value shown when one is completed
+====================
+*/
+static void UI_CompleteLine(char *line, int size)
+{
+    field_t field;
+    char   *word;
+    cvar_t *var;
+    size_t  len;
+
+    // (Field_CompleteCommand reads the character before an empty line)
+    if (!line[strspn(line, " \"")] || strlen(line) >= sizeof(field.buffer)) {
+        return;
+    }
+
+    Field_Clear(&field);
+    Q_strncpyz(field.buffer, line, sizeof(field.buffer));
+    field.cursor = strlen(field.buffer);
+    Field_AutoComplete(&field);
+
+    if (!strcmp(field.buffer, line)) {
+        return;
+    }
+    Q_strncpyz(line, field.buffer, size);
+
+    // a word completed whole (a space after it): a cvar's value
+    len = strlen(field.buffer);
+    if (field.buffer[len - 1] != ' ') {
+        return;
+    }
+    field.buffer[len - 1] = 0;
+    for (word = field.buffer + len - 1; word > field.buffer && !strchr(" ;\"", word[-1]); word--) {}
+    if (*word == '\\' || *word == '/') {
+        word++;
+    }
+    var = Cvar_FindVar(word);
+    if (var) {
+        Com_Printf("    %s = \"%s\"\n", var->name, var->string);
+    }
+}
+
+/*
+====================
 Key_KeynumToStringBuf
 ====================
 */
@@ -1135,20 +1120,6 @@ static void DMConsoleCommandHandler(const char *txt)
 
 /*
 ====================
-getScreenWidth
-====================
-*/
-static float getScreenWidth()
-{
-    if (uid.bHighResScaling) {
-        return maxWidthRes;
-    } else {
-        return uid.vidWidth;
-    }
-}
-
-/*
-====================
 getNewConsole
 ====================
 */
@@ -1160,6 +1131,9 @@ UIFloatingConsole *getNewConsole()
     console->Create(NULL, getDefaultConsoleRectangle(), consoleName, UWindowColor, UHudColor);
     console->setConsoleHandler(ConsoleCommandHandler);
     console->setConsoleBackground(UBlack, 0.8f);
+    // Added: read here, so a change takes effect when the console is made again (the next start)
+    Cvar_CheckRange(con_scrollback, MAX_CONSOLE_ITEMS, 4000, qtrue);
+    console->setScrollback(con_scrollback->integer);
     console->setShow(false);
     console->Connect(&s_consolehider, UIFloatingWindow::W_ClosePressed, UIFloatingWindow::W_ClosePressed);
     console->Connect(&s_consolehider, W_Destroyed, W_Destroyed);
@@ -1188,7 +1162,7 @@ UIFloatingDMConsole *getNewDMConsole()
     console->setConsoleHandler(DMConsoleCommandHandler);
     console->setConsoleBackground(UBlack, 0.8f);
     console->setShow(false);
-    // Added: faded by ui_hud_dmconsole (0 with cg_hudstyle 1: not drawn, the chat's typing line instead)
+    // Added: faded by ui_hud_dmconsole (0: not drawn, the chat's typing line instead)
     event = new Event(EV_Layout_AlphaCvar);
     event->AddString("ui_hud_dmconsole");
     console->ProcessEvent(event);
@@ -1206,70 +1180,7 @@ UIFloatingDMConsole *getNewDMConsole()
 
 /*
 ====================
-getCompassRectangle
-
-The compass hud's frame, which the message boxes keep clear of. Before the hud is loaded, upstream's estimate
-from ui_compass_scale (too narrow below 1280 pixels wide: the chat started under the compass)
-====================
-*/
-static UIRect2D getCompassRectangle(void)
-{
-    UIWidget *compass = hud_compass ? hud_compass->GetContainerWidget() : NULL;
-
-    if (compass && compass->getFrame().size.width > 0 && compass->getFrame().size.height > 0) {
-        return compass->getFrame();
-    }
-
-    return UIRect2D(
-        0,
-        0,
-        getScreenWidth() * uid.scaleRes[0] * ui_compass_scale->value * 0.2f,
-        uid.vidHeight * ui_compass_scale->value * 0.25f
-    );
-}
-
-/*
-====================
-getDefaultGMBoxRectangle
-
-The game messages: below the compass and the chat
-====================
-*/
-static UIRect2D getDefaultGMBoxRectangle(void)
-{
-    float y = Q_max(getCompassRectangle().getMaxY(), getDefaultDMBoxRectangle().getMaxY());
-
-    return UIRect2D(20.0f * uid.scaleRes[0], y, uid.vidWidth - 20.0f * uid.scaleRes[0], 128.0f * uid.scaleRes[1]);
-}
-
-/*
-====================
-getDefaultDMBoxRectangle
-
-The chat: right of the compass, 192 pixels short of the right edge
-====================
-*/
-static UIRect2D getDefaultDMBoxRectangle(void)
-{
-    float x     = getCompassRectangle().getMaxX();
-    float width = uid.vidWidth - x - 192.0f * uid.scaleRes[0];
-
-    return UIRect2D(x, 0, Q_max(width, 0.0f), 120.0f * uid.scaleRes[1]);
-}
-
-/*
-====================
-UI_GetObjectivesTop
-====================
-*/
-float UI_GetObjectivesTop(void)
-{
-    return getDefaultGMBoxRectangle().pos.y;
-}
-
-/*
-====================
-UI_GetObjectivesTop
+UI_GetHighResolutionScale
 ====================
 */
 void UI_GetHighResolutionScale(vec2_t scale)
@@ -1290,7 +1201,7 @@ Added: the Competitive HUD's menus (cg_hudstyle 1 or 2, ui/hud_comp_*.urc),
 shown in place of the stock HUD's
 ====================
 */
-static void UI_CompHuds(bool show, bool messages = false)
+static void UI_CompHuds(bool show, bool messages)
 {
     static Menu     *menus[UI_COMPHUD_MENUS];
     static UIWidget *containers[UI_COMPHUD_MENUS]; // (asked if shown every frame: the widget, not through the menu)
@@ -1310,53 +1221,13 @@ static void UI_CompHuds(bool show, bool messages = false)
         // the bottom's health and ammo: cg_hudstyle's preset's)
         const bool on  = (show && ui_compHudInLayout[i]) || (messages && (i == 1 || i == 3 || i == 4 || i == 11));
 
-        if (hud && containers[i] && on != containers[i]->IsVisible()) {
+        if (containers[i] && on != containers[i]->IsVisible()) {
             if (on) {
                 hud->ForceShow();
             } else {
                 hud->ForceHide();
             }
         }
-    }
-}
-
-/*
-====================
-UI_ShowHudList
-====================
-*/
-void UI_ShowHudList(void)
-{
-    for (int i = 1; i <= hudList.NumObjects(); i++) {
-        hudList.ObjectAt(i)->ForceShow();
-    }
-}
-
-/*
-====================
-UI_HideHudList
-====================
-*/
-void UI_HideHudList(void)
-{
-    for (int i = 1; i <= hudList.NumObjects(); i++) {
-        hudList.ObjectAt(i)->ForceHide();
-    }
-}
-
-/*
-====================
-UI_DisplayHudList
-====================
-*/
-void UI_DisplayHudList(void)
-{
-    for (int i = 1; i <= hudList.NumObjects(); i++) {
-        Menu     *pMenu   = hudList.ObjectAt(i);
-        UIWidget *pWidget = pMenu->GetContainerWidget();
-
-        pMenu->ForceShow();
-        pWidget->Display(uWinMan.getFrame(), 1.0);
     }
 }
 
@@ -1370,20 +1241,17 @@ void UI_PrintConsole(const char *msg)
     const UColor *pColor = NULL;
     const char   *pszString;
     char          szBlah[1024];
-    qboolean      bPrintedDMBox = qfalse;
 
     pszString = msg;
-
-    // Added: the Competitive HUD's chat, game messages and kills
-    if (*msg > 0 && (unsigned char)*msg < MESSAGE_MAX) {
-        UI_CompHud_Print(msg);
-    }
 
     if (*pszString > 0 && (unsigned char)*pszString < MESSAGE_MAX) {
         qboolean bNormalMessage = qfalse;
         qboolean bDMMessage     = qfalse;
         qboolean bBold          = qfalse;
         qboolean bDeathMessage  = qfalse;
+
+        // Added: the Competitive HUD's chat, game messages and kills
+        UI_CompHud_Print(msg);
 
         switch (*pszString) {
         case MESSAGE_YELLOW:
@@ -1422,52 +1290,17 @@ void UI_PrintConsole(const char *msg)
         }
 
         //
-        // print to the deathmatch message box
+        // a game message (the Competitive HUD shows it): its sound if bold,
+        // marked as one in the console
         //
-        if (dmbox) {
-            // Changed in OPM
-            //  Avoid touching/copying buffers
-            /*
-            if (bDMMessage) {
-                *szString = MESSAGE_CHAT_WHITE;
-                dmbox->Print(szString);
-            } else if (bDeathMessage) {
-                *szString = bDeathMessage;
-                dmbox->Print(szString);
-            }
-            */
-
-            if (bDMMessage || bDeathMessage) {
-                dmbox->Print(msg);
-                bPrintedDMBox = qtrue;
-            }
-        }
-
-        //
-        // print to the game message box
-        //
-        if (gmbox && !bPrintedDMBox) {
+        if (!bDMMessage && !bDeathMessage) {
             if (bBold) {
-                // Changed in OPM
-                //  Avoid touching/copying buffers
-                //*szString = MESSAGE_WHITE;
-                //gmbox->Print(szString);
-
-                gmbox->Print(msg);
                 uii.Snd_PlaySound("objective_text");
-            } else {
-                gmbox->Print(pszString);
             }
 
-            if (!ui_gmboxspam->integer) {
-                return;
-            }
-
-            if (!bDMMessage) {
-                Q_strncpyz(szBlah, "Game Message: ", sizeof(szBlah));
-                Q_strcat(szBlah, sizeof(szBlah), pszString);
-                pszString = szBlah;
-            }
+            Q_strncpyz(szBlah, "Game Message: ", sizeof(szBlah));
+            Q_strcat(szBlah, sizeof(szBlah), pszString);
+            pszString = szBlah;
         }
     }
 
@@ -1496,7 +1329,13 @@ void UI_PrintConsole(const char *msg)
             s_intermediateconsole = new str;
         }
 
-        *s_intermediateconsole = msg;
+        // Fixed: every message of the UI's start kept until the console is there (only the last one was); after
+        // the start, with no console (ui_console 0), only the last, as before (not a whole session's)
+        if (cls.uiStarted) {
+            *s_intermediateconsole = pszString;
+        } else {
+            *s_intermediateconsole += pszString;
+        }
     }
 }
 
@@ -1512,45 +1351,6 @@ void UI_PrintDeveloperConsole(const char *msg)
     }
 
     developer_console->AddText(msg, NULL);
-}
-
-/*
-====================
-UI_UpdateContinueGame
-====================
-*/
-void UI_UpdateContinueGame(void)
-{
-    cvar_t     *var;
-    const char *name;
-    const char *archive_name;
-    int         length;
-    Event      *event;
-
-    var  = Cvar_Get("g_lastsave", "", 0);
-    name = var->string;
-
-    if (*name) {
-        archive_name = Com_GetArchiveFileName(name, "sav");
-        length       = FS_ReadFileEx(archive_name, NULL, qtrue);
-
-        if (length != -1) {
-            event = new Event(EV_Widget_Enable);
-            menuManager.PassEventToWidget("continue game", event);
-
-            event = new Event(EV_Widget_Disable);
-            menuManager.PassEventToWidget("new game", event);
-            return;
-        }
-
-        Cvar_Set("g_lastsave", "");
-    }
-
-    event = new Event(EV_Widget_Disable);
-    menuManager.PassEventToWidget("continue game", event);
-
-    event = new Event(EV_Widget_Enable);
-    menuManager.PassEventToWidget("new game", event);
 }
 
 /*
@@ -1674,8 +1474,12 @@ void UI_OpenDMConsole(int iMode)
         return;
     }
 
-    // Added: with cg_hudstyle 1 its window isn't drawn (the chat's typing line instead)
-    Cvar_Set("ui_hud_dmconsole", UI_CompHud_Active() ? "0" : "1");
+    // Added: the chat opens empty: a line typed and not sent (the chat left with Esc, or closed by a menu,
+    // the console or a change of its mode) isn't there again. Never while it is being typed in
+    if (dm_console->getConsole() && !dm_console->getConsole()->IsThisOrChildActive()) {
+        dm_console->getConsole()->ClearCurrentLine();
+    }
+
     UI_SetDMConsoleMode(iMode);
     dm_console->setShow(true);
     uWinMan.ActivateControl(dm_console);
@@ -1838,53 +1642,6 @@ void UI_ActivateView3D(void)
 
 /*
 ====================
-UI_DrawIntro
-====================
-*/
-void UI_DrawIntro(void)
-{
-    if (clc.state == CA_CINEMATIC) {
-        view3d->setShow(true);
-        return;
-    }
-
-    view3d->setShow(false);
-    UI_ClearBackground();
-
-    if (cls.startStage < 3 || cls.startStage >= 12) {
-        return;
-    }
-
-    if (intro_stage.material->GetMaterial()) {
-        float  swidth;
-        float  sheight;
-        vec4_t color;
-
-        VectorSet4(color, 1, 1, 1, 1);
-        if (intro_stage.fadetime) {
-            float frac;
-
-            frac     = Q_clamp_float((cls.realtime - intro_stage.starttime) / intro_stage.fadetime, 0, 1);
-            color[0] = color[1] = color[2] =
-                intro_stage.alpha_start + frac * (intro_stage.alpha_end - intro_stage.alpha_start);
-        }
-
-        swidth  = view3d->getFrame().getMaxX();
-        sheight = view3d->getFrame().getMaxY();
-
-        re.SetColor(color);
-
-        re.DrawStretchPic(0.0, 0.0, swidth, sheight, 0.0, 0.0, 1.0, 1.0, intro_stage.material->GetMaterial());
-        re.SetColor(NULL);
-    }
-
-    if (cls.realtime >= intro_stage.endtime) {
-        CL_FinishedStartStage();
-    }
-}
-
-/*
-====================
 UI_MenuUp
 ====================
 */
@@ -1895,18 +1652,34 @@ qboolean UI_MenuUp()
 
 /*
 ====================
-UI_FullscreenMenuUp
+UI_StopBind
+
+Added: a key's box waiting for a key (Options' KEYS) given up, as Esc
+does, when a connect or a map's load takes the screen
 ====================
 */
-qboolean UI_FullscreenMenuUp()
+static void UI_StopBind(void)
 {
-    Menu *currentMenu = menuManager.CurrentMenu();
-
-    if (currentMenu) {
-        return currentMenu->isFullscreen();
+    if (uWinMan.BindActive()) {
+        uWinMan.BindActive()->KeyEvent(K_ESCAPE, 0);
     }
+}
 
-    return qfalse;
+/*
+====================
+UI_ForgetLostSave
+
+The last save (g_lastsave: a mission's death loads it, the end screen's
+TRY AGAIN) forgotten when its file is gone; asked when the Esc menu opens
+====================
+*/
+static void UI_ForgetLostSave(void)
+{
+    const char *name = Cvar_Get("g_lastsave", "", 0)->string;
+
+    if (*name && FS_ReadFileEx(Com_GetArchiveFileName(name, "sav"), NULL, qtrue) == -1) {
+        Cvar_Set("g_lastsave", "");
+    }
 }
 
 /*
@@ -1918,11 +1691,11 @@ Updates the UI.
 */
 void UI_Update(void)
 {
-    static Menu *mainMenu;
-    static int   mainMenusGeneration = -1;
-    Menu        *currentMenu;
-    UIRect2D     frame;
+    Menu    *currentMenu;
+    UIRect2D frame;
 
+    // Added: what an error in mid-draw left of the draw cache undone
+    UI_DrawReset();
     // Added: the faces asked for at the UI's start registered (their texels made meanwhile), before anything is drawn
     UI_BakeBatch(false);
     re.SetRenderTime(cls.realtime);
@@ -1936,29 +1709,6 @@ void UI_Update(void)
         view3d->setShow(true);
         frame = uWinMan.getFrame();
         view3d->Display(frame, 1.0);
-
-        if (ui_hud && !view3d->LetterboxActive()) {
-            // draw the health hud
-            if (hud_health) {
-                hud_health->ForceShow();
-                frame = uWinMan.getFrame();
-                hud_health->GetContainerWidget()->Display(frame, 1.0);
-            }
-
-            // draw the ammo hud
-            if (hud_ammo) {
-                hud_ammo->ForceShow();
-                frame = uWinMan.getFrame();
-                hud_ammo->GetContainerWidget()->Display(frame, 1.0);
-            }
-
-            // draw the compass hud
-            if (hud_compass) {
-                hud_compass->ForceShow();
-                frame = uWinMan.getFrame();
-                hud_compass->GetContainerWidget()->Display(frame, 1.0);
-            }
-        }
 
         return;
     }
@@ -1980,55 +1730,21 @@ void UI_Update(void)
     {
         static cvar_t *ui_menucover = Cvar_Get("ui_menucover", "0", CVAR_ROM);
 
-        if (ui_menucover->integer != (int)covered) {
+        if (ui_menucover->integer != covered) {
             Cvar_Set("ui_menucover", covered ? "1" : "0");
         }
     }
 
-    // Changed: the Competitive HUD shows the game messages, the chat and the kills itself
-    if (gmbox) {
-        gmbox->setRealShow(!UI_CompHud_Active() && !covered);
-    }
-
-    if (dmbox) {
-        dmbox->setRealShow(!UI_CompHud_Active() && !covered);
-    }
-
     currentMenu = menuManager.CurrentMenu();
 
-    // the main menu, searched for only when the menus change
-    if (mainMenusGeneration != menuManager.Generation()) {
-        mainMenusGeneration = menuManager.Generation();
-        mainMenu            = menuManager.FindMenu("main");
-    }
-
-    if (currentMenu == mainMenu) {
-        UI_MainMenuWidgetsUpdate();
-    } else if (currentMenu && !str::icmp(currentMenu->m_name, "dm_main")) {
-        // (the stock Esc menu's widgets: not the Reloaded one shown for its name)
-        UI_MultiplayerMainMenuWidgetsUpdate();
-    }
-
-    // don't care about the intro
-    if (!CL_FinishedIntro()) {
-        UI_DrawIntro();
-    } else if (!server_loading && (clc.state == CA_CONNECTING || clc.state == CA_CHALLENGING) && ui_pConnectingMenu) {
+    if (!server_loading && (clc.state == CA_CONNECTING || clc.state == CA_CHALLENGING) && ui_pConnectingMenu) {
         view3d->setShow(false);
         UI_ClearBackground();
-
-        if (UI_BindActive()) {
-            Menu *bindMenu = menuManager.FindMenu("controls");
-
-            if (bindMenu) {
-                Event *event = new Event(EV_UIFakkBindList_StopBind);
-                bindMenu->PassEventToWidget("bindlist", event);
-            } else {
-                uWinMan.SetBindActive(NULL);
-            }
-        }
+        UI_StopBind();
 
         if (clc.connectStartTime >= cls.realtime - 1000 * cl_connect_timeout->integer) {
-            if (currentMenu != ui_pConnectingMenu) {
+            // Changed: the menu looked up now (the Reloaded connect's box shown for its name)
+            if (currentMenu != menuManager.FindMenu("connecting")) {
                 UI_ForceMenuOff(true);
                 UI_DeactiveFloatingWindows();
                 UI_ForceMenu("connecting");
@@ -2050,8 +1766,13 @@ void UI_Update(void)
             if (clc.state <= CA_PRIMED) {
                 view3d->setShow(false);
                 UI_ClearBackground();
-            } else if (clc.state == CA_ACTIVE || clc.state == CA_CINEMATIC) {
-                Com_FakeUnpause();
+            } else if (clc.state == CA_ACTIVE) {
+                // Changed: the Reloaded Esc menu holds a mission as the stock menu did, the game shown under it
+                if (covered && com_sv_running->integer && !cg_gametype->integer) {
+                    Com_FakePause();
+                } else {
+                    Com_FakeUnpause();
+                }
                 view3d->setShow(true);
             } else {
                 UI_ClearBackground();
@@ -2060,17 +1781,7 @@ void UI_Update(void)
         } else {
             view3d->setShow(false);
             UI_ClearBackground();
-
-            if (UI_BindActive()) {
-                Menu *bindMenu = menuManager.FindMenu("controls");
-
-                if (bindMenu) {
-                    Event *event = new Event(EV_UIFakkBindList_StopBind);
-                    bindMenu->PassEventToWidget("bindlist", event);
-                }
-            } else {
-                uWinMan.SetBindActive(NULL);
-            }
+            UI_StopBind();
 
             if (ui_pLoadingMenu) {
                 if (currentMenu != ui_pLoadingMenu) {
@@ -2091,450 +1802,22 @@ void UI_Update(void)
 
     // Hide the HUD when necessary
     if (!ui_hud || covered || clc.state != CA_ACTIVE || view3d->LetterboxActive() || (currentMenu && currentMenu->isFullscreen())
-        || server_loading || ((cl.snap.ps.pm_flags & PMF_NO_HUD) || (cl.snap.ps.pm_flags & PMF_INTERMISSION))) {
-        if (crosshairhud) {
-            crosshairhud->ForceHide();
-        }
-        if (hud_weapons) {
-            hud_weapons->ForceHide();
-            ui_weapHudTime = 0;
-        }
-        if (hud_items) {
-            hud_items->ForceHide();
-            ui_itemHudTime = 0;
-        }
-        if (hud_health) {
-            hud_health->ForceHide();
-        }
-        if (hud_ammo) {
-            hud_ammo->ForceHide();
-        }
-        if (hud_compass) {
-            hud_compass->ForceHide();
-        }
-        if (hud_boss) {
-            hud_boss->ForceHide();
-        }
-
-        UI_HideHudList();
-        // Added: through the intermission, the Competitive HUD's messages, chat, kills and vote stay
-        if (UI_CompHud_Active() && ui_hud && !covered && clc.state == CA_ACTIVE && !server_loading && !view3d->LetterboxActive()
-            && !(currentMenu && currentMenu->isFullscreen())) {
-            UI_CompHud_Frame();
-            UI_CompHuds(false, true);
-        } else {
-            UI_CompHuds(false);
-        }
-    } else if (UI_CompHud_Active()) {
-        // Added: the Competitive HUD's menus instead of the stock HUD's (the
-        // boss's health stays), those hidden when shown, not each frame
-        Menu *const stock[] = {crosshairhud, hud_weapons, hud_items, hud_health, hud_ammo, hud_compass};
-
-        for (Menu *m : stock) {
-            if (m && m->isVisible()) {
-                m->ForceHide();
-            }
-        }
-        ui_weapHudTime = ui_itemHudTime = 0;
-        for (int i = 1; i <= hudList.NumObjects(); i++) {
-            if (hudList.ObjectAt(i)->isVisible()) {
-                hudList.ObjectAt(i)->ForceHide();
-            }
-        }
-        UI_CompHud_Frame();
-        UI_CompHuds(true);
+        || server_loading) {
+        UI_CompHuds(false, false);
     } else {
-        UI_CompHuds(false);
-        if (crosshairhud) {
-            if (ui_crosshair->integer && cl.snap.ps.stats[STAT_CROSSHAIR]) {
-                crosshairhud->ForceShow();
-            } else {
-                crosshairhud->ForceHide();
-            }
-        }
+        // Changed: the Competitive HUD's menus (cl_uicomp.cpp)
+        // Added: through the intermission its messages, chat, kills and vote stay
+        const bool messages = (cl.snap.ps.pm_flags & (PMF_NO_HUD | PMF_INTERMISSION)) != 0;
 
-        //
-        // show and highlight all weapons that the player holds
-        //
-
-        //
-        // try to show the weapons bar
-        //
-        if (hud_weapons) {
-            if (ui_weaponsbar->integer && !(cl.snap.ps.pm_flags & PMF_NO_WEAPONBAR)) {
-                int iEquippedDiff = 0;
-                int iOwnedDiff    = 0;
-
-                if (ui_weaponsbar->integer == 2) {
-                    ui_weapHudTime = cls.realtime + ui_weaponsbartime->value;
-                } else if (ui_weaponsbar->integer != 3 && ui_itemHudTime && hud_items->isVisible()) {
-                    ui_weapHudTime = 0;
-                }
-
-                if (ui_lastWeapHudState_Owned != cl.snap.ps.stats[STAT_WEAPONS]
-                    || ui_lastWeapHudState_Equipped != cl.snap.ps.stats[STAT_EQUIPPED_WEAPON]) {
-                    iOwnedDiff    = cl.snap.ps.stats[STAT_WEAPONS] ^ ui_lastWeapHudState_Owned & 0x3F;
-                    iEquippedDiff = (ui_lastWeapHudState_Equipped ^ cl.snap.ps.stats[STAT_EQUIPPED_WEAPON]) & 0x3F;
-
-                    // if we have different equipment, reset the weapons hud time
-                    if (iOwnedDiff || iEquippedDiff) {
-                        ui_weapHudTime = cls.realtime + ui_weaponsbartime->integer;
-                    }
-                }
-
-                //
-                // show weapons that the player holds
-                //
-                if (iOwnedDiff) {
-                    if (iOwnedDiff & 1) {
-                        if (cl.snap.ps.stats[STAT_WEAPONS] & 1) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("pistol_empty", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("pistol_empty", event);
-                        }
-                    }
-                    if (iOwnedDiff & 2) {
-                        if (cl.snap.ps.stats[STAT_WEAPONS] & 2) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("rifle_empty", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("rifle_empty", event);
-                        }
-                    }
-                    if (iOwnedDiff & 4) {
-                        if (cl.snap.ps.stats[STAT_WEAPONS] & 4) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("smg_empty", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("smg_empty", event);
-                        }
-                    }
-                    if (iOwnedDiff & 8) {
-                        if (cl.snap.ps.stats[STAT_WEAPONS] & 8) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("mg_empty", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("mg_empty", event);
-                        }
-                    }
-                    if (iOwnedDiff & 16) {
-                        if (cl.snap.ps.stats[STAT_WEAPONS] & 16) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("grenade_empty", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("grenade_empty", event);
-                        }
-                    }
-                    if (iOwnedDiff & 32) {
-                        if (cl.snap.ps.stats[STAT_WEAPONS] & 32) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("heavy_empty", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("heavy_empty", event);
-                        }
-                    }
-                    ui_lastWeapHudState_Owned =
-                        cl.snap.ps.stats[STAT_WEAPONS] & 0x3F | ui_lastWeapHudState_Owned & ~0x3F;
-                }
-                //
-                // highlight currently equipped weapons
-                //
-                if (iEquippedDiff) {
-                    if (iEquippedDiff & 1) {
-                        if (cl.snap.ps.stats[STAT_EQUIPPED_WEAPON] & 1) {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("pistol_equipped", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("pistol_equipped", event);
-                        }
-                    }
-                    if (iEquippedDiff & 2) {
-                        if (cl.snap.ps.stats[STAT_EQUIPPED_WEAPON] & 2) {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("rifle_equipped", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("rifle_equipped", event);
-                        }
-                    }
-                    if (iEquippedDiff & 4) {
-                        if (cl.snap.ps.stats[STAT_EQUIPPED_WEAPON] & 4) {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("smg_equipped", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("smg_equipped", event);
-                        }
-                    }
-                    if (iEquippedDiff & 8) {
-                        if (cl.snap.ps.stats[STAT_EQUIPPED_WEAPON] & 8) {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("mg_equipped", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("mg_equipped", event);
-                        }
-                    }
-                    if (iEquippedDiff & 16) {
-                        if (cl.snap.ps.stats[STAT_EQUIPPED_WEAPON] & 16) {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("grenade_equipped", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("grenade_equipped", event);
-                        }
-                    }
-                    if (iEquippedDiff & 32) {
-                        if (cl.snap.ps.stats[STAT_EQUIPPED_WEAPON] & 32) {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("heavy_equipped", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("heavy_equipped", event);
-                        }
-                    }
-                    ui_lastWeapHudState_Equipped =
-                        cl.snap.ps.stats[STAT_EQUIPPED_WEAPON] & 0x3F | ui_lastWeapHudState_Equipped & ~0x3F;
-                }
-
-                if (!ui_weapHudTime) {
-                    if (hud_weapons->isVisible()) {
-                        hud_weapons->ProcessEvent(EV_HideMenu);
-                    }
-                } else if (ui_weapHudTime < cls.realtime || ui_itemHudTime > ui_weapHudTime) {
-                    ui_weapHudTime = 0;
-
-                    if (hud_weapons->isVisible()) {
-                        hud_weapons->ProcessEvent(EV_HideMenu);
-                    }
-                } else if (!hud_weapons->isVisible()) {
-                    Event *event = new Event(EV_ShowMenu);
-                    event->AddInteger(false);
-                    hud_weapons->ProcessEvent(event);
-
-                    if (hud_items->isVisible()) {
-                        hud_items->ProcessEvent(EV_HideMenu);
-                    }
-                }
-            } else {
-                hud_weapons->ForceHide();
-                ui_weapHudTime = 0;
-            }
-        }
-
-        //
-        // try to show the item bar
-        //
-        if (hud_items) {
-            if (ui_weaponsbar->integer && ui_itemsbar->integer) {
-                int iEquippedDiff = 0;
-                int iOwnedDiff    = 0;
-
-                if (ui_weaponsbar->integer == 3) {
-                    ui_itemHudTime = cls.realtime + ui_weaponsbartime->integer;
-
-                    if (ui_weapHudTime && hud_weapons->isVisible()) {
-                        ui_itemHudTime = 0;
-                    }
-                }
-
-                if (ui_lastWeapHudState_Owned != cl.snap.ps.stats[STAT_WEAPONS]
-                    || ui_lastWeapHudState_Equipped != cl.snap.ps.stats[STAT_EQUIPPED_WEAPON]) {
-                    iOwnedDiff    = cl.snap.ps.stats[STAT_WEAPONS] ^ ui_lastWeapHudState_Owned & 0xF00;
-                    iEquippedDiff = (ui_lastWeapHudState_Equipped ^ cl.snap.ps.stats[STAT_EQUIPPED_WEAPON]) & 0xF00;
-
-                    // if we have different equipment, reset the weapons hud time
-                    if (iOwnedDiff || iEquippedDiff) {
-                        ui_weapHudTime = cls.realtime + ui_weaponsbartime->integer;
-                    }
-                }
-
-                //
-                // show items that the player holds
-                //
-                if (iOwnedDiff) {
-                    if (iOwnedDiff & 0x100) {
-                        if (cl.snap.ps.stats[STAT_WEAPONS] & 1) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("slot1_icon", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("slot1_icon", event);
-                        }
-                    }
-                    if (iOwnedDiff & 0x200) {
-                        if (cl.snap.ps.stats[STAT_WEAPONS] & 2) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("slot2_icon", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("slot2_icon", event);
-                        }
-                    }
-                    if (iOwnedDiff & 0x400) {
-                        if (cl.snap.ps.stats[STAT_WEAPONS] & 4) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("slot3_icon", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("slot3_icon", event);
-                        }
-                    }
-                    if (iOwnedDiff & 0x800) {
-                        if (cl.snap.ps.stats[STAT_WEAPONS] & 8) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("slot4_icon", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("slot4_icon", event);
-                        }
-                    }
-                    ui_lastWeapHudState_Owned =
-                        cl.snap.ps.stats[STAT_WEAPONS] & 0xF00 | (ui_lastWeapHudState_Owned & 0xF0);
-                }
-                //
-                // highlight currently equipped weapons
-                //
-                else if (iEquippedDiff) {
-                    if (iEquippedDiff & 0x100) {
-                        if (cl.snap.ps.stats[STAT_EQUIPPED_WEAPON] & 1) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("slot1_highlight", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("slot1_highlight", event);
-                        }
-                    } else if (iEquippedDiff & 0x200) {
-                        if (cl.snap.ps.stats[STAT_EQUIPPED_WEAPON] & 2) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("slot2_highlight", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("slot2_highlight", event);
-                        }
-                    } else if (iEquippedDiff & 0x400) {
-                        if (cl.snap.ps.stats[STAT_EQUIPPED_WEAPON] & 4) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("slot3_highlight", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("slot3_highlight", event);
-                        }
-                    } else if (iEquippedDiff & 0x800) {
-                        if (cl.snap.ps.stats[STAT_EQUIPPED_WEAPON] & 8) {
-                            Event *event = new Event(EV_Widget_Disable);
-                            hud_weapons->PassEventToWidget("slot4_highlight", event);
-                        } else {
-                            Event *event = new Event(EV_Widget_Enable);
-                            hud_weapons->PassEventToWidget("slot4_highlight", event);
-                        }
-                    } else {
-                        ui_lastWeapHudState_Equipped =
-                            cl.snap.ps.stats[STAT_EQUIPPED_WEAPON] & 0xF00 | (ui_lastWeapHudState_Equipped & 0xF0);
-                    }
-                }
-
-                if (!ui_itemHudTime) {
-                    if (hud_items->isVisible()) {
-                        hud_items->ProcessEvent(EV_HideMenu);
-                    }
-                } else if (ui_itemHudTime < cls.realtime || ui_weapHudTime > ui_itemHudTime) {
-                    ui_itemHudTime = 0;
-
-                    if (hud_items->isVisible()) {
-                        hud_items->ProcessEvent(EV_HideMenu);
-                    }
-                } else if (!hud_items->isVisible()) {
-                    Event *event = new Event(EV_ShowMenu);
-                    event->AddInteger(false);
-                    hud_items->ProcessEvent(event);
-
-                    if (hud_weapons->isVisible()) {
-                        hud_weapons->ProcessEvent(EV_HideMenu);
-                    }
-                }
-            } else {
-                hud_items->ForceHide();
-                ui_itemHudTime = 0;
-            }
-        }
-
-        if (hud_health) {
-            hud_health->ForceShow();
-        }
-
-        //
-        // show the ammo hud
-        //
-        str ammo = "hud_ammo_";
-        ammo += CL_ConfigString(CS_WEAPONS + cl.snap.ps.activeItems[ITEM_WEAPON]);
-
-        if (!hud_ammo || hud_ammo->m_name.icmp(ammo)) {
-            Menu *ammoMenu = menuManager.FindMenu(ammo);
-            if (ammoMenu) {
-                if (ammoMenu != hud_ammo) {
-                    if (hud_ammo) {
-                        hud_ammo->ForceHide();
-                    }
-                    hud_ammo = ammoMenu;
-                }
-            } else {
-                ammoMenu = menuManager.FindMenu("hud_ammo_");
-                if (ammoMenu) {
-                    if (ammoMenu != hud_ammo) {
-                        if (hud_ammo) {
-                            hud_ammo->ForceHide();
-                        }
-                        hud_ammo = ammoMenu;
-                    }
-                }
-            }
-        }
-
-        if (hud_ammo) {
-            hud_ammo->ForceShow();
-        }
-
-        //
-        // show the compass
-        //
-        if (hud_compass) {
-            if (ui_compass->integer) {
-                hud_compass->ForceShow();
-            } else {
-                hud_compass->ForceHide();
-            }
-        }
-
-        //
-        // show the boss health
-        //
-        if (hud_boss) {
-            if (cl.snap.ps.stats[STAT_BOSSHEALTH] > 0 && !hud_boss->isVisible()) {
-                Event *event = new Event(EV_ShowMenu);
-                event->AddInteger(false);
-                hud_boss->ProcessEvent(event);
-            } else if (hud_boss->isVisible()) {
-                hud_boss->ProcessEvent(EV_HideMenu);
-            }
-        }
-
-        UI_ShowHudList();
+        UI_CompHud_Frame();
+        UI_CompHuds(!messages, messages);
     }
 
     //
     // show the scoreboard
     //
     if (scoreboard_menu) {
-        if (UI_Menus_Scoreboard(scoreboard_menuname.c_str()) ? scoreboard_up : scoreboardlist && scoreboardlist->IsVisible()) {
+        if (UI_ScoreboardShown()) {
             scoreboard_menu->ForceShow();
         } else {
             scoreboard_menu->ForceHide();
@@ -2542,123 +1825,6 @@ void UI_Update(void)
     }
 
     uWinMan.UpdateViews();
-}
-
-/*
-====================
-UI_MultiplayerMenuWidgetsUpdate
-====================
-*/
-void UI_MultiplayerMenuWidgetsUpdate(void)
-{
-    Event *event;
-
-    // allow the map change widget when running in-game
-    if (com_sv_running->integer) {
-        event = new Event(EV_Widget_Disable);
-        menuManager.PassEventToWidget("startnew", event);
-
-        if (clc.state > CA_PRIMED && !cg_gametype->integer) {
-            event = new Event(EV_Widget_Disable);
-            menuManager.PassEventToWidget("changemap", event);
-        } else {
-            event = new Event(EV_Widget_Enable);
-            menuManager.PassEventToWidget("changemap", event);
-        }
-    } else {
-        event = new Event(EV_Widget_Disable);
-        menuManager.PassEventToWidget("changemap", event);
-
-        event = new Event(EV_Widget_Enable);
-        menuManager.PassEventToWidget("startnew", event);
-    }
-
-    // allow the disconnect widget when in-game
-    if (clc.state > CA_PRIMED) {
-        event = new Event(EV_Widget_Enable);
-        menuManager.PassEventToWidget("disconnect", event);
-    } else {
-        event = new Event(EV_Widget_Disable);
-        menuManager.PassEventToWidget("disconnect", event);
-    }
-
-    // allow the join widget when in-game
-    if (com_sv_running->integer || clc.state > CA_PRIMED) {
-        event = new Event(EV_Widget_Disable);
-        menuManager.PassEventToWidget("joinlan", event);
-
-        event = new Event(EV_Widget_Disable);
-        menuManager.PassEventToWidget("joininternet", event);
-    } else {
-        event = new Event(EV_Widget_Enable);
-        menuManager.PassEventToWidget("joinlan", event);
-
-        event = new Event(EV_Widget_Enable);
-        menuManager.PassEventToWidget("joininternet", event);
-    }
-}
-
-/*
-====================
-UI_MainMenuWidgetsUpdate
-====================
-*/
-void UI_MainMenuWidgetsUpdate(void)
-{
-    if (clc.state > CA_PRIMED) {
-        Event *event = new Event(EV_Widget_Enable);
-        menuManager.PassEventToWidget("backtogame", event);
-    } else {
-        Event *event = new Event(EV_Widget_Disable);
-        menuManager.PassEventToWidget("backtogame", event);
-    }
-
-    UI_UpdateContinueGame();
-}
-
-/*
-====================
-UI_MultiplayerMainMenuWidgetsUpdate
-====================
-*/
-// Added in 2.0
-void UI_MultiplayerMainMenuWidgetsUpdate(void)
-{
-    static const cvar_t *cg_allowvote = Cvar_Get("cg_allowvote", "1", 0);
-    Menu                *menu         = menuManager.CurrentMenu();
-
-    // Added: the vote widgets are the stock Esc menu's; the Reloaded one shown
-    // for its name has none (an event no widget takes isn't freed)
-    if (!menu || str::icmp(menu->m_name, "dm_main")) {
-        UI_UpdateContinueGame();
-        return;
-    }
-    if (cg_allowvote->integer) {
-        menuManager.PassEventToWidget("cantvote", new Event(EV_Widget_Disable));
-
-        if (atoi(CL_ConfigString(CS_VOTE_TIME))) {
-            menuManager.PassEventToWidget("callvotebutton", new Event(EV_Widget_Disable));
-
-            if (cl.snap.ps.voted) {
-                menuManager.PassEventToWidget("votebutton", new Event(EV_Widget_Disable));
-                menuManager.PassEventToWidget("alreadyvoted", new Event(EV_Widget_Enable));
-            } else {
-                menuManager.PassEventToWidget("votebutton", new Event(EV_Widget_Enable));
-                menuManager.PassEventToWidget("alreadyvoted", new Event(EV_Widget_Disable));
-            }
-        } else {
-            menuManager.PassEventToWidget("callvotebutton", new Event(EV_Widget_Enable));
-            menuManager.PassEventToWidget("votebutton", new Event(EV_Widget_Disable));
-            menuManager.PassEventToWidget("alreadyvoted", new Event(EV_Widget_Disable));
-        }
-    } else {
-        menuManager.PassEventToWidget("callvotebutton", new Event(EV_Widget_Disable));
-        menuManager.PassEventToWidget("votebutton", new Event(EV_Widget_Disable));
-        menuManager.PassEventToWidget("alreadyvoted", new Event(EV_Widget_Disable));
-        menuManager.PassEventToWidget("cantvote", new Event(EV_Widget_Enable));
-    }
-
-    UI_UpdateContinueGame();
 }
 
 /*
@@ -2710,8 +1876,6 @@ UI_PopMenu
 */
 void UI_PopMenu(qboolean restore_cvars)
 {
-    Menu *menu;
-
     //
     //  Added in OPM
     //   Close any active floating windows (e.g. maplist)
@@ -2728,18 +1892,6 @@ void UI_PopMenu(qboolean restore_cvars)
     }
 
     UI_FocusMenuIfExists();
-
-    menu = menuManager.CurrentMenu();
-
-    if (menu) {
-        if (!str::cmp(menu->m_name, "main")) {
-            UI_MainMenuWidgetsUpdate();
-        } else if (!str::cmp(menu->m_name, "dm_main")) {
-            UI_MultiplayerMainMenuWidgetsUpdate();
-        } else if (!str::cmp(menu->m_name, "multiplayer")) {
-            UI_MultiplayerMenuWidgetsUpdate();
-        }
-    }
 }
 
 /*
@@ -2778,12 +1930,9 @@ void UI_PushMenu(const char *name)
 
     UI_FocusMenuIfExists();
 
-    if (!str::cmp(name, "main")) {
-        UI_MainMenuWidgetsUpdate();
-    } else if (!str::cmp(name, "dm_main")) {
-        UI_MultiplayerMainMenuWidgetsUpdate();
-    } else if (!str::cmp(name, "multiplayer")) {
-        UI_MultiplayerMenuWidgetsUpdate();
+    // (the Esc menu)
+    if (!str::cmp(name, "dm_main")) {
+        UI_ForgetLostSave();
     }
 }
 
@@ -2796,6 +1945,11 @@ void UI_ForceMenu(const char *name)
 {
     Menu    *menu  = menuManager.CurrentMenu();
     qboolean bDiff = qfalse;
+
+    // Added: the Reloaded menus told what they are forced as (the cgame's vote menus: their page)
+    if (!UI_Menus_Pushing(name)) {
+        return;
+    }
 
     if (menu) {
         bDiff = strcmp(menu->m_name, name) != 0;
@@ -2819,6 +1973,11 @@ void UI_ShowMenu(const char *name, qboolean bForce)
 
     pMenu = menuManager.FindMenu(name);
 
+    // Added: the Reloaded end of a mission's level pushed (cl_uimenus.cpp)
+    if (pMenu && UI_Menus_End(name, pMenu, qtrue)) {
+        return;
+    }
+
     if (pMenu) {
         if (bForce) {
             pMenu->ForceShow();
@@ -2840,6 +1999,11 @@ void UI_HideMenu(const char *name, qboolean bForce)
     Menu *pMenu;
 
     pMenu = menuManager.FindMenu(name);
+
+    // Added: the Reloaded end of a mission's level popped (cl_uimenus.cpp)
+    if (pMenu && UI_Menus_End(name, pMenu, qfalse)) {
+        return;
+    }
 
     if (pMenu) {
         if (bForce) {
@@ -3053,7 +2217,10 @@ void UI_GlobalWidgetCommand_f(void)
         event->AddToken(Cmd_Argv(i));
     }
 
-    uWinMan.PassEventToWidget(name, event);
+    // Added: freed when no widget has the name
+    if (!uWinMan.PassEventToWidget(name, event)) {
+        delete event;
+    }
 }
 
 /*
@@ -3078,66 +2245,6 @@ qboolean UI_BindActive(void)
 
 /*
 ====================
-UI_SetReturnMenuToCurrent
-====================
-*/
-void UI_SetReturnMenuToCurrent(void)
-{
-    Menu *currentMenu = menuManager.CurrentMenu();
-
-    if (currentMenu) {
-        Cvar_Set("ui_returnmenu", currentMenu->m_name);
-    } else {
-        Cvar_Set("ui_returnmenu", "");
-    }
-}
-
-/*
-====================
-UI_PushReturnMenu
-====================
-*/
-qboolean UI_PushReturnMenu()
-{
-    str sMenuName;
-
-    if (!ui_returnmenu->string || !*ui_returnmenu->string) {
-        return qfalse;
-    }
-
-    sMenuName = ui_returnmenu->string;
-
-    UI_PushMenu(sMenuName);
-    Cvar_Set("ui_returnmenu", "");
-    UI_FocusMenuIfExists();
-
-    if (!menuManager.CurrentMenu()) {
-        return qfalse;
-    }
-
-    if (!str::cmp(sMenuName, "main")) {
-        UI_MainMenuWidgetsUpdate();
-    } else if (!str::cmp(sMenuName, "dm_main")) {
-        UI_MultiplayerMainMenuWidgetsUpdate();
-    } else if (!str::cmp(sMenuName, "multiplayer")) {
-        UI_MultiplayerMenuWidgetsUpdate();
-    }
-
-    return qtrue;
-}
-
-/*
-====================
-UI_PushReturnMenu_f
-====================
-*/
-void UI_PushReturnMenu_f(void)
-{
-    UI_PushReturnMenu();
-}
-
-/*
-====================
 UI_MenuEscape
 ====================
 */
@@ -3152,7 +2259,8 @@ void UI_MenuEscape(const char *name)
         return;
     }
 
-    if (menuManager.CurrentMenu() == mainmenu && clc.state == CA_DISCONNECTED) {
+    // Changed: the main menu looked up now (the Reloaded one shown for its name)
+    if (menuManager.CurrentMenu() == menuManager.FindMenu("main") && clc.state == CA_DISCONNECTED) {
         if (developer->integer) {
             if (UI_ConsoleIsVisible()) {
                 UI_CloseConsole();
@@ -3170,25 +2278,14 @@ void UI_MenuEscape(const char *name)
 
     if (menuManager.CurrentMenu()) {
         menuManager.PopMenu(qtrue);
-    } else if (!Q_stricmp(name, "main") && clc.state > CA_PRIMED && cg_gametype->integer > 0) {
-        // multiplayer
+    } else if (!Q_stricmp(name, "main") && clc.state > CA_PRIMED) {
+        // in a game (Changed: single player's too, the Reloaded Esc menu shown for dm_main has a mission's own tiles)
         UI_PushMenu("dm_main");
     } else {
-        // single-player
         UI_PushMenu(name);
     }
 
     UI_FocusMenuIfExists();
-
-    if (menuManager.CurrentMenu()) {
-        if (!str::cmp(name, "main")) {
-            UI_MainMenuWidgetsUpdate();
-        } else if (!str::cmp(name, "dm_main")) {
-            UI_MultiplayerMainMenuWidgetsUpdate();
-        } else if (!str::cmp(name, "multiplayer")) {
-            UI_MultiplayerMenuWidgetsUpdate();
-        }
-    }
 }
 
 /*
@@ -3299,46 +2396,6 @@ void UI_MapList_f(void)
 
     MapRunnerClass *map = new MapRunnerClass;
     map->Setup("maps", mappath, ".bsp", "_sml");
-
-    CL_SetMousePos(uid.vidWidth / 2, uid.vidHeight / 2);
-}
-
-/*
-====================
-UI_DMMapSelect_f
-====================
-*/
-void UI_DMMapSelect_f(void)
-{
-    str basepath = "maps";
-    str mappath;
-    str gametype;
-
-    if (Cmd_Argc() > 1) {
-        const char *path;
-
-        path = Cmd_Argv(1);
-
-        if (strcmp(path, ".")) {
-            basepath += "/";
-            basepath += path;
-        }
-
-        if (Cmd_Argc() > 2) {
-            path = Cmd_Argv(2);
-            if (strcmp(path, ".")) {
-                mappath += "maps/";
-                mappath += path;
-            }
-        }
-
-        if (Cmd_Argc() > 3) {
-            gametype = Cmd_Argv(3);
-        }
-    }
-
-    MpMapPickerClass *map = new MpMapPickerClass;
-    map->Setup(basepath, mappath, gametype);
 
     CL_SetMousePos(uid.vidWidth / 2, uid.vidHeight / 2);
 }
@@ -3498,58 +2555,6 @@ void UI_StartDMMap_f(void)
            szHostName,
            pszMapName)
     );
-}
-
-/*
-====================
-UI_PlayerModel_f
-====================
-*/
-void UI_PlayerModel_f(void)
-{
-    qboolean bGermanModel;
-    str      modelpath = "models/player";
-
-    bGermanModel = qfalse;
-
-    if (Cmd_Argc() > 1) {
-        bGermanModel = atoi(Cmd_Argv(1)) ? qtrue : qfalse;
-
-        if (Cmd_Argc() == 3) {
-            modelpath += "/";
-            modelpath += Cmd_Argv(2);
-        }
-    }
-
-    PlayerModelPickerClass *picker = new PlayerModelPickerClass;
-    picker->Setup("models/player", modelpath, bGermanModel);
-
-    CL_SetMousePos(uid.vidWidth / 2, uid.vidHeight / 2);
-}
-
-/*
-====================
-UI_ApplyPlayerModel_f
-====================
-*/
-void UI_ApplyPlayerModel_f(void)
-{
-    const char *pszUIPlayerModel;
-    char        donotshowssindeorfr[64];
-
-    pszUIPlayerModel = CvarGetForUI("ui_dm_playermodel_set", "american_army");
-    Cvar_Set("dm_playermodel", pszUIPlayerModel);
-
-    pszUIPlayerModel = CvarGetForUI("ui_dm_playergermanmodel_set", "german_wehrmacht_soldier");
-    if (!Q_stricmpn(pszUIPlayerModel, "german_waffen_", 14)) {
-        Q_strncpyz(donotshowssindeorfr, "german_waffenss_", sizeof(donotshowssindeorfr));
-        Q_strcat(donotshowssindeorfr, sizeof(donotshowssindeorfr), pszUIPlayerModel + 14);
-        Cvar_Set("dm_playergermanmodel", donotshowssindeorfr);
-    } else {
-        Cvar_Set("dm_playergermanmodel", pszUIPlayerModel);
-    }
-
-    Cvar_Set("name", CvarGetForUI("ui_name", "UnnamedSoldier"));
 }
 
 /*
@@ -3964,6 +2969,7 @@ void CL_FillUIImports(void)
     uii.Rend_End2DList       = re.End2DList;
     uii.Rend_Draw2DList      = re.Draw2DList;
     uii.Rend_Free2DList      = re.Free2DList;
+    uii.Cmd_CompleteLine     = UI_CompleteLine;
 
     uii.Rend_Set2DStartTime = re.Set2DInitialShaderTime;
 }
@@ -4049,13 +3055,6 @@ void UI_ResolutionChange(void)
 {
     UIRect2D frame;
 
-    if (com_target_game->integer >= TG_MOHTA) {
-        ui_compass_scale = Cvar_Get("ui_compass_scale", "0.75", CVAR_ARCHIVE | CVAR_LATCH);
-    } else {
-        // Older version doesn't have an adjustable compass, so assume 0.5 by default
-        ui_compass_scale = Cvar_Get("ui_compass_scale", "0.55", CVAR_ARCHIVE | CVAR_LATCH);
-    }
-
     CL_FillUIImports();
     CL_FillUIDef();
 
@@ -4099,28 +3098,12 @@ void UI_ResolutionChange(void)
         developer_console->setFrame(frame);
     }
 
-    if (scoreboardlist) {
-        delete scoreboardlist;
-        scoreboardlist = NULL;
-        UI_CreateScoreboard();
-    }
-
     uie.ResolutionChange();
     menuManager.RealignMenus();
 
     if (view3d) {
         frame = UIRect2D(0, 0, uid.vidWidth, uid.vidHeight);
         view3d->setFrame(frame);
-    }
-
-    if (gmbox) {
-        frame = getDefaultGMBoxRectangle();
-        gmbox->setFrame(frame);
-    }
-
-    if (dmbox) {
-        frame = getDefaultDMBoxRectangle();
-        dmbox->setFrame(frame);
     }
 
     // Added: the Competitive HUD baked at the new size
@@ -4330,17 +3313,6 @@ void UI_LocationPrint_f(void)
 
 /*
 ====================
-UI_LoadInventory_f
-====================
-*/
-void UI_LoadInventory_f(void)
-{
-    UI_CloseInventory();
-    CL_LoadInventory(ui_inventoryfile->string, &client_inv);
-}
-
-/*
-====================
 UI_ClearState
 ====================
 */
@@ -4349,17 +3321,6 @@ void UI_ClearState(void)
     S_FadeSound(0.0);
     UI_ClearCenterPrint();
     UI_CompHud_Clear();
-
-    if (gmbox) {
-        gmbox->Clear();
-    }
-
-    if (dmbox) {
-        dmbox->Clear();
-    }
-
-    // Added in OPM
-    SCR_StopCinematic();
 }
 
 /*
@@ -4397,33 +3358,6 @@ void UI_CheckRestart(void)
     } else if (mini_console) {
         delete mini_console;
         mini_console = NULL;
-    }
-
-    if (ui_gmbox->integer) {
-        if (!gmbox) {
-            UIRect2D frame;
-
-            gmbox = new UIGMBox;
-            frame = getDefaultGMBoxRectangle();
-
-            gmbox->Create(frame, UHudColor, UHudColor, 0);
-            gmbox->setAlwaysOnBottom(true);
-            gmbox->setBorderStyle(border_none);
-        }
-    } else if (gmbox) {
-        delete gmbox;
-        gmbox = NULL;
-    }
-
-    if (!dmbox) {
-        UIRect2D frame;
-
-        dmbox = new UIDMBox;
-        frame = getDefaultDMBoxRectangle();
-
-        dmbox->Create(frame, UHudColor, UHudColor, 0);
-        dmbox->setAlwaysOnBottom(true);
-        dmbox->setBorderStyle(border_outline);
     }
 
     menuManager.CheckRestart();
@@ -4511,42 +3445,7 @@ void UI_TestListCtrl_f(void)
     }
 }
 
-class StatsUpdater : public Listener
-{
-public:
-    CLASS_PROTOTYPE(StatsUpdater);
-
-    void UpdateStats(Event *ev);
-};
-
-Event EV_StatsUpdater_UpdateStats("updatestats", EV_DEFAULT, NULL, NULL, "Update the stats on the missionLog");
-
-CLASS_DECLARATION(Listener, StatsUpdater, NULL) {
-    {NULL, NULL}
-};
-
-static StatsUpdater statsUpdater;
-static str          loadName;
-
-void StatsUpdater::UpdateStats(Event *ev)
-{
-    cvar_t *pMaxClients = Cvar_Get("sv_maxclients", "1", 0);
-
-    if (!com_sv_running->integer || pMaxClients->integer > 1) {
-        return;
-    }
-
-    if (paused && !paused->integer) {
-        CL_AddReliableCommand("stats", qfalse);
-    }
-
-    Event *event = new Event(EV_StatsUpdater_UpdateStats);
-    PostEvent(event, 2.0);
-}
-
-static int  statsRequestTime;
-static bool intermission_stats_up;
-static bool isMissionLogVisible;
+static str loadName;
 
 /*
 ====================
@@ -4572,9 +3471,6 @@ void UI_ShowScoreboard_f(const char *pszMenuName)
             }
         }
 
-        if (scoreboardlist && scoreboardlist->IsVisible()) {
-            scoreboardlist->setShow(false);
-        }
         scoreboard_up = qfalse;
     } else {
         if (scoreboard_menuname.length()) {
@@ -4590,14 +3486,6 @@ void UI_ShowScoreboard_f(const char *pszMenuName)
         }
 
         scoreboard_up = qtrue;
-        if (UI_Menus_Scoreboard(scoreboard_menuname.c_str())) {
-            // (the Reloaded scoreboard: the stock list stays hidden)
-            if (scoreboardlist && scoreboardlist->IsVisible()) {
-                scoreboardlist->setShow(false);
-            }
-        } else if (scoreboardlist && !scoreboardlist->IsVisible()) {
-            scoreboardlist->setShow(true);
-        }
     }
 }
 
@@ -4608,10 +3496,7 @@ UI_ScoreboardShown
 */
 qboolean UI_ScoreboardShown(void)
 {
-    if (UI_Menus_Scoreboard(scoreboard_menuname.c_str())) {
-        return scoreboard_up && scoreboard_menu ? qtrue : qfalse;
-    }
-    return scoreboardlist && scoreboardlist->IsVisible() ? qtrue : qfalse;
+    return UI_Menus_Scoreboard(scoreboard_menuname.c_str()) && scoreboard_up && scoreboard_menu ? qtrue : qfalse;
 }
 
 /*
@@ -4622,9 +3507,6 @@ UI_HideScoreboard_f
 void UI_HideScoreboard_f(void)
 {
     scoreboard_up = qfalse;
-    if (scoreboardlist) {
-        scoreboardlist->setShow(false);
-    }
 
     if (scoreboard_menuname.length()) {
         // Fixed in 2.30 (scoreboard_menu check)
@@ -4632,132 +3514,6 @@ void UI_HideScoreboard_f(void)
             scoreboard_menu->ForceHide();
         }
     }
-}
-
-class ScoreboardListItem : public UIListCtrlItem
-{
-    str      strings[8];
-    qboolean bColorSet;
-    UColor   backColor;
-    UColor   textColor;
-    qboolean bTitleItem;
-
-public:
-    ScoreboardListItem();
-
-    void SetListItemStrings(
-        const char *string1,
-        const char *string2,
-        const char *string3,
-        const char *string4,
-        const char *string5,
-        const char *string6,
-        const char *string7,
-        const char *string8
-    );
-    virtual griditemtype_t getListItemType(int which) const;
-    virtual str            getListItemString(int i) const;
-    virtual int            getListItemValue(int which) const;
-    virtual void           DrawListItem(int iColumn, const UIRect2D& drawRect, bool bSelected, UIFont *pFont);
-    void                   SetColors(const UColor& newTextColor, const UColor& newBackColor);
-    void                   ClearColors(void);
-    void                   SetTitleItem(qboolean bSet);
-    virtual qboolean       IsHeaderEntry(void) const;
-};
-
-ScoreboardListItem::ScoreboardListItem()
-{
-    bColorSet  = false;
-    bTitleItem = false;
-}
-
-void ScoreboardListItem::DrawListItem(int iColumn, const UIRect2D& drawRect, bool bSelected, UIFont *pFont)
-{
-    DrawBox(drawRect, backColor, 1.0);
-    pFont->setColor(textColor);
-    pFont->Print(
-        (drawRect.pos.x + 1) / uid.scaleRes[0],
-        drawRect.pos.y / uid.scaleRes[1],
-        Sys_LV_CL_ConvertString(getListItemString(iColumn)),
-        -1,
-        uid.scaleRes
-    );
-
-    if (bTitleItem) {
-        UIRect2D lineRect;
-        UColor   lineColor = backColor;
-
-        lineRect = drawRect;
-        lineRect.pos.y += lineRect.size.height - 2.0;
-        lineRect.size.height = 2.0;
-
-        DrawBox(lineRect, lineColor, 1.0);
-    }
-}
-
-void ScoreboardListItem::SetColors(const UColor& newTextColor, const UColor& newBackColor)
-{
-    textColor = newTextColor;
-    backColor = newBackColor;
-    bColorSet = true;
-}
-
-void ScoreboardListItem::ClearColors(void)
-{
-    bColorSet = false;
-}
-
-/*
-====================
-UI_CreateScoreboard
-====================
-*/
-void UI_CreateScoreboard(void)
-{
-    int         i;
-    int         iColumnWidth;
-    float       w, h, x, y;
-    float       fColumnScale;
-    float       fR, fG, fB, fA;
-    float       fFontR, fFontG, fFontB, fFontA;
-    const char *pszColumnName;
-
-    if (!cge) {
-        return;
-    }
-
-    scoreboardlist = new UIListCtrl;
-    cge->CG_GetScoreBoardPosition(&x, &y, &w, &h);
-    scoreboard_x = x;
-    scoreboard_y = y;
-    scoreboard_w = w;
-    scoreboard_h = h;
-
-    SCR_AdjustFrom640(&x, &y, &w, &h);
-    fColumnScale = uid.vidWidth / 640.0;
-    cge->CG_GetScoreBoardColor(&fR, &fG, &fB, &fA);
-    cge->CG_GetScoreBoardFontColor(&fFontR, &fFontG, &fFontB, &fFontA);
-
-    scoreboardlist->InitFrame(NULL, x, y, w, h, -1, "verdana-12");
-    scoreboardlist->setBackgroundColor(UColor(fR, fG, fB, fA), true);
-    scoreboardlist->setForegroundColor(UColor(fFontR, fFontG, fFontB, fFontA));
-
-    for (i = 0; i < 8; i++) {
-        pszColumnName = cge->CG_GetColumnName(i, &iColumnWidth);
-        if (!pszColumnName) {
-            break;
-        }
-
-        scoreboardlist->AddColumn(pszColumnName, i, iColumnWidth * fColumnScale + 0.5, false, false);
-    }
-
-    scoreboard_header = cge->CG_GetScoreBoardDrawHeader();
-    scoreboardlist->setShow(false);
-    scoreboardlist->AllowActivate(false);
-    scoreboardlist->setAlwaysOnBottom(true);
-    scoreboardlist->SetUseScrollBar(false);
-    scoreboardlist->SetDrawHeader(scoreboard_header);
-    scoreboardlist->setHeaderFont("facfont-20");
 }
 
 /*
@@ -4780,81 +3536,7 @@ void UI_SetScoreBoardItem(
     qboolean     bIsHeader
 )
 {
-    int                 i;
-    float               x, y, w, h;
-    ScoreboardListItem *pItem;
-
-    if (iItemNumber >= 64) {
-        return;
-    }
-
-    if (scoreboardlist) {
-        cge->CG_GetScoreBoardPosition(&x, &y, &w, &h);
-
-        // Recreate the scoreboard if it has different rect
-        if (scoreboard_x != x || scoreboard_y != y || scoreboard_w != w || scoreboard_h != h
-            || scoreboard_header != cge->CG_GetScoreBoardDrawHeader()) {
-            delete scoreboardlist;
-            scoreboardlist = NULL;
-            UI_CreateScoreboard();
-        }
-    } else {
-        UI_CreateScoreboard();
-    }
-
-    if (scoreboardlist) {
-        if (iItemNumber + 1 > scoreboardlist->getNumItems()) {
-            pItem = new ScoreboardListItem;
-            scoreboardlist->AddItem(pItem);
-        } else {
-            pItem = (ScoreboardListItem *)scoreboardlist->GetItem(iItemNumber + 1);
-        }
-
-        if (pItem) {
-            if (!pszData1) {
-                pszData1 = "";
-            }
-            if (!pszData2) {
-                pszData2 = "";
-            }
-            if (!pszData3) {
-                pszData3 = "";
-            }
-            if (!pszData4) {
-                pszData4 = "";
-            }
-            if (!pszData5) {
-                pszData5 = "";
-            }
-            if (!pszData6) {
-                pszData6 = "";
-            }
-            if (!pszData7) {
-                pszData7 = "";
-            }
-            if (!pszData8) {
-                pszData8 = "";
-            }
-
-            pItem->SetListItemStrings(pszData1, pszData2, pszData3, pszData4, pszData5, pszData6, pszData7, pszData8);
-
-            if (pTextColor && pBackColor) {
-                UColor textColor, backColor;
-
-                textColor = UColor(pTextColor[0], pTextColor[1], pTextColor[2], pTextColor[3]);
-                backColor = UColor(pBackColor[0], pBackColor[1], pBackColor[2], pBackColor[3]);
-                pItem->SetColors(textColor, backColor);
-            } else {
-                pItem->ClearColors();
-            }
-
-            for (i = 0; i < 8; i++) {
-                pItem->getListItemString(i);
-            }
-
-            pItem->SetTitleItem(bIsHeader);
-        }
-    }
+    // nothing: the stock scoreboard list is gone (kept for the cgame, cgi.UI_SetScoreBoardItem)
 }
 
 /*
@@ -4864,9 +3546,7 @@ UI_DeleteScoreBoardItems
 */
 void UI_DeleteScoreBoardItems(int iMaxIndex)
 {
-    while (iMaxIndex + 1 <= scoreboardlist->getNumItems()) {
-        scoreboardlist->DeleteItem(scoreboardlist->getNumItems());
-    }
+    // nothing: as UI_SetScoreBoardItem
 }
 
 /*
@@ -4876,53 +3556,12 @@ UI_Hud_f
 */
 void UI_Hud_f(void)
 {
-    qboolean hide;
-
     if (Cmd_Argc() != 2) {
         Com_Printf("Usage: ui_hud [1|0]");
         return;
     }
 
     ui_hud = atoi(Cmd_Argv(1));
-    hide   = !ui_hud;
-
-    if (hud_weapons && hide) {
-        hud_weapons->ForceHide();
-        ui_weapHudTime = 0;
-    }
-
-    if (hud_items && hide) {
-        hud_items->ForceHide();
-        ui_itemHudTime = 0;
-    }
-
-    if (hud_health) {
-        if (hide) {
-            hud_health->ForceHide();
-        } else {
-            hud_health->ForceShow();
-        }
-    }
-    if (hud_ammo) {
-        if (hide) {
-            hud_ammo->ForceHide();
-        } else {
-            hud_ammo->ForceShow();
-        }
-    }
-    if (hud_compass) {
-        if (hide) {
-            hud_compass->ForceHide();
-        } else {
-            hud_compass->ForceShow();
-        }
-    }
-
-    if (hide) {
-        UI_HideHudList();
-    } else {
-        UI_ShowHudList();
-    }
 
     if (ui_hud) {
         Cvar_Set("cg_hud", "1");
@@ -4948,173 +3587,6 @@ void UI_ClearConsole_f(void)
 
     if (developer_console) {
         developer_console->Clear();
-    }
-}
-
-/*
-====================
-CL_FinishedIntro
-====================
-*/
-qboolean CL_FinishedIntro(void)
-{
-    return cls.startStage == 0;
-}
-
-/*
-====================
-CL_FinishedStartStage
-====================
-*/
-void CL_FinishedStartStage(void)
-{
-    int wait;
-
-    switch (cls.startStage++) {
-    case 1:
-        Cbuf_ExecuteText(EXEC_NOW, "cinematic EAlogo.RoQ\n");
-        break;
-    case 2:
-        intro_stage.alpha_start = 0.0;
-        intro_stage.alpha_end   = 1.0;
-
-        wait                  = ui_titlescreen_fadein->value * 1000.0;
-        intro_stage.fadetime  = wait;
-        intro_stage.starttime = cls.realtime;
-        intro_stage.endtime   = cls.realtime + wait;
-
-        intro_stage.material = uWinMan.RegisterShader("mohaa_title");
-        break;
-    case 3:
-        intro_stage.alpha_start = 1.0;
-        intro_stage.alpha_end   = 1.0;
-
-        wait                  = ui_legalscreen_stay->value * 1000.0;
-        intro_stage.fadetime  = 0.0;
-        intro_stage.starttime = cls.realtime;
-        intro_stage.endtime   = cls.realtime + wait;
-        break;
-    case 4:
-        intro_stage.alpha_start = 1.0;
-        intro_stage.alpha_end   = 0.0;
-
-        wait                  = ui_titlescreen_fadeout->value * 1000.0;
-        intro_stage.fadetime  = wait;
-        intro_stage.starttime = cls.realtime;
-        intro_stage.endtime   = cls.realtime + wait;
-        break;
-    case 5:
-        intro_stage.alpha_start = 0.0;
-        intro_stage.alpha_end   = 1.0;
-
-        wait                  = ui_legalscreen_fadein->value * 1000.0;
-        intro_stage.fadetime  = wait;
-        intro_stage.starttime = cls.realtime;
-        intro_stage.endtime   = cls.realtime + wait;
-
-        intro_stage.material = uWinMan.RegisterShader("legal");
-        break;
-    case 6:
-        intro_stage.alpha_start = 1.0;
-        intro_stage.alpha_end   = 1.0;
-
-        wait                  = ui_legalscreen_stay->value * 1000.0;
-        intro_stage.fadetime  = 0.0;
-        intro_stage.starttime = cls.realtime;
-        intro_stage.endtime   = cls.realtime + wait;
-        break;
-    case 7:
-        intro_stage.alpha_start = 1.0;
-        intro_stage.alpha_end   = 0.0;
-
-        wait                  = ui_legalscreen_fadeout->value * 1000.0;
-        intro_stage.fadetime  = wait;
-        intro_stage.starttime = cls.realtime;
-        intro_stage.endtime   = cls.realtime + wait;
-        break;
-    case 8:
-        if (com_target_game->integer >= target_game_e::TG_MOHTA) {
-            cls.startStage = 0;
-            return;
-        }
-
-        Cbuf_ExecuteText(EXEC_NOW, "cinematic 2015intro.RoQ\n");
-        break;
-    case 9:
-        Cbuf_ExecuteText(EXEC_NOW, "cinematic intro.RoQ\n");
-        break;
-    case 10:
-        cls.startStage = 0;
-        break;
-    default:
-        break;
-    }
-}
-
-/*
-====================
-UI_StartStageKeyEvent
-====================
-*/
-void UI_StartStageKeyEvent(void)
-{
-    switch (cls.startStage) {
-    case 2:
-        if (ui_skip_eamovie->integer) {
-            SCR_StopCinematic();
-        }
-        break;
-    case 3:
-    case 4:
-    case 5:
-        if (ui_skip_titlescreen->integer) {
-            cls.startStage = 5;
-            CL_FinishedStartStage();
-        }
-        break;
-    case 6:
-    case 7:
-    case 8:
-        if (ui_skip_legalscreen->integer) {
-            cls.startStage = 8;
-            CL_FinishedStartStage();
-        }
-        break;
-    case 9:
-    case 10:
-        SCR_StopCinematic();
-        break;
-    default:
-        break;
-    }
-}
-
-/*
-====================
-UI_StartIntro_f
-====================
-*/
-void UI_StartIntro_f(void)
-{
-    cls.startStage = 1;
-    IN_MouseOff();
-    CL_FinishedStartStage();
-}
-
-/*
-====================
-CL_TryStartIntro
-====================
-*/
-void CL_TryStartIntro(void)
-{
-    // the console opens at startup only in developer mode (Metal port; upstream opened it whenever no intro played)
-    if (developer->integer) {
-        UI_ToggleConsole();
-    } else if (cl_playintro->integer) {
-        // FIXME: no intro from now
-        Cvar_Set(cl_playintro->name, "0");
-        UI_StartIntro_f();
     }
 }
 
@@ -5177,136 +3649,6 @@ static void LoadConsoleRectangle(void)
 
 /*
 ====================
-UI_AddHud_f
-====================
-*/
-void UI_AddHud_f(void)
-{
-    Menu *hud = menuManager.FindMenu(Cmd_Argv(1));
-
-    if (hud) {
-        if (!hudList.ObjectInList(hud)) {
-            hudList.AddObject(hud);
-        }
-
-        hud->ShowMenu(NULL);
-    } else {
-        Com_DPrintf("Hud %s not found in menu system.\n", Cmd_Argv(1));
-    }
-}
-
-/*
-====================
-UI_RemoveHud_f
-====================
-*/
-void UI_RemoveHud_f(void)
-{
-    const char *name = Cmd_Argv(1);
-    Menu       *hud;
-    int         i;
-
-    // Nothing to do unless the hud list holds a menu of that name: cgame removes its stopwatch huds every frame,
-    // and the menu search is the slow part
-    for (i = 1; i <= hudList.NumObjects(); i++) {
-        if (!hudList.ObjectAt(i)->m_name.icmp(name)) {
-            break;
-        }
-    }
-
-    if (i > hudList.NumObjects()) {
-        return;
-    }
-
-    hud = menuManager.FindMenu(name);
-
-    if (hud && hudList.ObjectInList(hud)) {
-        hud->ForceHide();
-        hudList.RemoveObject(hud);
-    }
-}
-
-/*
-====================
-UI_StartServer_f
-====================
-*/
-void UI_StartServer_f(void)
-{
-    const char *map = Cmd_Argv(1);
-
-    if (strlen(map)) {
-        Cbuf_AddText(va("map %s\n", map));
-    }
-}
-
-/*
-====================
-UI_ShowStatistics_f
-====================
-*/
-void UI_ShowStatistics_f()
-{
-    cvar_t *pMaxClients = Cvar_Get("sv_maxclients", "1", 0);
-
-    if (!com_sv_running->integer || pMaxClients->integer > 1) {
-        return;
-    }
-
-    if (missionLog && !isMissionLogVisible) {
-        isMissionLogVisible = true;
-        missionLog->ShowMenu(NULL);
-        IN_MouseOn();
-    }
-
-    if (statsRequestTime + 2000 <= cls.realtime) {
-        if (paused && !paused->integer) {
-            statsRequestTime = cls.realtime;
-            CL_AddReliableCommand("stats", qfalse);
-            Event *event = new Event(EV_StatsUpdater_UpdateStats);
-            statsUpdater.PostEvent(event, 2.0);
-        }
-    }
-}
-
-/*
-====================
-UI_HideStatistics_f
-====================
-*/
-void UI_HideStatistics_f()
-{
-    cvar_t *pMaxClients = Cvar_Get("sv_maxclients", "1", 0);
-
-    if (!com_sv_running->integer || pMaxClients->integer > 1) {
-        return;
-    }
-
-    if (missionLog) {
-        isMissionLogVisible = false;
-        missionLog->HideMenu(&EV_HideMenu);
-        IN_MouseOff();
-    }
-
-    statsUpdater.CancelEventsOfType(EV_StatsUpdater_UpdateStats);
-}
-
-/*
-====================
-UI_SalesScreen_f
-====================
-*/
-void UI_SalesScreen_f()
-{
-    if (random() > 0.5) {
-        Cbuf_AddText("pushmenu sales_splash1\n");
-    } else {
-        Cbuf_AddText("pushmenu sales_splash2\n");
-    }
-}
-
-/*
-====================
 CL_ShutdownUI
 ====================
 */
@@ -5332,7 +3674,6 @@ void CL_ShutdownUI(void)
     Cmd_RemoveCommand("togglemenu");
     Cmd_RemoveCommand("loadmenu");
     Cmd_RemoveCommand("maplist");
-    Cmd_RemoveCommand("dmmapselect");
     Cmd_RemoveCommand("ui_startdmmap");
     Cmd_RemoveCommand("viewspawnlist");
     Cmd_RemoveCommand("lod_spawnlist");
@@ -5340,7 +3681,6 @@ void CL_ShutdownUI(void)
     Cmd_RemoveCommand("notepad");
     Cmd_RemoveCommand("editscript");
     Cmd_RemoveCommand("editshader");
-    Cmd_RemoveCommand("inv_restart");
     Cmd_RemoveCommand("ui_showmouse");
     Cmd_RemoveCommand("ui_hidemouse");
     Cmd_RemoveCommand("ui_saveconsolepos");
@@ -5350,31 +3690,12 @@ void CL_ShutdownUI(void)
     Cmd_RemoveCommand("ui_hud");
     Cmd_RemoveCommand("ui_resetcvars");
     Cmd_RemoveCommand("ui_checkrestart");
-    Cmd_RemoveCommand("ui_addhud");
-    Cmd_RemoveCommand("ui_removehud");
     Cmd_RemoveCommand("centerprint");
     Cmd_RemoveCommand("locationprint");
-    Cmd_RemoveCommand("startserver");
     Cmd_RemoveCommand("finishloadingscreen");
-    Cmd_RemoveCommand("playermodel");
-    Cmd_RemoveCommand("ui_applyplayermodel");
     Cmd_RemoveCommand("ui_getplayermodel");
     Cmd_RemoveCommand("devcon");
-    Cmd_RemoveCommand("+statistics");
-    Cmd_RemoveCommand("-statistics");
 
-    for (int i = 0; i < hudList.NumObjects(); i++) {
-        hudList.RemoveObjectAt(i);
-    }
-
-    // Removed in 2.0
-    //  Crosshair is now handled by the cgame module
-    //crosshairhud       = menuManager.FindMenu("crosshair");
-    hud_weapons        = menuManager.FindMenu("hud_weapons");
-    hud_items          = menuManager.FindMenu("hud_items");
-    hud_health         = menuManager.FindMenu("hud_health");
-    hud_compass        = menuManager.FindMenu("hud_compass");
-    hud_boss           = menuManager.FindMenu("hud_boss");
     ui_pConnectingMenu = menuManager.FindMenu("connecting");
 
     // delete base hud
@@ -5399,46 +3720,6 @@ void CL_ShutdownUI(void)
         mini_console = NULL;
     }
 
-    // delete game hud
-    if (crosshairhud) {
-        crosshairhud = NULL;
-    }
-    if (hud_weapons) {
-        hud_weapons = NULL;
-    }
-    if (hud_items) {
-        hud_items = NULL;
-    }
-    if (hud_health) {
-        hud_health = NULL;
-    }
-    if (hud_ammo) {
-        hud_ammo = NULL;
-    }
-    if (hud_compass) {
-        hud_compass = NULL;
-    }
-    if (hud_boss) {
-        hud_boss = NULL;
-    }
-
-    // delete informations hud
-    if (scoreboardlist) {
-        delete scoreboardlist;
-        scoreboardlist = NULL;
-    }
-    if (gmbox) {
-        delete gmbox;
-        gmbox = NULL;
-    }
-    if (dmbox) {
-        delete dmbox;
-        dmbox = NULL;
-    }
-
-    // clear inventory
-    client_inv.Clear();
-
     // shutdown the UI
     uie.Shutdown();
 
@@ -5446,6 +3727,77 @@ void CL_ShutdownUI(void)
     menuManager.DeleteAllMenus();
 
     cls.uiStarted = false;
+}
+
+/*
+====================
+UI_StockMenuGone
+
+Added: a stock menu file nothing shows any more (the Reloaded menus and
+the URC HUD are its screens): not loaded. Named one by one, the games'
+own (Allied Assault's, Spearhead's and Breakthrough's pk3s): a map's or a
+mod's menus load, under these names too (FS_FileInGamePak). What still loads: the load screens (the Reloaded load
+screen shows their pictures), the end of a level's (StatsScreen_*,
+mission_*: the end screen's), what the game scripts show (the briefings,
+the title cards, credits1, dday1 and 2) and the developer tools' menus
+====================
+*/
+static qboolean UI_StockMenuGone(const char *file)
+{
+    static const char *const gone[] = {
+        // the stock HUD's (the URC HUD in its place)
+        "hud_ammo_15cmc36", "hud_ammo_aagun", "hud_ammo_abturretmain", "hud_ammo_abturretmini", "hud_ammo_bar",
+        "hud_ammo_bazooka", "hud_ammo_beretta", "hud_ammo_bohler", "hud_ammo_bomba", "hud_ammo_bombabreda",
+        "hud_ammo_breda", "hud_ammo_carcano", "hud_ammo_colt45", "hud_ammo_delisle", "hud_ammo_empty",
+        "hud_ammo_flak88", "hud_ammo_g43", "hud_ammo_garand", "hud_ammo_granatwerfer", "hud_ammo_kar98",
+        "hud_ammo_kar98mortar", "hud_ammo_kar98sniper", "hud_ammo_l42a1", "hud_ammo_landmineallies",
+        "hud_ammo_landmineaxis", "hud_ammo_lee-enfield", "hud_ammo_m2grenade", "hud_ammo_mg42",
+        "hud_ammo_mills_grenade", "hud_ammo_minedetector", "hud_ammo_minedetector_axis", "hud_ammo_modello",
+        "hud_ammo_moschetto", "hud_ammo_mosinnagantrifle", "hud_ammo_mp40", "hud_ammo_mp44",
+        "hud_ammo_nagantrevolver", "hud_ammo_nebelhandgranate", "hud_ammo_nebelwerfer", "hud_ammo_p38",
+        "hud_ammo_panzercannon", "hud_ammo_panzerschreck", "hud_ammo_piat", "hud_ammo_portableturret",
+        "hud_ammo_ppsh", "hud_ammo_pzb41", "hud_ammo_rdg-1smokegrenade", "hud_ammo_russian_f1_grenade",
+        "hud_ammo_shotgun", "hud_ammo_silencedpistol", "hud_ammo_smokegrenade", "hud_ammo_springfield",
+        "hud_ammo_steilhandgranate", "hud_ammo_sten", "hud_ammo_svt", "hud_ammo_t34_dtm", "hud_ammo_t34cannon",
+        "hud_ammo_thompson", "hud_ammo_vickers", "hud_ammo_webleyrevolver", "hud_compass", "hud_fraglimit",
+        "hud_fuse", "hud_fuse_wet", "hud_health", "hud_items", "hud_score", "hud_stopwatch", "hud_timelimit",
+        "hud_weapons",
+        // the main menu's pages, Options' and the old Campaign's (the Reloaded menus' screens; Training's end, its
+        // briefing room, Campaign's missions)
+        "main", "options_main", "advancedoptions", "audio options", "video options", "controls", "calibrate_monitor",
+        "loadsave", "loadsave_mp", "medals", "war_records", "briefing_room", "mission1difficulty", "mission2difficulty",
+        "mission3difficulty", "mission4difficulty", "mission5difficulty", "mission6difficulty", "missiont1difficulty",
+        "mission1_briefing", "mission2_briefing", "mission3_briefing", "mission4_briefing", "mission5_briefing",
+        "mission6_briefing",
+        // Multiplayer's: the browsers, Host, the map rotation, Instant Action
+        "multiplayer", "multiplayeroptions", "multiplayerstart", "multiplayerstart_ffa", "multiplayerstart_lib",
+        "multiplayerstart_obj", "multiplayerstart_round", "multiplayerstart_team", "multiplayerstart_tow",
+        "joingame", "joininternetgame", "joinlangame", "joinnetgame", "filtermenu", "map_rotation_setup",
+        "instant_action_menu",
+        // a game's: the Esc menu, the team and weapon menus, the scoreboards, the votes
+        "dm_main", "dm_teamselect", "obj_teamselect", "dm_ffamodelselect", "dm_primaryselect",
+        "dm_primaryselect_british", "dm_primaryselect_german", "dm_primaryselect_italian",
+        "dm_primaryselect_russian", "dm_scoreboard", "dm_round_scoreboard", "obj_scoreboard", "tow_scoreboard",
+        "lib_scoreboard", "votemain", "votecast", "votesubclient", "votesubfloat", "votesubinteger", "votesublist",
+        "votesubtext",
+        // the connect's boxes
+        "connecting", "errormessage", "badserveraddy", "disconnected", "serverdisconnected", "servertimeout",
+        "serverfull", "wrongversion",
+        // screens no game shows: the startup's logo, the demo's help, the update check's, the stock crosshair, briefing
+        // slides no briefing uses
+        "eascreen", "patch_available", "demohelp", "crosshair", "briefing2c", "briefing2d", "briefing3f", "briefing3g",
+        "briefing3h",
+    };
+    char name[MAX_QPATH];
+
+    COM_StripExtension(file, name, sizeof(name));
+    for (size_t i = 0; i < ARRAY_LEN(gone); i++) {
+        if (!Q_stricmp(name, gone[i])) {
+            // Fixed: only the games' own file (a mod's or a map's of the same name was skipped too)
+            return FS_FileInGamePak(va("ui/%s", file));
+        }
+    }
+    return qfalse;
 }
 
 /*
@@ -5463,23 +3815,18 @@ void CL_InitializeUI(void)
 
     // Register all variables
     ui_minicon         = Cvar_Get("ui_minicon", "0", 1);
-    ui_gmbox           = Cvar_Get("ui_gmbox", "1", 1);
     ui_consoleposition = Cvar_Get("ui_consoleposition", "", 1);
     // the console key works by default (the Metal port's default, upstream's is 0)
     ui_console         = Cvar_Get("ui_console", "1", 1);
-    ui_crosshair       = Cvar_Get("ui_crosshair", "1", 1);
-    ui_weaponsbar      = Cvar_Get("ui_weaponsbar", "1", 1);
-    ui_weaponsbartime  = Cvar_Get("ui_weaponsbartime", "2500", 1);
-    ui_itemsbar        = Cvar_Get("ui_itemsbar", "0", 1);
+    con_scrollback     = Cvar_Get("con_scrollback", va("%d", MAX_CONSOLE_ITEMS), CVAR_ARCHIVE);
     sound_overlay      = Cvar_Get("soundoverlay", "0", 0);
     ui_debugload       = Cvar_Get("ui_debugload", "0", 0);
     Cvar_Get("ui_signshader", "", 0);
-    ui_compass             = Cvar_Get("ui_compass", "1", 0);
+    Cvar_Get("ui_compass", "1", 0); // (the Competitive HUD's compass, shown with no radar)
     ui_newvidmode          = Cvar_Get("ui_newvidmode", "-1", 0);
-    ui_inventoryfile       = Cvar_Get("ui_inventoryfile", "global/inventory.txt", 0);
     ui_drawcoords          = Cvar_Get("ui_drawcoords", "0", 0);
-    ui_health_start        = Cvar_Get("ui_health_start", "0", 0);
-    ui_health_end          = Cvar_Get("ui_health_end", "0", 0);
+    Cvar_Get("ui_health_start", "0", 0);
+    Cvar_Get("ui_health_end", "0", 0);
     ui_GunneryEvaluation   = Cvar_Get("ui_GunneryEvaluation", "0", 0);
     ui_GroinShots          = Cvar_Get("ui_GroinShots", "0", 0);
     ui_RightArmShots       = Cvar_Get("ui_RightArmShots", "0", 0);
@@ -5497,27 +3844,13 @@ void CL_InitializeUI(void)
     ui_NumComplete         = Cvar_Get("ui_NumComplete", "0", 0);
     ui_NumHits             = Cvar_Get("ui_NumHits", "0", 0);
     ui_NumShotsFired       = Cvar_Get("ui_NumShotsFired", "0", 0);
-    ui_gmboxspam           = Cvar_Get("ui_gmboxspam", "1", 0);
     UI_CompHud_Init();
     UI_Menus_Init();
     UI_Extras_Init();
     ui_gotmedal            = Cvar_Get("ui_gotmedal", "0", 0);
     ui_success             = Cvar_Get("ui_success", "0", 0);
     ui_failed              = Cvar_Get("ui_failed", "0", 0);
-    ui_returnmenu          = Cvar_Get("ui_returnmenu", "0", 0);
-    ui_skip_eamovie        = Cvar_Get("ui_skip_eamovie", "1", 0);
-    ui_skip_titlescreen    = Cvar_Get("ui_skip_titlescreen", "1", 0);
-    ui_skip_legalscreen    = Cvar_Get("ui_skip_legalscreen", "1", 0);
-    ui_titlescreen_fadein  = Cvar_Get("ui_titlescreen_fadein", "1", 0);
-    ui_titlescreen_fadeout = Cvar_Get("ui_titlescreen_fadeout", "1", 0);
-    ui_titlescreen_stay    = Cvar_Get("ui_titlescreen_stay", "3", 0);
-    ui_legalscreen_fadein  = Cvar_Get("ui_legalscreen_fadein", "1", 0);
-    ui_legalscreen_fadeout = Cvar_Get("ui_legalscreen_fadeout", "1", 0);
-    ui_legalscreen_stay    = Cvar_Get("ui_legalscreen_stay", "3", 0);
     cl_greenfps            = Cvar_Get("cl_greenfps", "0", 1);
-    // no intro videos unless asked for (the Metal port's default, upstream's is 1)
-    cl_playintro           = Cvar_Get("cl_playintro", "0", 0);
-    cl_movieaudio          = Cvar_Get("cl_movieaudio", "1", 0);
     Cvar_Get("ui_startmap", "", 1);
     Cvar_Get("dlg_badsave", "This save game is invalid", 0);
 
@@ -5529,9 +3862,6 @@ void CL_InitializeUI(void)
     // Added: the head icons' pictures (the outlines baked)
     UI_CompHud_HeadIcons();
     uie.Init();
-
-    UI_LoadInventory_f();
-    UI_CreateScoreboard();
 
     // New since mohta
     // Version number
@@ -5551,7 +3881,6 @@ void CL_InitializeUI(void)
     Cmd_AddCommand("togglemenu", UI_ToggleMenu_f);
     Cmd_AddCommand("loadmenu", UI_LoadMenu_f);
     Cmd_AddCommand("maplist", UI_MapList_f);
-    Cmd_AddCommand("dmmapselect", UI_DMMapSelect_f);
     Cmd_AddCommand("ui_startdmmap", UI_StartDMMap_f);
     Cmd_AddCommand("viewspawnlist", UI_ViewSpawnList_f);
     Cmd_AddCommand("lod_spawnlist", UI_LODSpawnList_f);
@@ -5560,7 +3889,6 @@ void CL_InitializeUI(void)
     Cmd_AddCommand("editscript", UI_EditScript_f);
     Cmd_AddCommand("editshader", UI_EditShader_f);
     Cmd_AddCommand("editspecificshader", UI_EditSpecificShader_f);
-    Cmd_AddCommand("inv_restart", UI_LoadInventory_f);
     Cmd_AddCommand("ui_showmouse", UI_ShowMouse_f);
     Cmd_AddCommand("ui_hidemouse", UI_HideMouse_f);
     Cmd_AddCommand("ui_saveconsolepos", SaveConsoleRectangle);
@@ -5572,19 +3900,8 @@ void CL_InitializeUI(void)
     Cmd_AddCommand("ui_checkrestart", UI_CheckRestart);
     Cmd_AddCommand("centerprint", UI_CenterPrint_f);
     Cmd_AddCommand("locationprint", UI_LocationPrint_f);
-    Cmd_AddCommand("ui_addhud", UI_AddHud_f);
-    Cmd_AddCommand("ui_removehud", UI_RemoveHud_f);
-    Cmd_AddCommand("startserver", UI_StartServer_f);
     Cmd_AddCommand("finishloadingscreen", UI_FinishLoadingScreen_f);
-    Cmd_AddCommand("playermodel", UI_PlayerModel_f);
-    Cmd_AddCommand("ui_applyplayermodel", UI_ApplyPlayerModel_f);
     Cmd_AddCommand("ui_getplayermodel", UI_GetPlayerModel_f);
-    Cmd_AddCommand("+statistics", UI_ShowStatistics_f);
-    Cmd_AddCommand("-statistics", UI_HideStatistics_f);
-    Cmd_AddCommand("setreturnmenu", UI_SetReturnMenuToCurrent);
-    Cmd_AddCommand("gotoreturnmenu", UI_PushReturnMenu_f);
-    Cmd_AddCommand("salesscreen", UI_SalesScreen_f);
-    Cmd_AddCommand("launchgamespy", UI_LaunchGameSpy_f);
 
     if (developer->integer) {
         UColor bgColor;
@@ -5610,8 +3927,6 @@ void CL_InitializeUI(void)
     view3d->setName("view3d");
     view3d->InitSubtitle();
 
-    memset(&intro_stage, 0, sizeof(intro_stage));
-
     // Register the loading material
     ui_static_materials.loading = uWinMan.RegisterShader("textures/menu/loading");
 
@@ -5635,22 +3950,6 @@ void CL_InitializeUI(void)
         dm_console = getNewDMConsole();
     }
 
-    // Create the game message box
-    if (ui_gmbox->integer && !gmbox) {
-        gmbox = new UIGMBox;
-        gmbox->Create(getDefaultGMBoxRectangle(), UHudColor, UHudColor, 0.0);
-        gmbox->setAlwaysOnBottom(true);
-        gmbox->setBorderStyle(border_none);
-    }
-
-    // Create the deathmatch message box
-    if (!dmbox) {
-        dmbox = new UIDMBox;
-        dmbox->Create(getDefaultDMBoxRectangle(), UHudColor, UHudColor, 0.0);
-        dmbox->setAlwaysOnBottom(true);
-        dmbox->setBorderStyle(border_outline);
-    }
-
     // Load all urc files
     // Added: their faces baked meanwhile on worker threads (registered at the first frame, in the order asked for)
     UI_BakeBatch(true);
@@ -5659,6 +3958,9 @@ void CL_InitializeUI(void)
     for (i = 0; i < nfiles; i++) {
         char szFilename[MAX_QPATH];
 
+        if (UI_StockMenuGone(filenames[i])) {
+            continue;
+        }
         Com_sprintf(szFilename, sizeof(szFilename), "ui/%s", filenames[i]);
         new UILayout(szFilename);
     }
@@ -5667,51 +3969,13 @@ void CL_InitializeUI(void)
 
     uWinMan.CreateMenus();
 
-    // find the crosshair
-    // Removed in 2.0
-    //  Crosshair is now handled by the cgame module
-    //crosshairhud = menuManager.FindMenu("crosshair");
-    // find weapons hud
-    hud_weapons = menuManager.FindMenu("hud_weapons");
-    // find items hud
-    hud_items = menuManager.FindMenu("hud_items");
-    // find the health hud
-    hud_health = menuManager.FindMenu("hud_health");
-    // find the compass hud
-    hud_compass = menuManager.FindMenu("hud_compass");
-    // find the boss health hud
-    hud_boss = menuManager.FindMenu("hud_boss");
-    // find the stats screen
-    missionLog = menuManager.FindMenu("StatsScreen");
     // find the connection menu
     ui_pConnectingMenu = menuManager.FindMenu("connecting");
-
-    if (crosshairhud) {
-        crosshairhud->ShowMenu(NULL);
-    }
-    if (hud_health) {
-        hud_health->ShowMenu(NULL);
-    }
-    if (hud_compass) {
-        hud_compass->ShowMenu(NULL);
-    }
-
-    // find the main menu
-    mainmenu = menuManager.FindMenu("main");
 
     IN_MouseOn();
 
     // realign menus
     menuManager.RealignMenus();
-
-    // the message boxes, made before the compass hud was loaded
-    if (gmbox) {
-        gmbox->setFrame(getDefaultGMBoxRectangle());
-    }
-
-    if (dmbox) {
-        dmbox->setFrame(getDefaultDMBoxRectangle());
-    }
 
     // Added: the Competitive HUD's pictures begun ahead of the first map's load
     UI_CompHud_PreBake(qtrue);
@@ -5721,8 +3985,9 @@ void CL_InitializeUI(void)
 
     cls.uiStarted = qtrue;
 
-    if (!com_dedicated->integer) {
-        CL_TryStartIntro();
+    // the console opens at startup in developer mode (upstream opened it whenever no intro played)
+    if (!com_dedicated->integer && developer->integer) {
+        UI_ToggleConsole();
     }
 }
 
@@ -6129,10 +4394,14 @@ void UI_BeginLoad(const char *pszMapName)
         ui_pLoadingMenu        = menuManager.FindMenu(ui_sCurrentLoadingMenu);
     }
 
-    // Added: the Reloaded load screen, the stock one's picture in it (cl_uimenus.cpp)
-    if (UI_Menus_Loading(ui_pLoadingMenu, pszMapName)) {
-        ui_sCurrentLoadingMenu = "reloaded_loading";
-        ui_pLoadingMenu        = menuManager.FindMenu(ui_sCurrentLoadingMenu);
+    // Added: the Reloaded load screen, the stock one's pictures in it (cl_uimenus.cpp)
+    {
+        const char *ours = UI_Menus_Loading(ui_pLoadingMenu, pszMapName);
+
+        if (ours) {
+            ui_sCurrentLoadingMenu = ours;
+            ui_pLoadingMenu        = menuManager.FindMenu(ui_sCurrentLoadingMenu);
+        }
     }
     ui_loadWhat[0] = 0;
 
@@ -6352,50 +4621,4 @@ void TestListItem::DrawListItem(int iColumn, const UIRect2D& drawRect, bool bSel
 qboolean TestListItem::IsHeaderEntry(void) const
 {
     return qfalse;
-}
-
-void ScoreboardListItem::SetListItemStrings(
-    const char *string1,
-    const char *string2,
-    const char *string3,
-    const char *string4,
-    const char *string5,
-    const char *string6,
-    const char *string7,
-    const char *string8
-)
-{
-    strings[0] = string1;
-    strings[1] = string2;
-    strings[2] = string3;
-    strings[3] = string4;
-    strings[4] = string5;
-    strings[5] = string6;
-    strings[6] = string7;
-    strings[7] = string8;
-}
-
-griditemtype_t ScoreboardListItem::getListItemType(int i) const
-{
-    return bColorSet != 0 ? TYPE_OWNERDRAW : TYPE_STRING;
-}
-
-str ScoreboardListItem::getListItemString(int i) const
-{
-    return strings[i];
-}
-
-int ScoreboardListItem::getListItemValue(int i) const
-{
-    return atoi(strings[i]);
-}
-
-void ScoreboardListItem::SetTitleItem(qboolean bSet)
-{
-    bTitleItem = bSet;
-}
-
-qboolean ScoreboardListItem::IsHeaderEntry(void) const
-{
-    return bTitleItem;
 }

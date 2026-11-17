@@ -47,8 +47,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "../gamespy/q_gamespy.h"
 
-qboolean CL_FinishedIntro(void);
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -169,7 +167,6 @@ static const char *target_game_names[] =
 };
 
 void Com_WriteConfig_f( void );
-void CIN_CloseAllVideos(void);
 
 void Com_InitTargetGame();
 void Com_InitHunkMemory( void );
@@ -507,6 +504,9 @@ void QDECL Com_Error( int code, const char *fmt, ... ) {
 			CL_AbnormalDisconnect();
 			CL_FlushMemory();
 			CL_StartHunkUsers(qfalse);
+			// Added: the screen's update this error may have ended, drawn again from the next frame (last: not
+			// while the error is handled)
+			SCR_AbortUpdate();
 		} else {
             SV_Shutdown(va("Server disconnected: %s", com_errorMessage));
 		}
@@ -522,6 +522,9 @@ void QDECL Com_Error( int code, const char *fmt, ... ) {
 			CL_AbnormalDisconnect();
 			CL_FlushMemory();
 			CL_StartHunkUsers(qfalse);
+			// Added: the screen's update this error may have ended, drawn again from the next frame (last: not
+			// while the error is handled)
+			SCR_AbortUpdate();
 		}
 #endif
 		FS_PureServerSetLoadedPaks("", "");
@@ -2460,11 +2463,8 @@ void Com_Frame( void ) {
     msec = com_frameTime - lastTime;
 
 #ifndef DEDICATED
-	if (com_dedicated->integer || CL_FinishedIntro())
-	{
-		Cbuf_Execute(0);
-		SV_CheckSaveGame();
-	}
+	Cbuf_Execute(0);
+	SV_CheckSaveGame();
 #else
 	// Fixed in OPM
 	//   On dedicated servers, the client part that runs buffered commands is never run.
@@ -2521,9 +2521,7 @@ void Com_Frame( void ) {
 		timeBeforeEvents = Sys_Milliseconds ();
 	}
 	Com_EventLoop();
-	if (CL_FinishedIntro()) {
-		Cbuf_Execute(msec);
-	}
+	Cbuf_Execute(msec);
 
 
 	//
@@ -2924,15 +2922,15 @@ Field_CompleteFilename
 ===============
 */
 void Field_CompleteFilename(const char* dir,
-    const char* ext, qboolean stripExt, qboolean allowNonPureFilesOnDisk)
+    const char* ext, qboolean stripExt, qboolean allowNonPureFilesOnDisk, qboolean wantSubs)
 {
     matchCount = 0;
     shortestMatch[0] = 0;
 
-    FS_FilenameCompletion(dir, ext, stripExt, FindMatches, allowNonPureFilesOnDisk);
+    FS_FilenameCompletion(dir, ext, stripExt, FindMatches, allowNonPureFilesOnDisk, wantSubs);
 
     if (!Field_Complete())
-        FS_FilenameCompletion(dir, ext, stripExt, PrintMatches, allowNonPureFilesOnDisk);
+        FS_FilenameCompletion(dir, ext, stripExt, PrintMatches, allowNonPureFilesOnDisk, wantSubs);
 }
 
 /*

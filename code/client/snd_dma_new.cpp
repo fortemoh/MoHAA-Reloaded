@@ -355,7 +355,11 @@ sfxHandle_t S_RegisterSound(const char *name, int streamed, qboolean force_load)
     int    i;
 
     if (!s_bSoundStarted) {
-        Com_Printf("ERROR:  Trying to register sound %s when soundsystem hasn't started.\n", name);
+        /* Fixed in Omaha: with s_initsound 0 sound is off on purpose, and this
+           printed for every sound cgame played (about 19 lines a second in a match). */
+        if (Cvar_VariableIntegerValue("s_initsound")) {
+            Com_Printf("ERROR:  Trying to register sound %s when soundsystem hasn't started.\n", name);
+        }
         return 0;
     }
 
@@ -495,12 +499,15 @@ void S_StartSound(
     int          streamed
 )
 {
-    if (s_show_sounds->integer > 0 && sfxHandle > 0 && sfxHandle < s_numSfx) {
+    /* Fixed in Omaha: s_show_sounds is created by the omaha driver's init, which
+       S_Init skips with s_initsound 0; it was NULL here and the first sound cgame
+       played (a footstep) crashed the client. */
+    if (s_show_sounds && s_show_sounds->integer > 0 && sfxHandle > 0 && sfxHandle < s_numSfx) {
         Com_DPrintf("S_StartSound: %s\n", s_knownSfx[sfxHandle].name);
     }
 
     if (!s_bSoundStarted) {
-        if (s_show_sounds->integer > 0) {
+        if (s_show_sounds && s_show_sounds->integer > 0) {
             Com_DPrintf("^~^~^ sound system not yet started\n");
         }
         return;

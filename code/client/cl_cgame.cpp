@@ -26,7 +26,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cl_uimenus.h"
 #include "cl_uiextras.h"
 #include "cl_ui.h"
-#include "cl_uiradar.h"
 #include "../corepp/tiki.h"
 #include "../qcommon/localization.h"
 #include "../qcommon/bg_compat.h"
@@ -800,7 +799,6 @@ void CL_InitCGameDLL( clientGameImport_t *cgi, clientGameExport_t **cge ) {
 	cgi->UI_ShowMenu				= UI_ShowMenu;
 	cgi->UI_HideMenu				= UI_HideMenu;
 	cgi->UI_FontStringWidth			= CL_FontStringWidth;
-	cgi->UI_GetObjectivesTop		= UI_GetObjectivesTop;
 	cgi->UI_GetHighResolutionScale  = UI_GetHighResolutionScale;
 	cgi->Key_StringToKeynum			= Key_StringToKeynum;
 	cgi->Key_KeynumToBindString		= Key_KeynumToBindString;
@@ -859,6 +857,10 @@ void CL_InitCGameDLL( clientGameImport_t *cgi, clientGameExport_t **cge ) {
 	cgi->GetRenderTimeFraction		= CL_RenderTimeFraction;
 	cgi->R_DrawBoxes				= re.DrawBoxes;
 	cgi->UI_DrawZoomOverlay			= UI_DrawZoomOverlay;
+	cgi->UI_DrawInstaMessage		= UI_DrawInstaMessage;
+	cgi->UI_DrawObjectives			= UI_Menus_DrawObjectives;
+	cgi->UI_DrawStatusIcon			= UI_DrawStatusIcon;
+	cgi->UI_DrawLagometer			= UI_DrawLagometer;
 	// FIXME
 	//cgi->pUnknownVar				= NULL;
 

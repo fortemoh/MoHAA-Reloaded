@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "cg_local.h"
 #include "cg_parsemsg.h"
+#include "cg_viewmodel.h"
 
 //============================================================================
 
@@ -240,29 +241,8 @@ cg_viewmodel_movedrop scales how far it drops and pulls back while moving
 modification counts until a setting changes
 ===============
 */
-typedef struct {
-    float x, y, z;
-} vmPreset_t;
-
-static const vmPreset_t vmPresets[] = {
-    {0,    0,    0   }, // 0 custom: the offsets as they are
-    {1.0f, 1.0f, -1.0f}, // 1 Desktop: out of the way, right, forward and down
-    {0,    -1.5f, 0.5f}, // 2 Couch: closer, so bigger
-    {0,    0,    0   }, // 3 Classic: the game's own position
-};
-
-#define VM_SETTINGS 5 // offsets x, y, z, then yaw, then the drop while moving
-#define VM_YAW      3
-#define VM_MOVEDROP 4
-#define VM_PRESET   VM_SETTINGS
-
-static const float vmLimits[VM_SETTINGS][2] = {
-    {-2.5f, 2.5f},   // x: left, right
-    {-2.0f, 2.0f},   // y: back, forward
-    {-2.0f, 1.0f},   // z: down, up (higher, the weapons' ends come into view)
-    {-15.0f, 15.0f}, // yaw: the muzzle out, to the middle
-    {0.0f, 1.0f},    // the drop while moving: none, the game's own
-};
+// (the presets and the limits: cg_viewmodel.h)
+#define VM_PRESET VM_SETTINGS
 
 static float vmValues[VM_SETTINGS] = {0, 0, 0, 0, 1}; // right, forward, up, yaw, drop
 static int   vmModCount[VM_SETTINGS + 1] = {-1, -1, -1, -1, -1, -1};
@@ -1247,11 +1227,6 @@ void CG_DrawActiveFrame(int serverTime, int frameTime, stereoFrame_t stereoView,
 
     // update audio positions
     cgi.S_Respatialize(cg.snap->ps.clientNum, cg.SoundOrg, cg.SoundAxis);
-
-    // make sure the lagometerSample and frame timing isn't done twice when in stereo
-    if (stereoView != STEREO_RIGHT) {
-        CG_AddLagometerFrameInfo();
-    }
 
     CG_UpdateTestEmitter();
     CG_AddPendingEffects();

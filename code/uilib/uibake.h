@@ -41,9 +41,10 @@ qhandle_t UI_BakeShape(const char *key, const char *const *layers, int numLayers
 // the same layers' texels (RGBA, w x h, rows down) into out, nothing registered
 void UI_BakeTexels(const char *const *layers, int numLayers, int w, int h, float scale, byte *out);
 
-// pixels a unit of a w x h design: the screen fitted both ways, times the
-// scale set (UI_SetDesignScale: true when it changed, the faces and shapes
-// then baked again; the menus are to be aligned again)
+// pixels a unit of a w x h design: fitted in the screen's height, and in its
+// width as far as 4:3 (a narrower screen's is smaller), times the scale set
+// (UI_SetDesignScale: true when it changed, the faces and shapes then baked
+// again; the menus are to be aligned again)
 float UI_DesignScale(float w, float h);
 bool  UI_SetDesignScale(float scale);
 // changes when a face is to be baked again: the renderer's restart, the scale

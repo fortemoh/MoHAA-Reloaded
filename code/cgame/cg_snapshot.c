@@ -368,7 +368,6 @@ static snapshot_t *CG_ReadNextSnapshot(void)
 
         // if it succeeded, return
         if (r) {
-            CG_AddLagometerSnapshotInfo(dest);
             return dest;
         }
 
@@ -376,9 +375,6 @@ static snapshot_t *CG_ReadNextSnapshot(void)
         // never arrived, or  is so old that its entities
         // have been shoved off the end of the circular
         // buffer in the client system.
-
-        // record as a dropped packet
-        CG_AddLagometerSnapshotInfo(NULL);
 
         // If there are additional snapshots, continue trying to
         // read them.
@@ -410,11 +406,11 @@ of an interpolating one)
 void CG_ProcessSnapshots(void)
 {
     snapshot_t *snap;
-    int         n;
+    int         n, serverTime;
     qboolean    differentServer;
 
     // see what the latest snapshot the client system has is
-    cgi.GetCurrentSnapshotNumber(&n, &cg.latestSnapshotTime);
+    cgi.GetCurrentSnapshotNumber(&n, &serverTime);
     if (n != cg.latestSnapshotNum) {
         if (n < cg.latestSnapshotNum) {
             // this should never happen

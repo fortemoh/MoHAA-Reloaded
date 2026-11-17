@@ -90,22 +90,13 @@ static qhandle_t CG_HeadIconModel(headIcon_t icon)
 ===============
 CG_TeamHeadIcon
 
-Added: a team's icon above a team mate's head: with the Competitive HUD
-(cg_hudstyle 1 or 2) its team icons' (scripts/reloaded_hud.shader, the client's
-outlines baked), else the game's
+Added: a team's icon above a team mate's head: the Competitive HUD's team
+icons' (scripts/reloaded_hud.shader, the client's outlines baked)
 ===============
 */
 static qhandle_t CG_TeamHeadIcon(qboolean allies)
 {
-    static cvar_t *hudstyle;
-
-    if (!hudstyle) {
-        hudstyle = cgi.Cvar_Get("cg_hudstyle", "1", CVAR_ARCHIVE);
-    }
-    if (hudstyle->integer > 0) {
-        return CG_HeadIconModel(allies ? HEADICON_RELOADED_ALLIES : HEADICON_RELOADED_AXIS);
-    }
-    return CG_HeadIconModel(allies ? HEADICON_ALLIES : HEADICON_AXIS);
+    return CG_HeadIconModel(allies ? HEADICON_RELOADED_ALLIES : HEADICON_RELOADED_AXIS);
 }
 
 /*
