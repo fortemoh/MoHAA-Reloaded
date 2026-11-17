@@ -1320,11 +1320,12 @@ static void Bake_Layer(uiCanvas_t *cv, const char *text)
             for (int y = 0; y < sub.h; y++) {
                 for (int x = 0; x < sub.w; x++) {
                     const float *p = &sub.px[(y * sub.w + x) * 4];
-                    float       *d = &cv->px[((y0 + y) * cv->w + x0 + x) * 4];
 
                     if (x0 + x < 0 || y0 + y < 0 || x0 + x >= cv->w || y0 + y >= cv->h) {
                         continue;
                     }
+                    float *d = &cv->px[((y0 + y) * cv->w + x0 + x) * 4];
+
                     for (int k = 0; k < 4; k++) {
                         d[k] = p[k] + d[k] * (1.0f - p[3]);
                     }
