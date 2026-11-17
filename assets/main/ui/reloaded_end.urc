@@ -17,7 +17,6 @@ fgcolor 1.00 1.00 1.00 1.00
 bgcolor 0.00 0.00 0.00 0.00
 borderstyle "NONE"
 screen end
-layer front
 }
 
 end.
