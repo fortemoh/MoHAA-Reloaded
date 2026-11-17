@@ -1873,6 +1873,8 @@ void UI_Update(void)
     Menu    *currentMenu;
     UIRect2D frame;
 
+    // Added: what an error in mid-draw left of the draw cache undone
+    UI_DrawReset();
     // Added: the faces asked for at the UI's start registered (their texels made meanwhile), before anything is drawn
     UI_BakeBatch(false);
     re.SetRenderTime(cls.realtime);

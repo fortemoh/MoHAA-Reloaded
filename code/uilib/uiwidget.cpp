@@ -845,11 +845,15 @@ UIWidget::UIWidget()
     lastShowTime = -1;
 }
 
+static void UI_DrawForget(UIWidget *widget);
+
 UIWidget::~UIWidget()
 {
     //int i;
 
     m_dying = true;
+    // Added: not the widget whose list is being made any more (an error in mid-draw left it there)
+    UI_DrawForget(this);
 
     if (m_drawList && uii.Rend_Free2DList && uii.IsRendererLoaded()) {
         uii.Rend_Free2DList(m_drawList);
@@ -2431,6 +2435,25 @@ void UI_DrawLive(void)
     ui_drawLive++;
 }
 
+static void UI_DrawForget(UIWidget *widget)
+{
+    if (ui_drawMaking == widget) {
+        ui_drawMaking = NULL;
+    }
+}
+
+// Added: before a frame's UI is drawn, what an error left in mid-draw undone (Com_Error is a longjmp: Display's
+// own undoing didn't run): the scope, the widget whose list was being made (not touched: it may be gone; it
+// makes its list again, not valid), and the renderer's list (ended as it is)
+void UI_DrawReset(void)
+{
+    ui_drawScope = 0;
+    if (ui_drawMaking) {
+        ui_drawMaking = NULL;
+        uii.Rend_End2DList();
+    }
+}
+
 int UI_DrawHash(int h, const void *data, size_t size)
 {
     const byte *p = (const byte *)data;
@@ -2560,6 +2583,8 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
     if (make) {
         m_drawDeps.clear();
         m_drawKeys.clear();
+        // Added: not valid until made (an error in mid-draw ends it before: UI_DrawReset)
+        m_drawValid   = false;
         ui_drawMaking = this;
     }
     // (a class drawing from more than its cvars: live while shown)
