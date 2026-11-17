@@ -2395,7 +2395,6 @@ static void RM_PictureDone(void)
     rm.stamp  = UI_BakeStamp();
 }
 
-// an objective's diamond (white for the current one), its box d pixels
 // a mark's shader and size kept while its scale and the baked images stay
 typedef struct {
     int       stamp, d;
@@ -2418,6 +2417,7 @@ static qhandle_t Comp_MarkKeep(compMark_t *m, float k, float s, int d, qhandle_t
     return h;
 }
 
+// an objective's diamond (white for the current one), its box d pixels
 static qhandle_t Comp_ObjectiveShader(qboolean current, float k, float s, int *d)
 {
     static compMark_t kept[2];
