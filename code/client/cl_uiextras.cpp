@@ -1037,7 +1037,7 @@ static std::vector<std::string> EX_Lines(const char *text)
         while (!l.empty() && (l.back() == ' ' || l.back() == '\r' || l.back() == '\t')) {
             l.pop_back();
         }
-        if (!l.empty() && l.find_first_not_of(" \t") != std::string::npos) {
+        if (!l.empty()) {
             lines.push_back(l.substr(l.find_first_not_of(" \t")));
         }
         if (!e) {
