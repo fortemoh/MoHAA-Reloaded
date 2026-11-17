@@ -410,9 +410,7 @@ void UI_DrawZoomOverlay(int type, float alpha)
         return;
     }
     // (made now only if not begun ahead)
-    if (m->w != uid.vidWidth || m->h != uid.vidHeight || (!m->making && (!m->shader || m->refSeq != uii.GetRefSequence()))) {
-        ZM_Begin(kind);
-    }
+    ZM_Begin(kind);
     ZM_Finish(kind);
     if (!m->shader) {
         return;

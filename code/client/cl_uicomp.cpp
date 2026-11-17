@@ -2291,7 +2291,7 @@ static void RM_SeedPlayers(const vec3_t eye)
     // the teammates the snapshot has, on the floor under their feet: the
     // radar's own positions are x and y only (radarClient_t; its origin[2]
     // read past them, into axis[0], a height near 0), the others not known
-    for (int i = 0; g_radarClients && cl.snap.valid && i < cl.snap.numEntities; i++) {
+    for (int i = 0; g_radarClients && i < cl.snap.numEntities; i++) {
         const entityState_t *e = &cl.parseEntities[(cl.snap.parseEntitiesNum + i) & (MAX_PARSE_ENTITIES - 1)];
         const radarClient_t *c;
 
