@@ -64,12 +64,3 @@ public:
     void         FrameInitialized(void) override;
     virtual void Pressed(Event *ev);
 };
-
-class ConsoleView : public UIWidget
-{
-public:
-    CLASS_PROTOTYPE(ConsoleView);
-
-protected:
-    void Draw(void) override;
-};

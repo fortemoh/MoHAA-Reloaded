@@ -885,9 +885,3 @@ qboolean View3D::LetterboxActive(void)
 {
     return m_letterbox_active;
 }
-
-CLASS_DECLARATION(UIWidget, ConsoleView, NULL) {
-    {NULL, NULL}
-};
-
-void ConsoleView::Draw(void) {}
