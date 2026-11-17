@@ -1577,7 +1577,7 @@ static void Comp_FeedBox(float x0, float y0, float x1, float y1, float s, qboole
     const float     px[4]  = {floorf(x0 * s + 0.5f), floorf(x0 * s + 0.5f) + c, floorf(x1 * s + 0.5f) - c, floorf(x1 * s + 0.5f)};
     const float     py[4]  = {floorf(y0 * s + 0.5f), floorf(y0 * s + 0.5f) + c, floorf(y1 * s + 0.5f) - c, floorf(y1 * s + 0.5f)};
     // the texture's parts: a corner, the middle texel (its centre: no neighbour bleeds in), the other corner
-    const float     t[4][2] = {{0.0f, (float)c / n}, {(c + 0.5f) / n, (c + 1.5f) / n}, {(c + 2.0f) / n, 1.0f}};
+    const float     t[3][2] = {{0.0f, (float)c / n}, {(c + 0.5f) / n, (c + 1.5f) / n}, {(c + 2.0f) / n, 1.0f}};
 
     if (!shader || px[2] < px[1] || py[2] < py[1]) {
         if (!edge) {

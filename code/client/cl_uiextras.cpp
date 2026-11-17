@@ -53,7 +53,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "client.h"
 #include "cl_lagometer.h"
 #include "cl_ui.h"
-#include "cl_uicomp.h"
 #include "cl_uiextras.h"
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
@@ -1167,7 +1166,7 @@ static void EX_TypingLine(void)
         const float tx  = lx + RL_TextW(v, label.c_str(), 17, true) + 8.0f;
         const float room = x1 / s - 12.0f - tx;
         rlFace_t    face = RL_Face(v, 17, false);
-        size_t      first = 0, last;
+        size_t      first, last;
         float       cw;
 
         RL_BoxPx(x0, y0, x1, y1, EX_FILL);
