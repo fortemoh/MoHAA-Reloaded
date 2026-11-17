@@ -169,7 +169,7 @@ void CL_Lagometer_Snapshot(int serverTime, int message, int ping, int snapFlags,
 }
 
 // the numbers drawn, at the client's server time
-static void LG_Stats(int clientTime)
+static void LG_Stats(void)
 {
     lgStats_t *st = &lg.st;
     int        pingSum = 0, pingN = 0, jitSum = 0, jitN = 0, prev = -1, peak = 0;
@@ -179,9 +179,9 @@ static void LG_Stats(int clientTime)
 
     memset(st, 0, sizeof(*st));
     st->serial = serial;
-    st->edge   = LG_Slot(clientTime + LG_SLOT_MS);
+    st->edge   = LG_Slot(cl.serverTime + LG_SLOT_MS);
     if (lg.haveUpdate) {
-        st->sinceUpdateMs = Q_max(0, clientTime - lg.lastTime);
+        st->sinceUpdateMs = Q_max(0, cl.serverTime - lg.lastTime);
         st->interrupted   = st->sinceUpdateMs >= LG_INTERRUPTED_MS;
     }
 
@@ -256,7 +256,7 @@ const lgStats_t *CL_Lagometer_Frame(void)
     lg.lastFrameUs = now;
 
     if (!lg.lastStatsUs || now - lg.lastStatsUs >= LG_STATS_US || now < lg.lastStatsUs) {
-        LG_Stats(cl.serverTime);
+        LG_Stats();
         lg.lastStatsUs = now;
     } else {
         // what must move every frame: the scroll, an outage
