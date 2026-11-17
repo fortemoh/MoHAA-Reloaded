@@ -25,6 +25,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #pragma once
 
+#include "cl_uidraw.h"
+
 void UI_Extras_Init(void);
 // the zoom overlay drawn (the cgame's: 0 a scope, 1 the Kar98's, 2 the spy
 // camera's, 3 the binoculars'), faded by alpha
@@ -46,12 +48,8 @@ qboolean UI_Extras_Typing(void);
 // what is baked (a map's load, a new screen size); ahead: the overlays' masks begun on other threads
 void UI_Extras_PreBake(qboolean ahead);
 
-#ifdef __cplusplus
-#    include "cl_uidraw.h"
-
 // the round's end banner on the Reloaded scoreboard: its height in the menus'
 // units (0: none), drawn with its top at y; its key (the draw cache's)
 float UI_Extras_BannerHeight(void);
 void  UI_Extras_DrawBanner(const rlView_t& v, float y);
 int   UI_Extras_BannerKey(void);
-#endif
