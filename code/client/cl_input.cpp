@@ -1182,7 +1182,6 @@ view.
 void CL_GetLiveUserCmd( usercmd_t *ucmd ) {
 	int			i, interval, elapsed, movespeed;
 	int			forward, side, up;
-	unsigned	weapon;
 
 	interval = CL_MoveInterval();
 	if ( !interval ) {
@@ -1225,14 +1224,12 @@ void CL_GetLiveUserCmd( usercmd_t *ucmd ) {
 	ucmd->rightmove = ClampChar( ucmd->rightmove + (int)cl.lookMove[0] );
 	ucmd->forwardmove = ClampChar( ucmd->forwardmove + (int)cl.lookMove[1] );
 
-	weapon = ucmd->buttons & GetWeaponCommandMask( WEAPON_COMMAND_MAX_VER17 );
-	ucmd->buttons = weapon;
+	ucmd->buttons &= GetWeaponCommandMask( WEAPON_COMMAND_MAX_VER17 );
 	for ( i = 0; i < 15; i++ ) {
 		if ( in_buttons[i].active || in_buttons[i].wasPressed ) {
 			ucmd->buttons |= 1 << i;
 		}
 	}
-	ucmd->buttons |= weapon;
 
 	if ( UI_MenuActive() || UI_ConsoleIsOpen() ) {
 		ucmd->buttons |= BUTTON_TALK;
