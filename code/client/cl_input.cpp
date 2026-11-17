@@ -1134,9 +1134,6 @@ and the replay would take it back.
 static float CL_LiveKeyFraction( const kbutton_t *key, int interval, int elapsed, qboolean projectHold ) {
 	int		msec, remain;
 
-	if ( interval < 1 ) {
-		interval = 1;
-	}
 	remain = interval - elapsed;
 	if ( remain < 0 ) {
 		remain = 0;
