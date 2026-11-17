@@ -818,7 +818,11 @@ void UIConsole::OnSizeChanged(Event *ev)
 		}
 	}
 
-	m_scroll->setTopItem(m_scroll->getNumItems() - m_scroll->getPageHeight());
+	// Fixed: the bottom only for a console that was there (or has no lines); the place worked out above
+	// was always overridden
+	if (topitem == -1 || atbottom) {
+		m_scroll->setTopItem(m_scroll->getNumItems() - m_scroll->getPageHeight());
+	}
 	if (m_scroll->getTopItem() < 0) {
 		m_scroll->setTopItem(0);
 	}
