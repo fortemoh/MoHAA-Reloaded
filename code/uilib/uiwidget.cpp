@@ -132,15 +132,6 @@ Event W_Draw
     "Draw the widget." 
 );
 
-Event EV_Layout_Size
-(
-    "size",
-    EV_DEFAULT,
-    "ffff",
-    "x y width height",
-    "Set the size of the widget" 
-);
-
 Event EV_Layout_Rect
 (
     "rect",
@@ -204,15 +195,6 @@ Event EV_Layout_Borderstyle
     "Set the borderstyle of the widget(NONE, 3D_BORDER, INDENT_BORDER) "
 );
 
-Event EV_Layout_BorderColor
-(
-    "bordercolor",
-    EV_DEFAULT,
-    "ffff",
-    "red green blue alpha",
-    "Set the border color of the widget"
-);
-
 Event EV_Layout_Shader
 (
     "shader",
@@ -267,15 +249,6 @@ Event EV_Layout_ClickSound
     "Set the sound to be played when the widget is clicked"
 );
 
-Event EV_Layout_Stretch
-(
-    "stretch",
-    EV_DEFAULT,
-    "s",
-    "stretchdir",
-    "Set the widget to be stretched horizontally or vertically across the screen"
-);
-
 Event EV_Layout_VirtualRes
 (
     "virtualres",
@@ -284,15 +257,6 @@ Event EV_Layout_VirtualRes
     "usevirtualres design_width design_height",
     "Set the widget to be modified horizontally or vertically across the screen to account for resolutions != 640x480"
     " (Added: with a design's size, scaled alike both ways to fit the screen, on whole pixels)"
-);
-
-Event EV_Layout_InitData
-(
-    "initdata",
-    EV_DEFAULT,
-    "s",
-    "datastring",
-    "Set the linkcvar to be initialized to this value"
 );
 
 Event EV_Layout_Align
@@ -322,24 +286,6 @@ Event EV_Layout_LinkCvar
     "Set the cvar that will be updated when the widget is changed"
 );
 
-Event EV_Layout_NoParentClipping
-(
-    "noparentclip",
-    EV_DEFAULT,
-    NULL,
-    NULL,
-    "Set the widget to not be clipped by the parent widget"
-);
-
-Event EV_Layout_NoParentAdjustment
-(
-    "noparentadjust",
-    EV_DEFAULT,
-    NULL,
-    NULL,
-    "Set the widget to not be adjusted by the parent widget"
-);
-
 Event EV_Widget_OrderNumber
 (
     "ordernumber",
@@ -365,15 +311,6 @@ Event EV_Widget_EnabledCvar
     "s",
     "cvar_name",
     "Set the cvar to check to see if this button is enabled or not"
-);
-
-Event EV_Layout_AliasCache
-(
-    "aliascache",
-    EV_DEFAULT,
-    "ssSSSSSS",
-    "alias realPath arg1 arg2 arg3 arg4 arg5 arg6",
-    "Create an alias to the specified path and cache the resource"
 );
 
 // Added
@@ -552,7 +489,6 @@ Event EV_Layout_VidMode
 CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Widget_Hide,               &UIWidget::Hide                    },
     {&EV_Widget_Activate,           &UIWidget::Activate                },
-    {&EV_Layout_Size,               &UIWidget::LayoutSize              },
     {&EV_Layout_Rect,               &UIWidget::LayoutRect              },
     {&EV_Layout_Name,               &UIWidget::LayoutName              },
     {&EV_Layout_Title,              &UIWidget::LayoutTitle             },
@@ -560,22 +496,16 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Layout_BGColor,            &UIWidget::LayoutBgColor           },
     {&EV_Layout_FGColor,            &UIWidget::LayoutFgColor           },
     {&EV_Layout_Borderstyle,        &UIWidget::LayoutBorderStyle       },
-    {&EV_Layout_BorderColor,        &UIWidget::LayoutBorderColor       },
     {&EV_Layout_Shader,             &UIWidget::LayoutShader            },
     {&EV_Layout_TileShader,         &UIWidget::LayoutTileShader        },
     {&EV_Layout_HoverShader,        &UIWidget::LayoutHoverShader       },
     {&EV_Layout_PressedShader,      &UIWidget::LayoutPressedShader     },
     {&EV_Layout_FadeIn,             &UIWidget::LayoutFadeIn            },
     {&EV_Layout_ClickSound,         &UIWidget::LayoutClickSound        },
-    {&EV_Layout_Stretch,            &UIWidget::LayoutStretch           },
     {&EV_Layout_VirtualRes,         &UIWidget::LayoutVirtualRes        },
-    {&EV_Layout_InitData,           &UIWidget::LayoutInitData          },
     {&EV_Layout_Align,              &UIWidget::LayoutAlign             },
-    {&EV_Layout_NoParentClipping,   &UIWidget::LayoutNoParentClipping  },
-    {&EV_Layout_NoParentAdjustment, &UIWidget::LayoutNoParentAdjustment},
     {&EV_Layout_StuffCommand,       &UIWidget::LayoutStuffCommand      },
     {&EV_Layout_LinkCvar,           &UIWidget::LayoutLinkCvar          },
-    {&EV_Layout_AliasCache,         &UIWidget::LayoutAliasCache        },
     {&EV_Widget_OrderNumber,        &UIWidget::LayoutOrderNumber       },
     {&EV_Widget_TextAlignment,      &UIWidget::TextAlignment           },
     {&EV_Widget_Enable,             &UIWidget::EnableEvent             },
@@ -1080,15 +1010,6 @@ void UIWidget::AlignPosition(void)
         scaleFrameVirtualRes(m_frame, m_vVirtualScale, vNewVirtualScale);
     }
 
-    if (m_flags & WF_STRETCH_VERTICAL) {
-        m_frame.pos.y       = 0;
-        m_frame.size.height = uid.vidHeight;
-    }
-    if (m_flags & WF_STRETCH_HORIZONTAL) {
-        m_frame.pos.x      = 0;
-        m_frame.size.width = uid.vidWidth;
-    }
-
     if (m_align & WA_CENTERX) {
         m_frame.pos.x = uid.vidWidth * 0.5 - m_frame.size.width * 0.5;
     }
@@ -1242,11 +1163,6 @@ void UIWidget::InitFrame(UIWidget *parentview, const UIRect2D& r, int border, co
     InitFrame(parentview, r.pos.x, r.pos.y, r.size.width, r.size.height, border, fontname);
 }
 
-void UIWidget::LayoutSize(Event *ev)
-{
-    LayoutRect(ev);
-}
-
 void UIWidget::LayoutRect(Event *ev)
 {
     UIPoint2D pos;
@@ -1300,11 +1216,6 @@ void UIWidget::LayoutBorderStyle(Event *ev)
     }
 }
 
-void UIWidget::LayoutBorderColor(Event *ev)
-{
-    setBorderColor(UColor(ev->GetFloat(1), ev->GetFloat(2), ev->GetFloat(3), ev->GetFloat(4)));
-}
-
 void UIWidget::LayoutShader(Event *ev)
 {
     setMaterial(uWinMan.RegisterShader(ev->GetString(1)));
@@ -1339,21 +1250,6 @@ void UIWidget::LayoutClickSound(Event *ev)
 {
     m_clicksound = ev->GetString(1);
     uii.Snd_RegisterSound(m_clicksound, false);
-}
-
-void UIWidget::LayoutStretch(Event *ev)
-{
-    str stretch = ev->GetString(1);
-
-    if (!stricmp(stretch, "vertical")) {
-        m_flags |= WF_STRETCH_VERTICAL;
-    } else if (!stricmp(stretch, "horizontal")) {
-        m_flags |= WF_STRETCH_HORIZONTAL;
-    } else if (!stricmp(stretch, "both")) {
-        m_flags |= WF_STRETCH_VERTICAL | WF_STRETCH_HORIZONTAL;
-    }
-
-    m_flags |= WF_NOPARENTADJUST | WF_DIRECTED;
 }
 
 void UIWidget::LayoutVirtualRes(Event *ev)
@@ -1686,13 +1582,6 @@ void UIWidget::BakeShapes(void)
     }
 }
 
-void UIWidget::LayoutInitData(Event *ev)
-{
-    if (m_cvarname.length()) {
-        uii.Cvar_Set(m_cvarname, ev->GetString(1));
-    }
-}
-
 void UIWidget::LayoutAlign(Event *ev)
 {
     for (int i = 1; i <= ev->NumArgs(); i++) {
@@ -1728,16 +1617,6 @@ void UIWidget::LayoutLinkCvar(Event *ev)
     LinkCvar(ev->GetString(1));
 }
 
-void UIWidget::LayoutNoParentClipping(Event *ev)
-{
-    m_flags |= WF_DIRECTED;
-}
-
-void UIWidget::LayoutNoParentAdjustment(Event *ev)
-{
-    m_flags |= WF_NOPARENTADJUST;
-}
-
 void UIWidget::LayoutOrderNumber(Event *ev)
 {
     m_ordernum = ev->GetInteger(1);
@@ -1761,30 +1640,6 @@ void UIWidget::TextAlignment(Event *ev)
         } else if (!stricmp(align, "centery")) {
             setFontVerticalAlignment(FONT_JUSTVERT_CENTER);
         }
-    }
-}
-
-void UIWidget::LayoutAliasCache(Event *ev)
-{
-    int i;
-    str parms;
-    str realSound;
-
-    if (ev->NumArgs() <= 1) {
-        return;
-    }
-
-    for (i = 3; i <= ev->NumArgs(); i++) {
-        parms += ev->GetToken(i);
-        parms += " ";
-    }
-
-    realSound = ev->GetString(2);
-
-    uii.Alias_Add(parms, realSound, parms);
-
-    if (strstr(realSound, ".wav") || strstr(realSound, ".mp3")) {
-        uii.Snd_RegisterSound(realSound, false);
     }
 }
 
@@ -2579,15 +2434,6 @@ void UIWidget::Realign(void)
         bScaled                 = scaleFrameVirtualRes(m_frame, m_vVirtualScale, vNewVirtualScale);
     }
 
-    if (m_flags & WF_STRETCH_VERTICAL) {
-        m_frame.pos.y       = 0;
-        m_frame.size.height = uid.vidHeight;
-    }
-    if (m_flags & WF_STRETCH_HORIZONTAL) {
-        m_frame.pos.x      = 0;
-        m_frame.size.width = uid.vidWidth;
-    }
-
     if (m_align & WA_CENTERX) {
         m_frame.pos.x = uid.vidWidth * 0.5 - m_frame.size.width * 0.5;
     }
@@ -2608,7 +2454,7 @@ void UIWidget::Realign(void)
         m_frame.pos.y = 0;
     }
 
-    if ((m_align & WA_FULL) || (m_flags & (WF_STRETCH_HORIZONTAL | WF_STRETCH_VERTICAL)) || bScaled) {
+    if ((m_align & WA_FULL) || bScaled) {
         setFrame(m_frame);
     }
 }

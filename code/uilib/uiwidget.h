@@ -52,8 +52,6 @@ public:
 };
 
 // widget flags
-#define WF_STRETCH_VERTICAL   (1 << 0)
-#define WF_STRETCH_HORIZONTAL (1 << 1)
 #define WF_DIRECTED           (1 << 2)
 #define WF_TILESHADER         (1 << 3)
 #define WF_ALWAYS_BOTTOM      (1 << 4)
@@ -261,7 +259,6 @@ public:
         const char *fontname = "verdana-12"
     );
     void InitFrame(UIWidget *parentview, const UIRect2D& r, int border, const char *fontname = "verdana-12");
-    void LayoutSize(Event *ev);
     void LayoutRect(Event *ev);
     void LayoutName(Event *ev);
     void LayoutTitle(Event *ev);
@@ -269,24 +266,18 @@ public:
     void LayoutBgColor(Event *ev);
     void LayoutFgColor(Event *ev);
     void LayoutBorderStyle(Event *ev);
-    void LayoutBorderColor(Event *ev);
     void LayoutShader(Event *ev);
     void LayoutTileShader(Event *ev);
     void LayoutHoverShader(Event *ev);
     void LayoutPressedShader(Event *ev);
     void LayoutFadeIn(Event *ev);
     void LayoutClickSound(Event *ev);
-    void LayoutStretch(Event *ev);
     void LayoutVirtualRes(Event *ev);
-    void LayoutInitData(Event *ev);
     void LayoutAlign(Event *ev);
     void LayoutStuffCommand(Event *ev);
     void LayoutLinkCvar(Event *ev);
-    void LayoutNoParentClipping(Event *ev);
-    void LayoutNoParentAdjustment(Event *ev);
     void LayoutOrderNumber(Event *ev);
     void TextAlignment(Event *ev);
-    void LayoutAliasCache(Event *ev);
     void SetEnabledCvar(Event *ev);
     // Added
     void LayoutShape(Event *ev);
@@ -449,7 +440,6 @@ extern Event EV_Widget_Enable;
 extern Event EV_Widget_Disable;
 extern Event W_RealignWidget;
 extern Event W_Draw;
-extern Event EV_Layout_Size;
 extern Event EV_Layout_Rect;
 extern Event EV_Layout_Name;
 extern Event EV_Layout_Title;
@@ -457,7 +447,6 @@ extern Event EV_Layout_Font;
 extern Event EV_Layout_BGColor;
 extern Event EV_Layout_FGColor;
 extern Event EV_Layout_Borderstyle;
-extern Event EV_Layout_BorderColor;
 extern Event EV_Layout_AlphaCvar; // Added
 extern Event EV_Layout_Shader;
 extern Event EV_Layout_TileShader;
@@ -465,18 +454,13 @@ extern Event EV_Layout_HoverShader;
 extern Event EV_Layout_PressedShader;
 extern Event EV_Layout_FadeIn;
 extern Event EV_Layout_ClickSound;
-extern Event EV_Layout_Stretch;
 extern Event EV_Layout_VirtualRes;
-extern Event EV_Layout_InitData;
 extern Event EV_Layout_Align;
 extern Event EV_Layout_StuffCommand;
 extern Event EV_Layout_LinkCvar;
-extern Event EV_Layout_NoParentClipping;
-extern Event EV_Layout_NoParentAdjustment;
 extern Event EV_Widget_OrderNumber;
 extern Event EV_Widget_TextAlignment;
 extern Event EV_Widget_EnabledCvar;
-extern Event EV_Layout_AliasCache;
 extern Event EV_Layout_BGFill;
 extern Event EV_Layout_Fullscreen;
 extern Event EV_Layout_VidMode;
