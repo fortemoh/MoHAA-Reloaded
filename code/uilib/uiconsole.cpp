@@ -727,7 +727,8 @@ qboolean UIConsole::KeyEvent(int key, unsigned int time)
 
 	case K_END:
 		if (uii.Sys_IsKeyDown(K_CTRL)) {
-			m_scroll->setTopItem(m_scroll->getNumItems());
+			// Fixed: the last page (the last line was put at the top, blank rows under it)
+			m_scroll->setTopItem(m_scroll->getNumItems() - m_scroll->getPageHeight());
 		} else {
 			m_caret = m_currentline.length();
 		}
