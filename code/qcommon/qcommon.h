@@ -802,6 +802,7 @@ long	FS_FOpenFileRead(const char* filename, fileHandle_t* file, qboolean uniqueF
 // file IO goes through FS_ReadFile, which Does The Right Thing already.
 
 int		FS_FileIsInPAK(const char *filename, int *pChecksum );
+qboolean	FS_FileInGamePak(const char *filename);
 // returns 1 if a file is in the PAK file, otherwise -1
 
 size_t	FS_Write( const void *buffer, size_t len, fileHandle_t f );

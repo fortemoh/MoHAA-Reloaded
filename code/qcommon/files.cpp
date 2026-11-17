@@ -3243,6 +3243,35 @@ void FS_TouchFile_f( void ) {
 
 /*
 ============
+FS_FileInGamePak
+
+Added: whether the file a read opens is in one of the games' own pk3s:
+pak and a digit (Pak0 to Pak6EnUk and pak7, pak1 to pak5), in main,
+mainta or maintt. Not a mod's or a map's pk3, nor a loose file
+============
+*/
+qboolean FS_FileInGamePak(const char *filename)
+{
+	searchpath_t	*search;
+	const pack_t	*pak;
+
+	for (search = fs_searchpaths; search; search = search->next) {
+		// (a pak a pure server doesn't allow isn't read: as FS_FOpenFileRead)
+		if (search->pack && !FS_PakIsPure(search->pack)) {
+			continue;
+		}
+		if (FS_FOpenFileReadDir(filename, search, NULL, qfalse, qfalse) > 0) {
+			pak = search->pack;
+			return pak && !Q_stricmpn(pak->pakBasename, "pak", 3) && isdigit((unsigned char)pak->pakBasename[3])
+				&& (!Q_stricmp(pak->pakGamename, BASEGAME) || !Q_stricmp(pak->pakGamename, GAME_EXTENSION_MOHTA)
+					|| !Q_stricmp(pak->pakGamename, GAME_EXTENSION_BASE_MOHTT));
+		}
+	}
+	return qfalse;
+}
+
+/*
+============
 FS_Which
 ============
 */

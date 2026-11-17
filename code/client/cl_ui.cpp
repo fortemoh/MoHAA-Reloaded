@@ -3916,7 +3916,7 @@ UI_StockMenuGone
 Added: a stock menu file nothing shows any more (the Reloaded menus and
 the URC HUD are its screens): not loaded. Named one by one, the games'
 own (Allied Assault's, Spearhead's and Breakthrough's pk3s): a map's or a
-mod's menus load. What still loads: the load screens (the Reloaded load
+mod's menus load, under these names too (FS_FileInGamePak). What still loads: the load screens (the Reloaded load
 screen shows their pictures), the end of a level's (StatsScreen_*,
 mission_*: the end screen's), what the game scripts show (the briefings,
 the title cards, credits1, dday1 and 2) and the developer tools' menus
@@ -3973,7 +3973,8 @@ static qboolean UI_StockMenuGone(const char *file)
     COM_StripExtension(file, name, sizeof(name));
     for (size_t i = 0; i < ARRAY_LEN(gone); i++) {
         if (!Q_stricmp(name, gone[i])) {
-            return qtrue;
+            // Fixed: only the games' own file (a mod's or a map's of the same name was skipped too)
+            return FS_FileInGamePak(va("ui/%s", file));
         }
     }
     return qfalse;
