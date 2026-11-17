@@ -913,12 +913,6 @@ static const char *const comp_arcAngle[3] = {"ui_hud_arc0_angle", "ui_hud_arc1_a
 static const char *const comp_objOn[3]    = {"ui_hud_obj0_on", "ui_hud_obj1_on", "ui_hud_obj2_on"};
 static const char *const comp_obj[3]      = {"ui_hud_obj0", "ui_hud_obj1", "ui_hud_obj2"};
 
-// the angle on screen (clockwise, up the view) of a world yaw
-static float Comp_ScreenAngle(float viewYaw, float yaw)
-{
-    return AngleSubtract(viewYaw, yaw);
-}
-
 void UI_CompHud_Frame(void)
 {
     const playerState_t *ps       = &cl.snap.ps;
@@ -1188,17 +1182,18 @@ void UI_CompHud_Frame(void)
         }
         comp.lastDmg    = dmg;
         comp.lastHealth = ps->stats[STAT_HEALTH];
+        // (a world yaw's angle on screen, clockwise from up the view: the view's yaw less it)
         for (i = 0; i < 3; i++) {
             const int age = cls.realtime - comp.arcTime[i];
 
             Comp_SetF(comp_arcAlpha[i], comp.arcTime[i] && age < 1500 ? 1.0f - age / 1500.0f : 0.0f);
             if (comp.arcTime[i] && age < 1500) {
-                Comp_SetF(comp_arcAngle[i], Comp_ScreenAngle(viewYaw, comp.arcStat[i] / 10.0f + 180.0f));
+                Comp_SetF(comp_arcAngle[i], AngleSubtract(viewYaw, comp.arcStat[i] / 10.0f + 180.0f));
             }
         }
         Comp_SetF("ui_hud_dmg_alpha", dmg > 0 && comp.flashTime ? Com_Clamp(0.0f, 1.0f, 1.0f - (cls.realtime - comp.flashTime) / 1500.0f) : 0.0f);
         if (Comp_Cvar("ui_hud_dmg_alpha")->value > 0.0f) {
-            Comp_SetF("ui_hud_dmg_angle", Comp_ScreenAngle(viewYaw, dmg / 10.0f + 180.0f));
+            Comp_SetF("ui_hud_dmg_angle", AngleSubtract(viewYaw, dmg / 10.0f + 180.0f));
         }
     }
 
