@@ -210,8 +210,6 @@ typedef struct {
 	fileHandle_t download;
 	char		downloadTempName[MAX_OSPATH];
 	char		downloadName[MAX_OSPATH];
-	int		sv_allowDownload;
-	char		sv_dlURL[MAX_CVAR_VALUE_STRING];
 	int			downloadNumber;
 	int			downloadBlock;	// block we are waiting for
 	size_t		downloadCount;	// how many bytes we got
