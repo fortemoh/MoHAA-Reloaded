@@ -20,8 +20,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
-// cl_uiextras.h: the Competitive HUD's extras (Added): the zoom overlays, the centre and location prints, the chat's typing line, the
-// round's end banner and the quick messages' menu
+// cl_uiextras.h: the Competitive HUD's extras (Added): the zoom overlays, the status icons, the lagometer, the centre and location
+// prints, the chat's typing line, the round's end banner and the quick messages' menu
 
 #pragma once
 

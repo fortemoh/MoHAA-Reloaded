@@ -84,7 +84,7 @@ cvar_t        *sound_overlay;
 
 static char          server_mapname[64];
 static Menu         *scoreboard_menu;
-// Added: the scoreboard is up (the Reloaded scoreboard: the stock list isn't shown)
+// Added: the scoreboard is up (the Reloaded scoreboard)
 static qboolean      scoreboard_up;
 
 unsigned char        UIListCtrlItem[8];
@@ -2350,7 +2350,7 @@ void UI_GlobalWidgetCommand_f(void)
         event->AddToken(Cmd_Argv(i));
     }
 
-    // Added: freed when no widget has the name (the cgame's vote lists: their stock menus aren't loaded)
+    // Added: freed when no widget has the name
     if (!uWinMan.PassEventToWidget(name, event)) {
         delete event;
     }
