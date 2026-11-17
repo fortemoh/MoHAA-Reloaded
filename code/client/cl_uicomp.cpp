@@ -2620,7 +2620,8 @@ void UIHudRadar::Draw(void)
         UI_CompHud_MapLoaded();
     }
     if (!rm.nodes.empty()) {
-        const int texels = Q_max(1, Q_min(6, (int)(RM_CELL / upp + 0.5f)));
+        // (a very large map's fewer, its picture at most 4096 across: tested as kept, or it is made again each time)
+        const int texels = Q_min(Q_max(1, Q_min(6, (int)(RM_CELL / upp + 0.5f))), 4096 / Q_max(rm.cw, rm.ch));
 
         // (the walk changes only while no picture is being made of it)
         RM_PictureDone();
@@ -2631,7 +2632,7 @@ void UIHudRadar::Draw(void)
         if (!rm.worker.joinable()
             && (rm.stamp != UI_BakeStamp() || texels != rm.texels || fabsf(eye[2] - 64.0f - rm.focusZ) > 24.0f
                 || (rm.walked != (int)rm.nodes.size() && rm.queue.empty()))) {
-            rm.texels = Q_min(texels, 4096 / Q_max(rm.cw, rm.ch));
+            rm.texels = texels;
             rm.focusZ = eye[2] - 64.0f;
             rm.walked = (int)rm.nodes.size();
             RM_Picture();
