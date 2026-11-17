@@ -3688,9 +3688,9 @@ the URC HUD are its screens): not loaded. Named one by one, the games'
 own (Allied Assault's, Spearhead's and Breakthrough's pk3s): a map's or a
 mod's menus load, under these names too (FS_FileInGamePak). What still loads: the load screens (the Reloaded load
 screen shows their pictures), the end of a level's (StatsScreen_*,
-mission_*: the end screen's), what the game scripts show (the briefings,
-the title cards, credits1, dday1 and 2) and the developer tools' menus
-that still work
+mission_*: the end screen's) and what the game scripts show (the
+briefings, the title cards, credits1, dday1 and 2); none of the developer
+tools' menus
 ====================
 */
 static qboolean UI_StockMenuGone(const char *file)
@@ -3744,6 +3744,9 @@ static qboolean UI_StockMenuGone(const char *file)
         // the developer tools made of the stock pull-down menus (removed): the decal, emitter and smoke editors, the
         // sound editor (its soundpicker removed too)
         "decals", "emitter", "smoke", "zound",
+        // the last developer tools, the only users of the stock field, checkbox, list and list box (removed): the
+        // camera tool and its quick menu, the level designers' F1 menu, a test page
+        "cinematicmenu", "cinemaquickmenu", "leveldesign", "greytest",
     };
     char name[MAX_QPATH];
 
