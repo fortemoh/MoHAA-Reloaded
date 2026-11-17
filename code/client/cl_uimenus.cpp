@@ -376,10 +376,9 @@ rlView_t RL_View(void)
 {
     rlView_t v;
 
-    v.dh     = uid.vidHeight >= 900 ? 1080.0f : 900.0f;
-    v.s      = uid.vidHeight / v.dh;
-    v.dw     = uid.vidWidth / v.s;
-    v.layout = v.dw < 1500.0f ? 0 : v.dw > 2200.0f ? 2 : 1;
+    v.dh = uid.vidHeight >= 900 ? 1080.0f : 900.0f;
+    v.s  = uid.vidHeight / v.dh;
+    v.dw = uid.vidWidth / v.s;
     return v;
 }
 
@@ -2134,7 +2133,7 @@ enum { ID_WTAB = 10, ID_WTAB_AXIS, ID_WPREV, ID_WNEXT };
 static void RL_Grid(const rlView_t& v, float *tw, float *th, float *gap, float *gw)
 {
     *gap = 14;
-    *tw  = v.layout == 0 ? 200.0f : 210.0f;
+    *tw  = v.dw < 1500.0f ? 200.0f : 210.0f; // (narrower on a narrow screen)
     *th  = 168;
     *gw  = 3 * *tw + 2 * *gap;
 }

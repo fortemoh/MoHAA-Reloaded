@@ -58,7 +58,6 @@ static const rlTeam_t rl_teams[2] = {
 typedef struct {
     float s;      // pixels a unit
     float dw, dh; // the screen's units across and down
-    int   layout; // 0 narrow (under 1500 across), 1 standard, 2 wide (over 2200)
 } rlView_t;
 
 enum { RL_LEFT, RL_CENTER, RL_RIGHT };

@@ -519,7 +519,7 @@ static int   ex_lagFrame = -1;
 // the HUD's units (cg_hud_scale)
 static rlView_t EX_HudView(void)
 {
-    rlView_t v = RL_View();
+    rlView_t v;
 
     v.s  = UI_DesignScale(1920.0f, 1080.0f);
     v.dw = uid.vidWidth / v.s;
@@ -1270,12 +1270,11 @@ static void IM_Make(const char *title, const char *const *lines, int count, floa
 
     im.h = IM_HEAD + 8.0f + IM_STEP * (im.count + 1) + 12.0f;
     k    = Com_Clamp(0.5f, 1.0f, (dh - IM_LOWEST - IM_HIGHEST) / im.h);
-    im.v.s      = s * k;
-    im.v.dw     = uid.vidWidth / im.v.s;
-    im.v.dh     = uid.vidHeight / im.v.s;
-    im.v.layout = 1;
-    im.x        = IM_LEFT / k;
-    im.y        = Q_max(IM_HIGHEST, Q_min(IM_TOP, dh - IM_LOWEST - im.h * k)) / k;
+    im.v.s  = s * k;
+    im.v.dw = uid.vidWidth / im.v.s;
+    im.v.dh = uid.vidHeight / im.v.s;
+    im.x    = IM_LEFT / k;
+    im.y    = Q_max(IM_HIGHEST, Q_min(IM_TOP, dh - IM_LOWEST - im.h * k)) / k;
 
     tw = RL_TextW(im.v, im.head.c_str(), IM_SIZE - 2.0f, true, 1.2f);
     for (int i = 0; i < im.count; i++) {
