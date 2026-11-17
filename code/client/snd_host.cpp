@@ -26,7 +26,6 @@ source tree, or write to the Free Software Foundation, Inc.,
 // Public sound API. There is one host, the Omaha mixer (see snd_host.h).
 
 #include "snd_local.h"
-#include "client.h"
 
 const sndHost_t *s_sndHost = &s_sndHostOmaha;
 
