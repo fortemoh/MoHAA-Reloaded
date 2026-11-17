@@ -1123,13 +1123,11 @@ qboolean UI_Extras_Typing(void)
 
 static void EX_TypingLine(void)
 {
-    const float s = UI_DesignScale(1920.0f, 1080.0f);
     const char *line;
     int         mode, caret;
     Menu       *menu;
     UIWidget   *chat;
     float       left, top;
-    rlView_t    v;
     rlColor_t   col;
     std::string label;
 
@@ -1137,16 +1135,14 @@ static void EX_TypingLine(void)
     if (!ex_typing) {
         return;
     }
+    const rlView_t v = EX_HudView();
+    const float    s = v.s;
+
     // over the chat's menu, as it is placed (its own file may move it)
     menu = menuManager.FindMenu("hud_comp_chat");
     chat = menu ? menu->GetContainerWidget() : NULL;
     left = chat ? chat->getFrame().pos.x : 0.0f;
     top  = chat ? chat->getFrame().pos.y : uid.vidHeight - 256.0f * s;
-
-    v.s      = s;
-    v.dw     = uid.vidWidth / s;
-    v.dh     = uid.vidHeight / s;
-    v.layout = 1;
 
     if (mode == 100) {
         label = "ALL:";
@@ -1369,13 +1365,8 @@ void UI_Extras_PreBake(qboolean ahead)
 
     // the faces and the emblems the prints, the banner, the typing line, the status icons and the lagometer draw
     {
-        const rlView_t v = RL_View();
-        const float    s = UI_DesignScale(1920.0f, 1080.0f);
-        rlView_t       hv = v;
+        const rlView_t v = RL_View(), hv = EX_HudView();
 
-        hv.s  = s;
-        hv.dw = uid.vidWidth / s;
-        hv.dh = uid.vidHeight / s;
         UI_BakeBatch(true);
         RL_Face(v, 24, false);
         RL_Face(v, 34, true);
@@ -1391,7 +1382,7 @@ void UI_Extras_PreBake(qboolean ahead)
         RL_TeamIcon(v, 0, 0, 0, 38);
         RL_TeamIcon(v, 1, 0, 0, 38);
         for (int i = 0; i < UI_ICON_NUM; i++) {
-            RL_Outline(EX_HudView(), ex_icons[i].glyph, 0, 0, EX_ICON_SIZE, EX_ICON_SIZE, EX_TEXT);
+            RL_Outline(hv, ex_icons[i].glyph, 0, 0, EX_ICON_SIZE, EX_ICON_SIZE, EX_TEXT);
         }
         rl_bakeOnly = false;
     }
