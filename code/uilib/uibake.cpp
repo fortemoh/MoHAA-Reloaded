@@ -400,6 +400,8 @@ static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
     const float       s      = spec->absolute ? Q_max(1.0f, floorf(spec->px / 24.0f)) : ds;
     const float       slant  = spec->slant ? SLANT : 0.0f;
     const qboolean    shadow = spec->shadow;
+    // the shadow's offset, read here: a bake thread runs after the caller's spec is gone
+    const float       shOff  = spec->absolute ? 1.0f : s;
     const int         pageW  = Q_max(32, (int)(256.0f * s + 0.001f));
     const uiFace_t   *face   = spec->face;
     fontheader_sgl_t *sgl    = &f->sgl;
@@ -465,7 +467,7 @@ static void Bake_FontPage(uiBakedFont_t *f, const uiFontSpec_t *spec)
 
                 for (int col = 0; col < w; col++, out += 4) {
                     const float a     = mask[row * w + col] / 255.0f;
-                    const float sh    = shadow ? Bake_ShadowAt(mask.data(), w, m.lineH, col, row, spec->absolute ? 1.0f : s) : 0.0f;
+                    const float sh    = shadow ? Bake_ShadowAt(mask.data(), w, m.lineH, col, row, shOff) : 0.0f;
                     const float alpha = a + sh * (1.0f - a);
 
                     out[0] = out[1] = out[2] = (byte)(alpha > 0.0f ? a / alpha * 255.0f + 0.5f : 255.0f);
