@@ -948,7 +948,8 @@ static void Svg_Path(const char *d, std::vector<uiSvgCmd_t>& out)
             continue;
         }
         // the numbers this command takes
-        const int  n   = strchr("MmLlTt", op) ? 2 : strchr("HhVv", op) ? 1 : strchr("Cc", op) ? 6 : strchr("QqSs", op) ? 4 : 0;
+        // (no command yet: strchr would find 0 at a list's end)
+        const int  n   = !op ? 0 : strchr("MmLlTt", op) ? 2 : strchr("HhVv", op) ? 1 : strchr("Cc", op) ? 6 : strchr("QqSs", op) ? 4 : 0;
         const bool rel = op >= 'a';
         float      v[6];
         int        i;
