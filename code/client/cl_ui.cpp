@@ -1329,7 +1329,13 @@ void UI_PrintConsole(const char *msg)
             s_intermediateconsole = new str;
         }
 
-        *s_intermediateconsole = msg;
+        // Fixed: every message of the UI's start kept until the console is there (only the last one was); after
+        // the start, with no console (ui_console 0), only the last, as before (not a whole session's)
+        if (cls.uiStarted) {
+            *s_intermediateconsole = pszString;
+        } else {
+            *s_intermediateconsole += pszString;
+        }
     }
 }
 
