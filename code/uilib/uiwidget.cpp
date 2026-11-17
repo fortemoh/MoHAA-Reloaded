@@ -1717,7 +1717,6 @@ void UIWidget::Flow(void)
     m_flowing    = false;
     m_designRect = r;
     // the frame as the design's (DesignFrame)
-    frame             = m_frame;
     frame.pos.x       = floorf(r.pos.x * m_vVirtualScale[0] + 0.5f);
     frame.pos.y       = floorf(r.pos.y * m_vVirtualScale[1] + 0.5f);
     frame.size.width  = floorf((r.pos.x + r.size.width) * m_vVirtualScale[0] + 0.5f) - frame.pos.x;
@@ -3094,13 +3093,8 @@ void UIWidget::SetEnabledCvar(Event *ev)
 
 void UIWidget::SetVirtualScale(vec2_t out)
 {
-    if (m_designSize[0] > 0 && m_designSize[1] > 0) {
-        // Added: a design's size, alike both ways
-        out[0] = out[1] = UI_DesignScale(m_designSize[0], m_designSize[1]);
-    } else {
-        out[0] = uid.vidWidth / 640.0;
-        out[1] = uid.vidHeight / 480.0;
-    }
+    out[0] = uid.vidWidth / 640.0;
+    out[1] = uid.vidHeight / 480.0;
 }
 
 void UIWidget::EventFadeSequence(Event *ev)
