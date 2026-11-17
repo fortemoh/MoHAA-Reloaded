@@ -94,8 +94,6 @@ typedef struct sndHost_s {
 extern const sndHost_t  s_sndHostOmaha;
 extern const sndHost_t *s_sndHost;
 
-qboolean S_Host_Init(void);
-
 #ifdef __cplusplus
 }
 #endif

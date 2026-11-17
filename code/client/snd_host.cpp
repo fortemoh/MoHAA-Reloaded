@@ -30,12 +30,6 @@ source tree, or write to the Free Software Foundation, Inc.,
 
 const sndHost_t *s_sndHost = &s_sndHostOmaha;
 
-qboolean S_Host_Init(void)
-{
-    s_sndHost = &s_sndHostOmaha;
-    return s_sndHost->Init();
-}
-
 void MUSIC_NewSoundtrack(const char *name)
 {
     s_sndHost->MusicNewSoundtrack(name);

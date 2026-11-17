@@ -229,10 +229,10 @@ qboolean S_LoadSound(const char *fileName, sfx_t *sfx, int streamed, qboolean fo
 //
 // Driver-specific functions
 //
-// Changed in Omaha: the driver is the sound host selected at S_Init (snd_host.h)
+// Changed in Omaha: the driver is the sound host (snd_host.h)
 #include "snd_host.h"
 
-#define S_Driver_Init                   S_Host_Init
+#define S_Driver_Init                   s_sndHost->Init
 #define S_Driver_Shutdown               s_sndHost->Shutdown
 #define S_Driver_StartSound             s_sndHost->StartSound
 #define S_Driver_AddLoopingSound        s_sndHost->AddLoopingSound
