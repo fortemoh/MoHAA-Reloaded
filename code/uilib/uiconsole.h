@@ -22,29 +22,26 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #pragma once
 
+#include <vector>
+
 typedef void (*consoleHandler_t)(const char *text);
 
 class item
 {
 public:
-    str           string;
-    int           lines;
-    int           begins[10];
-    int           breaks[10];
-    const UColor *pColor;
+    str              string;
+    int              lines;
+    // Changed: as many rows as the text needs (there were 10, the rest ran off on the last one)
+    std::vector<int> begins;
+    std::vector<int> breaks;
+    const UColor    *pColor;
 
     item();
 };
 
 inline item::item()
 {
-    lines = 0;
-
-    for (int i = 0; i < 10; i++) {
-        begins[i] = 0;
-        breaks[i] = 0;
-    }
-
+    lines  = 0;
     pColor = NULL;
 }
 

@@ -343,10 +343,6 @@ void UIConsole::AddText(const char *text, const UColor *pColor)
 	if (m_scroll->getTopItem() < 0) {
 		m_scroll->setTopItem(0);
 	}
-
-	if (curitem->lines == 9) {
-		AddText("\n", NULL);
-	}
 }
 
 void UIConsole::CalcLineBreaks(item& theItem)
@@ -360,6 +356,7 @@ void UIConsole::CalcLineBreaks(item& theItem)
 	lenchecking   = 0;
 	len_of_space  = m_font->getCharWidth(' ');
 	theItem.lines = 0;
+	theItem.breaks.clear();
 	remaining     = theItem.string.c_str();
 
 	for (i = 0; remaining[i]; i++) {
@@ -372,24 +369,20 @@ void UIConsole::CalcLineBreaks(item& theItem)
 			int charlen = m_font->getCharWidth(remaining[i]);
 			if (m_frame.size.width - m_scroll->getSize().width < (charlen + lenchecking + lensofar)) {
 				if (lensofar) {
-					lensofar                      = lenchecking;
-					theItem.breaks[theItem.lines] = sofar.length();
-					sofar                         = checking;
-					lenchecking                   = charlen;
-					checking                      = remaining[i];
+					lensofar    = lenchecking;
+					theItem.breaks.push_back(sofar.length());
+					sofar       = checking;
+					lenchecking = charlen;
+					checking    = remaining[i];
 				} else {
-					lensofar                      = charlen;
-					theItem.breaks[theItem.lines] = checking.length();
-					sofar                         = remaining[i];
-					lenchecking                   = 0;
-					checking                      = "";
+					lensofar    = charlen;
+					theItem.breaks.push_back(checking.length());
+					sofar       = remaining[i];
+					lenchecking = 0;
+					checking    = "";
 				}
 
 				theItem.lines++;
-
-				if (theItem.lines == ARRAY_LEN(theItem.breaks) - 1) {
-					break;
-				}
 			} else {
 				checking += remaining[i];
 				lenchecking += charlen;
@@ -397,10 +390,12 @@ void UIConsole::CalcLineBreaks(item& theItem)
 		}
 	}
 
-	if (remaining[i] || lenchecking || lensofar) {
-		theItem.breaks[theItem.lines++] = -1;
+	if (lenchecking || lensofar) {
+		theItem.breaks.push_back(-1);
+		theItem.lines++;
 	}
 
+	theItem.begins.resize(theItem.lines);
 	lensofar = 0;
 	for (i = 0; i < theItem.lines; i++) {
 		theItem.begins[i] = lensofar;
