@@ -2562,26 +2562,6 @@ void CL_PingServers_f(void)
 
 /*
 ====================
-UI_MapList_f
-====================
-*/
-void UI_MapList_f(void)
-{
-    str mappath = "maps";
-
-    if (Cmd_Argc() == 2) {
-        mappath += "/";
-        mappath += Cmd_Argv(1);
-    }
-
-    MapRunnerClass *map = new MapRunnerClass;
-    map->Setup("maps", mappath, ".bsp", "_sml");
-
-    CL_SetMousePos(uid.vidWidth / 2, uid.vidHeight / 2);
-}
-
-/*
-====================
 UI_StartDMMap_f
 ====================
 */
@@ -2775,42 +2755,6 @@ void UI_GetPlayerModel_f(void)
 
 /*
 ====================
-UI_SoundPicker_f
-====================
-*/
-void UI_SoundPicker_f(void)
-{
-    new SoundPickerClass;
-}
-
-/*
-====================
-UI_ViewSpawnList_f
-====================
-*/
-void UI_ViewSpawnList_f(void)
-{
-    str modelpath = "models";
-
-    ViewSpawnerClass *picker = new ViewSpawnerClass;
-    picker->Setup("models", modelpath, ".tik");
-}
-
-/*
-====================
-UI_LODSpawnList_f
-====================
-*/
-void UI_LODSpawnList_f(void)
-{
-    str modelpath = "models";
-
-    LODSpawnerClass *picker = new LODSpawnerClass;
-    picker->Setup("models", modelpath, ".tik");
-}
-
-/*
-====================
 UI_LoadMenu
 ====================
 */
@@ -3000,6 +2944,16 @@ void UI_StartLocalSoundDialog(const char *sound_name)
 
 /*
 ====================
+UI_PickFile
+
+Changed: nothing, the file picker (a developer's tool) is gone; the UI
+import table keeps its slot (uii.File_PickFile)
+====================
+*/
+static void UI_PickFile(const char *name, Listener *obj, Event& event) {}
+
+/*
+====================
 CL_FillUIImports
 ====================
 */
@@ -3025,7 +2979,7 @@ void CL_FillUIImports(void)
     uii.Cvar_Reset                  = Cvar_Reset;
     uii.Cvar_Find                   = Cvar_FindVar;
     uii.Cvar_Set                    = UI_Cvar_Set;
-    uii.File_PickFile               = PickFile;
+    uii.File_PickFile               = UI_PickFile;
     uii.File_FreeFile               = FS_FreeFile;
     uii.File_ListFiles              = ListFilesForUI;
     uii.File_OpenFile               = FS_ReadFile;
@@ -3771,11 +3725,7 @@ void CL_ShutdownUI(void)
     Cmd_RemoveCommand("listmenus");
     Cmd_RemoveCommand("togglemenu");
     Cmd_RemoveCommand("loadmenu");
-    Cmd_RemoveCommand("maplist");
     Cmd_RemoveCommand("ui_startdmmap");
-    Cmd_RemoveCommand("viewspawnlist");
-    Cmd_RemoveCommand("lod_spawnlist");
-    Cmd_RemoveCommand("soundpicker");
     Cmd_RemoveCommand("ui_showmouse");
     Cmd_RemoveCommand("ui_hidemouse");
     Cmd_RemoveCommand("ui_saveconsolepos");
@@ -3835,6 +3785,7 @@ mod's menus load, under these names too (FS_FileInGamePak). What still loads: th
 screen shows their pictures), the end of a level's (StatsScreen_*,
 mission_*: the end screen's), what the game scripts show (the briefings,
 the title cards, credits1, dday1 and 2) and the developer tools' menus
+that still work
 ====================
 */
 static qboolean UI_StockMenuGone(const char *file)
@@ -3882,6 +3833,9 @@ static qboolean UI_StockMenuGone(const char *file)
         // slides no briefing uses
         "eascreen", "patch_available", "demohelp", "crosshair", "briefing2c", "briefing2d", "briefing3f", "briefing3g",
         "briefing3h",
+        // the developer tools whose button only ran a removed file picker: the animation viewer's (viewspawnlist), the
+        // LOD tool's (lod_spawnlist)
+        "animate2", "lodtool",
     };
     char name[MAX_QPATH];
 
@@ -3975,11 +3929,7 @@ void CL_InitializeUI(void)
     Cmd_AddCommand("listmenus", UI_ListMenus_f);
     Cmd_AddCommand("togglemenu", UI_ToggleMenu_f);
     Cmd_AddCommand("loadmenu", UI_LoadMenu_f);
-    Cmd_AddCommand("maplist", UI_MapList_f);
     Cmd_AddCommand("ui_startdmmap", UI_StartDMMap_f);
-    Cmd_AddCommand("viewspawnlist", UI_ViewSpawnList_f);
-    Cmd_AddCommand("lod_spawnlist", UI_LODSpawnList_f);
-    Cmd_AddCommand("soundpicker", UI_SoundPicker_f);
     Cmd_AddCommand("ui_showmouse", UI_ShowMouse_f);
     Cmd_AddCommand("ui_hidemouse", UI_HideMouse_f);
     Cmd_AddCommand("ui_saveconsolepos", SaveConsoleRectangle);

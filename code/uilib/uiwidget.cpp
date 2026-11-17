@@ -3123,11 +3123,6 @@ void UIWidget::EventFadeSequence(Event *ev)
     m_fadeSequenceState         = fadesequence_t::SEQUENCE_STARTING;
 }
 
-void UIWidget::SetDontLocalize()
-{
-    m_flags |= WF_DONTLOCALIZE;
-}
-
 CLASS_DECLARATION(UIWidget, UIWidgetContainer, NULL) {
     {&EV_Layout_BGFill,     &UIWidgetContainer::SetBGFill    },
     {&EV_Layout_Fullscreen, &UIWidgetContainer::SetFullscreen},

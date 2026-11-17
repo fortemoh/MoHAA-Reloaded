@@ -907,8 +907,6 @@ void	FS_FilenameCompletion( const char *dir, const char *ext,
 const char* FS_GetCurrentGameDir();
 void	FS_GetRelativeFilename( const char *currentDirectory, const char *absoluteFilename, char *out, size_t destlen );
 
-void FS_FileTime(const char* filename, char* date, char* size);
-
 void FS_CorrectCase(char* path);
 
 extern cvar_t* fs_debug;
@@ -1235,8 +1233,6 @@ void CL_CharEvent( int key );
 // char events are for field typing, not game control
 
 void CL_GetMouseState( int *x, int *y, unsigned int *buttons );
-
-void CL_SetMousePos( int x, int y );
 
 void CL_MouseEvent( int dx, int dy, int time );
 
