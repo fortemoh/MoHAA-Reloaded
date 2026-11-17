@@ -377,24 +377,6 @@ Event EV_Layout_FitBelow
     "Its bottom pad design units under a sibling's text (or its bottom edge)"
 );
 
-Event EV_Layout_FitTo
-(
-    "fitto",
-    EV_DEFAULT,
-    "sfF",
-    "widget_name pad min",
-    "As wide as a sibling's text and pad on each side (no narrower than min), about its middle"
-);
-
-Event EV_Layout_FitText
-(
-    "fittext",
-    EV_DEFAULT,
-    "fFF",
-    "pad min max",
-    "As wide as its text and pad on each side, between min and max, about where its text is aligned"
-);
-
 Event EV_Layout_MoveIf
 (
     "moveif",
@@ -499,8 +481,6 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Layout_FlowBefore,         &UIWidget::LayoutFlowBefore        },
     {&EV_Layout_FlowBelow,          &UIWidget::LayoutFlowBelow         },
     {&EV_Layout_FitBelow,           &UIWidget::LayoutFitBelow          },
-    {&EV_Layout_FitTo,              &UIWidget::LayoutFitTo             },
-    {&EV_Layout_FitText,            &UIWidget::LayoutFitText           },
     {&EV_Layout_MoveIf,             &UIWidget::LayoutMoveIf            },
     {&EV_Layout_FitWidth,           &UIWidget::LayoutFitWidth          },
     {&EV_Layout_Anchor,             &UIWidget::LayoutAnchor            },
@@ -1324,16 +1304,15 @@ void UIWidget::LayoutAnchor(Event *ev)
     m_anchor[1] = ev->GetFloat(2);
 }
 
-enum { RULE_FLOWAFTER, RULE_FLOWBEFORE, RULE_FLOWBELOW, RULE_FITBELOW, RULE_FITTO, RULE_FITTEXT, RULE_MOVEIF };
+enum { RULE_FLOWAFTER, RULE_FLOWBEFORE, RULE_FLOWBELOW, RULE_FITBELOW, RULE_MOVEIF };
 
 void UIWidget::AddRule(int kind, Event *ev, int floats)
 {
-    const int first = kind == RULE_FITTEXT ? 1 : 2;
-    uiRule_t  r     = {kind, kind == RULE_FITTEXT ? str() : ev->GetString(1), NULL, 0, 0, 0};
-    float    *v[3]  = {&r.a, &r.b, &r.c};
+    uiRule_t r    = {kind, ev->GetString(1), NULL, 0, 0};
+    float   *v[2] = {&r.a, &r.b};
 
-    for (int i = 0; i < floats && first + i <= ev->NumArgs(); i++) {
-        *v[i] = ev->GetFloat(first + i);
+    for (int i = 0; i < floats && 2 + i <= ev->NumArgs(); i++) {
+        *v[i] = ev->GetFloat(2 + i);
     }
     m_rules.push_back(r);
 }
@@ -1342,8 +1321,6 @@ void UIWidget::LayoutFlowAfter(Event *ev) { AddRule(RULE_FLOWAFTER, ev, 1); }
 void UIWidget::LayoutFlowBefore(Event *ev) { AddRule(RULE_FLOWBEFORE, ev, 1); }
 void UIWidget::LayoutFlowBelow(Event *ev) { AddRule(RULE_FLOWBELOW, ev, 1); }
 void UIWidget::LayoutFitBelow(Event *ev) { AddRule(RULE_FITBELOW, ev, 1); }
-void UIWidget::LayoutFitTo(Event *ev) { AddRule(RULE_FITTO, ev, 2); }
-void UIWidget::LayoutFitText(Event *ev) { AddRule(RULE_FITTEXT, ev, 3); }
 void UIWidget::LayoutMoveIf(Event *ev) { AddRule(RULE_MOVEIF, ev, 2); }
 void UIWidget::LayoutFitWidth(Event *ev) { m_fitWidth = ev->GetFloat(1); }
 
@@ -1376,7 +1353,7 @@ void UIWidget::Flow(void)
     for (uiRule_t& rule : m_rules) {
         UIRect2D b;
 
-        if (rule.kind != RULE_FITTEXT && !rule.sibling) {
+        if (!rule.sibling) {
             rule.sibling = m_parent ? m_parent->FindWidget(rule.name) : NULL;
             if (!rule.sibling || rule.sibling == this) {
                 rule.sibling = NULL;
@@ -1388,23 +1365,6 @@ void UIWidget::Flow(void)
                 r.pos.x += rule.a;
                 r.pos.y += rule.b;
             }
-            continue;
-        }
-        if (rule.kind == RULE_FITTEXT) {
-            // its own text's width, about where it is aligned
-            float w;
-
-            m_designRect = r;
-            b            = ContentBox();
-            w            = b.size.width + rule.a * 2.0f;
-            w            = Q_max(w, rule.b);
-            w            = rule.c > 0.0f ? Q_min(w, rule.c) : w;
-            if (m_iFontAlignmentHorizontal == FONT_JUSTHORZ_CENTER) {
-                r.pos.x += (r.size.width - w) * 0.5f;
-            } else if (m_iFontAlignmentHorizontal == FONT_JUSTHORZ_RIGHT) {
-                r.pos.x += r.size.width - w;
-            }
-            r.size.width = w;
             continue;
         }
         // (a gap after a sibling only when it has something)
@@ -1422,13 +1382,6 @@ void UIWidget::Flow(void)
         case RULE_FITBELOW:
             r.size.height = Q_max(0.0f, b.pos.y + b.size.height + rule.a - r.pos.y);
             break;
-        case RULE_FITTO: {
-            const float w = Q_max(b.size.width + rule.a * 2.0f, rule.b);
-
-            r.pos.x += (r.size.width - w) * 0.5f;
-            r.size.width = w;
-            break;
-        }
         }
     }
     depth--;

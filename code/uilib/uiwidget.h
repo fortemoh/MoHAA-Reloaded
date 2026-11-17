@@ -181,14 +181,14 @@ protected:
     str            m_widthCvar;  // the shape drawn this fraction wide
     bool           m_widthLeft;  // ... from its left, else about its middle
     vec2_t         m_anchor;     // a menu's middle at these fractions of the screen (-1: its align)
-    // the layout rules (flowafter flowbefore flowbelow fitbelow fitto
-    // fittext moveif): applied in order to the URC's rect each frame, from
+    // the layout rules (flowafter flowbefore flowbelow fitbelow moveif):
+    // applied in order to the URC's rect each frame, from
     // the siblings' boxes as they are then (Flow)
     struct uiRule_t {
         int       kind;
         str       name;
         UIWidget *sibling;
-        float     a, b, c;
+        float     a, b;
     };
     std::vector<uiRule_t> m_rules;
     UIRect2D       m_designBase; // the URC's rect
@@ -289,8 +289,6 @@ public:
     void             LayoutFlowBefore(Event *ev);
     void             LayoutFlowBelow(Event *ev);
     void             LayoutFitBelow(Event *ev);
-    void             LayoutFitTo(Event *ev);
-    void             LayoutFitText(Event *ev);
     void             LayoutMoveIf(Event *ev);
     void             LayoutFitWidth(Event *ev);
     cvar_t *CvarOf(int i, const str& name);
