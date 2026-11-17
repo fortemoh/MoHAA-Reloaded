@@ -407,7 +407,6 @@ public:
     virtual void       UpdateData(void);
     virtual void       UpdateUIElement(void);
     float              getTitleWidth(void);
-    float              getTitleHeight(void);
     bool               CanActivate(void);
     void               AllowActivate(bool canactivate);
     bool               IsActive(void);

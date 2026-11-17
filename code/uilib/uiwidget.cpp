@@ -2741,11 +2741,6 @@ float UIWidget::getTitleWidth(void)
     return m_font->getWidth(getTitle(), -1);
 }
 
-float UIWidget::getTitleHeight(void)
-{
-    return m_font->getHeight(getVirtualScale());
-}
-
 bool UIWidget::CanActivate(void)
 {
     if (!m_canactivate || m_dying) {
