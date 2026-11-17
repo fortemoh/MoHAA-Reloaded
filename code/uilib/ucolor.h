@@ -83,8 +83,6 @@ extern const UColor UClear;
 extern const UColor UWhite;
 extern const UColor UBlack;
 extern const UColor ULightGrey;
-extern const UColor UGrey;
-extern const UColor UDarkGrey;
 extern const UColor ULightRed;
 extern const UColor URed;
 extern const UColor UGreen;

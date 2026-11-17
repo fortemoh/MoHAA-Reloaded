@@ -42,7 +42,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "uistatus.h"
 #include "uilabel.h"
 #include "uislider.h"
-#include "uihorizscroll.h"
 #include "uivertscroll.h"
 #include "uibutton.h"
 #include "uicheckbox.h"
