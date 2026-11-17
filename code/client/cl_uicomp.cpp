@@ -2208,7 +2208,7 @@ static void RM_Step(size_t most)
 
 static void RM_Walk(void)
 {
-    const char *p = CM_EntityString();
+    const char *p;
     vec3_t      mins, maxs;
     const int   start = Sys_Milliseconds();
 
