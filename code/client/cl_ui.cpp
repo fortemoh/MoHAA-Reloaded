@@ -3330,56 +3330,6 @@ void UI_ClearState(void)
 
 /*
 ====================
-UI_CheckRestart
-====================
-*/
-void UI_CheckRestart(void)
-{
-    if (ui_console->integer && !fakk_console) {
-        fakk_console = getNewConsole();
-    }
-
-    if (!dm_console) {
-        dm_console = getNewDMConsole();
-    }
-
-    if (!ui_console->integer && fakk_console) {
-        fakk_console->SendSignal(W_Destroyed);
-    }
-
-    if (ui_minicon->integer) {
-        if (!mini_console) {
-            UISize2D size;
-            UColor   back = UColor(0.0, 0.5, 1.0, 1.0);
-
-            size.width  = 500;
-            size.height = 100;
-
-            mini_console = new FakkMiniconsole;
-            mini_console->Create(size, UHudColor, back, 0.3f);
-            mini_console->setAlwaysOnBottom(true);
-            mini_console->setBorderStyle(border_none);
-        }
-    } else if (mini_console) {
-        delete mini_console;
-        mini_console = NULL;
-    }
-
-    menuManager.CheckRestart();
-}
-
-/*
-====================
-UI_ResetCvars
-====================
-*/
-void UI_ResetCvars(void)
-{
-    menuManager.ResetCVars();
-}
-
-/*
-====================
 UI_ShowMouse_f
 ====================
 */
@@ -3638,8 +3588,6 @@ void CL_ShutdownUI(void)
     Cmd_RemoveCommand("ui_loadconsolepos");
     Cmd_RemoveCommand("clear");
     Cmd_RemoveCommand("ui_hud");
-    Cmd_RemoveCommand("ui_resetcvars");
-    Cmd_RemoveCommand("ui_checkrestart");
     Cmd_RemoveCommand("centerprint");
     Cmd_RemoveCommand("locationprint");
     Cmd_RemoveCommand("finishloadingscreen");
@@ -3847,8 +3795,6 @@ void CL_InitializeUI(void)
     Cmd_AddCommand("ui_loadconsolepos", LoadConsoleRectangle);
     Cmd_AddCommand("clear", UI_ClearConsole_f);
     Cmd_AddCommand("ui_hud", UI_Hud_f);
-    Cmd_AddCommand("ui_resetcvars", UI_ResetCvars);
-    Cmd_AddCommand("ui_checkrestart", UI_CheckRestart);
     Cmd_AddCommand("centerprint", UI_CenterPrint_f);
     Cmd_AddCommand("locationprint", UI_LocationPrint_f);
     Cmd_AddCommand("finishloadingscreen", UI_FinishLoadingScreen_f);

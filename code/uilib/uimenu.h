@@ -61,10 +61,8 @@ public:
     qboolean  isVisible(void);
     void      SaveCVars(void);
     void      RestoreCVars(void);
-    void      ResetCVars(void);
     void      PassEventToWidget(str name, Event *ev);
     void      PassEventToAllWidgets(Event& ev);
-    void      CheckRestart(void);
 };
 
 class MenuManager : public Listener
@@ -107,8 +105,6 @@ public:
     void  Unlock(Event *ev);
     void  PassEventToWidget(str name, Event *ev);
     void  PassEventToAllWidgets(Event& ev);
-    void  ResetCVars(void);
-    void  CheckRestart(void);
     bool  ForceMenu(str name);
 };
 

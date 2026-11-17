@@ -354,21 +354,6 @@ void Menu::RestoreCVars(void)
     }
 }
 
-void Menu::ResetCVars(void)
-{
-    int i;
-    int n;
-
-    n = m_itemlist.NumObjects();
-    for (i = 1; i <= n; i++) {
-        UIWidget *wid = m_itemlist.ObjectAt(i);
-
-        if (wid->m_cvarname.length()) {
-            uii.Cvar_Reset(wid->m_cvarname);
-        }
-    }
-}
-
 void Menu::PassEventToWidget(str name, Event *ev)
 {
     int i;
@@ -394,48 +379,6 @@ void Menu::PassEventToAllWidgets(Event& ev)
         UIWidget *wid = m_itemlist.ObjectAt(i);
         if (wid->ValidEvent(ev.getName())) {
             wid->ProcessEvent(ev);
-        }
-    }
-}
-
-void Menu::CheckRestart(void)
-{
-    cvar_t  *cvar;
-    qboolean do_restart     = false;
-    qboolean do_snd_restart = false;
-    qboolean do_ter_restart = false;
-    int      i;
-    int      n;
-
-    n = m_itemlist.NumObjects();
-    for (i = 1; i <= n; i++) {
-        UIWidget *wid = m_itemlist.ObjectAt(i);
-
-        if (wid->m_cvarname.length()) {
-            cvar = uii.Cvar_Find(wid->m_cvarname);
-            if (cvar && cvar->latchedString) {
-                if (str::icmp(wid->m_cvarvalue, cvar->latchedString)) {
-                    if (cvar->flags & CVAR_LATCH) {
-                        do_restart = true;
-                    } else if (cvar->flags & CVAR_SOUND_LATCH) {
-                        do_snd_restart = true;
-                    } else if (cvar->flags & CVAR_TERRAIN_LATCH) {
-                        do_ter_restart = true;
-                    }
-                }
-            }
-        }
-    }
-
-    if (do_restart) {
-        uii.Cmd_Stuff("vid_restart\n");
-    } else {
-        if (do_snd_restart) {
-            uii.Cmd_Stuff("snd_restart\n");
-        }
-
-        if (do_ter_restart) {
-            uii.Cmd_Stuff("ter_restart\n");
         }
     }
 }
@@ -819,24 +762,6 @@ void MenuManager::PassEventToAllWidgets(Event& ev)
     for (i = 1; i <= iMenuCount; i++) {
         Menu *pMenu = m_menulist.ObjectAt(i);
         pMenu->PassEventToAllWidgets(ev);
-    }
-}
-
-void MenuManager::ResetCVars(void)
-{
-    Menu *head = CurrentMenu();
-
-    if (head) {
-        head->ResetCVars();
-    }
-}
-
-void MenuManager::CheckRestart(void)
-{
-    Menu *head = CurrentMenu();
-
-    if (head) {
-        head->CheckRestart();
     }
 }
 
