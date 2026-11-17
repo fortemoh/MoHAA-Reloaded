@@ -30,8 +30,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 void        UI_Menus_Init(void);
 // a player model's name ("US - Soldier"), else the file's (fileName)
 const char *PM_FilenameToDisplayname(const char *fileName);
-// the menu shown for a stock menu's name, NULL: none (the menu of that name)
-const char *UI_Menus_Alias(const char *name);
 // a menu about to be pushed by that name (the weapon menu's nation and
 // preview); qfalse: not pushed (the server's push after a side picked in the
 // weapon menu, F2's mpoptions, F3's and F4's pages shown instead)

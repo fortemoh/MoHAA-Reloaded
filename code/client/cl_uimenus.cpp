@@ -1149,7 +1149,8 @@ static const struct {
 // (the page over it), shown in their place (UI_Menus_Pushing)
 #define RL_VOTEMENUS "reloaded_options"
 
-const char *UI_Menus_Alias(const char *name)
+// the menu shown for a stock menu's name, NULL: none (the menu of that name)
+static const char *UI_Menus_Alias(const char *name)
 {
     if (!name) {
         return NULL;
