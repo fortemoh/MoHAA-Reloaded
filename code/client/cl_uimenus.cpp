@@ -691,12 +691,6 @@ typedef struct {
     const char *cls, *name, *svg;
 } rlWeapon_t;
 
-static rlWeapon_t RL_W(const char *cls, const char *name, const char *svg)
-{
-    rlWeapon_t w = {cls, name, svg};
-    return w;
-}
-
 // what a nation gets for a class; axisModel: the Axis model it is for (the German sniper's)
 static rlWeapon_t RL_WeaponFor(int nation, int wc, int target, int dmflags, const char *axisModel)
 {
@@ -706,78 +700,78 @@ static rlWeapon_t RL_WeaponFor(int nation, int wc, int target, int dmflags, cons
     case WC_RIFLE:
         switch (nation) {
         case NAT_UK:
-            return RL_W("RIFLE", "LEE-ENFIELD", "enfield");
+            return {"RIFLE", "LEE-ENFIELD", "enfield"};
         case NAT_RU:
-            return RL_W("RIFLE", "MOSIN-NAGANT", "mosin_nagant_rifle");
+            return {"RIFLE", "MOSIN-NAGANT", "mosin_nagant_rifle"};
         case NAT_DE:
-            return RL_W("RIFLE", "KAR98K", "kar98");
+            return {"RIFLE", "KAR98K", "kar98"};
         case NAT_IT:
-            return RL_W("RIFLE", "CARCANO", "it_w_carcano");
+            return {"RIFLE", "CARCANO", "it_w_carcano"};
         default:
-            return RL_W("RIFLE", "M1 GARAND", "m1_garand");
+            return {"RIFLE", "M1 GARAND", "m1_garand"};
         }
     case WC_SNIPER:
         if (nation == NAT_UK && bt) {
-            return RL_W("SNIPER", "L42A1", "uk_w_l42a1");
+            return {"SNIPER", "L42A1", "uk_w_l42a1"};
         }
         if (nation == NAT_RU && !(dmflags & DF_OLD_SNIPER)) {
-            return RL_W("SNIPER", "SVT-40", "svt_rifle");
+            return {"SNIPER", "SVT-40", "svt_rifle"};
         }
         if (nation == NAT_DE) {
             if (aa || (dmflags & DF_OLD_SNIPER) || !Q_stricmpn(axisModel, "german_panzer", 13)) {
-                return RL_W("SNIPER", "KAR98K SNIPER", "kar98sniper");
+                return {"SNIPER", "KAR98K SNIPER", "kar98sniper"};
             }
-            return RL_W("SNIPER", "GEWEHR 43", "g43");
+            return {"SNIPER", "GEWEHR 43", "g43"};
         }
         if (nation == NAT_IT) {
-            return RL_W("SNIPER", "KAR98K SNIPER", "kar98sniper");
+            return {"SNIPER", "KAR98K SNIPER", "kar98sniper"};
         }
-        return RL_W("SNIPER", "SPRINGFIELD '03", "springfield");
+        return {"SNIPER", "SPRINGFIELD '03", "springfield"};
     case WC_SMG:
         switch (nation) {
         case NAT_UK:
-            return RL_W("SUBMACHINE GUN", "STEN MK II", "sten");
+            return {"SUBMACHINE GUN", "STEN MK II", "sten"};
         case NAT_RU:
-            return RL_W("SUBMACHINE GUN", "PPSH-41", "ppsh_smg");
+            return {"SUBMACHINE GUN", "PPSH-41", "ppsh_smg"};
         case NAT_DE:
-            return RL_W("SUBMACHINE GUN", "MP40", "mp40");
+            return {"SUBMACHINE GUN", "MP40", "mp40"};
         case NAT_IT:
-            return RL_W("SUBMACHINE GUN", "MOSCHETTO", "it_w_moschetto");
+            return {"SUBMACHINE GUN", "MOSCHETTO", "it_w_moschetto"};
         default:
-            return RL_W("SUBMACHINE GUN", "THOMPSON", "thompsonsmg");
+            return {"SUBMACHINE GUN", "THOMPSON", "thompsonsmg"};
         }
     case WC_MG:
         if (nation == NAT_UK && bt) {
-            return RL_W("MACHINE GUN", "VICKERS-BERTHIER", "uk_w_vickers");
+            return {"MACHINE GUN", "VICKERS-BERTHIER", "uk_w_vickers"};
         }
         if (nation == NAT_DE) {
-            return RL_W("MACHINE GUN", "STG 44", "mp44");
+            return {"MACHINE GUN", "STG 44", "mp44"};
         }
         if (nation == NAT_IT) {
-            return RL_W("MACHINE GUN", "BREDA", "it_w_breda");
+            return {"MACHINE GUN", "BREDA", "it_w_breda"};
         }
-        return RL_W("MACHINE GUN", "BAR", "bar");
+        return {"MACHINE GUN", "BAR", "bar"};
     case WC_HEAVY:
         if (nation == NAT_UK && bt) {
-            return RL_W("ANTI-TANK", "PIAT", "uk_w_piat");
+            return {"ANTI-TANK", "PIAT", "uk_w_piat"};
         }
         if (nation == NAT_DE || nation == NAT_IT) {
-            return RL_W("ANTI-TANK", "PANZERSCHRECK", "panzerschreck");
+            return {"ANTI-TANK", "PANZERSCHRECK", "panzerschreck"};
         }
-        return RL_W("ANTI-TANK", "BAZOOKA", "bazooka");
+        return {"ANTI-TANK", "BAZOOKA", "bazooka"};
     case WC_SHOTGUN:
         if (nation == NAT_UK && bt) {
-            return RL_W("SILENCED CARBINE", "DE LISLE", "delisle");
+            return {"SILENCED CARBINE", "DE LISLE", "delisle"};
         }
         if (nation == NAT_DE && !aa && !(dmflags & DF_DISALLOW_KAR98_MORTAR)) {
-            return RL_W("RIFLE GRENADE", "GEWEHRGRANATE", "kar98_mortar");
+            return {"RIFLE GRENADE", "GEWEHRGRANATE", "kar98_mortar"};
         }
-        return RL_W("SHOTGUN", "TRENCH GUN", "shotgun");
+        return {"SHOTGUN", "TRENCH GUN", "shotgun"};
     default:
         if (nation == NAT_DE) {
-            return RL_W("MINE SWEEPER", "MINENSUCHGER\xc4T", "gr_w_minedetector");
+            return {"MINE SWEEPER", "MINENSUCHGER\xc4T", "gr_w_minedetector"};
         }
-        return RL_W("MINE SWEEPER", "MINE DETECTOR", "us_w_minedetector");
+        return {"MINE SWEEPER", "MINE DETECTOR", "us_w_minedetector"};
     }
 }
 
@@ -2849,15 +2843,6 @@ static void RL_SortRows(std::vector<rlRow_t>& rows)
     });
 }
 
-static const char *RL_KD(const rlScore_t *sc, char *buf, int size)
-{
-    if (!sc) {
-        return "\x96";
-    }
-    Com_sprintf(buf, size, "%.2f", sc->deaths ? (float)sc->kills / sc->deaths : (float)sc->kills);
-    return buf;
-}
-
 static void RL_SbHeader(const rlView_t& v, float x, float y, float w, float h, const rlInfo_t& in, const std::vector<rlRow_t>& ffaRows)
 {
     const float k = h / 104;
@@ -2986,22 +2971,22 @@ static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, con
         const char *vals[5];
         float       rx = x + w - 16;
         char        k[16], d[16], ping[16], kd[16];
+        const float ratio = !r.sc ? 0.0f : r.sc->deaths ? (float)r.sc->kills / r.sc->deaths : (float)r.sc->kills;
 
         Com_sprintf(k, sizeof(k), "%d", r.sc ? r.sc->kills : 0);
         Com_sprintf(d, sizeof(d), "%d", r.sc ? r.sc->deaths : 0);
+        Com_sprintf(kd, sizeof(kd), "%.2f", ratio);
         Q_strncpyz(ping, r.sc ? (!Q_stricmp(r.sc->ping, "bot") ? "BOT" : r.sc->ping) : "\x96", sizeof(ping));
         vals[0] = r.sc ? k : "\x96";
         vals[1] = r.sc ? d : "\x96";
-        vals[2] = RL_KD(r.sc, kd, sizeof(kd));
+        vals[2] = r.sc ? kd : "\x96";
         vals[3] = r.sc ? r.sc->time : "\x96";
         vals[4] = ping;
         for (int c = 4; c >= 0; c--) {
             rlColor_t vc = col;
 
             if (c == 2 && r.sc && !dead && !me) {
-                const float kd = r.sc->deaths ? (float)r.sc->kills / r.sc->deaths : (float)r.sc->kills;
-
-                vc = kd >= 1.0f ? RL_Rgb(150, 205, 140) : RL_Rgb(220, 140, 120);
+                vc = ratio >= 1.0f ? RL_Rgb(150, 205, 140) : RL_Rgb(220, 140, 120);
             }
             if (c >= 3 && !me) {
                 vc = RL_Alpha(RL_MUTED, a);
