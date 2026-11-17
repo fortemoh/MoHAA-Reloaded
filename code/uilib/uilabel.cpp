@@ -23,14 +23,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "ui_local.h"
 #include "../qcommon/localization.h"
 
-Event EV_UILabel_LinkCvarToShader
-(
-    "linkcvartoshader",
-    EV_DEFAULT,
-    NULL,
-    NULL,
-    "Links the label's cvar to its shader"
-);
 // Added in 2.0
 //====
 Event EV_UILabel_OneShotSound
@@ -73,17 +65,14 @@ static const char *localizableVars[] = {
 CLASS_DECLARATION(UIWidget, UILabel, NULL) {
     {&W_MouseEntered,              &UILabel::MouseEntered         },
     {&W_MouseExited,               &UILabel::MouseExited          },
-    {&EV_UILabel_LinkCvarToShader, &UILabel::SetLinkCvarToShader  },
     {&EV_UILabel_OneShotSound,     &UILabel::OneShotSound         },
     {&EV_UILabel_LoopingSound,     &UILabel::LoopingSound         },
-    {&EV_Layout_Shader,            &UILabel::LabelLayoutShader    },
     {NULL,                         NULL                           }
 };
 
 UILabel::UILabel()
 {
     AllowActivate(false);
-    m_bLinkCvarToShader = false;
     m_bOneShotTriggered = false;
     m_iNextOneShotTime  = 0;
     m_iNextStateTime    = 0;
@@ -100,17 +89,6 @@ void UILabel::MouseEntered(Event *ev)
 void UILabel::MouseExited(Event *ev)
 {
     SetHovermaterialActive(false);
-}
-
-void UILabel::LabelLayoutShader(Event *ev)
-{
-    m_sCurrentShaderName = ev->GetString(1);
-    setMaterial(uWinMan.RegisterShader(m_sCurrentShaderName));
-}
-
-void UILabel::SetLinkCvarToShader(Event *ev)
-{
-    m_bLinkCvarToShader = true;
 }
 
 void UILabel::OneShotSound(Event *ev)
@@ -189,7 +167,7 @@ const char *UILabel::LinkedText(void)
 // Added: the text it draws
 const char *UILabel::CurrentText(void)
 {
-    if (m_cvarname.length() && !m_bLinkCvarToShader) {
+    if (m_cvarname.length()) {
         return LinkedText();
     }
     return label.length() ? label.c_str() : m_title.length() ? m_title.c_str() : "";
@@ -250,18 +228,6 @@ void UILabel::Draw(void)
 
     m_iLastDrawTime = uii.Sys_Milliseconds();
 
-    if (m_cvarname.length() && m_bLinkCvarToShader) {
-        string = LinkedText();
-        if (str::icmp(m_sCurrentShaderName, string)) {
-            m_sCurrentShaderName = string;
-
-            setMaterial(uWinMan.RegisterShader(m_sCurrentShaderName));
-
-            if (!m_material->GetMaterial()) {
-                setMaterial(NULL);
-            }
-        }
-    }
     string = CurrentText();
 
     if (*string) {

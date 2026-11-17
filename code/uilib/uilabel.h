@@ -25,8 +25,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 class UILabel : public UIWidget
 {
     str                     label;
-    qboolean                m_bLinkCvarToShader;
-    str                     m_sCurrentShaderName;
     str                     m_sOneShotSoundName;
     str                     m_sLoopingSoundName;
     qboolean                m_bOneShotTriggered;
@@ -58,13 +56,11 @@ public:
 private:
     void MouseEntered(Event *ev);
     void MouseExited(Event *ev);
-    void LabelLayoutShader(Event *ev);
     // Added in 2.0
     //====
     void OneShotSound(Event *ev);
     void LoopingSound(Event *ev);
     //====
-    void SetLinkCvarToShader(Event *ev);
     void FrameInitialized() override; // Added in 2.0
     void ProcessSounds();             // Added in 2.0
 
