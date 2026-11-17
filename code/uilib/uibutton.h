@@ -28,9 +28,6 @@ class UIButtonBase : public UIWidget
 {
 protected:
     mouseState_t m_mouseState;
-    str          m_hoverSound;
-    str          m_hoverCommand;
-    str          m_mouseExitedCommand;
 
 public:
     CLASS_PROTOTYPE(UIButtonBase);
@@ -41,9 +38,6 @@ protected:
     void MouseEntered(Event *ev);
     void MouseExited(Event *ev);
     void Dragged(Event *ev);
-    void SetHoverSound(Event *ev);
-    void SetHoverCommand(Event *ev);
-    void SetMouseExitedCommand(Event *ev);
 
 public:
     UIButtonBase();

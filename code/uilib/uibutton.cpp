@@ -32,42 +32,12 @@ Event W_Button_Pressed
     "Signal that the button was pressed"
 );
 
-Event W_Button_HoverSound
-(
-    "hoversound",
-    EV_DEFAULT,
-    "s",
-    "soundName",
-    "Set the sound to play when this button is hovered over"
-);
-
-Event W_Button_HoverCommand
-(
-    "hovercommand",
-    EV_DEFAULT,
-    "s",
-    "string",
-    "Set the command to execute when this button is hovered over"
-);
-
-Event W_Button_MouseAwayCommand
-(
-    "mouseawaycommand",
-    EV_DEFAULT,
-    "s",
-    "string",
-    "Set the command to execute when the mouse exits this button"
-);
-
 CLASS_DECLARATION(UIWidget, UIButtonBase, NULL) {
     {&W_LeftMouseDown,           &UIButtonBase::Pressed              },
     {&W_LeftMouseUp,             &UIButtonBase::Released             },
     {&W_LeftMouseDragged,        &UIButtonBase::Dragged              },
     {&W_MouseEntered,            &UIButtonBase::MouseEntered         },
     {&W_MouseExited,             &UIButtonBase::MouseExited          },
-    {&W_Button_HoverSound,       &UIButtonBase::SetHoverSound        },
-    {&W_Button_HoverCommand,     &UIButtonBase::SetHoverCommand      },
-    {&W_Button_MouseAwayCommand, &UIButtonBase::SetMouseExitedCommand},
     {NULL,                       NULL                                }
 };
 
@@ -120,45 +90,16 @@ void UIButtonBase::MouseEntered(Event *ev)
 {
     m_hovermaterial_active = qtrue;
     uWinMan.ActivateControl(this);
-
-    if (m_hoverSound.length()) {
-        uii.Snd_PlaySound(m_hoverSound.c_str());
-    }
-
-    if (m_hoverCommand.length()) {
-        str stuff = m_hoverCommand + "\n";
-        uii.Cmd_Stuff(stuff.c_str());
-    }
 }
 
 void UIButtonBase::MouseExited(Event *ev)
 {
     SetHovermaterialActive(false);
-
-    if (m_mouseExitedCommand.length()) {
-        str stuff = m_mouseExitedCommand + "\n";
-        uii.Cmd_Stuff(stuff.c_str());
-    }
 }
 
 void UIButtonBase::Dragged(Event *ev)
 {
     SetHovermaterialActive(getClientFrame().contains(MouseEventToClientPoint(ev)));
-}
-
-void UIButtonBase::SetHoverSound(Event *ev)
-{
-    m_hoverSound = ev->GetString(1);
-}
-
-void UIButtonBase::SetHoverCommand(Event *ev)
-{
-    m_hoverCommand = ev->GetString(1);
-}
-
-void UIButtonBase::SetMouseExitedCommand(Event *ev)
-{
-    m_mouseExitedCommand = ev->GetString(1);
 }
 
 void UIButtonBase::Action(void)
