@@ -450,19 +450,6 @@ void RL_RoundFrame(const rlView_t& v, float x, float y, float w, float h, float 
     RL_Shape(x0, y0, x1 - x0, y1 - y0, va("roundframe %g %g 1 1 1 1", r, width), c, v.s);
 }
 
-void RL_Skew(const rlView_t& v, float x, float y, float w, float h, float kl, float kr, rlColor_t c)
-{
-    const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
-
-    kl *= RL_SLANT;
-    kr *= RL_SLANT;
-    if (kl <= 0.0f && kr <= 0.0f) {
-        RL_Box(v, x, y, w, h, c);
-        return;
-    }
-    RL_Shape(x0, y0, x1 - x0, y1 - y0, va("poly 1 1 1 1 %.4g 0 1 0 %.4g 1 0 1", kl / w, 1.0f - kr / w), c, v.s);
-}
-
 // a horizontal gradient as strips (a and b at the left and right edges)
 void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b)
 {
@@ -1681,7 +1668,7 @@ static void RL_DrawMission(UIReloadedMenu *m, const rlView_t& v, float frac, con
     } else if (button && button->isEnabled()) {
         const bool hot = uid.mouseX >= RL_P(v, bx) && uid.mouseX < RL_P(v, bx + bw) && uid.mouseY >= RL_P(v, by) && uid.mouseY < RL_P(v, by + bh);
 
-        RL_Skew(v, bx, by, bw, bh, 12, 12, hot ? RL_BRASS_HOT : RL_BRASS);
+        RL_Box(v, bx, by, bw, bh, hot ? RL_BRASS_HOT : RL_BRASS);
         RL_Text(v, bx + bw / 2, by + bh / 2, "CONTINUE", RL_S1, RL_INK, true, RL_CENTER, 2.4f, RL_MID);
     } else {
         RL_Box(v, bx, by, bw, bh, RL_Rgb(10, 11, 12, 228));
@@ -2580,8 +2567,8 @@ void UIReloadedMenu::DrawEnd(const rlView_t& v, const rlInfo_t& in)
 
         RL_HeaderPanel(v, x0, y, gw, head, level[0] ? level : in.map, RL_H3, RL_MissionLine(in.map).c_str(), NULL, 1.0f,
                        gw - 56 - cw - 16);
-        RL_Skew(v, x0 + gw - 28 - cw, y + (head - bh) / 2, cw, bh, 12, 0, rl_end.ok ? RL_BRASS : RL_Rgb(214, 104, 88));
-        RL_Text(v, x0 + gw - 28 - cw / 2 + 3 * RL_SLANT, y + head / 2, tag, 18, RL_INK, true, RL_CENTER, 2, RL_MID);
+        RL_Box(v, x0 + gw - 28 - cw, y + (head - bh) / 2, cw, bh, rl_end.ok ? RL_BRASS : RL_Rgb(214, 104, 88));
+        RL_Text(v, x0 + gw - 28 - cw / 2, y + head / 2, tag, 18, RL_INK, true, RL_CENTER, 2, RL_MID);
     }
     y += head + gap;
     // the numbers, three a row
@@ -2640,10 +2627,10 @@ void UIReloadedMenu::DrawEnd(const rlView_t& v, const rlInfo_t& in)
     {
         const float cx = x0 + tw + gap, cw = 2 * tw + gap;
 
-        RL_Button(this, v, x0, y, tw, bh, "MAIN MENU", false, 0, 12, ID_MAINMENU);
-        RL_Button(this, v, cx, y, cw, bh, rl_end.ok ? "CONTINUE" : "TRY AGAIN", true, 12, 0, ID_CONTINUE, wait < 1.0f);
+        RL_Button(this, v, x0, y, tw, bh, "MAIN MENU", false, ID_MAINMENU);
+        RL_Button(this, v, cx, y, cw, bh, rl_end.ok ? "CONTINUE" : "TRY AGAIN", true, ID_CONTINUE, wait < 1.0f);
         if (wait < 1.0f) {
-            RL_Box(v, cx + 12 * RL_SLANT, y + bh - 4, (cw - 12 * RL_SLANT) * wait, 4, RL_BRASS);
+            RL_Box(v, cx, y + bh - 4, cw * wait, 4, RL_BRASS);
         }
         if (!rl_end.ok) {
             RL_Text(v, x0 + gw, y + bh + 24, *Cvar_VariableString("g_lastsave") ? "TRY AGAIN loads your last save." : "TRY AGAIN starts the level again.",

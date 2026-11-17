@@ -141,9 +141,9 @@ std::string RL_MissionLine(const char *map);
 // a Spearhead or Breakthrough level's painting (its load screen's, else its mission's; the missions' crop),
 // registered, the shape its aspect; 0 none (Allied Assault's: the end screen's own)
 qhandle_t   RL_LevelPainting(const char *map, float *aspect);
-// the main menu's slanted button (primary: brass; off: dimmed; lit while m's hot item), kl kr its edges' lean; its hit (id) added to m
-void        RL_Button(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, float kl,
-                      float kr, int id, bool off = false);
+// the main menu's button (primary: brass; off: dimmed; lit while m's hot item); its hit (id) added to m
+void        RL_Button(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, int id,
+                      bool off = false);
 
 // the player models a side can pick, in the order of their names (PM_FilenameToDisplayname)
 typedef struct {
