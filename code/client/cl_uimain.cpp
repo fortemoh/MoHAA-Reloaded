@@ -2214,6 +2214,8 @@ enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW
 #define OF_ANISO   128 // r_ext_texture_filter_anisotropic and r_ext_max_anisotropy: off, or how much
 #define OF_RES     256 // r_mode: the desktop's, or a size of the display's (r_customwidth, r_customheight)
 #define OF_THIRD   512 // a section in the third column (keys alone have three; else the right one)
+#define OF_REND    1024 // the renderer's own: shown where it made it, never made here (the Vulkan renderer's: Metal
+                        // has no multisampling, no limit on the dynamic lights, no submit thread, no mailbox present)
 
 typedef struct {
     int                kind, tab, flags; // the tab: a section's
@@ -2286,21 +2288,21 @@ static const rlOpt_t rl_opts[] = {
     O_SEG("Display Mode", "Borderless: a window without its frame.", "r_fullscreen", "1", rl_oDisplay, NULL, OF_DISPLAY),
     O_CYCLE("Resolution", "Desktop: the display's own.", "r_mode", "-2", NULL, NULL, OF_RES),
     O_TOGGLE("Vertical Sync", "No tearing, by waiting for the display.", "r_swapInterval", "0", 0),
-    O_TOGGLE("No Tearing", "The newest frame each refresh, less waiting.", "r_fastSync", "0", 0),
-    O_TOGGLE("Submit Thread", "Frames sent by a thread of their own.", "r_vkSubmitThread", "0", 0),
+    O_TOGGLE("No Tearing", "The newest frame each refresh, less waiting.", "r_fastSync", "0", OF_REND),
+    O_TOGGLE("Submit Thread", "Frames sent by a thread of their own.", "r_vkSubmitThread", "0", OF_REND),
     O_SLIDER("Max FPS", "Frames a second at most. 0: no limit.", "com_maxfps", "125", 0, 1000, 1, 0),
     O_SLIDER("Max FPS in Background", "With another window in front. 0: as above.", "com_maxfpsUnfocused", "0", 0, 1000, 1, 0),
     O_TOGGLE("Show FPS", "The frame rate in a corner.", "fps", "0", 0),
     O_SECTION(OT_VIDEO, "LIGHTING", 0),
     O_SEG("Shadows", "", "cg_shadows", "0", rl_oShadows, NULL, 0),
-    O_SEG("Dynamic Lights", "The most at once.", "r_maxDlights", "4", rl_oDlights, rl_oDlights, 0),
+    O_SEG("Dynamic Lights", "The most at once.", "r_maxDlights", "4", rl_oDlights, rl_oDlights, OF_REND),
     O_TOGGLE("Fast Dynamic Lights", "Cheaper, a little coarser.", "r_fastdlights", "0", 0),
     O_SECTION(OT_VIDEO, "PICTURE", OF_RIGHT),
     O_SLIDER("Brightness", "", "r_gamma", "1", 0.5f, 3, 0.05f, 0),
     O_SEG("Texture Quality", "", "r_picmip", "0", rl_oTextures, NULL, 0),
     O_SEG("Filtering", "", "r_textureMode", "GL_LINEAR_MIPMAP_LINEAR", rl_oFilters, rl_oFilterModes, 0),
     O_SEG("Anisotropic", "", "r_ext_texture_filter_anisotropic", "0", rl_oAniso, rl_oAnisoValues, OF_ANISO),
-    O_SEG("Multisampling", "Smoother edges.", "r_ext_multisample", "0", rl_oMsaa, rl_oMsaaValues, 0),
+    O_SEG("Multisampling", "Smoother edges.", "r_ext_multisample", "0", rl_oMsaa, rl_oMsaaValues, OF_REND),
     O_SECTION(OT_VIDEO, "EFFECTS", OF_RIGHT),
     O_SEG("Effect Detail", "Smoke, sparks, debris.", "cg_effectdetail", "1.0", rl_oDetail, rl_oDetailValues, 0),
     O_TOGGLE("Volumetric Smoke", "Smoke grenades' clouds.", "vss_draw", "1", 0),
@@ -2358,7 +2360,7 @@ static const rlOpt_t rl_opts[] = {
 static_assert(ID_OPT + RL_OPTS * 16 <= ID_KEY, "the settings' ids reach the keys'");
 
 // what the renderer (and, the last, the sound) takes at a restart, APPLY's: the latched settings, and the
-// brightness but on Windows (elsewhere it brightens the textures)
+// brightness but on Windows (elsewhere it brightens the textures); those the renderer doesn't make left alone
 static const char *const rl_optRestart[] = {
     "r_mode", "r_customwidth", "r_customheight", "r_fullscreen", "r_noborder", "r_swapInterval", "r_fastSync", "r_vkSubmitThread",
 #ifndef _WIN32
@@ -2455,6 +2457,14 @@ static cvar_t *RL_OptOther(const char *name)
     return cv;
 }
 
+// a cvar the game's code made (registered), NULL if none did: not one only a config's line made (OF_REND)
+static cvar_t *RL_OptMade(const char *name)
+{
+    cvar_t *cv = Cvar_FindVar(name);
+
+    return cv && !(cv->flags & CVAR_USER_CREATED) ? cv : NULL;
+}
+
 // a config file's lines, each tokenized as a command (Cmd_Argv) for fn
 template <typename F>
 static void RL_EachLine(const char *file, F fn)
@@ -2533,7 +2543,10 @@ static void RL_OptRead(void)
         sec           = rl_opts[i].kind == OC_SECTION ? i : sec;
         rl_opt.sec[i] = sec;
         if (rl_opts[i].cvar) {
-            rl_opt.cv[i] = RL_OptCvar(rl_opts[i].cvar, rl_opts[i].def, CVAR_ARCHIVE);
+            // (the renderer's own only if it made it: else the setting isn't shown)
+            rl_opt.cv[i] = !(rl_opts[i].flags & OF_REND) || RL_OptMade(rl_opts[i].cvar)
+                             ? RL_OptCvar(rl_opts[i].cvar, rl_opts[i].def, CVAR_ARCHIVE)
+                             : NULL;
         }
     }
     rl_opt.refSeq = uii.GetRefSequence();
@@ -2575,12 +2588,16 @@ static bool RL_KeyShown(int i, int a)
     return rl_opt.search.empty() ? rl_opts[s].tab == rl_opt.tab : RL_OptHas(rl_opts[s].label) || RL_OptHas(rl_keys.acts[a].name.c_str());
 }
 
-// a setting shown: its tab's, or what the search finds (its section's preview with what it finds there; an O_KEYS with an action shown)
+// a setting shown: its tab's, or what the search finds (its section's preview with what it finds there; an O_KEYS with an action shown);
+// never one of the renderer's own it doesn't make
 static bool RL_OptShown(int i)
 {
     const rlOpt_t& o = rl_opts[i];
     const int      s = rl_opt.sec[i];
 
+    if (o.cvar && !rl_opt.cv[i]) {
+        return false;
+    }
     if (o.kind == OC_KEYS) {
         for (int a = rl_keys.from[i]; a < rl_keys.to[i]; a++) {
             if (RL_KeyShown(i, a)) {
@@ -3279,9 +3296,9 @@ static int RL_OptPending(void)
     int pending = 0;
 
     for (int k = 0; k < RL_RESTARTS; k++) {
-        const cvar_t *cv = RL_OptOther(rl_optRestart[k]);
+        const cvar_t *cv = RL_OptMade(rl_optRestart[k]) ? RL_OptOther(rl_optRestart[k]) : NULL;
 
-        if (cv->latchedString || rl_opt.applied[k] != cv->string) {
+        if (cv && (cv->latchedString || rl_opt.applied[k] != cv->string)) {
             pending |= k < RL_RESTARTS - 1 ? 1 : 2;
         }
     }
@@ -3297,7 +3314,9 @@ static void RL_OptApply(void)
         return;
     }
     for (int k = 0; k < RL_RESTARTS; k++) {
-        rl_opt.applied[k] = RL_Latched(RL_OptOther(rl_optRestart[k]));
+        if (RL_OptMade(rl_optRestart[k])) {
+            rl_opt.applied[k] = RL_Latched(RL_OptOther(rl_optRestart[k]));
+        }
     }
     Cbuf_AddText(pending & 1 ? "vid_restart\n" : "");
     Cbuf_AddText(pending & 2 ? "snd_restart\n" : "");
