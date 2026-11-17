@@ -966,7 +966,7 @@ static const char *EX_BannerText(int winner, bool match)
     return winner ? (match ? "AXIS WIN THE MATCH" : "AXIS WIN THE ROUND") : (match ? "ALLIES WIN THE MATCH" : "ALLIES WIN THE ROUND");
 }
 
-float UI_Extras_BannerHeight(const rlView_t& v)
+float UI_Extras_BannerHeight(void)
 {
     if (EX_Winner() < 0) {
         return 0.0f;
@@ -1081,7 +1081,7 @@ void UI_Extras_Print(const char *text, float alpha, int x, int y)
         bx = (v.dw - bw) * 0.5f;
         by = 300.0f - bh * 0.5f;
         if (EX_BannerOverGame()) {
-            by = Q_max(by, EX_BANNER_Y + UI_Extras_BannerHeight(v) + 12.0f);
+            by = Q_max(by, EX_BANNER_Y + UI_Extras_BannerHeight() + 12.0f);
         }
     } else {
         bx = x == -1 ? (v.dw - bw) * 0.5f : x / 640.0f * v.dw - 24.0f;

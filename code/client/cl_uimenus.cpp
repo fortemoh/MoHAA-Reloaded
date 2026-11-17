@@ -3174,7 +3174,7 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
         const int first = in.teamScore[1] > in.teamScore[0] ? 1 : 0;
         const int order[2] = {first, !first};
         const int n1 = Q_max(1, (int)teams[order[0]].size()), n2 = Q_max(1, (int)teams[order[1]].size());
-        const float banner = UI_Extras_BannerHeight(v), over = banner > 0.0f ? banner + 16.0f : 0.0f;
+        const float banner = UI_Extras_BannerHeight(), over = banner > 0.0f ? banner + 16.0f : 0.0f;
         std::string tow[2][5];
         const int   towN = in.gametype == GT_TOW ? RL_TowObjectives(tow) : 0;
         const float towH = towN ? RL_TOWBAND + 4 + towN * RL_TOWROW + 14 : 0.0f;

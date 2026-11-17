@@ -49,9 +49,9 @@ void UI_Extras_PreBake(qboolean ahead);
 #ifdef __cplusplus
 #    include "cl_uidraw.h"
 
-// the round's end banner on the Reloaded scoreboard: its height in v's units
-// (0: none), drawn with its top at y; its key (the draw cache's)
-float UI_Extras_BannerHeight(const rlView_t& v);
+// the round's end banner on the Reloaded scoreboard: its height in the menus'
+// units (0: none), drawn with its top at y; its key (the draw cache's)
+float UI_Extras_BannerHeight(void);
 void  UI_Extras_DrawBanner(const rlView_t& v, float y);
 int   UI_Extras_BannerKey(void);
 #endif
