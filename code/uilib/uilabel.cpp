@@ -21,7 +21,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include "ui_local.h"
-#include "../qcommon/localization.h"
 
 // Added in 2.0
 //====
@@ -43,24 +42,6 @@ Event EV_UILabel_LoopingSound
 
 );
 //====
-
-static const char *localizableVars[] = {
-    "ui_timemessage",
-    "cg_obj_axistext1",
-    "cg_obj_axistext2",
-    "cg_obj_axistext3",
-    "cg_obj_axistext4",
-    "cg_obj_axistext5"
-    "cg_obj_alliedtext1",
-    "cg_obj_alliedtext2",
-    "cg_obj_alliedtext3",
-    "cg_obj_alliedtext4",
-    "cg_obj_alliedtext5",
-    "g_gametypestring",
-    "dm_serverstatus",
-    "com_errormessage",
-    NULL
-};
 
 CLASS_DECLARATION(UIWidget, UILabel, NULL) {
     {&W_MouseEntered,              &UILabel::MouseEntered         },
@@ -133,7 +114,7 @@ void UILabel::LoopingSound(Event *ev)
 }
 
 // Added: the linked cvar's text: the cvar found once, its text made again
-// only when it changed (localized)
+// only when it changed
 const char *UILabel::LinkedText(void)
 {
     const char *string;
@@ -150,14 +131,6 @@ const char *UILabel::LinkedText(void)
     if (m_linkVar->modificationCount != m_linkCount) {
         string = m_linkVar->latchedString && *m_linkVar->latchedString ? m_linkVar->latchedString : m_linkVar->string;
 
-        //
-        // localize the cvar value when possible
-        //
-        for (int i = 0; localizableVars[i]; i++) {
-            if (!strcmp(localizableVars[i], string)) {
-                string = Sys_LV_CL_ConvertString(localizableVars[i]);
-            }
-        }
         m_linkText  = string;
         m_linkCount = m_linkVar->modificationCount;
     }
