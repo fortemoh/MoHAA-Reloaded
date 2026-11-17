@@ -132,8 +132,6 @@ qboolean UI_DMConsoleState(int *mode, const char **line, int *caret);
 // Added: a scoreboard is shown
 qboolean UI_ScoreboardShown(void);
 void     UI_ToggleDMConsole(int iMode);
-void     UI_OpenDeveloperConsole(void);
-void     UI_CloseDeveloperConsole(void);
 void     UI_PrintConsole(const char *msg);
 
 //

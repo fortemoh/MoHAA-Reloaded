@@ -39,7 +39,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 static qboolean             ui_hud;
 static UIFloatingConsole   *fakk_console;
 static UIFloatingDMConsole *dm_console;
-static UIFloatingConsole   *developer_console;
 static FakkMiniconsole     *mini_console;
 static View3D              *view3d;
 qboolean                    server_loading;
@@ -644,20 +643,6 @@ void UI_PrintConsole(const char *msg)
 
 /*
 ====================
-UI_PrintDeveloperConsole
-====================
-*/
-void UI_PrintDeveloperConsole(const char *msg)
-{
-    if (!developer_console) {
-        return;
-    }
-
-    developer_console->AddText(msg, NULL);
-}
-
-/*
-====================
 UI_MenuActive
 ====================
 */
@@ -844,53 +829,6 @@ void UI_ToggleDMConsole(int iMode)
         }
     } else {
         UI_OpenDMConsole(iMode);
-    }
-}
-
-/*
-====================
-UI_OpenDeveloperConsole
-====================
-*/
-void UI_OpenDeveloperConsole(void)
-{
-    if (!developer_console) {
-        return;
-    }
-
-    developer_console->setShow(true);
-    uWinMan.ActivateControl(developer_console);
-    IN_MouseOn();
-}
-
-/*
-====================
-UI_CloseDeveloperConsole
-====================
-*/
-void UI_CloseDeveloperConsole(void)
-{
-    if (developer_console && developer_console->getShow()) {
-        developer_console->setShow(false);
-    }
-    UI_FocusMenuIfExists();
-}
-
-/*
-====================
-UI_ToggleDeveloperConsole_f
-====================
-*/
-void UI_ToggleDeveloperConsole_f(void)
-{
-    if (!developer_console) {
-        return;
-    }
-
-    if (developer_console->IsThisOrChildActive()) {
-        UI_CloseDeveloperConsole();
-    } else {
-        UI_OpenDeveloperConsole();
     }
 }
 
@@ -2332,11 +2270,6 @@ void UI_ResolutionChange(void)
         dm_console->setFrame(frame);
     }
 
-    if (developer_console) {
-        frame = getDefaultConsoleRectangle();
-        developer_console->setFrame(frame);
-    }
-
     uie.ResolutionChange();
     menuManager.RealignMenus();
 
@@ -2727,9 +2660,6 @@ void UI_ClearConsole_f(void)
         dm_console->Clear();
     }
 
-    if (developer_console) {
-        developer_console->Clear();
-    }
 }
 
 /*
@@ -2826,7 +2756,6 @@ void CL_ShutdownUI(void)
     Cmd_RemoveCommand("locationprint");
     Cmd_RemoveCommand("finishloadingscreen");
     Cmd_RemoveCommand("ui_getplayermodel");
-    Cmd_RemoveCommand("devcon");
 
     ui_pConnectingMenu = menuManager.FindMenu("connecting");
 
@@ -2842,10 +2771,6 @@ void CL_ShutdownUI(void)
     if (dm_console) {
         delete dm_console;
         dm_console = NULL;
-    }
-    if (developer_console) {
-        delete developer_console;
-        developer_console = NULL;
     }
     if (mini_console) {
         delete mini_console;
@@ -3033,23 +2958,6 @@ void CL_InitializeUI(void)
     Cmd_AddCommand("locationprint", UI_LocationPrint_f);
     Cmd_AddCommand("finishloadingscreen", UI_FinishLoadingScreen_f);
     Cmd_AddCommand("ui_getplayermodel", UI_GetPlayerModel_f);
-
-    if (developer->integer) {
-        UColor bgColor;
-
-        Cmd_AddCommand("devcon", UI_ToggleDeveloperConsole_f);
-
-        developer_console = new UIFloatingConsole;
-
-        bgColor = UWindowColor;
-
-        developer_console->Create(NULL, getDefaultConsoleRectangle(), "Developer Console", bgColor, UHudColor);
-        developer_console->setConsoleHandler(ConsoleCommandHandler);
-        developer_console->setConsoleBackground(UBlack, 0.800000011920929);
-        developer_console->setShow(false);
-        developer_console->Connect(&s_consolehider, UIFloatingWindow::W_ClosePressed, UIFloatingWindow::W_ClosePressed);
-        developer_console->Connect(&s_consolehider, W_Destroyed, W_Destroyed);
-    }
 
     // Create the 3D view
     view3d = new View3D;

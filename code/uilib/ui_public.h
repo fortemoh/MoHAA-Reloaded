@@ -221,7 +221,6 @@ typedef struct uiexport_s {
     void        UI_UpdateCenterPrint(const char *s, float alpha);
     void        UI_UpdateLocationPrint(int x, int y, const char *s, float alpha);
     void        UI_PrintConsole(const char *msg);
-    void        UI_PrintDeveloperConsole(const char *msg);
 
 #ifdef __cplusplus
 }
