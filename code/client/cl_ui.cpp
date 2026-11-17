@@ -1152,7 +1152,7 @@ Added: the Competitive HUD's menus (cg_hudstyle 1 or 2, ui/hud_comp_*.urc),
 shown in place of the stock HUD's
 ====================
 */
-static void UI_CompHuds(bool show, bool messages = false)
+static void UI_CompHuds(bool show, bool messages)
 {
     static Menu     *menus[UI_COMPHUD_MENUS];
     static UIWidget *containers[UI_COMPHUD_MENUS]; // (asked if shown every frame: the widget, not through the menu)
@@ -1935,19 +1935,15 @@ void UI_Update(void)
 
     // Hide the HUD when necessary
     if (!ui_hud || covered || clc.state != CA_ACTIVE || view3d->LetterboxActive() || (currentMenu && currentMenu->isFullscreen())
-        || server_loading || ((cl.snap.ps.pm_flags & PMF_NO_HUD) || (cl.snap.ps.pm_flags & PMF_INTERMISSION))) {
-        // Added: through the intermission, the Competitive HUD's messages, chat, kills and vote stay
-        if (ui_hud && !covered && clc.state == CA_ACTIVE && !server_loading && !view3d->LetterboxActive()
-            && !(currentMenu && currentMenu->isFullscreen())) {
-            UI_CompHud_Frame();
-            UI_CompHuds(false, true);
-        } else {
-            UI_CompHuds(false);
-        }
+        || server_loading) {
+        UI_CompHuds(false, false);
     } else {
         // Changed: the Competitive HUD's menus (cl_uicomp.cpp)
+        // Added: through the intermission its messages, chat, kills and vote stay
+        const bool messages = (cl.snap.ps.pm_flags & (PMF_NO_HUD | PMF_INTERMISSION)) != 0;
+
         UI_CompHud_Frame();
-        UI_CompHuds(true);
+        UI_CompHuds(!messages, messages);
     }
 
     //
