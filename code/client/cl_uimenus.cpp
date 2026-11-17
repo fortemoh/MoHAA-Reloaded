@@ -2640,13 +2640,11 @@ void UIReloadedMenu::DrawEnd(const rlView_t& v, const rlInfo_t& in)
     {
         const float cx = x0 + tw + gap, cw = 2 * tw + gap;
 
-        RL_Button(v, x0, y, tw, bh, "MAIN MENU", false, 0, 12, Hot(ID_MAINMENU));
-        Hit(v, x0, y, tw, bh, ID_MAINMENU);
-        RL_Button(v, cx, y, cw, bh, rl_end.ok ? "CONTINUE" : "TRY AGAIN", true, 12, 0, Hot(ID_CONTINUE), wait < 1.0f);
+        RL_Button(this, v, x0, y, tw, bh, "MAIN MENU", false, 0, 12, ID_MAINMENU);
+        RL_Button(this, v, cx, y, cw, bh, rl_end.ok ? "CONTINUE" : "TRY AGAIN", true, 12, 0, ID_CONTINUE, wait < 1.0f);
         if (wait < 1.0f) {
             RL_Box(v, cx + 12 * RL_SLANT, y + bh - 4, (cw - 12 * RL_SLANT) * wait, 4, RL_BRASS);
         }
-        Hit(v, cx, y, cw, bh, ID_CONTINUE);
         if (!rl_end.ok) {
             RL_Text(v, x0 + gw, y + bh + 24, *Cvar_VariableString("g_lastsave") ? "TRY AGAIN loads your last save." : "TRY AGAIN starts the level again.",
                     15, RL_MUTED, false, RL_RIGHT, 0, RL_MID);

@@ -1335,13 +1335,16 @@ static void RL_Divider(const rlView_t& v, float x, float y, float h)
     RL_Skew(v, x - 1, y + m, 2 + k, h - 2 * m, k, k, RL_Rgb(255, 255, 255, 97));
 }
 
-void RL_Button(const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, float kl, float kr, bool hot, bool off)
+void RL_Button(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, float kl, float kr,
+               int id, bool off)
 {
+    const bool      hot  = m->Hot(id);
     const rlColor_t fill = primary ? (hot ? RL_BRASS_HOT : RL_BRASS) : RL_Rgb(255, 255, 255, hot ? 44 : 26);
 
     RL_Skew(v, x, y, w, h, kl, kr, off ? RL_Rgb(255, 255, 255, 14) : fill);
     RL_Text(v, x + w / 2 + (kl - kr) * 0.25f * RL_SLANT, y + h / 2, label, 18, off ? RL_FAINT : primary ? RL_INK : RL_TEXT, true,
             RL_CENTER, 2, RL_MID);
+    m->Hit(v, x, y, w, h, id);
 }
 
 // a text field: the text (typed in: its end, should it not fit, and a caret; else cut), the placeholder when empty
@@ -1862,12 +1865,10 @@ static void RL_Browser(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         const bool  busy = RL_SvBusy();
 
         RL_Box(v, x + 1, ay, w - 2, RL_FOOT - 1, RL_HEAD);
-        RL_Button(v, x + RL_PAD, by, 150, bh, "REFRESH", false, 0, 12, m->Hot(ID_REFRESH) && !busy, busy);
+        RL_Button(m, v, x + RL_PAD, by, 150, bh, "REFRESH", false, 0, 12, ID_REFRESH, busy);
         RL_Field(v, fx, by, fw, bh, 12, 12, rl_mm.search, "Search server name\x85", rl_mm.edit == F_SEARCH, m->Hot(ID_SEARCH));
-        RL_Button(v, x + w - RL_PAD - jw, by, jw, bh, "JOIN", true, 12, 0, m->Hot(ID_JOIN));
-        m->Hit(v, x + RL_PAD, by, 150, bh, ID_REFRESH);
         m->Hit(v, fx, by, fw, bh, ID_SEARCH);
-        m->Hit(v, x + w - RL_PAD - jw, by, jw, bh, ID_JOIN);
+        RL_Button(m, v, x + w - RL_PAD - jw, by, jw, bh, "JOIN", true, 12, 0, ID_JOIN);
     }
 }
 
@@ -1907,9 +1908,8 @@ static void RL_Profile(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
     RL_Text(v, x + RL_PAD, y + 24, "PROFILE", 20, RL_TEXT, true, RL_LEFT, 2, RL_MID);
     RL_Text(v, x + RL_PAD, y + 76, "NAME", 14, RL_MUTED, true, RL_LEFT, 1.6f, RL_MID);
     RL_Field(v, x + RL_PAD, y + 92, w - 2 * RL_PAD - aw - 4, 40, 0, 12, rl_mm.name, "", rl_mm.edit == F_NAME, m->Hot(ID_NAME));
-    RL_Button(v, x + w - RL_PAD - aw, y + 92, aw, 40, "APPLY", true, 12, 0, m->Hot(ID_APPLY));
     m->Hit(v, x + RL_PAD, y + 92, w - 2 * RL_PAD - aw - 4, 40, ID_NAME);
-    m->Hit(v, x + w - RL_PAD - aw, y + 92, aw, 40, ID_APPLY);
+    RL_Button(m, v, x + w - RL_PAD - aw, y + 92, aw, 40, "APPLY", true, 12, 0, ID_APPLY);
     RL_Box(v, x, y + 148, w, 1, RL_LINE);
     for (int t = 0; t < 2; t++) {
         const float     cx  = x + RL_PAD + t * (cw + 10), fh = RL_CTRL;
@@ -2014,8 +2014,7 @@ static void RL_Host(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
     {
         const float by = RL_FootRow(v, x, foot, w);
 
-        RL_Button(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "START", true, 12, 0, m->Hot(ID_START), rl_host.map.empty());
-        m->Hit(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, ID_START);
+        RL_Button(m, v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "START", true, 12, 0, ID_START, rl_host.map.empty());
     }
 }
 
@@ -2116,8 +2115,7 @@ static void RL_CampMissions(UIReloadedMenu *m, const rlView_t& v, float x, float
         RL_Label(v, x + RL_PAD, foot + RL_FOOT / 2, "DIFFICULTY");
         RL_Text(v, ex + 16, foot + RL_FOOT / 2, RL_Ellipsize(v, says, 17, false, x + w - RL_PAD - 190 - 16 - (ex + 16)).c_str(), 17, RL_SOFT,
                 false, RL_LEFT, 0, RL_MID);
-        RL_Button(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "START", true, 12, 0, m->Hot(ID_CSTART), !rl_camp.card && rl_camp.saves.empty());
-        m->Hit(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, ID_CSTART);
+        RL_Button(m, v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "START", true, 12, 0, ID_CSTART, !rl_camp.card && rl_camp.saves.empty());
     }
 }
 
@@ -2171,14 +2169,11 @@ static void RL_CampSaves(UIReloadedMenu *m, const rlView_t& v, float x, float y,
     {
         const float by = RL_FootRow(v, x, foot, w);
 
-        RL_Button(v, x + RL_PAD, by, 150, RL_CTRL, "DELETE", false, 0, 12, m->Hot(ID_CDELETE), !s);
-        m->Hit(v, x + RL_PAD, by, 150, RL_CTRL, ID_CDELETE);
+        RL_Button(m, v, x + RL_PAD, by, 150, RL_CTRL, "DELETE", false, 0, 12, ID_CDELETE, !s);
         if (RL_InMission()) {
-            RL_Button(v, x + w - RL_PAD - 190 - 8 - 150, by, 150, RL_CTRL, "SAVE", false, 0, 12, m->Hot(ID_CSAVE));
-            m->Hit(v, x + w - RL_PAD - 190 - 8 - 150, by, 150, RL_CTRL, ID_CSAVE);
+            RL_Button(m, v, x + w - RL_PAD - 190 - 8 - 150, by, 150, RL_CTRL, "SAVE", false, 0, 12, ID_CSAVE);
         }
-        RL_Button(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "LOAD", true, 12, 0, m->Hot(ID_CLOAD), !s);
-        m->Hit(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, ID_CLOAD);
+        RL_Button(m, v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "LOAD", true, 12, 0, ID_CLOAD, !s);
     }
 }
 
@@ -3259,9 +3254,8 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
         break;
     case OC_CODE:
         RL_Field(v, right - 364, mid - 18, 260, 36, 0, 0, rl_opt.code, "CS\x85, or the clipboard's", rl_mm.edit == F_CODE, m->Hot(id));
-        RL_Button(v, right - 100, mid - 18, 100, 36, "IMPORT", false, 0, 0, m->Hot(id + 1));
         m->Hit(v, right - 364, mid - 18, 260, 36, id);
-        m->Hit(v, right - 100, mid - 18, 100, 36, id + 1);
+        RL_Button(m, v, right - 100, mid - 18, 100, 36, "IMPORT", false, 0, 0, id + 1);
         break;
     }
     RL_Box(v, x, y + h - 2, w, 1, RL_LINE);
@@ -3390,15 +3384,12 @@ static void RL_Options(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         const float dx  = m->m_screen == SCR_OPTIONS ? 150 + 8 : 0; // (BACK's room)
 
         if (dx) {
-            RL_Button(v, x + RL_PAD, by, 150, RL_CTRL, "BACK", false, 0, 12, m->Hot(ID_BACK));
-            m->Hit(v, x + RL_PAD, by, 150, RL_CTRL, ID_BACK);
+            RL_Button(m, v, x + RL_PAD, by, 150, RL_CTRL, "BACK", false, 0, 12, ID_BACK);
         }
-        RL_Button(v, x + RL_PAD + dx, by, 150, RL_CTRL, "DEFAULTS", false, 0, 12, m->Hot(ID_DEFAULTS));
+        RL_Button(m, v, x + RL_PAD + dx, by, 150, RL_CTRL, "DEFAULTS", false, 0, 12, ID_DEFAULTS);
         // (between the buttons)
         RL_Text(v, x + w / 2 + dx / 2, foot + RL_FOOT / 2, say, 15, RL_BRASS, true, RL_CENTER, 2, RL_MID, w - 2 * (RL_PAD + 190 + 16) - dx);
-        RL_Button(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "APPLY", true, 12, 0, m->Hot(ID_OAPPLY) && pending, !pending);
-        m->Hit(v, x + RL_PAD + dx, by, 150, RL_CTRL, ID_DEFAULTS);
-        m->Hit(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, ID_OAPPLY);
+        RL_Button(m, v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "APPLY", true, 12, 0, ID_OAPPLY, !pending);
     }
 }
 
@@ -3680,10 +3671,8 @@ static void RL_Vote(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
         if (cl.snap.ps.voted) {
             RL_Text(v, cx + cw - 24, cy + ch / 2, "YOUR VOTE IS IN", 15, RL_BRASS, true, RL_RIGHT, 2, RL_MID);
         } else {
-            RL_Button(v, bx - 8 - 150, cy + (ch - RL_CTRL) / 2, 150, RL_CTRL, "NO", false, 0, 12, m->Hot(ID_VNO));
-            m->Hit(v, bx - 8 - 150, cy + (ch - RL_CTRL) / 2, 150, RL_CTRL, ID_VNO);
-            RL_Button(v, bx, cy + (ch - RL_CTRL) / 2, 150, RL_CTRL, "YES", true, 12, 0, m->Hot(ID_VYES));
-            m->Hit(v, bx, cy + (ch - RL_CTRL) / 2, 150, RL_CTRL, ID_VYES);
+            RL_Button(m, v, bx - 8 - 150, cy + (ch - RL_CTRL) / 2, 150, RL_CTRL, "NO", false, 0, 12, ID_VNO);
+            RL_Button(m, v, bx, cy + (ch - RL_CTRL) / 2, 150, RL_CTRL, "YES", true, 12, 0, ID_VYES);
         }
         top = cy + ch + RL_PAD;
         RL_Box(v, x, top, w, 1, RL_LINE);
@@ -3755,11 +3744,9 @@ static void RL_Vote(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
         const float by    = RL_FootRow(v, x, foot, w);
         const bool  ready = RL_VoteReady();
 
-        RL_Button(v, x + RL_PAD, by, 150, RL_CTRL, "BACK", false, 0, 12, m->Hot(ID_BACK));
-        m->Hit(v, x + RL_PAD, by, 150, RL_CTRL, ID_BACK);
+        RL_Button(m, v, x + RL_PAD, by, 150, RL_CTRL, "BACK", false, 0, 12, ID_BACK);
         RL_Text(v, x + w / 2, foot + RL_FOOT / 2, say, 15, RL_BRASS, true, RL_CENTER, 2, RL_MID, w - 2 * (RL_PAD + 190 + 16));
-        RL_Button(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "CALL VOTE", true, 12, 0, m->Hot(ID_VCALL) && ready, !ready);
-        m->Hit(v, x + w - RL_PAD - 190, by, 190, RL_CTRL, ID_VCALL);
+        RL_Button(m, v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "CALL VOTE", true, 12, 0, ID_VCALL, !ready);
     }
 }
 
@@ -3918,10 +3905,8 @@ void UIReloadedMenu::DrawConfirm(const rlView_t& v)
     RL_Head(v, x, y, w, 56);
     RL_Text(v, x + 24, y + 28, says[k][0], 22, RL_TEXT, true, RL_LEFT, 2, RL_MID);
     RL_Text(v, x + 24, y + 100, k == 4 ? RL_KeyQuestion().c_str() : says[k][1], 22, RL_SOFT, false, RL_LEFT, 0, RL_MID, w - 48);
-    RL_Button(v, x + w - 24 - 328, by, 150, 48, "CANCEL", false, 0, 12, Hot(ID_CANCEL));
-    RL_Button(v, x + w - 24 - 170, by, 170, 48, says[k][2], true, 12, 0, Hot(ID_CONFIRM));
-    Hit(v, x + w - 24 - 328, by, 150, 48, ID_CANCEL);
-    Hit(v, x + w - 24 - 170, by, 170, 48, ID_CONFIRM);
+    RL_Button(this, v, x + w - 24 - 328, by, 150, 48, "CANCEL", false, 0, 12, ID_CANCEL);
+    RL_Button(this, v, x + w - 24 - 170, by, 170, 48, says[k][2], true, 12, 0, ID_CONFIRM);
 }
 
 /*
@@ -4102,8 +4087,7 @@ void UIReloadedMenu::DrawConnect(const rlView_t& v)
         }
         RL_Text(v, x + pad, by + 24, RL_Ellipsize(v, said.c_str(), 18, false, w - 3 * pad - 150).c_str(), 18,
                 clc.serverMessage[0] ? RL_TEXT : RL_MUTED, false, RL_LEFT, 0, RL_MID);
-        RL_Button(v, x + w - pad - 150, by, 150, 48, "CANCEL", false, 12, 0, Hot(ID_CANCEL));
-        Hit(v, x + w - pad - 150, by, 150, 48, ID_CANCEL);
+        RL_Button(this, v, x + w - pad - 150, by, 150, 48, "CANCEL", false, 12, 0, ID_CANCEL);
         return;
     }
     // what happened, a word more; the password's field
@@ -4113,10 +4097,8 @@ void UIReloadedMenu::DrawConnect(const rlView_t& v)
     if (password) {
         RL_Field(v, x + pad, sy + 96, w - 2 * pad, 44, 0, 0, std::string(rl_cn.typed.size(), '\x95'), "Password", true, false);
     }
-    RL_Button(v, x + w - pad - 328, by, 150, 48, "BACK", false, 0, 12, Hot(ID_CANCEL));
-    RL_Button(v, x + w - pad - 170, by, 170, 48, password ? "JOIN" : "RETRY", true, 12, 0, Hot(ID_CONFIRM));
-    Hit(v, x + w - pad - 328, by, 150, 48, ID_CANCEL);
-    Hit(v, x + w - pad - 170, by, 170, 48, ID_CONFIRM);
+    RL_Button(this, v, x + w - pad - 328, by, 150, 48, "BACK", false, 0, 12, ID_CANCEL);
+    RL_Button(this, v, x + w - pad - 170, by, 170, 48, password ? "JOIN" : "RETRY", true, 12, 0, ID_CONFIRM);
 }
 
 /*
