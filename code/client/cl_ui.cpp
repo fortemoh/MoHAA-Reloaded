@@ -1589,22 +1589,6 @@ qboolean UI_MenuUp()
 
 /*
 ====================
-UI_FullscreenMenuUp
-====================
-*/
-qboolean UI_FullscreenMenuUp()
-{
-    Menu *currentMenu = menuManager.CurrentMenu();
-
-    if (currentMenu) {
-        return currentMenu->isFullscreen();
-    }
-
-    return qfalse;
-}
-
-/*
-====================
 HDR calibration (r_hdrOutputTest)
 
 Menus built into the client, so they exist whatever the search path, two
