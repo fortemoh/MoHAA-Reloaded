@@ -994,10 +994,7 @@ void UIDMConsole::KeyEnter(void)
 			m_currentline = "";
 			m_caret       = 0;
 			return;
-		} else if (strstr(m_currentline, "wisper")
-				   || strstr(m_currentline, "private")
-				   // This one is opm-exclusive
-				   || strstr(m_currentline, "whisper")) {
+		} else if (strstr(m_currentline, "wisper") || strstr(m_currentline, "private")) {
 			char        szString[128];
 			const char *pszToken;
 
