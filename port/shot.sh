@@ -9,7 +9,7 @@
 #                              (diff images: <name>-diff-<n>.png, differences x16)
 #   port/shot.sh pair <name> <cfg> [engine args...]   fixed 3D views (shot_dm6.cfg, shot_dm5.cfg, shot_dm6fx.cfg,
 #                              shot_dm4.cfg, shot_obj3.cfg, shot_m2l1.cfg, shot_sh.cfg, shot_bt.cfg, shot_texmodes.cfg,
-#                              shot_debug.cfg, shot_cinematic.cfg): both renderers, then the diff of each view; the cfg's
+#                              shot_debug.cfg): both renderers, then the diff of each view; the cfg's
 #                              "// args:" line gives the engine args. -> <name>-view<k>-{opengl1,metal,diff}.png
 #   port/shot.sh fixed <renderer> <name> <cfg> [engine args...]   one renderer of a pair
 #   port/shot.sh views <name>  the per-view diffs again (after re-running one renderer with `fixed`)
@@ -19,7 +19,7 @@
 #                              against the saved Metal baseline (for changes meant to be pixel-identical; ~8 min)
 # Examples:
 #   port/shot.sh metal menu shot_menu.cfg && port/shot.sh opengl1 menu shot_menu.cfg && port/shot.sh diff menu
-#   port/shot.sh metal console shot_console.cfg +set ui_console 1 +set cl_playintro 0 +set developer 1
+#   port/shot.sh metal console shot_console.cfg +set ui_console 1 +set developer 1
 #   port/shot.sh metal view shot_view.cfg +set g_gametype 0 +set cg_drawviewmodel 0 +set cheats 1 +devmap dm/mohdm6
 #   port/shot.sh pair dm6 shot_dm6.cfg
 # OMM_FLAVOR=<flavor> runs another install than build.noindex/metal-install for Metal (e.g. a scratch build with other

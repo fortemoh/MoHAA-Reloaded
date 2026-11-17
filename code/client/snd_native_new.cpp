@@ -28,10 +28,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // snd_native_math.h: the voices' levels without s_volume, which is the master gain's.
 //
 // The only driver since 9g, which removed OpenAL's with openal-soft (the sndref flavor keeps both). The sound effects
-// are 9c's; the streamed sounds, the music (moods, crossfades), the triggered music, the movies' audio and playmp3
-// 9d's: a stream is read ahead into a mixer ring a little each frame, a short one decoded whole and looped by the
-// mixer. Headphone 3D (9f, s_speaker_type 1): the 3D voices go to the mixer with a direction, for Apple's HRTF, in
-// place of the pan.
+// are 9c's; the streamed sounds, the music (moods, crossfades), the triggered music and playmp3 9d's (the movies'
+// audio too, gone with the video player; its channel stays, a save's channel count holds it): a stream is read ahead
+// into a mixer ring a little each frame, a short one decoded whole and looped by the mixer. Headphone 3D (9f,
+// s_speaker_type 1): the 3D voices go to the mixer with a direction, for Apple's HRTF, in place of the pan.
 //
 // A channel is a mixer voice, the same number. The policy code below keeps snd_openal_new.cpp's shape (the
 // channel's Miles-named methods), so the two compare line by line: a start sends everything at once (MacSnd_Start),
@@ -72,7 +72,7 @@ typedef enum {
     NATIVE_KIND_3D,
     NATIVE_KIND_2D,
     NATIVE_KIND_STREAM,
-    NATIVE_KIND_MUSIC // songs, mp3, triggered music, the movie
+    NATIVE_KIND_MUSIC // songs, mp3, triggered music
 } native_kind_t;
 
 typedef enum {
@@ -2973,7 +2973,7 @@ void S_LoadData(soundsystemsavegame_t *pSave)
 ==============================================================================
 
 The streams (9d): the 2D streamed channels' (dialogue, the streamed aliases) and the music's (the songs, playmp3,
-the triggered music, the movies' audio). OpenAL's driver read 16384 frames a frame into AL buffers, up to 16 of them
+the triggered music). OpenAL's driver read 16384 frames a frame into AL buffers, up to 16 of them
 (~6 s ahead, one big read on the main thread each frame until then); here a stream is read ahead into a mixer ring of
 NATIVE_STREAM_SECONDS, at most NATIVE_STREAM_STEP frames a frame and only once NATIVE_STREAM_CHUNK frames fit (G1), and
 a stream no longer than NATIVE_STREAM_FIRST frames is decoded whole at its start and looped by the mixer (no file
@@ -4261,58 +4261,6 @@ S_TriggeredMusic_PlayIntroMusic
 void S_TriggeredMusic_PlayIntroMusic()
 {
     S_TriggeredMusic_SetupHandle("sound/music/mus_MainTheme.mp3", 0, 0, true);
-}
-
-/*
-==============
-S_StopMovieAudio
-==============
-*/
-void S_StopMovieAudio()
-{
-    chan_movie.stop();
-}
-
-/*
-==============
-S_SetupMovieAudio
-
-G15: the movie's .mp3, else its .wav, at 1.5 (A5); the cinematic's clock follows its position
-==============
-*/
-void S_SetupMovieAudio(const char *pszMovieName)
-{
-    char filename[MAX_QPATH];
-
-    S_StopMovieAudio();
-
-    COM_StripExtension(pszMovieName, filename, sizeof(filename));
-    Q_strcat(filename, sizeof(filename), ".mp3");
-
-    if (!chan_movie.queue_stream(filename)) {
-        COM_StripExtension(pszMovieName, filename, sizeof(filename));
-        Q_strcat(filename, sizeof(filename), ".wav");
-
-        if (!chan_movie.queue_stream(filename)) {
-            Com_DPrintf("Can't find any matching audio file for movie: %s\n", pszMovieName);
-            return;
-        }
-    }
-
-    chan_movie.set_gain(1.5f);
-    chan_movie.play();
-
-    Com_DPrintf("Movie Audio setup: %s\n", filename);
-}
-
-/*
-==============
-S_CurrentMoviePosition
-==============
-*/
-int S_CurrentMoviePosition()
-{
-    return chan_movie.sample_ms_offset();
 }
 
 /*
