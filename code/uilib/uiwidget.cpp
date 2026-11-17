@@ -2572,7 +2572,7 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
         ui_drawMaking = this;
     }
     // (a class drawing from more than its cvars: live while shown)
-    if (!CacheDraw() && isEnabled() && (m_enabledCvar.length() || IsVisible())) {
+    if (!CacheDraw() && Shown()) {
         UI_DrawLive();
     }
     DisplayNow(drawframe, parent_alpha);
