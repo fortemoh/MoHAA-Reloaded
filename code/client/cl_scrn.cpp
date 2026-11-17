@@ -513,9 +513,22 @@ This is called every frame, and can also be called explicitly to flush
 text to the screen.
 ==================
 */
-void SCR_UpdateScreen( void ) {
-	static qboolean screen_recursive;
+// Changed: out of SCR_UpdateScreen, for SCR_AbortUpdate
+static qboolean screen_recursive;
 
+/*
+==================
+SCR_AbortUpdate
+
+Added: an error (Com_Error's longjmp) ended the frame, perhaps in the middle of
+SCR_UpdateScreen: its guard put down, or the screen was never drawn again
+==================
+*/
+void SCR_AbortUpdate( void ) {
+	screen_recursive = qfalse;
+}
+
+void SCR_UpdateScreen( void ) {
 	if ( !scr_initialized ) {
 		return;				// not initialized yet
 	}

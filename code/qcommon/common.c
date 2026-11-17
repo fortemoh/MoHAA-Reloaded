@@ -482,6 +482,9 @@ void QDECL Com_Error( int code, const char *fmt, ... ) {
 			CL_AbnormalDisconnect();
 			CL_FlushMemory();
 			CL_StartHunkUsers(qfalse);
+			// Added: the screen's update this error may have ended, drawn again from the next frame (last: not
+			// while the error is handled)
+			SCR_AbortUpdate();
 		} else {
             SV_Shutdown(va("Server disconnected: %s", com_errorMessage));
 		}
@@ -497,6 +500,9 @@ void QDECL Com_Error( int code, const char *fmt, ... ) {
 			CL_AbnormalDisconnect();
 			CL_FlushMemory();
 			CL_StartHunkUsers(qfalse);
+			// Added: the screen's update this error may have ended, drawn again from the next frame (last: not
+			// while the error is handled)
+			SCR_AbortUpdate();
 		}
 #endif
 		FS_PureServerSetLoadedPaks("", "");

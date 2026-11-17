@@ -1222,6 +1222,7 @@ void CL_InitKeyCommands( void );
 void CL_Init( void );
 void CL_Disconnect();
 void CL_AbnormalDisconnect();
+void SCR_AbortUpdate( void );	// Added: an error ended the frame (Com_Error)
 void CL_Shutdown(const char *finalmsg, qboolean disconnect, qboolean quit);
 qboolean CL_CommandPerFrame(void);	// cl_movefps 0: frames of 1 ms or more (Com_Frame)
 void CL_SetFrameNumber(int frameNumber);

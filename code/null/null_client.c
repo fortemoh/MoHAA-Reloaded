@@ -65,6 +65,9 @@ void CL_Disconnect() {
 void CL_AbnormalDisconnect() {
 }
 
+void SCR_AbortUpdate( void ) {
+}
+
 void CL_MapLoading( qboolean flush, const char *pszMapName ) {
 }
 
