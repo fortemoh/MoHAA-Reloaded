@@ -86,8 +86,6 @@ static Menu         *scoreboard_menu;
 // Added: the scoreboard is up (the Reloaded scoreboard)
 static qboolean      scoreboard_up;
 
-unsigned char        UIListCtrlItem[8];
-
 static const float maxWidthRes  = 1920;
 static const float maxHeightRes = 1080;
 
@@ -3405,53 +3403,6 @@ void UI_HideMouse_f(void)
     }
 }
 
-class TestListItem : public UIListCtrlItem
-{
-    str strings[3];
-
-public:
-    virtual griditemtype_t getListItemType(int which) const;
-    virtual str            getListItemString(int i) const;
-    virtual int            getListItemValue(int which) const;
-    virtual void           DrawListItem(int iColumn, const UIRect2D& drawRect, bool bSelected, UIFont *pFont);
-    virtual qboolean       IsHeaderEntry(void) const;
-};
-
-/*
-====================
-UI_TestListCtrl_f
-====================
-*/
-void UI_TestListCtrl_f(void)
-{
-    UIFloatingWindow *wnd = new UIFloatingWindow;
-    UIListCtrl       *control;
-    UIRect2D          frame = UIRect2D(20, 20, 400, 300);
-    TestListItem     *i1, *i2, *i3;
-
-    wnd->Create(NULL, frame, "Test list control", UWindowColor, UHudColor);
-
-    control = new UIListCtrl;
-    control->InitFrame(
-        wnd->getChildSpace(), frame.pos.x, frame.pos.y, frame.size.width, frame.size.height, border_none, "verdana-12"
-    );
-    control->setBackgroundColor(UWhite, true);
-    control->AddColumn("name", 0, 100, false, false);
-    control->AddColumn("ping", 1, 64, false, false);
-    control->AddColumn("IP", 2, 64, false, false);
-
-    for (int i = 0; i < 100; i++) {
-        i1 = new TestListItem;
-        control->AddItem(i1);
-
-        i2 = new TestListItem;
-        control->AddItem(i2);
-
-        i3 = new TestListItem;
-        control->AddItem(i3);
-    }
-}
-
 static str loadName;
 
 /*
@@ -3685,7 +3636,6 @@ void CL_ShutdownUI(void)
     Cmd_RemoveCommand("ui_hidemouse");
     Cmd_RemoveCommand("ui_saveconsolepos");
     Cmd_RemoveCommand("ui_loadconsolepos");
-    Cmd_RemoveCommand("ui_testlist");
     Cmd_RemoveCommand("clear");
     Cmd_RemoveCommand("ui_hud");
     Cmd_RemoveCommand("ui_resetcvars");
@@ -3892,7 +3842,6 @@ void CL_InitializeUI(void)
     Cmd_AddCommand("ui_hidemouse", UI_HideMouse_f);
     Cmd_AddCommand("ui_saveconsolepos", SaveConsoleRectangle);
     Cmd_AddCommand("ui_loadconsolepos", LoadConsoleRectangle);
-    Cmd_AddCommand("ui_testlist", UI_TestListCtrl_f);
     Cmd_AddCommand("clear", UI_ClearConsole_f);
     Cmd_AddCommand("ui_hud", UI_Hud_f);
     Cmd_AddCommand("ui_resetcvars", UI_ResetCvars);
@@ -4600,26 +4549,4 @@ CL_FontStringWidth
 int CL_FontStringWidth(fontheader_t *pFont, const char *pszString, int iMaxLen)
 {
     return uie.FontStringWidth(pFont, pszString, iMaxLen);
-}
-
-griditemtype_t TestListItem::getListItemType(int which) const
-{
-    return TYPE_STRING;
-}
-
-str TestListItem::getListItemString(int i) const
-{
-    return strings[i];
-}
-
-int TestListItem::getListItemValue(int i) const
-{
-    return atoi(strings[i]);
-}
-
-void TestListItem::DrawListItem(int iColumn, const UIRect2D& drawRect, bool bSelected, UIFont *pFont) {}
-
-qboolean TestListItem::IsHeaderEntry(void) const
-{
-    return qfalse;
 }
