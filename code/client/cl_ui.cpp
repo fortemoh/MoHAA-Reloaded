@@ -1195,16 +1195,14 @@ void UI_PrintConsole(const char *msg)
 
     pszString = msg;
 
-    // Added: the Competitive HUD's chat, game messages and kills
-    if (*msg > 0 && (unsigned char)*msg < MESSAGE_MAX) {
-        UI_CompHud_Print(msg);
-    }
-
     if (*pszString > 0 && (unsigned char)*pszString < MESSAGE_MAX) {
         qboolean bNormalMessage = qfalse;
         qboolean bDMMessage     = qfalse;
         qboolean bBold          = qfalse;
         qboolean bDeathMessage  = qfalse;
+
+        // Added: the Competitive HUD's chat, game messages and kills
+        UI_CompHud_Print(msg);
 
         switch (*pszString) {
         case MESSAGE_YELLOW:
