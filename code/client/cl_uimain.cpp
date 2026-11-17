@@ -1275,7 +1275,6 @@ static void RL_CampDelete(void)
     rl_camp.scanned = false;
 }
 
-// the Esc menu's caption in a mission: "MISSION 2  ·  SCUTTLING THE U-529  ·  MEDIUM"
 std::string RL_MissionLine(const char *map)
 {
     const int k = RL_MissionOf(map), skill = Q_max(0, Q_min(2, Cvar_VariableIntegerValue("skill")));
@@ -1466,8 +1465,6 @@ static void RL_Label(const rlView_t& v, float x, float y, const char *label)
     RL_Text(v, x, y, label, 14, RL_MUTED, true, RL_LEFT, 1.6f, RL_MID);
 }
 
-// a list's row (Host's maps, the saved games) across a panel's left part w
-// wide: picked brass-marked (else hot), a 16:9 photo, the title over its caption
 // a list's row's mark: picked brass-marked, else hot (and its hit)
 static void RL_RowMark(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, bool sel, int id)
 {
@@ -1480,6 +1477,8 @@ static void RL_RowMark(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
     m->Hit(v, x + 2, y, w - 3, h, id);
 }
 
+// a list's row (Host's maps, the saved games) across a panel's left part w
+// wide: picked brass-marked (else hot), a 16:9 photo, the title over its caption
 static void RL_ListRow(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, qhandle_t shot, float aspect,
                        const char *title, const char *caption, bool sel, int id)
 {
@@ -2012,7 +2011,6 @@ static void RL_Host(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
     }
     RL_Label(v, rx, fy, "WHO CAN JOIN");
     RL_Segments(m, v, rx, fy + 16, 40, rl_joinLabels, 2, rl_host.online, ID_LOCAL);
-    // the foot row
     {
         const float by = RL_FootRow(v, x, foot, w);
 
@@ -3384,7 +3382,6 @@ static void RL_Options(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
     } else if (height > band) {
         RL_ScrollBar(v, x + w, top, band, scroll, band, height);
     }
-    // the foot row
     {
         const float by = RL_FootRow(v, x, foot, w);
         const int   pending = RL_OptPending();
