@@ -1202,7 +1202,7 @@ void UI_CompHud_Frame(void)
         // through the intermission (and with no HUD) only the messages, the
         // chat, the kills and the vote (cl_ui.cpp: the other menus hidden)
         const qboolean show  = !(ps->pm_flags & (PMF_NO_HUD | PMF_INTERMISSION));
-        const qboolean strip = (!(ps->pm_flags & PMF_SPECTATING) || following) && show;
+        const qboolean strip = (!spectating || following) && show;
         const qboolean radar = Comp_Int("cg_hud_radar") != 0;
         const qboolean msgs  = Comp_Int("cg_hud_messages") != 0;
         auto           flag  = [](const char *name, qboolean on) { Comp_Set(name, on ? "1" : "0"); };
@@ -1236,7 +1236,7 @@ void UI_CompHud_Frame(void)
     }
 
     // the compass: its bearings turn with the view, the objectives' balls on its rim
-    if (Comp_Cvar("ui_hud_compass_on")->integer) {
+    if (Comp_Int("ui_hud_compass_on")) {
         const int stats[3] = {ps->stats[STAT_OBJECTIVECENTER], ps->stats[STAT_OBJECTIVELEFT], ps->stats[STAT_OBJECTIVERIGHT]};
         const int rest[3]  = {1800, 1730, 1870};
 
