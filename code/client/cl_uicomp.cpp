@@ -1212,7 +1212,6 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_msgs_r", msgs && radar);
         flag("ui_hud_msgs_c", msgs && !radar);
         flag("ui_hud_score_on", Comp_Int("cg_hud_score") && gametype != GT_SINGLE_PLAYER);
-        // the cards
         flag("ui_hud_cards_on", rounds && Comp_Int("cg_hud_alive"));
         flag("ui_hud_health_on", strip && Comp_Int("cg_hud_health"));
         flag("ui_hud_badge_on", strip && Comp_Int("cg_hud_badge"));
@@ -1257,19 +1256,7 @@ void UI_CompHud_Files(void)
     FS_SetBuiltinFiles(builtin_files);
 }
 
-/*
-================
-UI_CompHud_HeadIcons
-
-The pictures of the team icons above team mates' heads (scripts/
-reloaded_hud.shader, cgame's): the HUD's team outlines
-baked at 128 px into TGAs, given to the filesystem with the files compiled
-in. The discs fill as much of the picture as the game's 32 px allies.tga
-(28 px) and axis.tga (30 px) do; the renderer mipmaps them
-================
-*/
 static std::vector<builtinFile_t> comp_files;
-static std::vector<byte>          comp_headIcons[2];
 
 /*
 ================
@@ -1310,6 +1297,19 @@ qboolean UI_CompHud_AddFile(const char *name, const void *data, int size)
     comp_files[n].name = name;
     return qtrue;
 }
+
+/*
+================
+UI_CompHud_HeadIcons
+
+The pictures of the team icons above team mates' heads (scripts/
+reloaded_hud.shader, cgame's): the HUD's team outlines
+baked at 128 px into TGAs, given to the filesystem with the files compiled
+in. The discs fill as much of the picture as the game's 32 px allies.tga
+(28 px) and axis.tga (30 px) do; the renderer mipmaps them
+================
+*/
+static std::vector<byte> comp_headIcons[2];
 
 void UI_CompHud_HeadIcons(void)
 {
@@ -1465,8 +1465,9 @@ UIHudFeed
 
 The kill feed (feed kills: right aligned pad px before the widget's right
 edge, the newest at the bottom, 6 s, fading in the last 1.5; each line in a
-box reaching pad px either side of it, at least 30 tall, 4 apart: dark, red
-with a red edge for the player's kill or death), the chat (feed chat: from
+box reaching pad px either side of it, KF_ROW tall, KF_SPACE apart: dark,
+dark red for the player's death, black with a red edge for the player's
+kill), the chat (feed chat: from
 the bottom up) and the game messages (feed messages: from the top), 8 s
 fading in the last 2; lines wrapped between words, the newest that fit.
 boldfont: the white game messages'

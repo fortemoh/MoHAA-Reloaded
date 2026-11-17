@@ -102,7 +102,7 @@ static std::unordered_map<std::string, uiBakedFont_t *> bake_fontNames;
 static std::unordered_map<std::string, uiBaked_t> bake_shapes;
 static thread_local std::vector<uiVertex_t>       bake_path; // the outline being filled
 static int                                        bake_gen;
-static std::mutex                                 bake_lock; // bake_faces, bake_pictures
+static std::mutex                                 bake_lock; // bake_faces, bake_pictures, bake_svgs
 
 static const float SLANT = 0.21256f; // tan 12 degrees: CSS's text-skew -12deg
 
@@ -1536,8 +1536,7 @@ static void Bake_ShapeTexels(const std::vector<std::string>& layers, int w, int 
 
 // what a layer reads, read now (on the main thread): the faces, the
 // pictures and the outlines it names (its tokens "<file>-<px>...", "....png"
-// and "....svg"); an unknown
-// kind told here, as Bake_Layer tells it on the main thread
+// and "....svg"); an unknown kind told here, as Bake_Layer tells it on the main thread
 static void Bake_Prepare(const char *text)
 {
     static const char *const kinds[] = {
