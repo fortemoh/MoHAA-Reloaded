@@ -531,6 +531,38 @@ void UIConsole::CharEvent(int ch)
 	}
 }
 
+// Added: the clipboard's text put in at the caret, its line breaks and tabs as spaces, the characters
+// CharEvent would drop left out
+void UIConsole::Paste(void)
+{
+	const char *clip = uii.Sys_GetClipboard();
+	str         text;
+
+	if (!clip) {
+		return;
+	}
+
+	for (; *clip; clip++) {
+		if (*clip == '\n' || *clip == '\t') {
+			text += ' ';
+		} else if ((unsigned char)*clip > 31 && (unsigned char)*clip < 128) {
+			text += *clip;
+		}
+	}
+
+	if (!text.length()) {
+		return;
+	}
+
+	if (m_caret > m_currentline.length()) {
+		m_caret = m_currentline.length();
+	}
+
+	m_refreshcompletionbuffer = true;
+	m_currentline             = str(m_currentline, 0, m_caret) + text + (m_currentline.c_str() + m_caret);
+	m_caret += text.length();
+}
+
 qboolean UIConsole::KeyEvent(int key, unsigned int time)
 {
 	const char *command;
@@ -692,6 +724,13 @@ qboolean UIConsole::KeyEvent(int key, unsigned int time)
 
 	case K_MWHEELDOWN:
 		m_scroll->AttemptScrollTo(m_scroll->getTopItem() + 2);
+		break;
+
+	case 'v':
+		// Added: Ctrl+V pastes
+		if (uii.Sys_IsKeyDown(K_CTRL)) {
+			Paste();
+		}
 		break;
 
 	case K_MWHEELUP:

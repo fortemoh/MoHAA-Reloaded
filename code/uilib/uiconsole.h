@@ -77,6 +77,7 @@ protected:
     int  AddLine(void);
     void DrawBottomLine(void);
     void AddHistory(void);
+    void Paste(void);
 
     virtual void Print(Event *ev);
     virtual void KeyEnter(void);
