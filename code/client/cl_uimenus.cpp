@@ -108,7 +108,6 @@ static struct {
 typedef struct {
     int  client;
     char name[MAX_NAME_LENGTH];
-    int  team;
 } rlPlayer_t;
 
 struct rlInfo_t {
@@ -118,9 +117,8 @@ struct rlInfo_t {
     char                    map[MAX_QPATH];
     std::vector<rlPlayer_t> allies, axis, spectators; // in client order
     int                     connected;
-    int                     self, selfTeam;
+    int                     self;
     int                     teamScore[2]; // -1 unknown
-    bool                    serverScores; // the teams' scores from the server's configstring
 };
 
 static int RL_Gametype(void)
@@ -148,10 +146,10 @@ static void RL_Info(rlInfo_t *in)
     in->spectators.clear();
     in->connected = 0;
     in->self      = cl.snap.valid ? cl.snap.ps.clientNum : clc.clientNum;
-    in->selfTeam  = cl.snap.valid ? cl.snap.ps.stats[STAT_TEAM] : TEAM_NONE;
     for (int i = 0; i < MAX_CLIENTS; i++) {
         const char *cs = CL_ConfigString(CS_PLAYERS + i);
         rlPlayer_t  p;
+        int         team;
 
         if (!cs[0]) {
             continue;
@@ -161,19 +159,18 @@ static void RL_Info(rlInfo_t *in)
             continue;
         }
         p.client = i;
-        p.team   = atoi(Info_ValueForKey(cs, "team"));
+        team     = atoi(Info_ValueForKey(cs, "team"));
         in->connected++;
-        if (p.team == TEAM_ALLIES) {
+        if (team == TEAM_ALLIES) {
             in->allies.push_back(p);
-        } else if (p.team == TEAM_AXIS) {
+        } else if (team == TEAM_AXIS) {
             in->axis.push_back(p);
-        } else if (p.team == TEAM_SPECTATOR) {
+        } else if (team == TEAM_SPECTATOR) {
             in->spectators.push_back(p);
         }
     }
     // the teams' scores: the server's (CS_TEAMSCORES), else the scoreboard's
-    in->serverScores = sscanf(CL_ConfigString(CS_TEAMSCORES), "%d %d", &in->teamScore[0], &in->teamScore[1]) == 2;
-    if (!in->serverScores) {
+    if (sscanf(CL_ConfigString(CS_TEAMSCORES), "%d %d", &in->teamScore[0], &in->teamScore[1]) != 2) {
         in->teamScore[0] = rl_sb.teamScore[0];
         in->teamScore[1] = rl_sb.teamScore[1];
     }
@@ -316,19 +313,11 @@ const char *RL_MapName(const char *map)
     return name;
 }
 
-static const char *RL_ModeName(int gametype, bool upper)
+static const char *RL_ModeName(int gametype)
 {
-    static const char *const names[][2] = {
-        {"Single player",   "SINGLE PLAYER"  },
-        {"Free-for-all",    "FREE-FOR-ALL"   },
-        {"Team deathmatch", "TEAM DEATHMATCH"},
-        {"Round-based",     "ROUND-BASED"    },
-        {"Objective",       "OBJECTIVE"      },
-        {"Tug of war",      "TUG OF WAR"     },
-        {"Liberation",      "LIBERATION"     },
-    };
+    static const char *const names[] = {"SINGLE PLAYER", "FREE-FOR-ALL", "TEAM DEATHMATCH", "ROUND-BASED", "OBJECTIVE", "TUG OF WAR", "LIBERATION"};
 
-    return names[gametype >= 0 && gametype < (int)ARRAY_LEN(names) ? gametype : 0][upper];
+    return names[gametype >= 0 && gametype < (int)ARRAY_LEN(names) ? gametype : 0];
 }
 
 // the round's or match's time left, "" none (as the HUD's timer); its own buffer
@@ -711,9 +700,8 @@ static rlWeapon_t RL_W(const char *cls, const char *name, const char *svg)
     return w;
 }
 
-// what a nation gets for a class; axisModel: the Axis model it is for (the
-// German sniper's), NULL the player's (dm_playergermanmodel)
-static rlWeapon_t RL_WeaponFor(int nation, int wc, int target, int dmflags, const char *axisModel = NULL)
+// what a nation gets for a class; axisModel: the Axis model it is for (the German sniper's)
+static rlWeapon_t RL_WeaponFor(int nation, int wc, int target, int dmflags, const char *axisModel)
 {
     const bool bt = target >= TG_MOHTT, aa = target < TG_MOHTA;
 
@@ -739,8 +727,7 @@ static rlWeapon_t RL_WeaponFor(int nation, int wc, int target, int dmflags, cons
             return RL_W("SNIPER", "SVT-40", "svt_rifle");
         }
         if (nation == NAT_DE) {
-            if (aa || (dmflags & DF_OLD_SNIPER)
-                || !Q_stricmpn(axisModel ? axisModel : Cvar_VariableString("dm_playergermanmodel"), "german_panzer", 13)) {
+            if (aa || (dmflags & DF_OLD_SNIPER) || !Q_stricmpn(axisModel, "german_panzer", 13)) {
                 return RL_W("SNIPER", "KAR98K SNIPER", "kar98sniper");
             }
             return RL_W("SNIPER", "GEWEHR 43", "g43");
@@ -1777,7 +1764,7 @@ static void RL_DrawLoading(UIReloadedMenu *m, const rlView_t& v)
     RL_BoxPx(x1 - 1, y0 + 1, x1, y1 - 1, line);
     {
         // the name in what the mode leaves: smaller (to H2 at least), then cut
-        const char *mode = RL_ModeName(rl_ld.gametype, true);
+        const char *mode = RL_ModeName(rl_ld.gametype);
         const char *name = RL_MapName(rl_ld.map);
         const float room = cw - RL_TextW(v, mode, 16, true, 2.6f) - 32, w = RL_TextW(v, name, RL_H1, true);
         const float size = w > room ? Q_max(RL_H2, floorf(RL_H1 * room / w)) : RL_H1;
@@ -2146,25 +2133,21 @@ void UIReloadedMenu::Draw(void)
 RL_HeaderPanel
 
 The header of the weapon menu, the Esc menu and the scoreboard: a dark
-panel, the title (H2 or H3, an emblem before it: team 0 or 1) over its
+panel, the title (H2 or H3) over its
 caption on the left, the time left over "TIME LEFT" on the right; k scales
 it (the scoreboard's slimmer header); the title and the caption fit
 leftW (0: all the panel but the time)
 ================
 */
-static void RL_HeaderPanel(const rlView_t& v, float x, float y, float w, float h, const char *titleText, float titleSize, int team,
+static void RL_HeaderPanel(const rlView_t& v, float x, float y, float w, float h, const char *titleText, float titleSize,
                            const char *captionText, const char *leftText, float k = 1.0f, float leftW = 0.0f)
 {
     // (copied: the strings va gives are reused while it draws)
     const std::string title(titleText), caption(captionText), left(leftText ? leftText : "");
-    const float       iconD = 40 * k;
-    float             tx    = x + 28, room;
+    const float       tx = x + 28;
+    float             room;
 
     RL_Round(v, x, y, w, h, 6, RL_Rgb(10, 11, 12, 236));
-    if (team >= 0) {
-        RL_TeamIcon(v, team, tx + iconD / 2, y + 32 * k, iconD);
-        tx += iconD + 14;
-    }
     room = leftW > 0.0f ? leftW - (tx - x - 28)
                         : x + w - 28 - tx - (left.empty() ? 0.0f : RL_TextW(v, left.c_str(), RL_H3 * k, true) + 24);
     RL_Text(v, tx, y + 32 * k, title.c_str(), titleSize * k, RL_TEXT, true, RL_LEFT, 0, RL_MID, room);
@@ -2257,7 +2240,7 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
     }
 
     // the header: the emblem of the side previewed, the tabs, the time left
-    RL_HeaderPanel(v, x0, y0, gw, head, "", RL_H2, -1, "", RL_TimeLeft(in.gametype));
+    RL_HeaderPanel(v, x0, y0, gw, head, "", RL_H2, "", RL_TimeLeft(in.gametype));
     RL_TeamIcon(v, tab, x0 + 28 + 22, y0 + 52, 44);
     {
         float tx = x0 + 28 + 44 + 24;
@@ -2422,7 +2405,7 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
         const char *left = RL_TimeLeft(in.gametype);
 
         head[0] = RL_MapName(in.map);
-        head[1] = RL_ModeName(in.gametype, true);
+        head[1] = RL_ModeName(in.gametype);
         // (bots take slots past sv_maxclients, which the client isn't told: then no limit shown)
         head[2] = in.connected <= in.maxClients ? va("%d / %d PLAYERS", in.connected, in.maxClients) : va("%d PLAYERS", in.connected);
         if (left[0]) {
@@ -2627,7 +2610,7 @@ void UIReloadedMenu::DrawEnd(const rlView_t& v, const rlInfo_t& in)
         const char *tag = rl_end.ok ? "SUCCESS" : "FAILED";
         const float cw  = RL_TextW(v, tag, 18, true, 2) + 56;
 
-        RL_HeaderPanel(v, x0, y, gw, head, level[0] ? level : in.map, RL_H3, -1, RL_MissionLine(in.map).c_str(), NULL, 1.0f,
+        RL_HeaderPanel(v, x0, y, gw, head, level[0] ? level : in.map, RL_H3, RL_MissionLine(in.map).c_str(), NULL, 1.0f,
                        gw - 56 - cw - 16);
         RL_Skew(v, x0 + gw - 28 - cw, y + (head - bh) / 2, cw, bh, 12, 0, rl_end.ok ? RL_BRASS : RL_Rgb(214, 104, 88));
         RL_Text(v, x0 + gw - 28 - cw / 2 + 3 * RL_SLANT, y + head / 2, tag, 18, RL_INK, true, RL_CENTER, 2, RL_MID);
@@ -2885,7 +2868,7 @@ static void RL_SbHeader(const rlView_t& v, float x, float y, float w, float h, c
     const float cx = x + w / 2;
 
     // (the title and caption left of the score in the middle)
-    RL_HeaderPanel(v, x, y, w, h, RL_MapName(in.map), RL_H3, -1, RL_ModeName(in.gametype, true), left, k, w / 2 - 260 * k - 28);
+    RL_HeaderPanel(v, x, y, w, h, RL_MapName(in.map), RL_H3, RL_ModeName(in.gametype), left, k, w / 2 - 260 * k - 28);
     if (in.gametype == GT_FFA) {
         const rlRow_t *lead = !ffaRows.empty() && ffaRows[0].sc ? &ffaRows[0] : NULL;
         std::string    line = lead ? "LEADER: " + RL_Upper(lead->p->name) : std::string("NO SCORES YET");
@@ -3351,7 +3334,7 @@ void UI_Menus_DrawObjectives(qboolean shown)
         const float    count = objs.empty() ? 0.0f : RL_TextW(v, "OBJECTIVES DONE", RL_S2, false, 2.4f) + 28;
         float          y = y0 + head + 14;
 
-        RL_HeaderPanel(v, x, y0, w, head, level[0] ? level : map, RL_H3, -1, RL_MissionLine(map).c_str(), NULL, 1.0f, w - 56 - count);
+        RL_HeaderPanel(v, x, y0, w, head, level[0] ? level : map, RL_H3, RL_MissionLine(map).c_str(), NULL, 1.0f, w - 56 - count);
         RL_Box(v, x, y0 + head - 4, w, 4, RL_BRASS);
         if (objs.empty()) {
             return;
