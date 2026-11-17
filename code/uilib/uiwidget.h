@@ -54,9 +54,7 @@ public:
 // widget flags
 #define WF_DIRECTED           (1 << 2)
 #define WF_ALWAYS_BOTTOM      (1 << 4)
-#define WF_ALWAYS_TOP         (1 << 5)
 #define WF_NOPARENTADJUST     (1 << 6)
-#define WF_DONTLOCALIZE       (1 << 7)
 
 // widget alignment flags
 #define WA_LEFT    (1 << 0)
@@ -227,18 +225,6 @@ protected:
     void         Hide(Event *ev);
     void         Activate(Event *ev);
     void         BringToFront(void);
-    static void  SplitWidgets(
-         Container<UIWidget *>& src,
-         Container<UIWidget *>& bottom,
-         Container<UIWidget *>& normal,
-         Container<UIWidget *>& top
-     );
-    static void CombineWidgets(
-        Container<UIWidget *>& dst,
-        Container<UIWidget *>& bottom,
-        Container<UIWidget *>& normal,
-        Container<UIWidget *>& top
-    );
     static void ArrangeWidgetList(Container<UIWidget *>& list);
 
 public:

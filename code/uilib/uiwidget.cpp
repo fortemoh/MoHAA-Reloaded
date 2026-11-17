@@ -738,8 +738,7 @@ bool UIWidget::addChild(UIWidget *widget)
     m_children.AddObject(widget);
     if (m_children.NumObjects() != 1) {
         UIWidget *child = m_children.ObjectAt(m_children.NumObjects() - 1);
-        if ((child->m_flags & (WF_ALWAYS_TOP | WF_ALWAYS_BOTTOM))
-            != (widget->m_flags & (WF_ALWAYS_TOP | WF_ALWAYS_BOTTOM))) {
+        if ((child->m_flags & WF_ALWAYS_BOTTOM) != (widget->m_flags & WF_ALWAYS_BOTTOM)) {
             ArrangeWidgetList(m_children);
         }
     }
@@ -1002,66 +1001,39 @@ void UIWidget::BringToFront(void)
             m_parent->m_children.RemoveObject(this);
             m_parent->m_children.AddObject(this);
 
-            if ((m_parent->m_children.ObjectAt(m_parent->m_children.NumObjects() - 1)->m_flags & 0x30)
-                != (m_flags & 0x30)) {
+            if ((m_parent->m_children.ObjectAt(m_parent->m_children.NumObjects() - 1)->m_flags & WF_ALWAYS_BOTTOM)
+                != (m_flags & WF_ALWAYS_BOTTOM)) {
                 ArrangeWidgetList(m_parent->m_children);
             }
         }
     }
 }
 
-void UIWidget::SplitWidgets(
-    Container<UIWidget *>& src, Container<UIWidget *>& bottom, Container<UIWidget *>& normal, Container<UIWidget *>& top
-)
-{
-    int i;
-
-    bottom.FreeObjectList();
-    normal.FreeObjectList();
-    top.FreeObjectList();
-
-    for (i = 1; i <= src.NumObjects(); i++) {
-        UIWidget *wid = src.ObjectAt(i);
-
-        if (wid->m_flags & 0x10) {
-            bottom.AddObject(wid);
-        } else if (wid->m_flags & 0x20) {
-            top.AddObject(wid);
-        } else {
-            normal.AddObject(wid);
-        }
-    }
-}
-
-void UIWidget::CombineWidgets(
-    Container<UIWidget *>& dst, Container<UIWidget *>& bottom, Container<UIWidget *>& normal, Container<UIWidget *>& top
-)
-{
-    Container<UIWidget *> *lists[3];
-    int                    list;
-    int                    i;
-
-    dst.ClearObjectList();
-
-    lists[0] = &bottom;
-    lists[1] = &normal;
-    lists[2] = &top;
-
-    for (list = 0; list < 3; list++) {
-        for (i = 1; i <= lists[list]->NumObjects(); i++) {
-            dst.AddObject(lists[list]->ObjectAt(i));
-        }
-    }
-}
-
+// Changed: the always-on-bottom widgets first, the rest after, each in their order (the always-on-top layer is gone:
+// nothing set it)
 void UIWidget::ArrangeWidgetList(Container<UIWidget *>& list)
 {
     Container<UIWidget *> bottom;
     Container<UIWidget *> normal;
-    Container<UIWidget *> top;
+    int                   i;
 
-    SplitWidgets(list, bottom, normal, top);
-    CombineWidgets(list, bottom, normal, top);
+    for (i = 1; i <= list.NumObjects(); i++) {
+        UIWidget *wid = list.ObjectAt(i);
+
+        if (wid->m_flags & WF_ALWAYS_BOTTOM) {
+            bottom.AddObject(wid);
+        } else {
+            normal.AddObject(wid);
+        }
+    }
+
+    list.ClearObjectList();
+    for (i = 1; i <= bottom.NumObjects(); i++) {
+        list.AddObject(bottom.ObjectAt(i));
+    }
+    for (i = 1; i <= normal.NumObjects(); i++) {
+        list.AddObject(normal.ObjectAt(i));
+    }
 }
 
 void UIWidget::Shutdown(void)
@@ -2390,7 +2362,6 @@ void UIWidget::setAlwaysOnBottom(bool b)
 {
     if (getAlwaysOnBottom() != b) {
         if (b) {
-            m_flags &= ~WF_ALWAYS_TOP;
             m_flags |= WF_ALWAYS_BOTTOM;
         } else {
             m_flags &= ~WF_ALWAYS_BOTTOM;
