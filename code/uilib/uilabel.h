@@ -72,6 +72,5 @@ private:
 public:
     UILabel();
 
-    void SetLabel(str lab);
     void Draw(void) override;
 };

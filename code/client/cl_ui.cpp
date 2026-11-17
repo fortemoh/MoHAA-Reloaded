@@ -2062,11 +2062,6 @@ void UI_PopMenu(qboolean restore_cvars)
     //
     UI_DeactiveFloatingWindows();
 
-    if (uWinMan.DialogExists()) {
-        uWinMan.RemoveAllDialogBoxes();
-        return;
-    }
-
     if (menuManager.CurrentMenu()) {
         menuManager.PopMenu(restore_cvars);
     }
@@ -2448,11 +2443,6 @@ void UI_MenuEscape(const char *name)
                 UI_OpenConsole();
             }
         }
-        return;
-    }
-
-    if (uWinMan.DialogExists()) {
-        uWinMan.RemoveAllDialogBoxes();
         return;
     }
 
@@ -3061,41 +3051,6 @@ void CL_EndRegistration(void)
     end = Sys_Milliseconds();
 
     Com_Printf("CL_EndRegistration: %5.2f seconds\n", (float)(start - end) / 1000.0);
-}
-
-/*
-====================
-UI_CreateDialog
-====================
-*/
-void UI_CreateDialog(
-    const char *title,
-    char       *cvarname,
-    const char *command,
-    const char *cancelCommand,
-    int         width,
-    int         height,
-    const char *shader,
-    const char *okshader,
-    const char *cancelshader
-)
-{
-    UIDialog *dlg     = new UIDialog;
-    UIRect2D  rect    = UIRect2D((uid.vidWidth - width) / 2, (uid.vidHeight - height) / 2, width, height);
-    UColor    bgColor = UWindowColor;
-
-    dlg->Create(NULL, rect, title, bgColor, UHudColor);
-    dlg->LinkCvar(cvarname);
-    dlg->SetOKCommand(command);
-    dlg->SetCancelCommand(cancelCommand);
-    dlg->SetLabelMaterial(uWinMan.RegisterShader(shader));
-    dlg->SetOkMaterial(uWinMan.RegisterShader(okshader));
-
-    if (cancelshader) {
-        dlg->SetCancelMaterial(uWinMan.RegisterShader(cancelshader));
-    }
-
-    uWinMan.ActivateControl(dlg);
 }
 
 /*

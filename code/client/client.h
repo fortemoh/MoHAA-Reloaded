@@ -637,7 +637,6 @@ void	CL_GlobalServers_f( void );
 void	CL_FavoriteServers_f( void );
 void	CL_Ping_f( void );
 void	CL_SaveShot_f( void );
-void	CL_Dialog_f( void );
 void	CL_ServerRestarted( void );
 qboolean CL_UpdateVisiblePings_f( int source );
 

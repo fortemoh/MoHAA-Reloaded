@@ -104,11 +104,6 @@ void UILabel::MouseExited(Event *ev)
     SetPressedmaterialActive(false);
 }
 
-void UILabel::SetLabel(str lab)
-{
-    label = lab;
-}
-
 void UILabel::LabelLayoutShader(Event *ev)
 {
     m_sCurrentShaderName = ev->GetString(1);

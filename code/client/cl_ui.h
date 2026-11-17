@@ -74,17 +74,6 @@ qboolean UI_MenuActive(void);
 qboolean UI_MenuUp(void);
 void     UI_FocusMenuIfExists(void);
 void     UI_DrawConnect(void);
-void     UI_CreateDialog(
-        const char *title,
-        char       *cvarname,
-        const char *command,
-        const char *cancelCommand,
-        int         width,
-        int         height,
-        const char *shader,
-        const char *okshader,
-        const char *cancelshader
-    );
 void UI_ToggleDMConsole(int iMode);
 void UI_ShowScoreboard_f(const char *pszMenuName);
 void UI_HideScoreboard_f(void);

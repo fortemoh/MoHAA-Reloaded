@@ -968,37 +968,6 @@ void UIWindowManager::DeactiveFloatingWindows(void)
     }
 }
 
-bool UIWindowManager::DialogExists(void)
-{
-    int       i;
-    UIWidget *pWidg;
-
-    for (i = 1; i <= m_children.NumObjects(); i++) {
-        pWidg = m_children.ObjectAt(i);
-        if (pWidg->isSubclassOf(UIDialog)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-void UIWindowManager::RemoveAllDialogBoxes(void)
-{
-    int       i;
-    UIWidget *pWidg;
-
-    for (i = m_children.NumObjects(); i > 0; i--) {
-        pWidg = m_children.ObjectAt(i);
-        if (pWidg->isSubclassOf(UIDialog)) {
-            UIDialog *pDlg = (UIDialog *)pWidg;
-
-            pDlg->m_cancel->m_command += "\n";
-            uii.Cmd_Stuff(pDlg->m_cancel->m_command);
-        }
-    }
-}
-
 void UIWindowManager::refreshCursor()
 {
     byte *pic;

@@ -49,7 +49,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "uifloatwnd.h"
 #include "uipopupmenu.h"
 #include "uiconsole.h"
-#include "uidialog.h"
 #include "editfield.h"
 #include "uifield.h"
 #include "uilayout.h"

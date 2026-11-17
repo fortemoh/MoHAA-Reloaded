@@ -90,8 +90,6 @@ public:
     void              SetBindActive(UIWidget *w);
     virtual void      Shutdown(void) override;
     void              DeactiveFloatingWindows(void);
-    bool              DialogExists(void);
-    void              RemoveAllDialogBoxes(void);
 
 private:
     // Added in OPM
