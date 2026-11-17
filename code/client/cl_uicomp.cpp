@@ -1438,7 +1438,7 @@ static void Comp_Fit(const char *pic, float boxW, float boxH, float s, float *w,
 }
 
 // a text's width, smaller to fit a width
-static float Comp_TextW(UIFont *font, const char *text, float fit = 0.0f)
+static float Comp_TextW(UIFont *font, const char *text, float fit)
 {
     const float k = font->FitScale(text, fit);
 

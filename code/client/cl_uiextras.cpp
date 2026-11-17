@@ -985,7 +985,7 @@ int UI_Extras_BannerKey(void)
 
 // drawn with its top at y, across the middle (as wide as its line, the
 // emblem in front)
-static void EX_Banner(const rlView_t& v, int winner, float y, float alpha)
+static void EX_Banner(const rlView_t& v, int winner, float y)
 {
     const std::string score = EX_Score();
     const char       *text  = EX_BannerText(winner, EX_MatchWon());
@@ -993,11 +993,11 @@ static void EX_Banner(const rlView_t& v, int winner, float y, float alpha)
     const float       bw = tw + icon + 14 + 48, bh = score.empty() ? 56.0f : 92.0f;
     const float       x  = floorf((v.dw - bw) * 0.5f);
 
-    EX_EdgedBox(v, x, y, bw, bh, alpha);
-    RL_TeamIcon(v, winner, x + 24 + icon * 0.5f, y + 28, icon, alpha);
-    RL_Text(v, x + 24 + icon + 14, y + 28, text, 34, EX_Fade(EX_TEXT, alpha), true, RL_LEFT, 0, RL_MID);
+    EX_EdgedBox(v, x, y, bw, bh, 1.0f);
+    RL_TeamIcon(v, winner, x + 24 + icon * 0.5f, y + 28, icon);
+    RL_Text(v, x + 24 + icon + 14, y + 28, text, 34, EX_TEXT, true, RL_LEFT, 0, RL_MID);
     if (!score.empty()) {
-        RL_Text(v, v.dw * 0.5f, y + 70, score.c_str(), 24, EX_Fade(EX_Accent(), alpha), false, RL_CENTER, 0, RL_MID);
+        RL_Text(v, v.dw * 0.5f, y + 70, score.c_str(), 24, EX_Accent(), false, RL_CENTER, 0, RL_MID);
     }
 }
 
@@ -1006,7 +1006,7 @@ void UI_Extras_DrawBanner(const rlView_t& v, float y)
     const int winner = EX_Winner();
 
     if (winner >= 0) {
-        EX_Banner(v, winner, y, 1.0f);
+        EX_Banner(v, winner, y);
     }
 }
 
@@ -1341,7 +1341,7 @@ static bool EX_BannerOverGame(void)
 void UI_Extras_Draw2D(void)
 {
     if (EX_BannerOverGame()) {
-        EX_Banner(RL_View(), EX_Winner(), EX_BANNER_Y, 1.0f);
+        EX_Banner(RL_View(), EX_Winner(), EX_BANNER_Y);
     }
     EX_TypingLine();
 }
