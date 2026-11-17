@@ -79,9 +79,8 @@ UIButtonBase::UIButtonBase()
 
 void UIButtonBase::Pressed(Event *ev)
 {
-    m_mouseState             = M_DRAGGING;
-    m_hovermaterial_active   = qtrue;
-    m_pressedmaterial_active = qtrue;
+    m_mouseState           = M_DRAGGING;
+    m_hovermaterial_active = qtrue;
     uWinMan.setFirstResponder(this);
 }
 
@@ -102,8 +101,7 @@ void UIButtonBase::Released(Event *ev)
     if (ev) {
         if (!getClientFrame().contains(MouseEventToClientPoint(ev))) {
             // not in the frame anymore
-            m_hovermaterial_active   = false;
-            m_pressedmaterial_active = false;
+            m_hovermaterial_active = false;
             return;
         }
     }

@@ -393,7 +393,6 @@ void UIWindowManager::ActivateControl(UIWidget *control)
                 m_activeControl = NULL;
                 active->SendSignal(W_Deactivated);
                 active->SetHovermaterialActive(false);
-                active->SetPressedmaterialActive(false);
             }
 
             if (!active || !ActiveControl()) {

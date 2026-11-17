@@ -77,7 +77,6 @@ CLASS_DECLARATION(UIWidget, UILabel, NULL) {
     {&EV_UILabel_OneShotSound,     &UILabel::OneShotSound         },
     {&EV_UILabel_LoopingSound,     &UILabel::LoopingSound         },
     {&EV_Layout_Shader,            &UILabel::LabelLayoutShader    },
-    {&EV_Layout_TileShader,        &UILabel::LabelLayoutTileShader},
     {NULL,                         NULL                           }
 };
 
@@ -101,29 +100,12 @@ void UILabel::MouseEntered(Event *ev)
 void UILabel::MouseExited(Event *ev)
 {
     SetHovermaterialActive(false);
-    SetPressedmaterialActive(false);
 }
 
 void UILabel::LabelLayoutShader(Event *ev)
 {
     m_sCurrentShaderName = ev->GetString(1);
     setMaterial(uWinMan.RegisterShader(m_sCurrentShaderName));
-
-    m_flags &= ~WF_TILESHADER;
-}
-
-void UILabel::LabelLayoutTileShader(Event *ev)
-{
-    m_sCurrentShaderName = ev->GetString(1);
-    if (m_sCurrentShaderName.length() > 1) {
-        setMaterial(uWinMan.RegisterShader(m_sCurrentShaderName));
-    } else {
-        // Added in 2.0
-        //  Don't set the material if the shader name is considered empty
-        m_sCurrentShaderName = "";
-    }
-
-    m_flags |= WF_TILESHADER;
 }
 
 void UILabel::SetLinkCvarToShader(Event *ev)

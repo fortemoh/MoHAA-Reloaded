@@ -204,15 +204,6 @@ Event EV_Layout_Shader
     "Set the shader to draw on the background of the widget"
 );
 
-Event EV_Layout_TileShader
-(
-    "tileshader",
-    EV_DEFAULT,
-    "s",
-    "shaderName",
-    "Set the shader to draw tiled on the background of the widget"
-);
-
 Event EV_Layout_HoverShader
 (
     "hovershader",
@@ -220,15 +211,6 @@ Event EV_Layout_HoverShader
     "s",
     "shaderName",
     "Set the shader to on the background of the widget when the mouse is over the widget"
-);
-
-Event EV_Layout_PressedShader
-(
-    "pressedshader",
-    EV_DEFAULT,
-    "s",
-    "shaderName",
-    "Set the shader to on the background of the widget when it is pressed in"
 );
 
 Event EV_Layout_FadeIn
@@ -497,9 +479,7 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Layout_FGColor,            &UIWidget::LayoutFgColor           },
     {&EV_Layout_Borderstyle,        &UIWidget::LayoutBorderStyle       },
     {&EV_Layout_Shader,             &UIWidget::LayoutShader            },
-    {&EV_Layout_TileShader,         &UIWidget::LayoutTileShader        },
     {&EV_Layout_HoverShader,        &UIWidget::LayoutHoverShader       },
-    {&EV_Layout_PressedShader,      &UIWidget::LayoutPressedShader     },
     {&EV_Layout_FadeIn,             &UIWidget::LayoutFadeIn            },
     {&EV_Layout_ClickSound,         &UIWidget::LayoutClickSound        },
     {&EV_Layout_VirtualRes,         &UIWidget::LayoutVirtualRes        },
@@ -706,9 +686,7 @@ UIWidget::UIWidget()
     m_font                     = NULL;
     m_material                 = NULL;
     m_hovermaterial            = NULL;
-    m_pressedmaterial          = NULL;
     m_hovermaterial_active     = false;
-    m_pressedmaterial_active   = false;
     m_fadetime                 = 0.0f;
     m_alpha                    = 1.0f;
     m_motiontime               = 0.0f;
@@ -1219,23 +1197,11 @@ void UIWidget::LayoutBorderStyle(Event *ev)
 void UIWidget::LayoutShader(Event *ev)
 {
     setMaterial(uWinMan.RegisterShader(ev->GetString(1)));
-    m_flags &= ~WF_TILESHADER;
-}
-
-void UIWidget::LayoutTileShader(Event *ev)
-{
-    setMaterial(uWinMan.RegisterShader(ev->GetString(1)));
-    m_flags |= WF_TILESHADER;
 }
 
 void UIWidget::LayoutHoverShader(Event *ev)
 {
     setHoverMaterial(uWinMan.RegisterShader(ev->GetString(1)));
-}
-
-void UIWidget::LayoutPressedShader(Event *ev)
-{
-    setPressedMaterial(uWinMan.RegisterShader(ev->GetString(1)));
 }
 
 void UIWidget::LayoutFadeIn(Event *ev)
@@ -1984,11 +1950,6 @@ void UIWidget::setHoverMaterial(UIReggedMaterial *mat)
     m_hovermaterial = mat;
 }
 
-void UIWidget::setPressedMaterial(UIReggedMaterial *mat)
-{
-    m_pressedmaterial = mat;
-}
-
 void UIWidget::setBackgroundAlpha(float f)
 {
     m_alpha = f;
@@ -2281,31 +2242,12 @@ void UIWidget::DisplayNow(const UIRect2D& drawframe, float parent_alpha)
         col[3] = m_foreground_color.a * m_local_alpha;
         uii.Rend_SetColor(col);
 
-        if (m_flags & WF_TILESHADER) {
-            if (m_bVirtual) {
-                float fvWidth =
-                    m_frame.size.width / m_vVirtualScale[0] / uii.Rend_GetShaderWidth(m_material->GetMaterial());
-                float fvHeight =
-                    m_frame.size.height / m_vVirtualScale[1] / uii.Rend_GetShaderHeight(m_material->GetMaterial());
-
-                uii.Rend_DrawPicStretched(
-                    0, 0, m_frame.size.width, m_frame.size.height, 0, 0, fvWidth, fvHeight, m_material->GetMaterial()
-                );
-            } else {
-                uii.Rend_DrawPicTiled(0, 0, m_frame.size.width, m_frame.size.height, m_material->GetMaterial());
-            }
-        } else {
-            uii.Rend_DrawPicStretched(
-                0, 0, m_frame.size.width, m_frame.size.height, 0, 0, 1, 1, m_material->GetMaterial()
-            );
-        }
+        uii.Rend_DrawPicStretched(
+            0, 0, m_frame.size.width, m_frame.size.height, 0, 0, 1, 1, m_material->GetMaterial()
+        );
     }
 
-    if (m_pressedmaterial_active && m_pressedmaterial != NULL) {
-        uii.Rend_DrawPicStretched(
-            0, 0, m_frame.size.width, m_frame.size.height, 0, 0, 1, 1, m_pressedmaterial->GetMaterial()
-        );
-    } else if (m_hovermaterial_active && m_hovermaterial != NULL) {
+    if (m_hovermaterial_active && m_hovermaterial != NULL) {
         uii.Rend_DrawPicStretched(
             0, 0, m_frame.size.width, m_frame.size.height, 0, 0, 1, 1, m_hovermaterial->GetMaterial()
         );
@@ -2533,11 +2475,6 @@ bool UIWidget::SendSignal(Event& event)
 void UIWidget::SetHovermaterialActive(bool a)
 {
     m_hovermaterial_active = a;
-}
-
-void UIWidget::SetPressedmaterialActive(bool a)
-{
-    m_pressedmaterial_active = a;
 }
 
 int UIWidget::getOrderNum(void)
@@ -2824,7 +2761,6 @@ void UIWidgetContainer::SetActiveWidgetOrderNum(int num)
             uWinMan.ActivateControl(wid);
         } else {
             wid->SetHovermaterialActive(false);
-            wid->SetPressedmaterialActive(false);
         }
     }
 }

@@ -53,7 +53,6 @@ public:
 
 // widget flags
 #define WF_DIRECTED           (1 << 2)
-#define WF_TILESHADER         (1 << 3)
 #define WF_ALWAYS_BOTTOM      (1 << 4)
 #define WF_ALWAYS_TOP         (1 << 5)
 #define WF_NOPARENTADJUST     (1 << 6)
@@ -134,9 +133,7 @@ protected:
     float                 m_bottomindent;
     UIReggedMaterial     *m_material;
     UIReggedMaterial     *m_hovermaterial;
-    UIReggedMaterial     *m_pressedmaterial;
     bool                  m_hovermaterial_active;
-    bool                  m_pressedmaterial_active;
     motion_t              m_motiontype;
     float                 m_starttime;
     float                 m_fadetime;
@@ -267,9 +264,7 @@ public:
     void LayoutFgColor(Event *ev);
     void LayoutBorderStyle(Event *ev);
     void LayoutShader(Event *ev);
-    void LayoutTileShader(Event *ev);
     void LayoutHoverShader(Event *ev);
-    void LayoutPressedShader(Event *ev);
     void LayoutFadeIn(Event *ev);
     void LayoutClickSound(Event *ev);
     void LayoutVirtualRes(Event *ev);
@@ -349,7 +344,6 @@ public:
     void               setMaterial(UIReggedMaterial *mat);
     UIReggedMaterial  *getMaterial(void);
     void               setHoverMaterial(UIReggedMaterial *mat);
-    void               setPressedMaterial(UIReggedMaterial *mat);
     virtual void       setBackgroundAlpha(float f);
     void               Display(const UIRect2D& drawframe, float parent_alpha);
     void               DisplayNow(const UIRect2D& drawframe, float parent_alpha);
@@ -382,7 +376,6 @@ public:
     bool               getAlwaysOnBottom(void);
     bool               SendSignal(Event& event);
     void               SetHovermaterialActive(bool a);
-    void               SetPressedmaterialActive(bool a);
     int                getOrderNum(void);
     void               ActivateOrder(void);
     void               EnableEvent(Event *ev);
@@ -449,9 +442,7 @@ extern Event EV_Layout_FGColor;
 extern Event EV_Layout_Borderstyle;
 extern Event EV_Layout_AlphaCvar; // Added
 extern Event EV_Layout_Shader;
-extern Event EV_Layout_TileShader;
 extern Event EV_Layout_HoverShader;
-extern Event EV_Layout_PressedShader;
 extern Event EV_Layout_FadeIn;
 extern Event EV_Layout_ClickSound;
 extern Event EV_Layout_VirtualRes;

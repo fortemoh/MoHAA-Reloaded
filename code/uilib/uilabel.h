@@ -59,7 +59,6 @@ private:
     void MouseEntered(Event *ev);
     void MouseExited(Event *ev);
     void LabelLayoutShader(Event *ev);
-    void LabelLayoutTileShader(Event *ev);
     // Added in 2.0
     //====
     void OneShotSound(Event *ev);
