@@ -15,7 +15,6 @@ set(CLIENT_SOURCES
     ${SOURCE_DIR}/client/cl_consolecmds.cpp
     ${SOURCE_DIR}/client/cl_crosshair.c
     ${SOURCE_DIR}/client/cl_input.cpp
-    ${SOURCE_DIR}/client/cl_inv.cpp
     ${SOURCE_DIR}/client/cl_invrender.cpp
     ${SOURCE_DIR}/client/cl_keys.cpp
     ${SOURCE_DIR}/client/cl_lagometer.cpp

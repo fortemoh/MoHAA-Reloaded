@@ -2372,15 +2372,6 @@ void UIWidget::setPressedMaterial(UIReggedMaterial *mat)
     m_pressedmaterial = mat;
 }
 
-UIPoint2D UIWidget::getLocalPoint(const UIPoint2D& pos)
-{
-    if (m_parent) {
-        return UIPoint2D(pos.x - m_screenframe.pos.x, pos.y - m_screenframe.pos.y);
-    } else {
-        return pos;
-    }
-}
-
 UIPoint2D UIWidget::getGlobalPoint(const UIPoint2D& pos)
 {
     if (m_parent) {

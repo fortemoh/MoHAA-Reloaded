@@ -389,7 +389,6 @@ public:
     UIReggedMaterial  *getMaterial(void);
     void               setHoverMaterial(UIReggedMaterial *mat);
     void               setPressedMaterial(UIReggedMaterial *mat);
-    class UIPoint2D    getLocalPoint(const UIPoint2D& pos);
     class UIPoint2D    getGlobalPoint(const UIPoint2D& pos);
     virtual void       setBackgroundAlpha(float f);
     float              getBackgroundAlpha(void);

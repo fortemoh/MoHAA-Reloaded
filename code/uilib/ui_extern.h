@@ -67,6 +67,5 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../client/cl_uimaprunner.h"
 #include "../client/cl_uisoundpicker.h"
 #include "../client/cl_uiview3d.h"
-#include "../client/cl_inv.h"
 #include "../client/cl_invrender.h"
 #include "../client/cl_uistd.h"

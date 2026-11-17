@@ -99,7 +99,6 @@ void View3D::OnActivate(Event *ev)
     UIWidget         *wid;
     UList<UIWidget *> widgets;
 
-    UI_CloseInventory();
     Key_SetCatcher(Key_GetCatcher() & ~KEYCATCH_UI);
 
     for (wid = getParent()->getFirstChild(); wid; wid = getParent()->getNextChild(wid)) {

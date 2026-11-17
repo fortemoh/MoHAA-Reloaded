@@ -74,7 +74,6 @@ cvar_t        *ui_failed;
 cvar_t        *ui_drawcoords;
 cvar_t        *ui_minicon;
 cvar_t        *ui_consoleposition;
-cvar_t        *ui_inventoryfile;
 cvar_t        *ui_console;
 cvar_t        *ui_newvidmode;
 cvar_t        *ui_debugload;
@@ -90,7 +89,6 @@ unsigned char        UIListCtrlItem[8];
 static const float maxWidthRes  = 1920;
 static const float maxHeightRes = 1080;
 
-inventory_t              client_inv;
 static str               scoreboard_menuname;
 static str               ui_sCurrentLoadingMenu;
 
@@ -3433,17 +3431,6 @@ void UI_LocationPrint_f(void)
 
 /*
 ====================
-UI_LoadInventory_f
-====================
-*/
-void UI_LoadInventory_f(void)
-{
-    UI_CloseInventory();
-    CL_LoadInventory(ui_inventoryfile->string, &client_inv);
-}
-
-/*
-====================
 UI_ClearState
 ====================
 */
@@ -3812,7 +3799,6 @@ void CL_ShutdownUI(void)
     Cmd_RemoveCommand("notepad");
     Cmd_RemoveCommand("editscript");
     Cmd_RemoveCommand("editshader");
-    Cmd_RemoveCommand("inv_restart");
     Cmd_RemoveCommand("ui_showmouse");
     Cmd_RemoveCommand("ui_hidemouse");
     Cmd_RemoveCommand("ui_saveconsolepos");
@@ -3851,9 +3837,6 @@ void CL_ShutdownUI(void)
         delete mini_console;
         mini_console = NULL;
     }
-
-    // clear inventory
-    client_inv.Clear();
 
     // shutdown the UI
     uie.Shutdown();
@@ -3957,7 +3940,6 @@ void CL_InitializeUI(void)
     Cvar_Get("ui_signshader", "", 0);
     Cvar_Get("ui_compass", "1", 0); // (the Competitive HUD's compass, shown with no radar)
     ui_newvidmode          = Cvar_Get("ui_newvidmode", "-1", 0);
-    ui_inventoryfile       = Cvar_Get("ui_inventoryfile", "global/inventory.txt", 0);
     ui_drawcoords          = Cvar_Get("ui_drawcoords", "0", 0);
     Cvar_Get("ui_health_start", "0", 0);
     Cvar_Get("ui_health_end", "0", 0);
@@ -3997,8 +3979,6 @@ void CL_InitializeUI(void)
     UI_CompHud_HeadIcons();
     uie.Init();
 
-    UI_LoadInventory_f();
-
     // New since mohta
     // Version number
     Cvar_Set("game_version", va("v%s", com_target_shortversion->string));
@@ -4025,7 +4005,6 @@ void CL_InitializeUI(void)
     Cmd_AddCommand("editscript", UI_EditScript_f);
     Cmd_AddCommand("editshader", UI_EditShader_f);
     Cmd_AddCommand("editspecificshader", UI_EditSpecificShader_f);
-    Cmd_AddCommand("inv_restart", UI_LoadInventory_f);
     Cmd_AddCommand("ui_showmouse", UI_ShowMouse_f);
     Cmd_AddCommand("ui_hidemouse", UI_HideMouse_f);
     Cmd_AddCommand("ui_saveconsolepos", SaveConsoleRectangle);

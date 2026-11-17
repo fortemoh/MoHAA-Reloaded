@@ -44,7 +44,6 @@ void CL_ShutdownUI(void);
 //
 // general ui stuff
 //
-extern inventory_t  client_inv;
 extern cvar_t      *cl_greenfps;
 extern qboolean     server_loading;
 extern const UColor UWhiteChatMessageColor;
