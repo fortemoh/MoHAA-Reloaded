@@ -1373,7 +1373,8 @@ void UI_CompHud_Init(void)
         Cvar_Get(comp_toggles[i], "1", CVAR_ARCHIVE);
     }
     Cvar_Get("cg_hud_lowhealth", "0.4", CVAR_ARCHIVE);
-    // the HUD's size: its 1920x1080 design fitted in the screen, times this (0.25 to 2)
+    // the HUD's size: its 1080 lines fitted in the screen's (a screen narrower than 4:3: its 1440 across), times this
+    // (0.25 to 2)
     Cvar_Get("cg_hud_scale", "1", CVAR_ARCHIVE);
     // the accent: "f6f67a", "#f6f67a" or "R G B" (0 to 1)
     Cvar_Get("cg_hud_accent", "f6f67a", CVAR_ARCHIVE);

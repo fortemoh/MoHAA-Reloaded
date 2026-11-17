@@ -111,7 +111,8 @@ static int   bake_scaleGen;            // ... its changes
 
 float UI_DesignScale(float w, float h)
 {
-    return Q_min(uid.vidWidth / w, uid.vidHeight / h) * bake_designScale;
+    // the width counted as far as 4:3 of the height: a 4:3 screen's is as large as a 16:9 screen's of its height
+    return Q_min(uid.vidWidth / Q_min(w, h * 4.0f / 3.0f), uid.vidHeight / h) * bake_designScale;
 }
 
 bool UI_SetDesignScale(float scale)
