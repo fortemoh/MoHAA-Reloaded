@@ -2424,14 +2424,14 @@ static bool UI_SameRect(const UIRect2D& a, const UIRect2D& b)
     return a.pos.x == b.pos.x && a.pos.y == b.pos.y && a.size.width == b.size.width && a.size.height == b.size.height;
 }
 
-static std::vector<UIWidget *> ui_drawMaking; // the widget whose list is being made
-static int                     ui_drawScope;  // within a drawcache widget
-static int                     ui_drawLive;   // live draws so far
+static UIWidget *ui_drawMaking; // the widget whose list is being made
+static int       ui_drawScope;  // within a drawcache widget
+static int       ui_drawLive;   // live draws so far
 
 void UI_DrawDep(cvar_t *cvar)
 {
-    for (UIWidget *w : ui_drawMaking) {
-        w->AddDrawDep(cvar);
+    if (ui_drawMaking) {
+        ui_drawMaking->AddDrawDep(cvar);
     }
 }
 
@@ -2534,8 +2534,8 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
     }
     state = DrawState();
     // a class drawing from more than cvars: its state to the list being made
-    if (!ui_drawMaking.empty() && DrawKeyed()) {
-        ui_drawMaking[0]->m_drawKeys.push_back({this, state});
+    if (ui_drawMaking && DrawKeyed()) {
+        ui_drawMaking->m_drawKeys.push_back({this, state});
     }
     if (m_drawValid && m_drawStamp == stamp && m_drawAlpha == parent_alpha && UI_SameRect(m_drawRects[0], drawframe)
         && UI_SameRect(m_drawRects[1], m_screenframe) && UI_SameRect(m_drawRects[2], m_clippedframe) && m_drawKey == state
@@ -2551,8 +2551,8 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
             for (auto& d : m_drawDeps) {
                 UI_DrawDep(d.first);
             }
-            if (!ui_drawMaking.empty()) {
-                ui_drawMaking[0]->m_drawKeys.insert(ui_drawMaking[0]->m_drawKeys.end(), m_drawKeys.begin(), m_drawKeys.end());
+            if (ui_drawMaking) {
+                ui_drawMaking->m_drawKeys.insert(ui_drawMaking->m_drawKeys.end(), m_drawKeys.begin(), m_drawKeys.end());
             }
             uii.Rend_Draw2DList(m_drawList);
             ui_drawScope--;
@@ -2561,7 +2561,7 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
     }
 
     // a list made unless one is being made or it drew live last time
-    make = ui_drawMaking.empty() && !m_drawLive;
+    make = !ui_drawMaking && !m_drawLive;
     if (make) {
         m_drawList = uii.Rend_Begin2DList(m_drawList);
         make       = m_drawList != 0;
@@ -2569,7 +2569,7 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
     if (make) {
         m_drawDeps.clear();
         m_drawKeys.clear();
-        ui_drawMaking.push_back(this);
+        ui_drawMaking = this;
     }
     // (a class drawing from more than its cvars: live while shown)
     if (!CacheDraw() && isEnabled() && (m_enabledCvar.length() || IsVisible())) {
@@ -2577,7 +2577,7 @@ void UIWidget::Display(const UIRect2D& drawframe, float parent_alpha)
     }
     DisplayNow(drawframe, parent_alpha);
     if (make) {
-        ui_drawMaking.pop_back();
+        ui_drawMaking = NULL;
         uii.Rend_End2DList();
     }
     m_drawLive  = ui_drawLive != live;
