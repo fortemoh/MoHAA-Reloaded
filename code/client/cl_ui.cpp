@@ -1172,7 +1172,7 @@ static void UI_CompHuds(bool show, bool messages)
         // the bottom's health and ammo: cg_hudstyle's preset's)
         const bool on  = (show && ui_compHudInLayout[i]) || (messages && (i == 1 || i == 3 || i == 4 || i == 11));
 
-        if (hud && containers[i] && on != containers[i]->IsVisible()) {
+        if (containers[i] && on != containers[i]->IsVisible()) {
             if (on) {
                 hud->ForceShow();
             } else {
@@ -1863,7 +1863,7 @@ void UI_Update(void)
     {
         static cvar_t *ui_menucover = Cvar_Get("ui_menucover", "0", CVAR_ROM);
 
-        if (ui_menucover->integer != (int)covered) {
+        if (ui_menucover->integer != covered) {
             Cvar_Set("ui_menucover", covered ? "1" : "0");
         }
     }
