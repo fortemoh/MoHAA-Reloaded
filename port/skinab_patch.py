@@ -125,12 +125,16 @@ void mbABCapture( int which ) { mb_abWant = which; }
 	MB_BindVertices( mb_ring );"""),
     ("""		MB_CommitUploads();
 		[mb_cmd commit];
+		mb_lastSubmit = mach_absolute_time();
+		late = !drawable && MB_PostLatePresent( latency );
 		if ( latency ) {
-			MB_LatencyCommitted( latency, drawable != nil );
+			MB_LatencyCommitted( latency, drawable != nil || late );
 		}""", """		MB_CommitUploads();
 		[mb_cmd commit];
+		mb_lastSubmit = mach_absolute_time();
+		late = !drawable && MB_PostLatePresent( latency );
 		if ( latency ) {
-			MB_LatencyCommitted( latency, drawable != nil );
+			MB_LatencyCommitted( latency, drawable != nil || late );
 		}
 		if ( mb_abNumPairs ) {
 			[mb_cmd waitUntilCompleted];
