@@ -80,14 +80,6 @@ typedef enum {
 } borderstyle_t;
 
 typedef enum {
-    D_NONE,
-    D_FROM_LEFT,
-    D_FROM_RIGHT,
-    D_FROM_BOTTOM,
-    D_FROM_TOP
-} direction_t;
-
-typedef enum {
     MOTION_IN,
     MOTION_OUT
 } motion_t;
@@ -117,7 +109,6 @@ class UIWidget : public USignal
 protected:
     UIRect2D              m_frame;
     vec2_t                m_vVirtualScale;
-    UIPoint2D             m_startingpos;
     UIPoint2D             m_origin;
     UIRect2D              m_screenframe;
     UIPoint2D             m_screenorigin;
@@ -148,8 +139,6 @@ protected:
     UIReggedMaterial     *m_pressedmaterial;
     bool                  m_hovermaterial_active;
     bool                  m_pressedmaterial_active;
-    direction_t           m_direction;
-    direction_t           m_direction_orig;
     motion_t              m_motiontype;
     float                 m_starttime;
     float                 m_fadetime;
@@ -163,7 +152,6 @@ protected:
     float                 m_fadeSequenceRemainingTime;
     float                 m_fadeSequenceLastTime;
     int                   m_fadeSequenceState;
-    str                   m_stopsound;
     str                   m_clicksound;
     int                   m_align;
     int                   m_flags;
@@ -287,12 +275,10 @@ public:
     void LayoutHoverShader(Event *ev);
     void LayoutPressedShader(Event *ev);
     void LayoutFadeIn(Event *ev);
-    void LayoutStopSound(Event *ev);
     void LayoutClickSound(Event *ev);
     void LayoutStretch(Event *ev);
     void LayoutVirtualRes(Event *ev);
     void LayoutInitData(Event *ev);
-    void LayoutDirection(Event *ev);
     void LayoutAlign(Event *ev);
     void LayoutStuffCommand(Event *ev);
     void LayoutLinkCvar(Event *ev);
@@ -366,7 +352,6 @@ public:
     const char        *getName(void);
     void               setTitle(str title);
     const char        *getTitle(void);
-    void               setDirection(direction_t dir);
     motion_t           getMotionType(void);
     void               setMotionTime(float time);
     float              getMotionTime(void);
@@ -479,12 +464,10 @@ extern Event EV_Layout_TileShader;
 extern Event EV_Layout_HoverShader;
 extern Event EV_Layout_PressedShader;
 extern Event EV_Layout_FadeIn;
-extern Event EV_Layout_StopSound;
 extern Event EV_Layout_ClickSound;
 extern Event EV_Layout_Stretch;
 extern Event EV_Layout_VirtualRes;
 extern Event EV_Layout_InitData;
-extern Event EV_Layout_Direction;
 extern Event EV_Layout_Align;
 extern Event EV_Layout_StuffCommand;
 extern Event EV_Layout_LinkCvar;

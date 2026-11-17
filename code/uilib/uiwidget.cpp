@@ -258,15 +258,6 @@ Event EV_Layout_FadeIn
     "Set the amount of time it takes for the widget to fade in"
 );
 
-Event EV_Layout_StopSound
-(
-    "stopsound",
-    EV_DEFAULT,
-    "s",
-    "soundName",
-    "Set the sound to be played when the widget stops moving"
-);
-
 Event EV_Layout_ClickSound
 (
     "clicksound",
@@ -302,15 +293,6 @@ Event EV_Layout_InitData
     "s",
     "datastring",
     "Set the linkcvar to be initialized to this value"
-);
-
-Event EV_Layout_Direction
-(
-    "direction",
-    EV_DEFAULT,
-    "sF",
-    "direction time",
-    "Set the direction the widget will appear from on the screen\n(from_top, from_bottom, from_left, or from_right)\nTime is specified to determine how fast the widget will scroll in\n"
 );
 
 Event EV_Layout_Align
@@ -584,12 +566,10 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Layout_HoverShader,        &UIWidget::LayoutHoverShader       },
     {&EV_Layout_PressedShader,      &UIWidget::LayoutPressedShader     },
     {&EV_Layout_FadeIn,             &UIWidget::LayoutFadeIn            },
-    {&EV_Layout_StopSound,          &UIWidget::LayoutStopSound         },
     {&EV_Layout_ClickSound,         &UIWidget::LayoutClickSound        },
     {&EV_Layout_Stretch,            &UIWidget::LayoutStretch           },
     {&EV_Layout_VirtualRes,         &UIWidget::LayoutVirtualRes        },
     {&EV_Layout_InitData,           &UIWidget::LayoutInitData          },
-    {&EV_Layout_Direction,          &UIWidget::LayoutDirection         },
     {&EV_Layout_Align,              &UIWidget::LayoutAlign             },
     {&EV_Layout_NoParentClipping,   &UIWidget::LayoutNoParentClipping  },
     {&EV_Layout_NoParentAdjustment, &UIWidget::LayoutNoParentAdjustment},
@@ -799,12 +779,10 @@ UIWidget::UIWidget()
     m_pressedmaterial          = NULL;
     m_hovermaterial_active     = false;
     m_pressedmaterial_active   = false;
-    m_direction                = D_NONE;
     m_fadetime                 = 0.0f;
     m_alpha                    = 1.0f;
     m_motiontime               = 0.0f;
     m_starttime                = 0.0f;
-    m_direction_orig           = D_NONE;
     m_motiontype               = MOTION_IN;
     m_align                    = 0;
     m_flags                    = 0;
@@ -1020,8 +998,6 @@ void UIWidget::Motion(void)
 {
     float t;
     float frac;
-    int   i;
-    float nx, ny;
 
     t = uid.time / 1000.0;
 
@@ -1083,102 +1059,6 @@ void UIWidget::Motion(void)
 
         if (m_motiontype == MOTION_OUT) {
             m_alpha = 1.0 - m_alpha;
-        }
-    }
-
-    if (m_direction) {
-        frac = (t - m_starttime) / m_motiontime;
-
-        if (m_motiontype == MOTION_OUT) {
-            frac = 1.0 - frac;
-            if (frac <= 0.0) {
-                switch (m_direction) {
-                case D_FROM_BOTTOM:
-                    setFrame(UIRect2D(m_frame.pos.x, uid.vidHeight, m_frame.size.width, m_frame.size.height));
-                    break;
-                case D_FROM_TOP:
-                    setFrame(UIRect2D(
-                        m_frame.pos.x,
-                        -m_frame.size.height - m_parent->m_screenorigin.y,
-                        m_frame.size.width,
-                        m_frame.size.height
-                    ));
-                    break;
-                case D_FROM_LEFT:
-                    setFrame(UIRect2D(
-                        -m_frame.size.width - m_parent->m_screenorigin.x,
-                        m_frame.pos.y,
-                        m_frame.size.width,
-                        m_frame.size.height
-                    ));
-                    break;
-                case D_FROM_RIGHT:
-                    setFrame(UIRect2D(uid.vidWidth, m_frame.pos.y, m_frame.size.width, m_frame.size.height));
-                    break;
-                default:
-                    setFrame(UIRect2D(m_frame.pos.x, m_frame.pos.y, m_frame.size.width, m_frame.size.height));
-                    break;
-                }
-
-                m_direction = D_NONE;
-            }
-        } else {
-            if (frac >= 1.0) {
-                // done moving
-                setFrame(UIRect2D(m_startingpos, m_frame.size));
-                FrameInitialized();
-
-                for (i = 1; i <= m_children.NumObjects(); i++) {
-                    m_children.ObjectAt(i)->FrameInitialized();
-                }
-
-                m_direction = D_NONE;
-            }
-        }
-    }
-
-    switch (m_direction) {
-    case D_FROM_LEFT:
-        nx = 0;
-        if (m_parent) {
-            nx = m_frame.size.width + m_parent->m_screenorigin.x;
-        }
-        nx = (m_startingpos.x + nx) * frac - nx;
-        ny = m_frame.pos.y;
-
-        setFrame(UIRect2D(nx, ny, m_frame.size.width, m_frame.size.height));
-        break;
-    case D_FROM_RIGHT:
-        nx = uid.vidWidth - (uid.vidWidth - m_startingpos.x) * frac;
-        ny = m_frame.pos.y;
-
-        setFrame(UIRect2D(nx, ny, m_frame.size.width, m_frame.size.height));
-        break;
-    case D_FROM_BOTTOM:
-        nx = m_frame.pos.x;
-        ny = uid.vidHeight - (uid.vidHeight - m_startingpos.y) * frac;
-
-        setFrame(UIRect2D(nx, ny, m_frame.size.width, m_frame.size.height));
-        break;
-    case D_FROM_TOP:
-        nx = m_frame.pos.y;
-        ny = 0;
-        if (m_parent) {
-            ny = m_frame.size.height + m_parent->m_screenorigin.y;
-        }
-        ny = (m_startingpos.y + ny) * frac - ny;
-
-        setFrame(UIRect2D(nx, ny, m_frame.size.width, m_frame.size.height));
-        break;
-    default:
-        break;
-    }
-
-    if (m_direction == D_NONE) {
-        //
-        // play a sound to indicate the motion has finished
-        if (m_stopsound.length()) {
-            uii.Snd_PlaySound(m_stopsound);
         }
     }
 }
@@ -1352,8 +1232,6 @@ void UIWidget::InitFrame(
         setParent(&uWinMan);
     }
 
-    m_startingpos = m_frame.pos;
-
     setFont(fontname);
 
     FrameInitialized();
@@ -1381,8 +1259,6 @@ void UIWidget::LayoutRect(Event *ev)
         size.height = ev->GetFloat(4);
 
         setFrame(UIRect2D(pos, size));
-
-        m_startingpos = pos;
     }
 }
 
@@ -1457,12 +1333,6 @@ void UIWidget::LayoutFadeIn(Event *ev)
     if (m_motiontime != 0.0) {
         setMotionTime(m_fadetime);
     }
-}
-
-void UIWidget::LayoutStopSound(Event *ev)
-{
-    m_stopsound = ev->GetString(1);
-    uii.Snd_RegisterSound(m_stopsound, false);
 }
 
 void UIWidget::LayoutClickSound(Event *ev)
@@ -1821,29 +1691,6 @@ void UIWidget::LayoutInitData(Event *ev)
     if (m_cvarname.length()) {
         uii.Cvar_Set(m_cvarname, ev->GetString(1));
     }
-}
-
-void UIWidget::LayoutDirection(Event *ev)
-{
-    str direction = ev->GetString(1);
-
-    if (!stricmp(direction, "from_bottom")) {
-        setDirection(D_FROM_BOTTOM);
-    } else if (!stricmp(direction, "from_top")) {
-        setDirection(D_FROM_TOP);
-    } else if (!stricmp(direction, "from_left")) {
-        setDirection(D_FROM_LEFT);
-    } else if (!stricmp(direction, "from_right")) {
-        setDirection(D_FROM_RIGHT);
-    } else {
-        setDirection(D_NONE);
-    }
-
-    if (ev->NumArgs() > 1) {
-        setMotionTime(ev->GetFloat(2));
-    }
-
-    m_flags |= WF_DIRECTED;
 }
 
 void UIWidget::LayoutAlign(Event *ev)
@@ -2252,12 +2099,6 @@ const char *UIWidget::getTitle(void)
     return m_title;
 }
 
-void UIWidget::setDirection(direction_t dir)
-{
-    m_direction      = dir;
-    m_direction_orig = dir;
-}
-
 motion_t UIWidget::getMotionType(void)
 {
     return m_motiontype;
@@ -2525,7 +2366,7 @@ void UIWidget::DisplayNow(const UIRect2D& drawframe, float parent_alpha)
         return;
     }
 
-    if (m_direction || m_fadetime || m_fadeSequenceState != fadesequence_t::SEQUENCE_NONE) {
+    if (m_fadetime || m_fadeSequenceState != fadesequence_t::SEQUENCE_NONE) {
         UI_DrawLive();
         Motion();
     }
@@ -2704,26 +2545,11 @@ void UIWidget::ResetMotion(motion_t type)
 {
     AlignPosition();
 
-    m_direction  = m_direction_orig;
     m_motiontype = type;
 
     if (type == MOTION_IN) {
-        if (m_direction == D_FROM_BOTTOM) {
-            UIPoint2D point(m_frame.pos.x, uid.vidHeight);
-            setFrame(UIRect2D(point, m_frame.size));
-        } else if (m_direction == D_FROM_TOP) {
-            UIPoint2D point(m_frame.pos.x, -m_frame.size.height - m_parent->m_screenorigin.y);
-            setFrame(UIRect2D(point, m_frame.size));
-        } else if (m_direction == D_FROM_LEFT) {
-            UIPoint2D point(-m_frame.size.width - m_parent->m_screenorigin.x, m_frame.pos.y);
-            setFrame(UIRect2D(point, m_frame.size));
-        } else if (m_direction == D_FROM_RIGHT) {
-            UIPoint2D point(uid.vidWidth, m_frame.pos.y);
-            setFrame(UIRect2D(point, m_frame.size));
-        } else {
-            setFrame(m_frame);
-            FrameInitialized();
-        }
+        setFrame(m_frame);
+        FrameInitialized();
     }
 
     m_starttime = uid.time / 1000.0;
@@ -2784,7 +2610,6 @@ void UIWidget::Realign(void)
 
     if ((m_align & WA_FULL) || (m_flags & (WF_STRETCH_HORIZONTAL | WF_STRETCH_VERTICAL)) || bScaled) {
         setFrame(m_frame);
-        m_startingpos = m_frame.pos;
     }
 }
 
@@ -3025,7 +2850,6 @@ void UIWidgetContainer::AlignPosition(void)
     }
 
     setFrame(m_frame);
-    m_startingpos = m_frame.pos;
 }
 
 void UIWidgetContainer::Draw(void)
