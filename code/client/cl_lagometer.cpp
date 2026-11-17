@@ -50,7 +50,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 static struct {
     lgColumn_t col[LG_SLOTS];
     int        haveUpdate;
-    int        firstSlot;   // the first update's column since the reset
     int        lastTime;    // the newest update's server time
     int        lastMessage; // and message number
     int        lastPing;    // and ping
@@ -163,9 +162,6 @@ void CL_Lagometer_Snapshot(int serverTime, int message, int ping, int snapFlags,
     ping    = LG_Clamp(ping, 0, 999);
     c->ping = (int16_t)Q_max((int)c->ping, ping);
 
-    if (!lg.haveUpdate) {
-        lg.firstSlot = slot;
-    }
     lg.haveUpdate  = 1;
     lg.lastTime    = serverTime;
     lg.lastMessage = message;
