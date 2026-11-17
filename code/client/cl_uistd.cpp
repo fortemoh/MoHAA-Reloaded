@@ -152,17 +152,10 @@ void UIFakkLabel::LayoutRenderModelStudio(Event *ev)
 
 void UIFakkLabel::Draw(void)
 {
-    float     scale;
     qhandle_t handle;
     vec3_t    origin;
-    vec3_t    mins;
-    vec3_t    maxs;
-    vec3_t    angles;
-    vec3_t    offset;
-    vec3_t    rotateoffset;
     vec4_t    color;
     str       sAnimName;
-    float     height;
 
     if (!m_rendermodel) {
         UILabel::Draw();
@@ -180,10 +173,6 @@ void UIFakkLabel::Draw(void)
         return;
     }
 
-    VectorCopy(m_angles, angles);
-    VectorCopy(m_rotateoffset, rotateoffset);
-    VectorCopy(m_offset, offset);
-    scale     = m_scale;
     sAnimName = m_anim;
 
     // Added in 2.11
@@ -199,23 +188,10 @@ void UIFakkLabel::Draw(void)
         }
     }
 
-    VectorSet(mins, -16, -16, 0);
-    VectorSet(maxs, 16, 16, 96);
-
-    origin[1] = (mins[1] + maxs[1]) * 0.5;
-    origin[2] = (mins[2] + maxs[2]) * -0.5;
-
-    height = maxs[2] - mins[2];
-
-    if (height < maxs[1] - mins[1]) {
-        height = maxs[1] - mins[1];
-    }
-
-    if (height < maxs[0] - mins[0]) {
-        height = maxs[0] - mins[0];
-    }
-
-    origin[0] = height * scale * 0.5 / 0.268f;
+    // (a figure's box: 32 across, 96 high, from its feet)
+    origin[0] = 96.0f * m_scale * 0.5 / 0.268f;
+    origin[1] = 0;
+    origin[2] = -48;
 
     CL_Draw3DModel(
         m_screenframe.pos.x,
@@ -224,9 +200,9 @@ void UIFakkLabel::Draw(void)
         m_screenframe.size.height,
         handle,
         origin,
-        rotateoffset,
-        offset,
-        angles,
+        m_rotateoffset,
+        m_offset,
+        m_angles,
         color,
         sAnimName,
         m_modelaspect,
