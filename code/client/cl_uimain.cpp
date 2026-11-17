@@ -4418,9 +4418,7 @@ void UIReloadedMenu::ChooseMain(int id)
         menuManager.ShowMenu("reloaded_confirm");
         break;
     case ID_REFRESH:
-        if (!RL_SvBusy()) {
-            RL_SvRefresh();
-        }
+        RL_SvRefresh();
         break;
     case ID_SEARCH:
         rl_mm.edit = F_SEARCH;

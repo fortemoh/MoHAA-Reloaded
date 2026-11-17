@@ -132,7 +132,7 @@ static void RL_Info(rlInfo_t *in)
     char       *dollar;
 
     in->gametype   = atoi(Info_ValueForKey(info, "g_gametype"));
-    in->target     = com_target_game ? com_target_game->integer : TG_MOH;
+    in->target     = com_target_game->integer;
     in->dmflags    = atoi(Info_ValueForKey(info, "dmflags"));
     in->fraglimit  = atoi(Info_ValueForKey(info, "fraglimit"));
     in->maxClients = atoi(Info_ValueForKey(info, "sv_maxclients"));
@@ -141,9 +141,6 @@ static void RL_Info(rlInfo_t *in)
     if (dollar) {
         *dollar = 0;
     }
-    in->allies.clear();
-    in->axis.clear();
-    in->spectators.clear();
     in->connected = 0;
     in->self      = cl.snap.valid ? cl.snap.ps.clientNum : clc.clientNum;
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -1233,7 +1230,7 @@ const char *UI_Menus_Alias(const char *name)
 
 qboolean UI_Menus_Scoreboard(const char *name)
 {
-    return name && UI_Menus_Alias(name) && menuManager.FindMenuNamed("reloaded_scoreboard") ? qtrue : qfalse;
+    return UI_Menus_Alias(name) && menuManager.FindMenuNamed("reloaded_scoreboard") ? qtrue : qfalse;
 }
 
 qboolean UI_Menus_Covering(void)
@@ -1411,7 +1408,7 @@ void UI_Menus_Init(void)
         {{150, 168, 96},  {172, 190, 122}},
         {{198, 134, 74},  {216, 158, 104}},
     };
-    const int(&a)[2][3] = accents[com_target_game ? Q_max(0, Q_min(2, com_target_game->integer)) : TG_MOH];
+    const int(&a)[2][3] = accents[Q_max(0, Q_min(2, com_target_game->integer))];
 
     RL_BRASS     = RL_Rgb(a[0][0], a[0][1], a[0][2]);
     RL_BRASS_HOT = RL_Rgb(a[1][0], a[1][1], a[1][2]);
