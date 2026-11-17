@@ -55,7 +55,9 @@ class UIConsole : public UIWidget
 protected:
     UList<str>       m_history;
     void            *m_historyposition;
-    item             m_items[MAX_CONSOLE_ITEMS];
+    // Changed: m_maxitems of them (MAX_CONSOLE_ITEMS, but con_scrollback in the ~ console)
+    item            *m_items;
+    int              m_maxitems;
     str              m_currentline;
     UIVertScroll    *m_scroll;
     int              m_firstitem;
@@ -84,7 +86,10 @@ protected:
 
 public:
     UIConsole();
+    ~UIConsole();
 
+    // Added: the lines kept, the text there was cleared
+    void     setMaxItems(int count);
     void     setConsoleHandler(consoleHandler_t handler);
     void     AddText(const char *text, const UColor *pColor);
     // Added: the line being typed, the caret in it
@@ -131,6 +136,8 @@ public:
     void OnClosePressed(Event *ev);
     void setConsoleBackground(const UColor& color, float alpha);
     void setConsoleColor(const UColor& color);
+    // Added: the lines the console in it keeps
+    void setScrollback(int lines);
 };
 
 class UIDMConsole : public UIConsole

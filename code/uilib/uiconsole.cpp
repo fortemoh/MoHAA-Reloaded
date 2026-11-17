@@ -55,6 +55,26 @@ UIConsole::UIConsole()
 
 	m_scroll = new UIVertScroll();
 	AllowActivate(true);
+
+	m_maxitems = MAX_CONSOLE_ITEMS;
+	m_items    = new item[m_maxitems];
+}
+
+UIConsole::~UIConsole()
+{
+	delete[] m_items;
+}
+
+void UIConsole::setMaxItems(int count)
+{
+	if (count < 1 || count == m_maxitems) {
+		return;
+	}
+
+	delete[] m_items;
+	m_maxitems = count;
+	m_items    = new item[m_maxitems];
+	Clear();
 }
 
 int UIConsole::getFirstItem(void)
@@ -70,17 +90,17 @@ int UIConsole::getNextItem(int prev)
 
 	prev = prev + 1;
 
-	if (m_numitems < MAX_CONSOLE_ITEMS) {
+	if (m_numitems < m_maxitems) {
 		if (prev > m_firstitem) {
 			if (prev - m_firstitem >= m_numitems) {
 				return -1;
 			}
-		} else if (m_firstitem + m_numitems >= prev + MAX_CONSOLE_ITEMS) {
+		} else if (m_firstitem + m_numitems >= prev + m_maxitems) {
 			return -1;
 		}
 	}
 
-	if (prev >= MAX_CONSOLE_ITEMS) {
+	if (prev >= m_maxitems) {
 		prev = 0;
 	}
 
@@ -95,8 +115,8 @@ int UIConsole::getLastItem(void)
 {
 	int item = m_firstitem + m_numitems;
 
-	if (item - 1 >= MAX_CONSOLE_ITEMS) {
-		return item - (MAX_CONSOLE_ITEMS + 1);
+	if (item - 1 >= m_maxitems) {
+		return item - (m_maxitems + 1);
 	}
 
 	return item - 1;
@@ -106,20 +126,20 @@ int UIConsole::AddLine(void)
 {
 	int line = getLastItem() + 1;
 
-	if (line >= MAX_CONSOLE_ITEMS) {
+	if (line >= m_maxitems) {
 		line = 0;
 	}
 
-	if (m_numitems < MAX_CONSOLE_ITEMS) {
+	if (m_numitems < m_maxitems) {
 		m_numitems++;
 	} else {
 		m_firstitem++;
-		if (m_firstitem >= MAX_CONSOLE_ITEMS) {
+		if (m_firstitem >= m_maxitems) {
 			m_firstitem = 0;
 		}
 	}
 
-	assert(line < MAX_CONSOLE_ITEMS);
+	assert(line < m_maxitems);
 	return line;
 }
 
@@ -395,7 +415,7 @@ void UIConsole::Clear(void)
 	int i;
 
 	// clear items line
-	for (i = 0; i < MAX_CONSOLE_ITEMS; i++) {
+	for (i = 0; i < m_maxitems; i++) {
 		m_items[i].lines = 0;
 	}
 
@@ -888,6 +908,13 @@ void UIFloatingConsole::setConsoleHandler(consoleHandler_t handler)
 		m_console->setConsoleHandler(handler);
 	} else {
 		m_handler = handler;
+	}
+}
+
+void UIFloatingConsole::setScrollback(int lines)
+{
+	if (m_console) {
+		m_console->setMaxItems(lines);
 	}
 }
 

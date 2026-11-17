@@ -75,6 +75,8 @@ cvar_t        *ui_drawcoords;
 cvar_t        *ui_minicon;
 cvar_t        *ui_consoleposition;
 cvar_t        *ui_console;
+// Added: the lines the ~ console keeps
+static cvar_t *con_scrollback;
 cvar_t        *ui_newvidmode;
 cvar_t        *ui_debugload;
 cvar_t        *sound_overlay;
@@ -1081,6 +1083,9 @@ UIFloatingConsole *getNewConsole()
     console->Create(NULL, getDefaultConsoleRectangle(), consoleName, UWindowColor, UHudColor);
     console->setConsoleHandler(ConsoleCommandHandler);
     console->setConsoleBackground(UBlack, 0.8f);
+    // Added: read here, so a change takes effect when the console is made again (the next start)
+    Cvar_CheckRange(con_scrollback, MAX_CONSOLE_ITEMS, 4000, qtrue);
+    console->setScrollback(con_scrollback->integer);
     console->setShow(false);
     console->Connect(&s_consolehider, UIFloatingWindow::W_ClosePressed, UIFloatingWindow::W_ClosePressed);
     console->Connect(&s_consolehider, W_Destroyed, W_Destroyed);
@@ -3935,6 +3940,7 @@ void CL_InitializeUI(void)
     ui_consoleposition = Cvar_Get("ui_consoleposition", "", 1);
     // the console key works by default (MoHAA Reloaded's default, upstream's is 0)
     ui_console         = Cvar_Get("ui_console", "1", 1);
+    con_scrollback     = Cvar_Get("con_scrollback", va("%d", MAX_CONSOLE_ITEMS), CVAR_ARCHIVE);
     sound_overlay      = Cvar_Get("soundoverlay", "0", 0);
     ui_debugload       = Cvar_Get("ui_debugload", "0", 0);
     Cvar_Get("ui_signshader", "", 0);
