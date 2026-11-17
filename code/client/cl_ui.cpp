@@ -2811,88 +2811,6 @@ void UI_LODSpawnList_f(void)
 
 /*
 ====================
-UI_Notepad_f
-====================
-*/
-void UI_Notepad_f(void)
-{
-    if (Cmd_Argc() > 1) {
-        UI_LoadNotepadFile(Cmd_Argv(1));
-    } else {
-        UI_LoadNotepadFile(NULL);
-    }
-}
-
-/*
-====================
-UI_EditScript_f
-====================
-*/
-void UI_EditScript_f(void)
-{
-    const char *info;
-    const char *mname;
-    str         mapname;
-    str         mappath;
-
-    // editscript only works in-game
-    if (clc.state != CA_ACTIVE) {
-        Com_Printf("You need to load a map to edit its script\n");
-        return;
-    }
-
-    mname   = Info_ValueForKey(&cl.gameState.stringData[cl.gameState.stringOffsets[CS_SERVERINFO]], "mapname");
-    mapname = mname;
-
-    // remove the spawnpoint name
-    if (strchr(mname, '$')) {
-        info                  = strchr(mname, '$');
-        mapname[info - mname] = 0;
-    }
-
-    // make sure the map is loaded
-    if (!strcmp(mapname, "")) {
-        Com_Printf("No map loaded?\n");
-        return;
-    }
-
-    mappath = "maps/" + mapname + ".scr";
-
-    if (!UI_LoadNotepadFile(mappath)) {
-        Com_Printf("Couldn't load/find script file for %s\n", mappath.c_str());
-    }
-}
-
-/*
-====================
-UI_EditShader_f
-====================
-*/
-void UI_EditShader_f(void)
-{
-    str shaderpath;
-
-    if (Cmd_Argc() != 2) {
-        Com_Printf("Usage: Editshader <file>\n");
-        return;
-    }
-
-    shaderpath = "scripts/" + str(Cmd_Argv(1)) + ".shader";
-
-    if (!UI_LoadNotepadFile(shaderpath)) {
-        Com_Printf("Couldn't open shader named %s\n", shaderpath.c_str());
-    }
-}
-
-/*
-====================
-UI_EditSpecificShader_f
-====================
-*/
-void UI_EditSpecificShader_f(void) {}
-
-/*
-====================
 UI_LoadMenu
 ====================
 */
@@ -3858,9 +3776,6 @@ void CL_ShutdownUI(void)
     Cmd_RemoveCommand("viewspawnlist");
     Cmd_RemoveCommand("lod_spawnlist");
     Cmd_RemoveCommand("soundpicker");
-    Cmd_RemoveCommand("notepad");
-    Cmd_RemoveCommand("editscript");
-    Cmd_RemoveCommand("editshader");
     Cmd_RemoveCommand("ui_showmouse");
     Cmd_RemoveCommand("ui_hidemouse");
     Cmd_RemoveCommand("ui_saveconsolepos");
@@ -4065,10 +3980,6 @@ void CL_InitializeUI(void)
     Cmd_AddCommand("viewspawnlist", UI_ViewSpawnList_f);
     Cmd_AddCommand("lod_spawnlist", UI_LODSpawnList_f);
     Cmd_AddCommand("soundpicker", UI_SoundPicker_f);
-    Cmd_AddCommand("notepad", UI_Notepad_f);
-    Cmd_AddCommand("editscript", UI_EditScript_f);
-    Cmd_AddCommand("editshader", UI_EditShader_f);
-    Cmd_AddCommand("editspecificshader", UI_EditSpecificShader_f);
     Cmd_AddCommand("ui_showmouse", UI_ShowMouse_f);
     Cmd_AddCommand("ui_hidemouse", UI_HideMouse_f);
     Cmd_AddCommand("ui_saveconsolepos", SaveConsoleRectangle);

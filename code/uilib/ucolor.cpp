@@ -132,11 +132,6 @@ void UColor::ScaleColor(float scale)
     b *= scale;
 }
 
-void UColor::ScaleAlpha(float scale)
-{
-    a *= scale;
-}
-
 void UColor::set(float r, float g, float b, float a)
 {
     this->r = r;

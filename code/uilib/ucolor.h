@@ -39,7 +39,6 @@ public:
     operator float *() const;
 
     void ScaleColor(float scale);
-    void ScaleAlpha(float scale);
     void set(float r, float g, float b, float a);
 };
 

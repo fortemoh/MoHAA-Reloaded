@@ -57,8 +57,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "uilistbox.h"
 #include "uilistctrl.h"
 #include "uimenu.h"
-#include "uimledit.h"
-#include "uinotepad.h"
 #include "uipulldownmenu.h"
 #include "uipulldownmenucontainer.h"
 #include "uiwinman.h"
