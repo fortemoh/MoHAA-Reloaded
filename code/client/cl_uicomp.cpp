@@ -240,6 +240,14 @@ static const compWeapon_t *Comp_Weapon(const char *name)
     return NULL;
 }
 
+// the name of the weapon in hand ("": none, the server's -1)
+static const char *Comp_HandWeapon(void)
+{
+    const int w = cl.snap.ps.activeItems[ITEM_WEAPON];
+
+    return w >= 0 && w < MAX_WEAPONS ? CL_ConfigString(CS_WEAPONS + w) : "";
+}
+
 const char *UI_CompHud_WeaponOutline(const char *name)
 {
     const compWeapon_t *w = Comp_Weapon(name);
@@ -924,9 +932,7 @@ void UI_CompHud_Frame(void)
     // (g_spectatefollow_firstperson: the snapshot is that player's number)
     const qboolean       following = spectating && ((ps->pm_flags & PMF_CAMERA_VIEW) || ps->clientNum != clc.clientNum)
                                 && ps->stats[STAT_INFOCLIENT] >= 0 && ps->stats[STAT_INFOCLIENT] < MAX_CLIENTS;
-    const char *weapon = ps->activeItems[ITEM_WEAPON] >= 0 && ps->activeItems[ITEM_WEAPON] < MAX_WEAPONS
-                           ? CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON])
-                           : "";
+    const char *weapon = Comp_HandWeapon();
     // the ammo shown for what has a clip or ammo: not for an item with
     // neither (the binoculars, the papers: -1 and 0), as the stock HUD
     const bool  ammo   = weapon[0] && (ps->stats[STAT_CLIPAMMO] >= 0 || ps->stats[STAT_AMMO] > 0);
@@ -1915,7 +1921,7 @@ public:
         const playerState_t *ps   = &cl.snap.ps;
         const int            v[7] = {comp.frags, comp.smokes, comp.nation, ps->stats[STAT_WEAPONS], ps->stats[STAT_EQUIPPED_WEAPON],
                                      Comp_Int("cg_hud_grenades"), comp_accentStamp};
-        const char          *hand = CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON]);
+        const char          *hand = Comp_HandWeapon();
         int                  h    = UI_DrawHash(0, v, sizeof(v));
 
         h = UI_DrawHash(h, comp.primary, strlen(comp.primary));
@@ -1964,7 +1970,7 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
         x += pw[i] + (counts ? 8.0f : 0.0f) + 4.0f;
     }
     if (hand >= 0) {
-        const char *name = CL_ConfigString(CS_WEAPONS + cl.snap.ps.activeItems[ITEM_WEAPON]);
+        const char *name = Comp_HandWeapon();
 
         // a long name smaller, to fit 200 px
         Comp_Text(m_font, right - Comp_TextW(m_font, name, 200.0f), top + ph + 2.0f + lineH * 0.5f, name, white, getVirtualScale(), 200.0f);
@@ -1979,7 +1985,7 @@ void UIHudWeapons::Draw(void)
     const int            owned    = ps->stats[STAT_WEAPONS] & 0x3F, equipped = ps->stats[STAT_EQUIPPED_WEAPON] & 0x3F;
     const float          s        = m_vVirtualScale[0];
     const float          right    = m_frame.size.width / s - 18.0f;
-    const compWeapon_t  *inHand   = Comp_Weapon(CL_ConfigString(CS_WEAPONS + ps->activeItems[ITEM_WEAPON]));
+    const compWeapon_t  *inHand   = Comp_Weapon(Comp_HandWeapon());
     float                bottom   = m_frame.size.height / s;
     int                  handSlot = 0, primarySlot = 0, i;
 
