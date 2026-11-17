@@ -3358,10 +3358,17 @@ static void RL_Options(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         return;
     }
     RL_Head(v, x, y, w, 48);
-    RL_Tabs(m, v, x + 4, y, rl_optTabs, OT_NUM, rl_opt.search.empty() ? rl_opt.tab : -1, ID_OTAB, 17, 22);
     {
-        const float sw = Q_min(300.0f, w * 0.3f);
+        // the search field beside the tabs: on a page too narrow for both (4:3) the tabs' padding gives way first
+        // (22 down to 8), then the field's width
+        float sw = Q_min(300.0f, w * 0.3f), text = 0, pad;
 
+        for (int i = 0; i < OT_NUM; i++) {
+            text += RL_TextW(v, rl_optTabs[i], 17, true, 2);
+        }
+        pad = Q_max(8.0f, Q_min(22.0f, (w - 2 * RL_PAD - sw - text) / (2 * OT_NUM)));
+        sw  = Q_min(sw, w - 2 * RL_PAD - text - 2 * OT_NUM * pad);
+        RL_Tabs(m, v, x + 4, y, rl_optTabs, OT_NUM, rl_opt.search.empty() ? rl_opt.tab : -1, ID_OTAB, 17, pad);
         RL_Field(v, x + w - RL_PAD - sw, y + 7, sw, 34, rl_opt.search, "Search settings\x85", rl_mm.edit == F_OSEARCH, m->Hot(ID_OSEARCH));
         m->Hit(v, x + w - RL_PAD - sw, y + 7, sw, 34, ID_OSEARCH);
     }
