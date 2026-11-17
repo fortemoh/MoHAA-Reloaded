@@ -1950,7 +1950,7 @@ void UI_Update(void)
     // show the scoreboard
     //
     if (scoreboard_menu) {
-        if (UI_Menus_Scoreboard(scoreboard_menuname.c_str()) && scoreboard_up) {
+        if (UI_ScoreboardShown()) {
             scoreboard_menu->ForceShow();
         } else {
             scoreboard_menu->ForceHide();
