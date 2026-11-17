@@ -463,10 +463,8 @@ void RL_Skew(const rlView_t& v, float x, float y, float w, float h, float kl, fl
     RL_Shape(x0, y0, x1 - x0, y1 - y0, va("poly 1 1 1 1 %.4g 0 1 0 %.4g 1 0 1", kl / w, 1.0f - kr / w), c, v.s);
 }
 
-// a horizontal gradient as strips (a and b at the left and right edges);
-// under: the alpha of a black layer under it, drawn with it as one layer (two
-// flat layers blended make one: the screen filled once, not twice)
-void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b, float under)
+// a horizontal gradient as strips (a and b at the left and right edges)
+void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b)
 {
     const int x0 = RL_P(v, x), x1 = RL_P(v, x + w), y0 = RL_P(v, y), y1 = RL_P(v, y + h);
     const int n  = Q_max(1, Q_min(64, (x1 - x0) / 8));
@@ -481,15 +479,6 @@ void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor
         c.r = c.a > 0 ? (a.r * a.a + (b.r * b.a - a.r * a.a) * f) / c.a : 0;
         c.g = c.a > 0 ? (a.g * a.a + (b.g * b.a - a.g * a.a) * f) / c.a : 0;
         c.b = c.a > 0 ? (a.b * a.a + (b.b * b.a - a.b * a.a) * f) / c.a : 0;
-        if (under > 0.0f) {
-            // (black under, the strip over it: one color, premultiplied the same)
-            const float A = 1.0f - (1.0f - under) * (1.0f - c.a);
-
-            c.r = A > 0.0f ? c.r * c.a / A : 0.0f;
-            c.g = A > 0.0f ? c.g * c.a / A : 0.0f;
-            c.b = A > 0.0f ? c.b * c.a / A : 0.0f;
-            c.a = A;
-        }
         if (c.a <= 0.002f || rl_bakeOnly) {
             continue;
         }

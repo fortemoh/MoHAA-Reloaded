@@ -91,8 +91,8 @@ void RL_Round(const rlView_t& v, float x, float y, float w, float h, float r, rl
 void RL_RoundFrame(const rlView_t& v, float x, float y, float w, float h, float r, float width, rlColor_t c);
 // a box slanted as Omaha's tabs: its left edge kl, its right edge kr leaning right at the top (RL_SLANT 0: square)
 void RL_Skew(const rlView_t& v, float x, float y, float w, float h, float kl, float kr, rlColor_t c);
-// a horizontal gradient from a to b (under: a black layer under it, as one)
-void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b, float under = 0.0f);
+// a horizontal gradient from a to b
+void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b);
 bool RL_Outline(const rlView_t& v, const char *name, float cx, float cy, float bw, float bh, rlColor_t c, bool mirror = false);
 void RL_TeamIcon(const rlView_t& v, int t, float cx, float cy, float d, float alpha = 1.0f);
 rlFace_t RL_Face(const rlView_t& v, float size, bool bold);
