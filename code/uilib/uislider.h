@@ -45,7 +45,6 @@ class UISlider : public UIWidget
     bool              m_prev_arrow_depressed;
     bool              m_next_arrow_depressed;
     bool              m_thumb_depressed;
-    UIReggedMaterial *m_bar_material;
     UIReggedMaterial *m_prev_arrow_material;
     UIReggedMaterial *m_next_arrow_material;
     UIReggedMaterial *m_thumbmaterial;
@@ -69,9 +68,6 @@ private:
     void LayoutSetRange(Event *ev);
     void LayoutSetType(Event *ev);
     void LayoutSetStep(Event *ev);
-    void LayoutSliderThumbShader(Event *ev);
-    void LayoutSliderLeftShader(Event *ev);
-    void LayoutSliderRightShader(Event *ev);
 
 public:
     UISlider();

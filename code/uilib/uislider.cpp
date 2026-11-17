@@ -68,33 +68,6 @@ Event EV_Layout_SliderStep
     "Set the step size of the slider"
 );
 
-Event EV_Layout_SliderThumbShader
-(
-    "thumbshader",
-    EV_DEFAULT,
-    "sS",
-    "shader depressed_shader",
-    "Set the shader of the slider's thumb"
-);
-
-Event EV_Layout_SliderLeftShader
-(
-    "leftshader",
-    EV_DEFAULT,
-    "sS",
-    "shader depressed_shader",
-    "Set the shader of the slider's left arrow"
-);
-
-Event EV_Layout_SliderRightShader
-(
-    "rightshader",
-    EV_DEFAULT,
-    "sS",
-    "shader depressed_shader",
-    "Set the shader of the slider's right arrow"
-);
-
 CLASS_DECLARATION(UIWidget, UISlider, NULL) {
     {&W_LeftMouseDown,             &UISlider::Pressed                },
     {&W_LeftMouseDragged,          &UISlider::MouseDragged           },
@@ -107,9 +80,6 @@ CLASS_DECLARATION(UIWidget, UISlider, NULL) {
     {&EV_Layout_SliderType,        &UISlider::LayoutSetType          },
     {&EV_Layout_SliderStep,        &UISlider::LayoutSetStep          },
     // possible FAKK2 remnants below, not used currently
-    {&EV_Layout_SliderThumbShader, &UISlider::LayoutSliderThumbShader},
-    {&EV_Layout_SliderLeftShader,  &UISlider::LayoutSliderLeftShader },
-    {&EV_Layout_SliderRightShader, &UISlider::LayoutSliderRightShader},
     {NULL,                         NULL                              }
 };
 
@@ -138,7 +108,6 @@ UISlider::UISlider()
     m_thumbmaterial_pressed       = uWinMan.RegisterShader("textures/menu/slider_thumb_sel");
 
     // these are not initialized in the original game
-    m_bar_material = NULL; // seems to be unused
     m_maxx         = 0;
     m_minx         = 0;
 }
@@ -322,54 +291,6 @@ void UISlider::LayoutSetType(Event *ev)
 void UISlider::LayoutSetStep(Event *ev)
 {
     m_stepsize = ev->GetFloat(1);
-}
-
-void UISlider::LayoutSliderThumbShader(Event *ev)
-{
-    str shader      = ev->GetString(1);
-    m_thumbmaterial = uWinMan.RegisterShader(shader);
-
-    if (ev->NumArgs() <= 1) {
-        m_thumbmaterial_pressed = m_thumbmaterial;
-    } else {
-        str pressedShader       = ev->GetString(2);
-        m_thumbmaterial_pressed = uWinMan.RegisterShader(pressedShader);
-    }
-
-    m_sliderwidth = uii.Rend_GetShaderWidth(m_thumbmaterial->GetMaterial());
-    m_initialized = qfalse;
-}
-
-void UISlider::LayoutSliderLeftShader(Event *ev)
-{
-    str shader            = ev->GetString(1);
-    m_prev_arrow_material = uWinMan.RegisterShader(shader);
-
-    if (ev->NumArgs() <= 1) {
-        m_prev_arrow_material_pressed = m_prev_arrow_material;
-    } else {
-        str pressedShader             = ev->GetString(2);
-        m_prev_arrow_material_pressed = uWinMan.RegisterShader(pressedShader);
-    }
-
-    m_arrow_width = uii.Rend_GetShaderWidth(m_prev_arrow_material->GetMaterial());
-    m_initialized = qfalse;
-}
-
-void UISlider::LayoutSliderRightShader(Event *ev)
-{
-    str shader            = ev->GetString(1);
-    m_next_arrow_material = uWinMan.RegisterShader(shader);
-
-    if (ev->NumArgs() <= 1) {
-        m_next_arrow_material_pressed = m_next_arrow_material;
-    } else {
-        str pressedShader             = ev->GetString(2);
-        m_next_arrow_material_pressed = uWinMan.RegisterShader(pressedShader);
-    }
-
-    m_arrow_width = uii.Rend_GetShaderWidth(m_next_arrow_material->GetMaterial());
-    m_initialized = qfalse;
 }
 
 void UISlider::FrameInitialized(void)
