@@ -491,9 +491,9 @@ bool RL_Outline(const rlView_t& v, const char *name, float cx, float cy, float b
     return true;
 }
 
-void RL_TeamIcon(const rlView_t& v, int t, float cx, float cy, float d, float alpha)
+void RL_TeamIcon(const rlView_t& v, int t, float cx, float cy, float d)
 {
-    RL_Outline(v, rl_teams[t].icon, cx, cy, d, d, {1, 1, 1, alpha});
+    RL_Outline(v, rl_teams[t].icon, cx, cy, d, d, {1, 1, 1, 1});
 }
 
 /*

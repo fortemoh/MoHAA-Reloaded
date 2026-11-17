@@ -87,7 +87,7 @@ void RL_RoundFrame(const rlView_t& v, float x, float y, float w, float h, float 
 // a horizontal gradient from a to b
 void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b);
 bool RL_Outline(const rlView_t& v, const char *name, float cx, float cy, float bw, float bh, rlColor_t c, bool mirror = false);
-void RL_TeamIcon(const rlView_t& v, int t, float cx, float cy, float d, float alpha = 1.0f);
+void RL_TeamIcon(const rlView_t& v, int t, float cx, float cy, float d);
 rlFace_t RL_Face(const rlView_t& v, float size, bool bold);
 float RL_Advance(const rlFace_t& face, unsigned char ch);
 float RL_WidthPx(const rlFace_t& face, const char *text, float trackPx);
