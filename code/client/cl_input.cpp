@@ -1135,9 +1135,6 @@ static float CL_LiveKeyFraction( const kbutton_t *key, int interval, int elapsed
 	int		msec, remain;
 
 	remain = interval - elapsed;
-	if ( remain < 0 ) {
-		remain = 0;
-	}
 
 	msec = (int)key->msec;
 	if ( key->active ) {
