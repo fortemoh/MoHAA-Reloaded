@@ -2918,8 +2918,6 @@ void CL_InitializeUI(void)
     ui_success             = Cvar_Get("ui_success", "0", 0);
     ui_failed              = Cvar_Get("ui_failed", "0", 0);
     cl_greenfps            = Cvar_Get("cl_greenfps", "0", 1);
-    Cvar_Get("ui_startmap", "", 1);
-    Cvar_Get("dlg_badsave", "This save game is invalid", 0);
 
     Cvar_Set("cg_hud", ui_hud ? "1" : "0");
 
