@@ -961,10 +961,6 @@ void UIWindowManager::DeactiveFloatingWindows(void)
         if (pWidg->isSubclassOf(UIFloatingWindow)) {
             pWidg->SendSignal(W_Deactivated);
         }
-
-        if (pWidg->isSubclassOf(UIPopupMenu)) {
-            pWidg->ProcessEvent(W_Deactivated);
-        }
     }
 }
 

@@ -3791,6 +3791,9 @@ static qboolean UI_StockMenuGone(const char *file)
         // the developer tools whose button only ran a removed file picker: the animation viewer's (viewspawnlist), the
         // LOD tool's (lod_spawnlist)
         "animate2", "lodtool",
+        // the developer tools made of the stock pull-down menus (removed): the decal, emitter and smoke editors, the
+        // sound editor (its soundpicker removed too)
+        "decals", "emitter", "smoke", "zound",
     };
     char name[MAX_QPATH];
 
