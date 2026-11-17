@@ -588,9 +588,10 @@ void View3D::Draw2D(void)
             cge->CG_Draw2D();
         }
 
-        // Changed: no prints under the Reloaded weapon and Esc menus (no HUD there)
+        // Changed: no prints under the Reloaded weapon and Esc menus (no HUD there); they run down there
+        // as if drawn, so one that came under a menu isn't shown in full when it closes
         if (UI_Menus_Covering()) {
-            // (nothing)
+            m_printfadetime = Q_max(0.0f, m_printfadetime - cls.frametime);
         } else if (m_locationprint) {
             LocationPrint();
         } else {
