@@ -523,7 +523,6 @@ void UIWindowManager::CreateMenus(void)
             Menu              *m   = new Menu(w->getName());
 
             m->setFullscreen(wid->isFullscreen());
-            m->setVidMode(wid->getVidMode());
             m->AddMenuItem(w);
             m->ForceHide();
         }

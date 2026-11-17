@@ -276,16 +276,6 @@ void Menu::setFullscreen(qboolean bFullScreen)
     m_fullscreen = bFullScreen;
 }
 
-int Menu::getVidMode(void)
-{
-    return m_vidmode;
-}
-
-void Menu::setVidMode(int iMode)
-{
-    m_vidmode = iMode;
-}
-
 qboolean Menu::isVisible(void)
 {
     UIWidget *wid = GetContainerWidget();

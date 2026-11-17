@@ -28,7 +28,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 class Menu : public Listener
 {
     qboolean m_fullscreen;
-    int      m_vidmode;
 
 public:
     CLASS_PROTOTYPE(Menu);
@@ -54,8 +53,6 @@ public:
     void      ActivateMenu(void);
     qboolean  isFullscreen(void);
     void      setFullscreen(qboolean bFullScreen);
-    int       getVidMode(void);
-    void      setVidMode(int iMode);
     qboolean  isVisible(void);
     void      SaveCVars(void);
     void      RestoreCVars(void);

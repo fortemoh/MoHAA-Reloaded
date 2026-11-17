@@ -459,15 +459,6 @@ Event EV_Layout_Fullscreen
     "Set container to be fullscreen.  This will disable the game rendering if it's active"
 );
 
-Event EV_Layout_VidMode
-(
-    "vidmode",
-    EV_DEFAULT,
-    "i",
-    "vidmode",
-    "Set container's vidmode to change to when it's active"
-);
-
 CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Widget_Hide,               &UIWidget::Hide                    },
     {&EV_Widget_Activate,           &UIWidget::Activate                },
@@ -2576,7 +2567,6 @@ void UIWidget::EventFadeSequence(Event *ev)
 CLASS_DECLARATION(UIWidget, UIWidgetContainer, NULL) {
     {&EV_Layout_BGFill,     &UIWidgetContainer::SetBGFill    },
     {&EV_Layout_Fullscreen, &UIWidgetContainer::SetFullscreen},
-    {&EV_Layout_VidMode,    &UIWidgetContainer::SetVidMode   },
     {NULL,                  NULL                             }
 };
 
@@ -2584,7 +2574,6 @@ UIWidgetContainer::UIWidgetContainer()
 {
     m_bgfill        = UColor(0, 0, 0, 0);
     m_fullscreen    = false;
-    m_vidmode       = -1;
     m_currentwidnum = 0;
     m_maxordernum   = 0;
     m_layout        = NULL;
@@ -2663,16 +2652,6 @@ void UIWidgetContainer::SetBGFill(Event *ev)
 void UIWidgetContainer::SetFullscreen(Event *ev)
 {
     m_fullscreen = ev->GetBoolean(1);
-}
-
-void UIWidgetContainer::SetVidMode(Event *ev)
-{
-    m_vidmode = ev->GetInteger(1);
-}
-
-int UIWidgetContainer::getVidMode(void)
-{
-    return m_vidmode;
 }
 
 qboolean UIWidgetContainer::isFullscreen(void)

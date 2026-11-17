@@ -392,7 +392,6 @@ class UIWidgetContainer : public UIWidget
 {
     UColor   m_bgfill;
     qboolean m_fullscreen;
-    int      m_vidmode;
     int      m_currentwidnum;
     int      m_maxordernum;
 
@@ -411,8 +410,6 @@ public:
     void      Realign(void) override;
     void      SetBGFill(Event *ev);
     void      SetFullscreen(Event *ev);
-    void      SetVidMode(Event *ev);
-    int       getVidMode(void);
     qboolean  isFullscreen(void);
     UIWidget *GetNextWidgetInOrder(void);
     UIWidget *GetPrevWidgetInOrder(void);
@@ -454,7 +451,6 @@ extern Event EV_Widget_TextAlignment;
 extern Event EV_Widget_EnabledCvar;
 extern Event EV_Layout_BGFill;
 extern Event EV_Layout_Fullscreen;
-extern Event EV_Layout_VidMode;
 
 void SetColor(const UColor& color, float alpha);
 void DrawBox(const UIRect2D& rect, const UColor& color, float alpha);
