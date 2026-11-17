@@ -77,8 +77,6 @@ cvar_t        *ui_consoleposition;
 cvar_t        *ui_inventoryfile;
 cvar_t        *ui_console;
 cvar_t        *ui_newvidmode;
-cvar_t        *ui_health_start;
-cvar_t        *ui_health_end;
 cvar_t        *ui_debugload;
 cvar_t        *sound_overlay;
 
@@ -3971,8 +3969,8 @@ void CL_InitializeUI(void)
     ui_newvidmode          = Cvar_Get("ui_newvidmode", "-1", 0);
     ui_inventoryfile       = Cvar_Get("ui_inventoryfile", "global/inventory.txt", 0);
     ui_drawcoords          = Cvar_Get("ui_drawcoords", "0", 0);
-    ui_health_start        = Cvar_Get("ui_health_start", "0", 0);
-    ui_health_end          = Cvar_Get("ui_health_end", "0", 0);
+    Cvar_Get("ui_health_start", "0", 0);
+    Cvar_Get("ui_health_end", "0", 0);
     ui_GunneryEvaluation   = Cvar_Get("ui_GunneryEvaluation", "0", 0);
     ui_GroinShots          = Cvar_Get("ui_GroinShots", "0", 0);
     ui_RightArmShots       = Cvar_Get("ui_RightArmShots", "0", 0);
