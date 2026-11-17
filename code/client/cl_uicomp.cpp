@@ -1016,7 +1016,6 @@ void UI_CompHud_Frame(void)
     Comp_SetI("ui_hud_health", health);
     Comp_SetF("ui_hud_health_frac", Com_Clamp(0.0f, 1.0f, (float)health / maxHealth));
     Comp_Set("ui_hud_health_col", health < Comp_Cvar("cg_hud_lowhealth")->value * maxHealth ? "0.753 0.188 0.129 1" : Comp_Cvar("ui_hud_acc")->string);
-    Comp_Set("ui_hud_ammo_on", ammo ? "1" : "0");
     Comp_SetI("ui_hud_clip", ps->stats[STAT_CLIPAMMO]);
     Comp_SetI("ui_hud_ammo", ps->stats[STAT_AMMO]);
 
@@ -1146,7 +1145,6 @@ void UI_CompHud_Frame(void)
     if (full) {
         const int voteTime = atoi(CL_ConfigString(CS_VOTE_TIME));
 
-        Comp_Set("ui_hud_vote_on", voteTime ? "1" : "0");
         if (voteTime) {
             Comp_Set("ui_hud_vote_time", va("%ds", Q_max(0, (30000 - (cl.serverTime - voteTime)) / 1000 + 1)));
             static UIFont *font, *small;
