@@ -106,6 +106,13 @@ void mbABCapture( int which ) { mb_abWant = which; }
 """),
     ("""	if ( mb_skinDraw && mb_encSkin != mb_skinBuffer ) {""", """	[mb_enc setVertexBuffer:mb_ring offset:0 atIndex:3];
 	if ( mb_skinDraw && mb_encSkin != mb_skinBuffer ) {"""),
+    # a capture is the one draw's it was taken for: every draw binds through here, the static buffer's and the
+    # immediate mode's too, which would otherwise write their vertexes over the last capture (and past it, by the
+    # static buffer's vertex numbers)
+    ("""	[mb_enc setVertexBytes:&mb_vsu length:sizeof( mb_vsu ) atIndex:1];
+	mb_statDraws++;""", """	[mb_enc setVertexBytes:&mb_vsu length:sizeof( mb_vsu ) atIndex:1];
+	mb_vsu.capture = 0;
+	mb_statDraws++;"""),
     ("""	memcpy( indexDst, indices, (size_t)count * 4 );
 
 	MB_BindVertices( mb_ring );""", """	memcpy( indexDst, indices, (size_t)count * 4 );
