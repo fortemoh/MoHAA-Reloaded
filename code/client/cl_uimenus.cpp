@@ -2327,7 +2327,7 @@ static const rlRailItem_t rl_escItems[2][6] = {
      {ID_OPTIONS, "OPTIONS", NULL}},
 };
 
-// the game under it blurred: the renderer's "*frameblur", 0 without one (the dim alone: the Metal renderer for now)
+// the game under it blurred: the renderer's "*frameblur" (the Vulkan and Metal renderers'), 0 without one (the dim alone)
 static qhandle_t RL_FrameBlur(void)
 {
     static qhandle_t shader;

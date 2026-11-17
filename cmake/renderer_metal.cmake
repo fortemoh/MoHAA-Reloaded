@@ -56,6 +56,7 @@ set(RENDERER_METAL_SOURCES
 )
 
 set(RENDERER_METAL_SHADERS
+    ${RENDERER_METAL_DIR}/shaders/tr_mtl_blur.metal
     ${RENDERER_METAL_DIR}/shaders/tr_mtl_final.metal
     ${RENDERER_METAL_DIR}/shaders/tr_mtl_stage.metal
 )

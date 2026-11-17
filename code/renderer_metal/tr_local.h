@@ -1356,6 +1356,7 @@ typedef struct {
 	image_t					*flareImage;
 	image_t					*whiteImage;			// full of 0xff
 	image_t					*identityLightImage;	// full of tr.identityLightByte
+	image_t					*frameBlurImage;		// "*frameblur.tga": the frame blurred where it is drawn (mbFrameBlur)
 	image_t					*dlightImages[15];
 
 	shader_t				*defaultShader;

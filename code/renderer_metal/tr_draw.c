@@ -342,6 +342,22 @@ void Draw_SetColor(const vec4_t rgba) {
 
 /*
 ================
+RB_Begin2DSurface
+
+RB_BeginSurface for a 2D draw. The Reloaded menus' backdrop, "*frameblur", is
+the frame as drawn so far blurred into its image at its first draw of a frame
+(mbFrameBlur): nothing while it isn't drawn
+================
+*/
+static void RB_Begin2DSurface(shader_t *shader) {
+	if (tr.frameBlurImage && shader->numUnfoggedPasses && shader->unfoggedStages[0]->bundle[0].image[0] == tr.frameBlurImage) {
+		mbFrameBlur(tr.frameBlurImage->texnum);
+	}
+	RB_BeginSurface(shader);
+}
+
+/*
+================
 Draw_StretchPic
 ================
 */
@@ -374,7 +390,7 @@ void Draw_StretchPic(float x, float y, float w, float h, float s1, float t1, flo
 
 	// draw the pic
 	RB_Color4f(backEnd.color2D[0], backEnd.color2D[1], backEnd.color2D[2], backEnd.color2D[3]);
-	RB_BeginSurface(shader);
+	RB_Begin2DSurface(shader);
 
 	RB_Texcoord2f(s1, t1);
 	RB_Vertex2f(x, y);
@@ -438,7 +454,7 @@ void Draw_StretchPic2(float x, float y, float w, float h, float s1, float t1, fl
 
 	// draw the pic
 	RB_Color4f(backEnd.color2D[0], backEnd.color2D[1], backEnd.color2D[2], backEnd.color2D[3]);
-	RB_BeginSurface(shader);
+	RB_Begin2DSurface(shader);
 
 	RB_Texcoord2f(s1, t1);
 	RB_Vertex3f(x + halfWidth - (scaledWidth2 + -scaledHeight2), y + halfWidth - scaledHeight1 - scaledWidth1, 0);
@@ -594,7 +610,7 @@ void Draw_TrianglePic(const vec2_t vPoints[3], const vec2_t vTexCoords[3], qhand
 	// draw the pic
 	RB_Color4f(backEnd.color2D[0], backEnd.color2D[1], backEnd.color2D[2], backEnd.color2D[3]);
 
-	RB_BeginSurface(shader);
+	RB_Begin2DSurface(shader);
 
 	for (i = 0; i < 3; i++) {
 		RB_Texcoord2f(vTexCoords[i][0], vTexCoords[i][1]);
@@ -799,7 +815,7 @@ void DrawPolygon2D(const float (*points)[4], int count, qhandle_t hShader) {
 	}
 
 	RB_Color4f(backEnd.color2D[0], backEnd.color2D[1], backEnd.color2D[2], backEnd.color2D[3]);
-	RB_BeginSurface(shader);
+	RB_Begin2DSurface(shader);
 
 	for (i = 0; i < count; i++) {
 		RB_Texcoord2f(points[i][2], points[i][3]);
