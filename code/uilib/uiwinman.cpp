@@ -149,7 +149,6 @@ UIWindowManager::UIWindowManager()
     m_lastbuttons      = 0;
     m_oldview          = NULL;
     m_firstResponder   = NULL;
-    m_backgroundwidget = NULL;
     m_cursor           = NULL;
     m_showcursor       = true;
     m_cursorPic        = NULL;
@@ -209,17 +208,11 @@ UIWidget *UIWindowManager::getResponder(UIPoint2D& pos)
     }
 
     for (i = m_children.NumObjects(); i > 0; i--) {
-        subview = m_children.ObjectAt(i);
-        if (subview != m_backgroundwidget) {
-            responder = subview->FindResponder(pos);
-            if (responder) {
-                return responder;
-            }
+        subview   = m_children.ObjectAt(i);
+        responder = subview->FindResponder(pos);
+        if (responder) {
+            return responder;
         }
-    }
-
-    if (m_backgroundwidget) {
-        return m_backgroundwidget->FindResponder(pos);
     }
 
     return this;
@@ -231,33 +224,11 @@ void UIWindowManager::Init(const UIRect2D& frame, const char *fontname)
     m_font = new UIFont(fontname);
 }
 
-void UIWindowManager::setBackgroundWidget(UIWidget *widget)
-{
-    m_backgroundwidget = widget;
-    if (widget) {
-        widget->setParent(this);
-        widget->setFrame(m_frame);
-    }
-}
-
 void UIWindowManager::UpdateViews(void)
 {
-    int i;
-    int n;
     int x, y;
 
-    if (m_backgroundwidget) {
-        m_backgroundwidget->Display(m_frame, 1.0);
-
-        n = m_children.NumObjects();
-        for (i = 1; i <= n; i++) {
-            if (m_children.ObjectAt(i) != m_backgroundwidget) {
-                m_children.ObjectAt(i)->Display(m_frame, 1.0);
-            }
-        }
-    } else {
-        Display(m_frame, 1.0);
-    }
+    Display(m_frame, 1.0);
 
     if (m_cursor && m_showcursor && uid.uiHasMouse) {
         vec4_t     col;
@@ -446,90 +417,6 @@ void UIWindowManager::DeactivateCurrentControl(void)
     }
 }
 
-UIWidget *UIWindowManager::FindNextControl(UIWidget *control)
-{
-    UIWidget *widget;
-    bool      back_up;
-
-    if (!control) {
-        control = this;
-    }
-
-    while (control) {
-        widget = control->getFirstChild();
-        if (widget) {
-            if (widget->isEnabled() && widget->CanActivate()) {
-                return widget;
-            }
-
-            control = widget;
-        } else {
-            widget = control->getNextSibling();
-            if (widget) {
-                if (widget->isEnabled() && widget->CanActivate()) {
-                    return widget;
-                }
-
-                control = widget;
-            } else {
-                back_up = true;
-
-                while (control->getParent() && back_up) {
-                    control = control->getParent();
-                    if (control->getNextSibling()) {
-                        control = control->getNextSibling();
-
-                        // there is an error in the fakk2 code where the second check if the control is enabled
-                        // while the second should check if the control can activate
-                        // this especially affects MOHAA
-                        if (control->isEnabled() && control->CanActivate()) {
-                            return control;
-                        }
-
-                        back_up = false;
-                    }
-                }
-
-                if (control == this) {
-                    break;
-                }
-            }
-        }
-    }
-
-    return NULL;
-}
-
-UIWidget *UIWindowManager::FindPrevControl(UIWidget *control)
-{
-    UIWidget *tmp_control;
-    UIWidget *next_control;
-
-    if (control) {
-        tmp_control = this;
-        do {
-            next_control = tmp_control;
-            tmp_control  = FindNextControl(tmp_control);
-
-            if (!tmp_control) {
-                return NULL;
-            }
-        } while (tmp_control != control);
-    } else {
-        tmp_control = this;
-        do {
-            next_control = tmp_control;
-            tmp_control  = FindNextControl(tmp_control);
-        } while (tmp_control);
-    }
-
-    if (next_control != this) {
-        return next_control;
-    }
-
-    return NULL;
-}
-
 void UIWindowManager::setCursor(const char *string)
 {
     m_cursor = RegisterShader(string);
@@ -663,26 +550,6 @@ UIReggedMaterial *UIWindowManager::RegisterShader(const str& name)
     return regged;
 }
 
-UIReggedMaterial *UIWindowManager::RefreshShader(const str& name)
-{
-    int               i;
-    UIReggedMaterial *regged;
-
-    for (i = 1; i <= m_materiallist.NumObjects(); i++) {
-        regged = m_materiallist.ObjectAt(i);
-        if (regged->GetName() == name) {
-            regged->RefreshMaterial();
-            return regged;
-        }
-    }
-
-    regged = new UIReggedMaterial;
-    regged->SetMaterial(name);
-
-    m_materiallist.AddObject(regged);
-    return regged;
-}
-
 void UIWindowManager::CleanupShadersFromList(void)
 {
     int i;
@@ -776,146 +643,6 @@ bool UIWindowManager::IsDead(void)
     return m_amidead;
 }
 
-int UIWindowManager::AddBinding(str binding)
-{
-    int      i;
-    Binding *bind;
-
-    for (i = 1; i <= bindings.NumObjects(); i++) {
-        Binding *b = bindings.ObjectAt(i);
-
-        if (b->binding == binding) {
-            return i;
-        }
-    }
-
-    bind          = new Binding;
-    bind->binding = binding;
-    uii.Key_GetKeysForCommand(binding, &bind->key1, &bind->key2);
-    bindings.AddObject(bind);
-
-    return bindings.IndexOfObject(bind);
-}
-
-str UIWindowManager::GetKeyStringForCommand(str command, int index, qboolean alternate, int *key1, int *key2)
-{
-    str      s;
-    str      cmd;
-    Binding *bind;
-
-    if (index > bindings.NumObjects()) {
-        return "Invalid Command";
-    }
-
-    bind = bindings.ObjectAt(index);
-
-    if (command == bind->binding) {
-        if (bind->key1 < 0 || bind->key2 < 0) {
-            uii.Key_GetKeysForCommand(command, &bind->key1, &bind->key2);
-        }
-
-        if (bind->key2 >= 0) {
-            cmd = uii.Key_GetCommandForKey(bind->key2);
-            if (cmd != bind->binding) {
-                bind->key2 = -1;
-            }
-        }
-        if (bind->key1 >= 0) {
-            cmd = uii.Key_GetCommandForKey(bind->key1);
-            if (cmd != bind->binding) {
-                if (bind->key2 < 0) {
-                    bind->key1 = -1;
-                } else {
-                    bind->key1 = bind->key2;
-                    bind->key2 = -1;
-                }
-            }
-        }
-
-        if (alternate) {
-            if (bind->key2 >= 0) {
-                s = uii.Key_KeynumToString(bind->key2);
-            } else {
-                s = "None";
-            }
-        } else {
-            if (bind->key1 >= 0) {
-                s = uii.Key_KeynumToString(bind->key1);
-            } else {
-                s = "None";
-            }
-        }
-
-        if (key1) {
-            *key1 = bind->key1;
-        }
-        if (key2) {
-            *key2 = bind->key2;
-        }
-    } else {
-        s = "Invalid Command";
-    }
-
-    return s;
-}
-
-void UIWindowManager::BindKeyToCommand(str command, int key, int index, qboolean alternate)
-{
-    Binding *bind = bindings.ObjectAt(index);
-
-    if (bind->binding == command || !bind->binding.length()) {
-        if (!command.length()) {
-            uii.Key_SetBinding(key, "");
-            return;
-        }
-
-        if (!alternate) {
-            if (bind->key1 == key) {
-                return;
-            }
-
-            if (bind->key2 == key) {
-                uii.Key_SetBinding(bind->key1, "");
-                uii.Key_SetBinding(bind->key2, "");
-                bind->key1 = key;
-                bind->key2 = -1;
-            } else {
-                uii.Key_SetBinding(bind->key1, "");
-            }
-
-            if (!command.length()) {
-                uii.Key_SetBinding(key, "");
-            } else {
-                uii.Key_SetBinding(key, command.c_str());
-            }
-        } else {
-            if (bind->key2 == key) {
-                return;
-            }
-
-            if (bind->key1 == key) {
-                uii.Key_SetBinding(bind->key2, "");
-            } else {
-                uii.Key_SetBinding(bind->key2, "");
-                bind->key2 = key;
-
-                if (!command.length()) {
-                    uii.Key_SetBinding(key, "");
-                } else {
-                    uii.Key_SetBinding(key, command.c_str());
-                }
-            }
-        }
-    } else {
-        warning(
-            "UIWindowManager::BindKeyToCommand",
-            "Invalid bind command '%s' for widget command '%s'\n",
-            command.c_str(),
-            bind->binding.c_str()
-        );
-    }
-}
-
 UIWidget *UIWindowManager::BindActive(void)
 {
     return m_bindactive;
@@ -935,13 +662,6 @@ void UIWindowManager::Shutdown(void)
         m_materiallist.RemoveObjectAt(i);
 
         delete mat;
-    }
-
-    for (i = bindings.NumObjects(); i > 0; i--) {
-        Binding *b = bindings.ObjectAt(i);
-        bindings.RemoveObjectAt(i);
-
-        delete b;
     }
 
     m_cursor = NULL;

@@ -39,21 +39,6 @@ void UIE_ResolutionChanged(void)
     uWinMan.RefreshShadersFromList();
 }
 
-void UI_GetMouseState(int *mouseX, int *mouseY, int *flags)
-{
-    if (mouseX) {
-        *mouseX = uid.mouseX;
-    }
-
-    if (mouseY) {
-        *mouseY = uid.mouseY;
-    }
-
-    if (flags) {
-        *flags = uid.mouseFlags;
-    }
-}
-
 int UI_GetCvarInt(const char *name, int def)
 {
     cvar_t *cvar = uii.Cvar_Find(name);
@@ -108,17 +93,6 @@ void UI_SetCvarFloat(const char *cvar, float value)
 
     Com_sprintf(s, sizeof(s), "%f", value);
     uii.Cvar_Set(cvar, s);
-}
-
-void UI_ListFiles(const char *filespec)
-{
-    ui.fileList.RemoveAllItems();
-    uii.File_ListFiles(filespec);
-}
-
-const char *UI_ConfigString(int index)
-{
-    return uii.GetConfigstring(index);
 }
 
 void UI_Init(void)

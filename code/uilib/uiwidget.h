@@ -48,7 +48,6 @@ public:
     void       ReregisterMaterial(void);
     void       CleanupMaterial(void);
     void       SetMaterial(const str& name);
-    void       RefreshMaterial(void);
     str        GetName(void);
 };
 
@@ -170,7 +169,6 @@ protected:
     int                   m_flags;
     bool                  m_dying;
     int                   m_ordernum;
-    int                   m_configstring_index;
     fonthorzjustify_t     m_iFontAlignmentHorizontal;
     fontvertjustify_t     m_iFontAlignmentVertical;
     qboolean              m_bVirtual;
@@ -232,8 +230,6 @@ protected:
 
 public:
     CLASS_PROTOTYPE(UIWidget);
-
-    void (*m_commandhandler)(const char *, void *);
 
 protected:
     bool         addChild(UIWidget *widget);
@@ -340,13 +336,10 @@ public:
     void            setParent(UIWidget *parent);
     class UIWidget *getParent(void);
     class UIWidget *getFirstChild(void);
-    class UIWidget *getNextSibling(void);
     class UIWidget *getNextChild(UIWidget *child);
     class UIWidget *getPrevChild(UIWidget *child);
     class UIWidget *getPrevSibling(void);
-    class UIWidget *getPrevSibling(UIWidget *curr);
     class UIWidget *getLastSibling(void);
-    class UIWidget *findSibling(str name);
 
     void               Enable(void);
     void               Disable(void);
@@ -361,37 +354,27 @@ public:
     bool               getShow(void);
     class UColor       getBackgroundColor(void);
     virtual void       setBackgroundColor(const UColor& color, bool setbordercolor);
-    class UBorderColor getBorderColor(void);
     void               setBorderColor(const UBorderColor& color);
     class UColor       getForegroundColor(void);
     virtual void       setForegroundColor(const UColor& color);
-    borderstyle_t      getBorderStyle(void);
     void               setBorderStyle(borderstyle_t style);
     class UISize2D     getSize(void);
     void               setSize(const UISize2D& newsize);
     class UIRect2D     getFrame(void);
     void               setFrame(const UIRect2D& newframe);
-    class UIPoint2D    getOrigin(void);
-    void               setOrigin(const UIPoint2D& neworigin);
     void               setName(str name);
     const char        *getName(void);
     void               setTitle(str title);
     const char        *getTitle(void);
     void               setDirection(direction_t dir);
-    direction_t        getDirection(void);
-    void               setMotionType(motion_t type);
     motion_t           getMotionType(void);
     void               setMotionTime(float time);
     float              getMotionTime(void);
-    void               setAlign(int align);
-    int                getAlign(void);
     void               setMaterial(UIReggedMaterial *mat);
     UIReggedMaterial  *getMaterial(void);
     void               setHoverMaterial(UIReggedMaterial *mat);
     void               setPressedMaterial(UIReggedMaterial *mat);
-    class UIPoint2D    getGlobalPoint(const UIPoint2D& pos);
     virtual void       setBackgroundAlpha(float f);
-    float              getBackgroundAlpha(void);
     void               Display(const UIRect2D& drawframe, float parent_alpha);
     void               DisplayNow(const UIRect2D& drawframe, float parent_alpha);
     // Added: the draw cache: whether it draws only from its rect, colors,
@@ -406,14 +389,12 @@ public:
     virtual void       CharEvent(int ch);
     virtual void       UpdateData(void);
     virtual void       UpdateUIElement(void);
-    float              getTitleWidth(void);
     bool               CanActivate(void);
     void               AllowActivate(bool canactivate);
     bool               IsActive(void);
     bool               IsVisible(void);
     virtual void       LinkCvar(str cvarname);
     void               LinkCommand(str cmd);
-    void               InitializeCommandHandler(void (*fcn)(const char *, void *));
     class UIWidget    *FindWidget(str name);
     void               ResetMotion(motion_t type);
     virtual void       Realign(void);
@@ -422,25 +403,18 @@ public:
     class UIPoint2D    MouseEventToClientPoint(Event *ev);
     class UIRect2D     getClientFrame(void);
     void               setAlwaysOnBottom(bool b);
-    void               setAlwaysOnTop(bool b);
     bool               getAlwaysOnBottom(void);
-    bool               getAlwaysOnTop(void);
     bool               SendSignal(Event& event);
-    void               AddFlag(int flag);
     void               SetHovermaterialActive(bool a);
     void               SetPressedmaterialActive(bool a);
     int                getOrderNum(void);
-    class str          getCommand(void);
     void               ActivateOrder(void);
     void               EnableEvent(Event *ev);
     void               DisableEvent(Event *ev);
-    void               setConfigstringIndex(int cs);
-    int                getConfigstringIndex(void);
     bool               PassEventToWidget(str name, Event *ev);
 
     // Added in OPM
     UIFont       *getFont() const;
-    bool          isVirtual() const;
     const vec2_t& getVirtualScale() const;
     const vec2_t& getHighResScale() const;
 };

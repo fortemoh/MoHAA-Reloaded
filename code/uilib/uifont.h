@@ -75,7 +75,6 @@ public:
     float m_fit;
     void setAlpha(float alpha);
     void setFont(const char *fontname);
-    int  getMaxWidthIndex(const char *text, int maxlen);
     void setVirtualScale(const float *virtualScale);
     float getWidth(const char *text, int maxlen);
     float getCharWidth(unsigned short ch);

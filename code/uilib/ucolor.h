@@ -52,9 +52,7 @@ public:
 
     UColorHSV();
     UColorHSV(UColor rgb);
-    UColorHSV(float h, float s, float v, float a);
 
-    void set(float h, float s, float v, float a);
 };
 
 typedef enum {
@@ -73,7 +71,6 @@ public:
     UColor original;
 
     UBorderColor();
-    UBorderColor(const UColor& dark, const UColor& reallydark, const UColor& light);
     UBorderColor(const UColor& color);
 
     void CreateSolidBorder(const UColor& color, colorType_t type);

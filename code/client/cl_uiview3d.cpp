@@ -286,43 +286,6 @@ void View3D::DrawProf(void)
     // FIXME: unimplemented
 }
 
-void View3D::PrintSound(int channel, const char *name, float vol, int rvol, float pitch, float base, int& line)
-{
-    char  buf[255];
-    float x;
-    float xStep;
-    float height;
-
-    height = m_font->getHeight(getHighResScale());
-    xStep  = height;
-
-    x = 0;
-    Com_sprintf(buf, sizeof(buf), "%d", channel);
-    m_font->Print(x, height * line + m_frame.pos.y, buf, -1, getHighResScale());
-
-    x += xStep + xStep;
-    Com_sprintf(buf, sizeof(buf), "%s", name);
-    m_font->Print(x, height * line + m_frame.pos.y, buf, -1, getHighResScale());
-
-    x += xStep * 30.0;
-    Com_sprintf(buf, sizeof(buf), "vol:%.2f", vol);
-    m_font->Print(x, height * line + m_frame.pos.y, buf, -1, getHighResScale());
-
-    x += xStep * 8;
-    Com_sprintf(buf, sizeof(buf), "rvol:%.2f", (float)(rvol / 128.f));
-    m_font->Print(x, height * line + m_frame.pos.y, buf, -1, getHighResScale());
-
-    x += xStep * 5;
-    Com_sprintf(buf, sizeof(buf), "pit:%.2f", pitch);
-    m_font->Print(x, height * line + m_frame.pos.y, buf, -1, getHighResScale());
-
-    x += xStep * 5;
-    Com_sprintf(buf, sizeof(buf), "base:%d", (int)base);
-    m_font->Print(x, height * line + m_frame.pos.y, buf, -1, getHighResScale());
-
-    line++;
-}
-
 void View3D::DrawSoundOverlay(void)
 {
     setFont("verdana-14");

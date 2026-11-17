@@ -50,7 +50,6 @@ protected:
     UIRect2D       thumbRect;
     unnamed_struct m_dragThumbState;
     bool           m_frameinitted;
-    UColor         m_thumbcolor;
     UColor         m_solidbordercolor;
 
 public:
@@ -58,7 +57,6 @@ public:
 
 protected:
     int  getItemFromHeight(float height);
-    bool isEnoughItems(void);
 
 public:
     UIVertScroll();
@@ -79,7 +77,6 @@ public:
     int  getTopItem(void);
     int  getPageHeight(void);
     int  getNumItems(void);
-    void setThumbColor(const UColor& thumb);
     void setSolidBorderColor(const UColor& col);
     void InitFrameAlignRight(UIWidget *parent, float fWidthPadding, float fHeightPadding);
     void FrameInitialized() override;

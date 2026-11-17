@@ -98,16 +98,6 @@ void Menu::AddMenuItem(UIWidget *item)
     }
 }
 
-void Menu::DeleteMenuItem(UIWidget *item)
-{
-    // remove all item's children
-    for (int i = item->m_children.NumObjects(); i > 0; i--) {
-        m_itemlist.RemoveObject(item->m_children.ObjectAt(i));
-    }
-
-    m_itemlist.RemoveObject(item);
-}
-
 void Menu::setName(str name)
 {
     m_name = name;
@@ -236,19 +226,6 @@ UIWidget *Menu::GetNamedWidget(const char *pszName)
     return NULL;
 }
 
-void Menu::Update(void)
-{
-    int i;
-    int n;
-
-    n = m_itemlist.NumObjects();
-    for (i = 1; i <= n; i++) {
-        UIWidget *wid = m_itemlist.ObjectAt(i);
-        wid->UpdateUIElement();
-        wid->UpdateData();
-    }
-}
-
 void Menu::RealignWidgets(void)
 {
     int i;
@@ -369,20 +346,6 @@ void Menu::PassEventToWidget(str name, Event *ev)
     }
 }
 
-void Menu::PassEventToAllWidgets(Event& ev)
-{
-    int i;
-    int n;
-
-    n = m_itemlist.NumObjects();
-    for (i = 1; i <= n; i++) {
-        UIWidget *wid = m_itemlist.ObjectAt(i);
-        if (wid->ValidEvent(ev.getName())) {
-            wid->ProcessEvent(ev);
-        }
-    }
-}
-
 CLASS_DECLARATION(Listener, MenuManager, NULL) {
     {&EV_PushMenu,    &MenuManager::PushMenu},
     {&EV_LockMenus,   &MenuManager::Lock    },
@@ -411,12 +374,6 @@ void MenuManager::RealignMenus(void)
 void MenuManager::AddMenu(Menu *m)
 {
     m_menulist.AddObject(m);
-    m_generation++;
-}
-
-void MenuManager::DeleteMenu(Menu *m)
-{
-    m_menulist.RemoveObject(m);
     m_generation++;
 }
 
@@ -722,18 +679,6 @@ void MenuManager::ListMenus(void)
     }
 }
 
-void MenuManager::UpdateAllMenus(void)
-{
-    int i;
-    int num;
-
-    num = m_menulist.NumObjects();
-    for (i = 1; i <= num; i++) {
-        Menu *menu = m_menulist.ObjectAt(i);
-        menu->Update();
-    }
-}
-
 void MenuManager::Lock(Event *ev)
 {
     m_lock = true;
@@ -750,18 +695,6 @@ void MenuManager::PassEventToWidget(str name, Event *ev)
 
     if (head) {
         head->PassEventToWidget(name, ev);
-    }
-}
-
-void MenuManager::PassEventToAllWidgets(Event& ev)
-{
-    int i;
-    int iMenuCount;
-
-    iMenuCount = m_menulist.NumObjects();
-    for (i = 1; i <= iMenuCount; i++) {
-        Menu *pMenu = m_menulist.ObjectAt(i);
-        pMenu->PassEventToAllWidgets(ev);
     }
 }
 

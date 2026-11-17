@@ -195,27 +195,7 @@ UColorHSV::UColorHSV(UColor rgb)
     }
 }
 
-UColorHSV::UColorHSV(float h, float s, float v, float a)
-{
-    set(h, s, v, a);
-}
-
-void UColorHSV::set(float h, float s, float v, float a)
-{
-    this->h = h;
-    this->s = s;
-    this->v = v;
-    this->a = a;
-}
-
 UBorderColor::UBorderColor() {}
-
-UBorderColor::UBorderColor(const UColor& dark, const UColor& reallydark, const UColor& light)
-{
-    this->dark       = dark;
-    this->reallydark = reallydark;
-    this->light      = light;
-}
 
 UBorderColor::UBorderColor(const UColor& color)
 {

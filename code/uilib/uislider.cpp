@@ -143,11 +143,6 @@ UISlider::UISlider()
     m_minx         = 0;
 }
 
-void UISlider::setThumb(void)
-{
-    // not present in disassembly
-}
-
 void UISlider::Pressed(Event *ev)
 {
     float xpos = ev->GetFloat(1);
@@ -327,11 +322,6 @@ void UISlider::LayoutSetType(Event *ev)
 void UISlider::LayoutSetStep(Event *ev)
 {
     m_stepsize = ev->GetFloat(1);
-}
-
-void UISlider::LayoutSliderBGShader(Event *ev)
-{
-    // not present in disassembly
 }
 
 void UISlider::LayoutSliderThumbShader(Event *ev)
@@ -534,9 +524,4 @@ void UISlider::setRange(float min, float max)
 {
     m_minvalue = min;
     m_maxvalue = max;
-}
-
-void UISlider::setStep(float value)
-{
-    m_stepsize = value;
 }

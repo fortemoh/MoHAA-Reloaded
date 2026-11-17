@@ -77,11 +77,6 @@ void UIConsole::setMaxItems(int count)
 	Clear();
 }
 
-int UIConsole::getFirstItem(void)
-{
-	return m_firstitem;
-}
-
 int UIConsole::getNextItem(int prev)
 {
 	if (prev == -1) {

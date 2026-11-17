@@ -25,7 +25,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 qboolean UI_FontDBCSIsLeadByte(fontheader_t *font, unsigned short uch);
 int      UI_FontCodeSearch(const fontheader_t *font, unsigned short uch);
-int      UI_FontStringMaxWidth(fontheader_t *pFont, const char *pszString, int iMaxLen);
 
 const unsigned char DBCS_Maekin_TraditionalChinese[] = {
     0x0A1, 0x0E3, 0x0A1, 0x0CA, 0x0A1, 0x5B,  0x0A2, 0x4E,  0x0A2, 0x0B1, 0x0A1, 0x0CC, 0x0A2, 0x0B2, 0x0A2, 0x43,
@@ -447,17 +446,6 @@ void UIFont::PrintJustified(
     }
 }
 
-int UIFont::getMaxWidthIndex(const char *text, int maxlen)
-{
-    CheckRefreshFont();
-
-    if (!m_font) {
-        return 0;
-    }
-
-    return UI_FontStringMaxWidth(m_font, text, maxlen);
-}
-
 float UIFont::FitScale(const char *text, float width)
 {
     float w;
@@ -649,42 +637,6 @@ float UI_FontgetCharWidthf(fontheader_t *font, unsigned short uch)
     }
 
     return font->sgl[index]->locations[indirected].size[0] * widthMul;
-}
-
-int UI_FontStringMaxWidth(fontheader_t *pFont, const char *pszString, int iMaxLen)
-{
-    float widths    = 0.0;
-    float maxwidths = iMaxLen / 256.0f;
-    int   i;
-
-    if (!pFont) {
-        return 0;
-    }
-
-    for (int i = 0; pszString[i] && (iMaxLen == -1 || i < iMaxLen); i++) {
-        unsigned short uch = (unsigned char)pszString[i];
-
-        if (UI_FontDBCSIsLeadByte(pFont, uch)) {
-            uch = (uch << 8) | pszString[i];
-            if (!pszString[i]) {
-                break;
-            }
-
-            i++;
-        }
-
-        if (uch == '\n') {
-            widths = 0.0;
-        } else {
-            widths += UI_FontgetCharWidthf(pFont, uch);
-
-            if (maxwidths < widths) {
-                return i - 1;
-            }
-        }
-    }
-
-    return -1;
 }
 
 int UI_FontStringWidth(fontheader_t *pFont, const char *pszString, int iMaxLen)

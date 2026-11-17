@@ -761,13 +761,6 @@ void UIReggedMaterial::SetMaterial(const str& name)
     this->name = name;
 }
 
-void UIReggedMaterial::RefreshMaterial(void)
-{
-    if (isGot) {
-        this->hMat = uii.Rend_RefreshMaterial(name.c_str());
-    }
-}
-
 str UIReggedMaterial::GetName(void)
 {
     return name;
@@ -800,7 +793,6 @@ UIWidget::UIWidget()
     m_visible                  = true;
     m_enabled                  = true;
     m_canactivate              = false;
-    m_commandhandler           = NULL;
     m_font                     = NULL;
     m_material                 = NULL;
     m_hovermaterial            = NULL;
@@ -818,7 +810,6 @@ UIWidget::UIWidget()
     m_flags                    = 0;
     m_dying                    = false;
     m_ordernum                 = 0;
-    m_configstring_index       = -1;
     m_iFontAlignmentHorizontal = FONT_JUSTHORZ_CENTER;
     m_iFontAlignmentVertical   = FONT_JUSTVERT_CENTER;
     m_bVirtual                 = false;
@@ -1979,15 +1970,6 @@ UIWidget *UIWidget::getFirstChild(void)
     return NULL;
 }
 
-UIWidget *UIWidget::getNextSibling(void)
-{
-    if (m_parent) {
-        return m_parent->getNextChild(this);
-    }
-
-    return NULL;
-}
-
 UIWidget *UIWidget::getNextChild(UIWidget *child)
 {
     int index = m_children.IndexOfObject(child);
@@ -2025,15 +2007,6 @@ UIWidget *UIWidget::getPrevSibling(void)
     return NULL;
 }
 
-UIWidget *UIWidget::getPrevSibling(UIWidget *curr)
-{
-    if (m_parent) {
-        return m_parent->getPrevChild(curr);
-    }
-
-    return NULL;
-}
-
 UIWidget *UIWidget::getLastSibling(void)
 {
     if (m_parent && m_children.NumObjects()) {
@@ -2046,19 +2019,6 @@ UIWidget *UIWidget::getLastSibling(void)
     } else {
         return NULL;
     }
-}
-
-UIWidget *UIWidget::findSibling(str name)
-{
-    UIWidget *wid;
-
-    for (wid = getLastSibling(); wid != NULL; wid = getPrevSibling(wid)) {
-        if (wid->getName() == name) {
-            return wid;
-        }
-    }
-
-    return NULL;
 }
 
 void UIWidget::Enable(void)
@@ -2217,11 +2177,6 @@ void UIWidget::setBackgroundColor(const UColor& color, bool setbordercolor)
     }
 }
 
-UBorderColor UIWidget::getBorderColor(void)
-{
-    return m_border_color;
-}
-
 void UIWidget::setBorderColor(const UBorderColor& color)
 {
     m_border_color = color;
@@ -2235,11 +2190,6 @@ UColor UIWidget::getForegroundColor(void)
 void UIWidget::setForegroundColor(const UColor& color)
 {
     m_foreground_color = color;
-}
-
-borderstyle_t UIWidget::getBorderStyle(void)
-{
-    return m_borderStyle;
 }
 
 void UIWidget::setBorderStyle(borderstyle_t style)
@@ -2282,19 +2232,6 @@ void UIWidget::setFrame(const UIRect2D& newframe)
     }
 }
 
-UIPoint2D UIWidget::getOrigin(void)
-{
-    return m_origin;
-}
-
-void UIWidget::setOrigin(const UIPoint2D& neworigin)
-{
-    if (neworigin != m_origin) {
-        m_origin = neworigin;
-        PropogateCoordinateSystem();
-    }
-}
-
 void UIWidget::setName(str name)
 {
     m_name = name;
@@ -2321,16 +2258,6 @@ void UIWidget::setDirection(direction_t dir)
     m_direction_orig = dir;
 }
 
-direction_t UIWidget::getDirection(void)
-{
-    return m_direction;
-}
-
-void UIWidget::setMotionType(motion_t type)
-{
-    m_motiontype = type;
-}
-
 motion_t UIWidget::getMotionType(void)
 {
     return m_motiontype;
@@ -2344,16 +2271,6 @@ void UIWidget::setMotionTime(float time)
 float UIWidget::getMotionTime(void)
 {
     return m_motiontime;
-}
-
-void UIWidget::setAlign(int align)
-{
-    m_align = align;
-}
-
-int UIWidget::getAlign(void)
-{
-    return m_align;
 }
 
 void UIWidget::setMaterial(UIReggedMaterial *mat)
@@ -2376,23 +2293,9 @@ void UIWidget::setPressedMaterial(UIReggedMaterial *mat)
     m_pressedmaterial = mat;
 }
 
-UIPoint2D UIWidget::getGlobalPoint(const UIPoint2D& pos)
-{
-    if (m_parent) {
-        return UIPoint2D(pos.x + m_screenframe.pos.x, pos.y + m_screenframe.pos.y);
-    } else {
-        return pos;
-    }
-}
-
 void UIWidget::setBackgroundAlpha(float f)
 {
     m_alpha = f;
-}
-
-float UIWidget::getBackgroundAlpha(void)
-{
-    return m_alpha;
 }
 
 /*
@@ -2736,11 +2639,6 @@ void UIWidget::UpdateData(void) {}
 
 void UIWidget::UpdateUIElement(void) {}
 
-float UIWidget::getTitleWidth(void)
-{
-    return m_font->getWidth(getTitle(), -1);
-}
-
 bool UIWidget::CanActivate(void)
 {
     if (!m_canactivate || m_dying) {
@@ -2779,11 +2677,6 @@ void UIWidget::LinkCvar(str cvarname)
 void UIWidget::LinkCommand(str cmd)
 {
     m_command = cmd;
-}
-
-void UIWidget::InitializeCommandHandler(void (*fcn)(const char *, void *))
-{
-    m_commandhandler = fcn;
 }
 
 UIWidget *UIWidget::FindWidget(str name)
@@ -2952,30 +2845,9 @@ void UIWidget::setAlwaysOnBottom(bool b)
     }
 }
 
-void UIWidget::setAlwaysOnTop(bool b)
-{
-    if (getAlwaysOnTop() != b) {
-        if (b) {
-            m_flags &= ~WF_ALWAYS_BOTTOM;
-            m_flags |= WF_ALWAYS_TOP;
-        } else {
-            m_flags &= ~WF_ALWAYS_TOP;
-        }
-
-        if (m_parent) {
-            ArrangeWidgetList(m_parent->m_children);
-        }
-    }
-}
-
 bool UIWidget::getAlwaysOnBottom(void)
 {
     return (m_flags & WF_ALWAYS_BOTTOM) ? true : false;
-}
-
-bool UIWidget::getAlwaysOnTop(void)
-{
-    return (m_flags & WF_ALWAYS_TOP) ? true : false;
 }
 
 bool UIWidget::SendSignal(Event& event)
@@ -2985,11 +2857,6 @@ bool UIWidget::SendSignal(Event& event)
     } else {
         return USignal::SendSignal(event);
     }
-}
-
-void UIWidget::AddFlag(int flag)
-{
-    m_flags |= flag;
 }
 
 void UIWidget::SetHovermaterialActive(bool a)
@@ -3005,11 +2872,6 @@ void UIWidget::SetPressedmaterialActive(bool a)
 int UIWidget::getOrderNum(void)
 {
     return m_ordernum;
-}
-
-str UIWidget::getCommand(void)
-{
-    return m_command;
 }
 
 void UIWidget::ActivateOrder(void)
@@ -3036,16 +2898,6 @@ void UIWidget::EnableEvent(Event *ev)
 void UIWidget::DisableEvent(Event *ev)
 {
     Disable();
-}
-
-void UIWidget::setConfigstringIndex(int cs)
-{
-    m_configstring_index = cs;
-}
-
-int UIWidget::getConfigstringIndex(void)
-{
-    return m_configstring_index;
 }
 
 bool UIWidget::PassEventToWidget(str name, Event *ev)
@@ -3075,11 +2927,6 @@ bool UIWidget::PassEventToWidget(str name, Event *ev)
 UIFont *UIWidget::getFont() const
 {
     return m_font;
-}
-
-bool UIWidget::isVirtual() const
-{
-    return m_bVirtual;
 }
 
 const vec2_t& UIWidget::getVirtualScale() const

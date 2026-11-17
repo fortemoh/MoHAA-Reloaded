@@ -57,7 +57,6 @@ public:
     CLASS_PROTOTYPE(UISlider);
 
 private:
-    void setThumb(void);
     void Pressed(Event *ev);
     void Released(Event *ev);
     void Increment(void);
@@ -70,7 +69,6 @@ private:
     void LayoutSetRange(Event *ev);
     void LayoutSetType(Event *ev);
     void LayoutSetStep(Event *ev);
-    void LayoutSliderBGShader(Event *ev);
     void LayoutSliderThumbShader(Event *ev);
     void LayoutSliderLeftShader(Event *ev);
     void LayoutSliderRightShader(Event *ev);
@@ -85,5 +83,4 @@ public:
     void     UpdateUIElement(void) override;
     void     setType(slidertype_t type);
     void     setRange(float min, float max);
-    void     setStep(float value);
 };
