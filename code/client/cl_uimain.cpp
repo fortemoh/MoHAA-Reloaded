@@ -252,14 +252,13 @@ static int RL_SvTab(GServer s)
     default:
         return TAB_OTHER;
     }
-    std::string mode = RL_SvString(s, "gametype");
+    const char *mode = RL_SvString(s, "gametype");
 
-    std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) { return (char)tolower(c); });
-    return mode.find("free-for") != std::string::npos || mode == "ffa" ? TAB_FFA
-         : mode.find("round") != std::string::npos                     ? TAB_OTHER
-         : mode.find("obj") != std::string::npos                       ? TAB_OBJ
-         : mode.find("team") != std::string::npos                      ? TAB_TDM
-                                                                       : TAB_OTHER;
+    return Q_stristr(mode, "free-for") || !Q_stricmp(mode, "ffa") ? TAB_FFA
+         : Q_stristr(mode, "round")                               ? TAB_OTHER
+         : Q_stristr(mode, "obj")                                 ? TAB_OBJ
+         : Q_stristr(mode, "team")                                ? TAB_TDM
+                                                                  : TAB_OTHER;
 }
 
 // a list's news (ServerListThink's): a server answered (its row made or
@@ -367,28 +366,17 @@ static void RL_SvHalt(void)
 // the rows shown: the tab's, the search's, sorted
 static void RL_SvShown(void)
 {
-    std::string find = rl_mm.search;
-
     if (!rl_vis.dirty) {
         return;
     }
     rl_vis.dirty = false;
     rl_vis.rows.clear();
     rl_vis.players = 0;
-    std::transform(find.begin(), find.end(), find.begin(), [](unsigned char c) { return (char)tolower(c); });
     for (int i = 0; i < (int)rl_sv.rows.size(); i++) {
         const rlServer_t& r = rl_sv.rows[i];
 
-        if (rl_mm.tab != TAB_ALL && r.tab != rl_mm.tab) {
+        if ((rl_mm.tab != TAB_ALL && r.tab != rl_mm.tab) || !Q_stristr(r.name.c_str(), rl_mm.search.c_str())) {
             continue;
-        }
-        if (!find.empty()) {
-            std::string name = r.name;
-
-            std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return (char)tolower(c); });
-            if (name.find(find) == std::string::npos) {
-                continue;
-            }
         }
         rl_vis.rows.push_back(i);
         rl_vis.players += r.players;
@@ -1836,10 +1824,7 @@ static void RL_Browser(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
 
         RL_Text(v, x + w / 2, ry + 3 * rh, empty, 17, RL_MUTED, false, RL_CENTER, 0, RL_MID);
     } else if ((int)rl_vis.rows.size() > rl_mm.fit) {
-        // the scroll bar
-        const float th = (y + h - foot - ry) - 8, n = (float)rl_vis.rows.size();
-
-        RL_Box(v, x + w - 8, ry + 4 + th * rl_mm.top / n, 3, Q_max(24.0f, th * rl_mm.fit / n), RL_Rgb(255, 255, 255, 60));
+        RL_ScrollBar(v, x + w, ry, y + h - foot - ry, rl_mm.top, rl_mm.fit, rl_vis.rows.size());
     }
     {
         // the status row: the servers and players shown, the lists' state (or a word)
@@ -3105,11 +3090,8 @@ static void RL_Swatches(UIReloadedMenu *m, const rlView_t& v, int i, float right
 {
     const char *const *c = rl_opts[i].choices;
     const char        *set = RL_OptValue(i);
-    int                n = 0;
+    const int          n = RL_OptChoices(i);
 
-    while (c[n]) {
-        n++;
-    }
     set += *set == '#';
     for (int k = 0; k < n; k++) {
         const float        x   = right - (n - k) * 34 + 6;
@@ -3240,7 +3222,7 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
         return;
     }
     if (o.kind == OC_PREVIEW) {
-        RL_Panel(v, x, y, w, h - 12, RL_Rgb(0, 0, 0, 0));
+        RL_Frame(v, x, y, w, h - 12, 1, RL_LINE);
         RL_Crosshair(v, x, y, w, h - 12);
         RL_Text(v, x + 12, y + h - 12 - 18, "PREVIEW, 2X", 12, RL_Rgb(255, 255, 255, 150), true, RL_LEFT, 1.6f, RL_MID);
         return;
@@ -3505,10 +3487,10 @@ static struct {
     int                   pick;    // the vote picked, -1 none
     int                   choice;  // its choice: a list's place, a player's client; -1 none
     std::string           entry;   // a number's, a text's
-    int                   top, ctop, fit, cfit; // the lists' first shown, how many show
+    int                   top, ctop; // the lists' first shown
     int                   split;   // the columns' edge (pixels in the menu)
     int                   clickAt;
-} rl_vote = {{}, "", false, 0, 0, -1, -1, "", 0, 0, 1, 1, 0, 0};
+} rl_vote = {{}, "", false, 0, 0, -1, -1, "", 0, 0, 0, 0};
 
 static int  rl_over;        // the page over the Esc menu (RL_OVER_*)
 static bool rl_overPending; // asked for before the Esc menu was up: shown once it is (RL_OverTick)
@@ -3716,14 +3698,14 @@ static void RL_Vote(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
     } else {
         // the server's votes on the left, the one picked's choices on the right
         const float ly = top + 56, rx = x + lw;
-        const int   n  = (int)rl_vote.votes.size();
+        // (the rows a list shows)
+        const int   n = (int)rl_vote.votes.size(), fit = Q_max(1, (int)((foot - ly) / rh));
 
         RL_Box(v, rx, top + 1, 1, foot - top - 1, RL_LINE);
         RL_Label(v, x + RL_PAD + 8, top + 28, "THE SERVER'S VOTES");
-        rl_vote.fit   = Q_max(1, (int)((foot - ly) / rh));
-        rl_vote.top   = Q_max(0, Q_min(rl_vote.top, n - rl_vote.fit));
+        rl_vote.top   = Q_max(0, Q_min(rl_vote.top, n - fit));
         rl_vote.split = RL_P(v, rx);
-        for (int i = 0; i < rl_vote.fit && rl_vote.top + i < n; i++) {
+        for (int i = 0; i < fit && rl_vote.top + i < n; i++) {
             const rlVote_t& o = rl_vote.votes[rl_vote.top + i];
             // (what is picked for it, but a list's: its choices)
             const char     *caption = o.type >= VOTE_OPTION_CLIENT ? "A PLAYER"
@@ -3733,8 +3715,8 @@ static void RL_Vote(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
 
             RL_VoteRow(m, v, x, ly + i * rh, lw, rh, o.name.c_str(), caption, rl_vote.pick == rl_vote.top + i && !at, at != 0, ID_VOPT + rl_vote.top + i);
         }
-        if (n > rl_vote.fit) {
-            RL_ScrollBar(v, rx, ly, foot - ly, rl_vote.top, rl_vote.fit, n);
+        if (n > fit) {
+            RL_ScrollBar(v, rx, ly, foot - ly, rl_vote.top, fit, n);
         }
         if (pick) {
             const float rw = w - lw;
@@ -3754,9 +3736,8 @@ static void RL_Vote(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
                 const auto players = pick->type == VOTE_OPTION_LIST ? std::vector<std::pair<int, std::string>>() : RL_VotePlayers(pick->type);
                 const int  cn      = pick->type == VOTE_OPTION_LIST ? (int)pick->choices.size() : (int)players.size();
 
-                rl_vote.cfit = Q_max(1, (int)((foot - ly) / rh));
-                rl_vote.ctop = Q_max(0, Q_min(rl_vote.ctop, cn - rl_vote.cfit));
-                for (int i = 0; i < rl_vote.cfit && rl_vote.ctop + i < cn; i++) {
+                rl_vote.ctop = Q_max(0, Q_min(rl_vote.ctop, cn - fit));
+                for (int i = 0; i < fit && rl_vote.ctop + i < cn; i++) {
                     const int k = rl_vote.ctop + i, c = pick->type == VOTE_OPTION_LIST ? k : players[k].first;
 
                     RL_VoteRow(m, v, rx - 1, ly + i * rh, rw + 1, rh, pick->type == VOTE_OPTION_LIST ? pick->choices[k].c_str() : players[k].second.c_str(),
@@ -3764,8 +3745,8 @@ static void RL_Vote(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
                 }
                 if (!cn) {
                     RL_Text(v, rx + RL_PAD + 8, ly + rh / 2, "No one to choose.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
-                } else if (cn > rl_vote.cfit) {
-                    RL_ScrollBar(v, x + w, ly, foot - ly, rl_vote.ctop, rl_vote.cfit, cn);
+                } else if (cn > fit) {
+                    RL_ScrollBar(v, x + w, ly, foot - ly, rl_vote.ctop, fit, cn);
                 }
             }
         } else if (!at) {
