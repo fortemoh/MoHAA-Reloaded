@@ -901,7 +901,7 @@ void FS_Remove( const char *osPath );
 void FS_Remove_HomeData( const char *homePath );
 
 void	FS_FilenameCompletion( const char *dir, const char *ext,
-		qboolean stripExt, void(*callback)(const char *s), qboolean allowNonPureFilesOnDisk );
+		qboolean stripExt, void(*callback)(const char *s), qboolean allowNonPureFilesOnDisk, qboolean wantSubs );
 
 const char* FS_GetCurrentGameDir();
 void	FS_GetRelativeFilename( const char *currentDirectory, const char *absoluteFilename, char *out, size_t destlen );
@@ -933,7 +933,7 @@ void Field_Clear( field_t *edit );
 void Field_AutoComplete( field_t *edit );
 void Field_CompleteKeyname( void );
 void Field_CompleteFilename( const char *dir,
-		const char *ext, qboolean stripExt, qboolean allowNonPureFilesOnDisk );
+		const char *ext, qboolean stripExt, qboolean allowNonPureFilesOnDisk, qboolean wantSubs );
 void Field_CompleteCommand( char *cmd,
 		qboolean doCommands, qboolean doCvars );
 void Field_CompletePlayerName( const char **names, int count );

@@ -83,6 +83,7 @@ protected:
 
     virtual void Print(Event *ev);
     virtual void KeyEnter(void);
+    virtual void TabComplete(void);
 
 public:
     UIConsole();
@@ -150,6 +151,7 @@ public:
 
 private:
     void KeyEnter(void) override;
+    void TabComplete(void) override;
 
 public:
     UIDMConsole();

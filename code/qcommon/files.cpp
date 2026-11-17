@@ -4508,13 +4508,14 @@ void	FS_Flush( fileHandle_t f ) {
 }
 
 void	FS_FilenameCompletion( const char *dir, const char *ext,
-		qboolean stripExt, void(*callback)(const char *s), qboolean allowNonPureFilesOnDisk ) {
+		qboolean stripExt, void(*callback)(const char *s), qboolean allowNonPureFilesOnDisk, qboolean wantSubs ) {
 	char	**filenames;
 	int		nfiles;
 	int		i;
 	char	filename[ MAX_STRING_CHARS ];
 
-	filenames = FS_ListFilteredFiles( dir, ext, NULL, qfalse, &nfiles, allowNonPureFilesOnDisk );
+	// Changed: the files in the folders under dir too, if wantSubs
+	filenames = FS_ListFilteredFiles( dir, ext, NULL, wantSubs, &nfiles, allowNonPureFilesOnDisk );
 
 	FS_SortFileList( filenames, nfiles );
 

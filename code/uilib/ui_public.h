@@ -161,6 +161,8 @@ typedef struct glconfig_t;*/
         void (*Rend_End2DList)(void);
         void (*Rend_Draw2DList)(int handle);
         void (*Rend_Free2DList)(int handle);
+        // Added: Tab in the ~ console, the engine's completion of a whole line (cl_ui.cpp)
+        void (*Cmd_CompleteLine)(char *line, int size);
     } uiimport_t;
 
 #if 1

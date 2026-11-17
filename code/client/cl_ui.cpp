@@ -823,6 +823,54 @@ static void CL_GetClipboardData(char *buf, int buflen)
 
 /*
 ====================
+UI_CompleteLine
+
+Added: Tab in the ~ console. The engine's completion (Field_AutoComplete, as in the
+dedicated server's console): the line's last word, a command's argument by the command's
+own completion (set and the others a cvar, exec a config, map and the others a map); the
+matches listed when more than one; a cvar's value shown when one is completed
+====================
+*/
+static void UI_CompleteLine(char *line, int size)
+{
+    field_t field;
+    char   *word;
+    cvar_t *var;
+    size_t  len;
+
+    // (Field_CompleteCommand reads the character before an empty line)
+    if (!line[strspn(line, " \"")] || strlen(line) >= sizeof(field.buffer)) {
+        return;
+    }
+
+    Field_Clear(&field);
+    Q_strncpyz(field.buffer, line, sizeof(field.buffer));
+    field.cursor = strlen(field.buffer);
+    Field_AutoComplete(&field);
+
+    if (!strcmp(field.buffer, line)) {
+        return;
+    }
+    Q_strncpyz(line, field.buffer, size);
+
+    // a word completed whole (a space after it): a cvar's value
+    len = strlen(field.buffer);
+    if (field.buffer[len - 1] != ' ') {
+        return;
+    }
+    field.buffer[len - 1] = 0;
+    for (word = field.buffer + len - 1; word > field.buffer && !strchr(" ;\"", word[-1]); word--) {}
+    if (*word == '\\' || *word == '/') {
+        word++;
+    }
+    var = Cvar_FindVar(word);
+    if (var) {
+        Com_Printf("    %s = \"%s\"\n", var->name, var->string);
+    }
+}
+
+/*
+====================
 Key_KeynumToStringBuf
 ====================
 */
@@ -3093,6 +3141,7 @@ void CL_FillUIImports(void)
     uii.Rend_End2DList       = re.End2DList;
     uii.Rend_Draw2DList      = re.Draw2DList;
     uii.Rend_Free2DList      = re.Free2DList;
+    uii.Cmd_CompleteLine     = UI_CompleteLine;
 
     uii.Rend_Set2DStartTime = re.Set2DInitialShaderTime;
 }

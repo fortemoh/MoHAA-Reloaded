@@ -3165,15 +3165,15 @@ Field_CompleteFilename
 ===============
 */
 void Field_CompleteFilename(const char* dir,
-    const char* ext, qboolean stripExt, qboolean allowNonPureFilesOnDisk)
+    const char* ext, qboolean stripExt, qboolean allowNonPureFilesOnDisk, qboolean wantSubs)
 {
     matchCount = 0;
     shortestMatch[0] = 0;
 
-    FS_FilenameCompletion(dir, ext, stripExt, FindMatches, allowNonPureFilesOnDisk);
+    FS_FilenameCompletion(dir, ext, stripExt, FindMatches, allowNonPureFilesOnDisk, wantSubs);
 
     if (!Field_Complete())
-        FS_FilenameCompletion(dir, ext, stripExt, PrintMatches, allowNonPureFilesOnDisk);
+        FS_FilenameCompletion(dir, ext, stripExt, PrintMatches, allowNonPureFilesOnDisk, wantSubs);
 }
 
 /*

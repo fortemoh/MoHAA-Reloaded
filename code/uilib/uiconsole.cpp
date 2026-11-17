@@ -583,37 +583,33 @@ void UIConsole::Paste(void)
 	m_caret += text.length();
 }
 
+// Added: Tab, the engine's completion of the whole line (cl_ui.cpp's UI_CompleteLine: the last word,
+// the matches listed, a cvar's value)
+void UIConsole::TabComplete(void)
+{
+	char line[MAX_STRING_CHARS];
+
+	m_refreshcompletionbuffer = true;
+
+	if (m_currentline.length() >= sizeof(line)) {
+		return;
+	}
+
+	Q_strncpyz(line, m_currentline.c_str(), sizeof(line));
+	uii.Cmd_CompleteLine(line, sizeof(line));
+	m_currentline = line;
+	m_caret       = m_currentline.length();
+}
+
 qboolean UIConsole::KeyEvent(int key, unsigned int time)
 {
-	const char *command;
-
 	if (key != K_TAB && key != K_BACKSPACE) {
 		m_refreshcompletionbuffer = true;
 	}
 
 	switch (key) {
 	case K_TAB:
-		if (m_refreshcompletionbuffer) {
-			m_completionbuffer        = m_currentline;
-			m_refreshcompletionbuffer = false;
-			m_cntcvarnumber           = 0;
-			m_cntcmdnumber            = 0;
-		}
-
-		command = uii.Cmd_CompleteCommandByNumber(m_completionbuffer.c_str(), m_cntcmdnumber++);
-		if (!command) {
-			command = uii.Cvar_CompleteCvarByNumber(m_completionbuffer.c_str(), m_cntcvarnumber++);
-			if (!command) {
-				m_currentline             = m_completionbuffer;
-				m_refreshcompletionbuffer = true;
-				m_caret                   = m_currentline.length();
-				break;
-			}
-		}
-
-		m_currentline = command;
-		m_currentline += ' ';
-		m_caret = m_currentline.length();
+		TabComplete();
 		break;
 
 	case K_ENTER:
@@ -1069,6 +1065,34 @@ void UIDMConsole::Draw(void)
 	}
 
 	UIConsole::Draw();
+}
+
+// Changed: the console's Tab as it was, the first word only, one match a press (commands, then cvars)
+void UIDMConsole::TabComplete(void)
+{
+	const char *command;
+
+	if (m_refreshcompletionbuffer) {
+		m_completionbuffer        = m_currentline;
+		m_refreshcompletionbuffer = false;
+		m_cntcvarnumber           = 0;
+		m_cntcmdnumber            = 0;
+	}
+
+	command = uii.Cmd_CompleteCommandByNumber(m_completionbuffer.c_str(), m_cntcmdnumber++);
+	if (!command) {
+		command = uii.Cvar_CompleteCvarByNumber(m_completionbuffer.c_str(), m_cntcvarnumber++);
+		if (!command) {
+			m_currentline             = m_completionbuffer;
+			m_refreshcompletionbuffer = true;
+			m_caret                   = m_currentline.length();
+			return;
+		}
+	}
+
+	m_currentline = command;
+	m_currentline += ' ';
+	m_caret = m_currentline.length();
 }
 
 qboolean UIDMConsole::KeyEvent(int key, unsigned int time)
