@@ -50,10 +50,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 static struct {
     lgColumn_t col[LG_SLOTS];
     int        haveUpdate;
-    int        lastTime;    // the newest update's server time
-    int        lastMessage; // and message number
-    int        lastPing;    // and ping
-    int        lastFrame;   // the client frame last drawn with the lagometer up
+    int        lastTime;      // the newest update's server time
+    int        lastMessage;   // and message number
+    int        lastPing;      // and ping
+    int        lastFrame;     // the client frame last drawn with the lagometer up
+    int        lastCmdFrames; // cls.cmdFrames then
     int64_t    lastFrameUs;
     int64_t    lastStatsUs;
     lgStats_t  st;
@@ -245,15 +246,20 @@ const lgStats_t *CL_Lagometer_Frame(void)
             c->buffer = (int16_t)buffer;
         }
         c->flags |= LG_F_BUFFER;
-        // its time, if the frame before was drawn with it too (a frame of more
-        // than 2 s is a stall: loading, a breakpoint)
-        if (lg.lastFrame == cls.framecount - 1 && now - lg.lastFrameUs > 0 && now - lg.lastFrameUs < 2000000) {
+        // its time, if the frame before that drew was drawn with it too: the
+        // client frames since its last, this one aside, only made a usercmd
+        // (cl_movefps's frames don't draw, Metal port: counted as they come);
+        // not after a frame drawn without it (under the Esc and weapon menus).
+        // (a frame of more than 2 s is a stall: loading, a breakpoint)
+        if (cls.framecount - lg.lastFrame - 1 == cls.cmdFrames - lg.lastCmdFrames && now - lg.lastFrameUs > 0
+            && now - lg.lastFrameUs < 2000000) {
             c->frames++;
             c->frameUs += (uint32_t)(now - lg.lastFrameUs);
         }
     }
-    lg.lastFrame   = cls.framecount;
-    lg.lastFrameUs = now;
+    lg.lastFrame     = cls.framecount;
+    lg.lastCmdFrames = cls.cmdFrames;
+    lg.lastFrameUs   = now;
 
     if (!lg.lastStatsUs || now - lg.lastStatsUs >= LG_STATS_US || now < lg.lastStatsUs) {
         LG_Stats();

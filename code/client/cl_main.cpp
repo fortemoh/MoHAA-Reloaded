@@ -2697,6 +2697,8 @@ void CL_Frame ( int msec ) {
 	// update the screen (not on a frame of cl_movefps's usercmd ahead of the frame rate cap's, Metal port)
 	if ( com_renderFrame ) {
 		SCR_UpdateScreen();
+	} else {
+		cls.cmdFrames++;
 	}
 	// a fire click's frame keeps its eye info for its usercmd's packet (cl_movefps, Metal port)
 	CL_ClickEyeInfo();

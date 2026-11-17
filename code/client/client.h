@@ -333,6 +333,7 @@ typedef struct {
 	qboolean	timeScaled;
 
 	int			framecount;
+	int			cmdFrames;			// of those, the ones that only made cl_movefps's usercmd and didn't draw (Metal port)
 	int			frametime;			// msec since last frame
 	float		serverFrameTime;
 
