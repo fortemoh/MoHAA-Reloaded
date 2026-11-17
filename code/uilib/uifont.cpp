@@ -730,9 +730,7 @@ void UIFont::CheckRefreshFont()
         // the screen's new size): the width ratio made again for it now, so
         // what this frame measures (and a 2D list keeps) has the new one
         if (m_hasVirtualScale) {
-            const float vs[2] = {m_virtualScale[0], m_virtualScale[1]};
-
-            setVirtualScale(vs);
+            setVirtualScale(m_virtualScale);
         }
     } else if (!uii.IsRendererLoaded()) {
         m_font = NULL;
