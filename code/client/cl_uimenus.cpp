@@ -126,21 +126,28 @@ static int RL_Gametype(void)
     return atoi(Info_ValueForKey(CL_ConfigString(CS_SERVERINFO), "g_gametype"));
 }
 
+// a map's name without the spawn point after a $ (out: MAX_QPATH)
+static void RL_MapFile(char *out, const char *map)
+{
+    char *dollar;
+
+    Q_strncpyz(out, map, MAX_QPATH);
+    dollar = strchr(out, '$');
+    if (dollar) {
+        *dollar = 0;
+    }
+}
+
 static void RL_Info(rlInfo_t *in)
 {
     const char *info = CL_ConfigString(CS_SERVERINFO);
-    char       *dollar;
 
     in->gametype   = atoi(Info_ValueForKey(info, "g_gametype"));
     in->target     = com_target_game->integer;
     in->dmflags    = atoi(Info_ValueForKey(info, "dmflags"));
     in->fraglimit  = atoi(Info_ValueForKey(info, "fraglimit"));
     in->maxClients = atoi(Info_ValueForKey(info, "sv_maxclients"));
-    Q_strncpyz(in->map, Info_ValueForKey(info, "mapname"), sizeof(in->map));
-    dollar = strchr(in->map, '$');
-    if (dollar) {
-        *dollar = 0;
-    }
+    RL_MapFile(in->map, Info_ValueForKey(info, "mapname"));
     in->connected = 0;
     in->self      = cl.snap.valid ? cl.snap.ps.clientNum : clc.clientNum;
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -182,6 +189,23 @@ static void RL_WantScores(void)
         rl_sb.requested = cls.realtime;
         CL_AddReliableCommand("score", qfalse);
     }
+}
+
+// a player's row of "scores": the kills, deaths, time and ping from the argument at (a client out of range: none)
+static void RL_ScoreRow(int client, int at, qboolean dead, int& order)
+{
+    if (client < 0 || client >= MAX_CLIENTS) {
+        return;
+    }
+    rlScore_t *r = &rl_sb.client[client];
+
+    r->kills  = atoi(Cmd_Argv(at));
+    r->deaths = atoi(Cmd_Argv(at + 1));
+    Q_strncpyz(r->time, Cmd_Argv(at + 2), sizeof(r->time));
+    Q_strncpyz(r->ping, Cmd_Argv(at + 3), sizeof(r->ping));
+    r->dead  = dead;
+    r->order = order++;
+    rl_sb.seen[client] = rl_sb.stamp;
 }
 
 /*
@@ -247,35 +271,11 @@ void UI_Menus_ServerCommand(void)
                 }
                 continue;
             }
-            if (client < 0 || client >= MAX_CLIENTS) {
-                continue;
-            }
-            rlScore_t *r = &rl_sb.client[client];
-
-            r->kills  = atoi(Cmd_Argv(cur + 6 * i + 2));
-            r->deaths = atoi(Cmd_Argv(cur + 6 * i + 3));
-            Q_strncpyz(r->time, Cmd_Argv(cur + 6 * i + 4), sizeof(r->time));
-            Q_strncpyz(r->ping, Cmd_Argv(cur + 6 * i + 5), sizeof(r->ping));
-            r->dead  = dead;
-            r->order = order++;
-            rl_sb.seen[client] = rl_sb.stamp;
+            RL_ScoreRow(client, cur + 6 * i + 2, dead, order);
         }
     } else {
         for (int i = 0; i < n; i++) {
-            const int client = atoi(Cmd_Argv(cur + 5 * i));
-
-            if (client < 0 || client >= MAX_CLIENTS) {
-                continue;
-            }
-            rlScore_t *r = &rl_sb.client[client];
-
-            r->kills  = atoi(Cmd_Argv(cur + 5 * i + 1));
-            r->deaths = atoi(Cmd_Argv(cur + 5 * i + 2));
-            Q_strncpyz(r->time, Cmd_Argv(cur + 5 * i + 3), sizeof(r->time));
-            Q_strncpyz(r->ping, Cmd_Argv(cur + 5 * i + 4), sizeof(r->ping));
-            r->dead  = qfalse;
-            r->order = order++;
-            rl_sb.seen[client] = rl_sb.stamp;
+            RL_ScoreRow(atoi(Cmd_Argv(cur + 5 * i)), cur + 5 * i + 1, qfalse, order);
         }
     }
 }
@@ -400,13 +400,7 @@ void RL_SetColor(rlColor_t c)
 
 void RL_Box(const rlView_t& v, float x, float y, float w, float h, rlColor_t c)
 {
-    const int x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + w), y1 = RL_P(v, y + h);
-
-    if (x1 <= x0 || y1 <= y0 || c.a <= 0.0f || rl_bakeOnly) {
-        return;
-    }
-    RL_SetColor(c);
-    uii.Rend_DrawBox(x0, y0, x1 - x0, y1 - y0);
+    RL_BoxPx(RL_P(v, x), RL_P(v, y), RL_P(v, x + w), RL_P(v, y + h), c);
 }
 
 // a box in pixels (x1, y1 past its edge)
@@ -1594,7 +1588,7 @@ const char *UI_Menus_Loading(Menu *stock, const char *map)
     // (a local server's own: its configstring isn't here yet when it loads a map)
     const char *info = com_sv_running->integer ? Cvar_InfoString(CVAR_SERVERINFO) : CL_ConfigString(CS_SERVERINFO);
     const char *ours;
-    char        name[MAX_QPATH], *dollar;
+    char        name[MAX_QPATH];
 
     rl_ld.gametype = atoi(Info_ValueForKey(info, "g_gametype"));
     // (a mission's level waits for CONTINUE as its stock screen does; loading_default's doesn't)
@@ -1603,11 +1597,7 @@ const char *UI_Menus_Loading(Menu *stock, const char *map)
     if (!menuManager.FindMenuNamed(ours)) {
         return NULL;
     }
-    Q_strncpyz(name, map, sizeof(name));
-    dollar = strchr(name, '$');
-    if (dollar) {
-        *dollar = 0;
-    }
+    RL_MapFile(name, map);
     if (rl_ld.gametype == GT_SINGLE_PLAYER) {
         Q_strncpyz(rl_ld.map, name, sizeof(rl_ld.map));
         rl_ld.stock = stock;
@@ -2034,6 +2024,8 @@ int UIReloadedMenu::DrawKey(void)
     }
     if (m_screen == SCR_SCOREBOARD) {
         k.scores = rl_sb.stamp;
+        // (the round's end banner over the header)
+        k.banner = UI_Extras_BannerKey();
     }
     if (m_screen == SCR_WEAPON || m_screen == SCR_ESC || m_screen == SCR_SCOREBOARD) {
         // (the time left's seconds)
@@ -2044,10 +2036,6 @@ int UIReloadedMenu::DrawKey(void)
         k.wpick[0] = rl_wp.pick[0];
         k.wpick[1] = rl_wp.pick[1];
         k.wserial  = rl_wp.serial;
-    }
-    if (m_screen == SCR_SCOREBOARD) {
-        // (the round's end banner over the header)
-        k.banner = UI_Extras_BannerKey();
     }
     if (Main()) {
         k.main = MainDrawKey();
@@ -3282,7 +3270,7 @@ void UI_Menus_DrawObjectives(qboolean shown)
     };
     std::vector<rlObj_t> objs;
     int                  done = 0, current;
-    char                 map[MAX_QPATH], *dollar;
+    char                 map[MAX_QPATH];
     const char          *level;
 
     if (!shown || !uii.IsRendererLoaded()) {
@@ -3303,11 +3291,7 @@ void UI_Menus_DrawObjectives(qboolean shown)
         objs.push_back({text, (flags & OBJ_FLAG_COMPLETED) != 0, i == current && !(flags & OBJ_FLAG_COMPLETED)});
         done += objs.back().done;
     }
-    Q_strncpyz(map, Info_ValueForKey(CL_ConfigString(CS_SERVERINFO), "mapname"), sizeof(map));
-    dollar = strchr(map, '$');
-    if (dollar) {
-        *dollar = 0;
-    }
+    RL_MapFile(map, Info_ValueForKey(CL_ConfigString(CS_SERVERINFO), "mapname"));
     level = CL_ConfigString(CS_MESSAGE);
     {
         const rlView_t v = RL_View();
