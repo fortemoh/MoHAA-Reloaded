@@ -90,7 +90,7 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_target", "ui_hud_target_col",
     "ui_hud_target_hp", "ui_hud_target_hpcol", "ui_hud_target_on", "ui_hud_timer", "ui_hud_vote_on",
     "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_weapons_on",
-    "ui_hud_cards_allies", "ui_hud_cards_axis", "ui_hud_cards_on", "ui_hud_never",
+    "ui_hud_cards_allies", "ui_hud_cards_axis", "ui_hud_cards_on", "ui_hud_feed_under", "ui_hud_never",
 };
 
 // the accent (cg_hud_accent, the HUD's pale yellow by default) and its
@@ -1219,6 +1219,13 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_msgs_c", msgs && !radar);
         flag("ui_hud_score_on", Comp_Int("cg_hud_score") && gametype != GT_SINGLE_PLAYER);
         flag("ui_hud_cards_on", rounds && Comp_Int("cg_hud_alive"));
+        // the kill feed under the cards where the screen has no room for both in a row (a 4:3 screen, a large
+        // cg_hud_scale): the cards' box ends 476 right of the middle, the feed's is the last 445
+        flag(
+            "ui_hud_feed_under",
+            rounds && Comp_Int("cg_hud_alive") && !Comp_Int("cg_hud_alivecount")
+                && uid.vidWidth / UI_DesignScale(1920.0f, 1080.0f) < 2 * (476.0f + 445.0f)
+        );
         flag("ui_hud_health_on", strip && Comp_Int("cg_hud_health"));
         flag("ui_hud_badge_on", strip && Comp_Int("cg_hud_badge"));
         flag("ui_hud_ammo_on", strip && ammo && Comp_Int("cg_hud_ammo"));
