@@ -1417,6 +1417,12 @@ void UI_OpenDMConsole(int iMode)
         return;
     }
 
+    // Added: the chat opens empty: a line typed and not sent (the chat left with Esc, or closed by a menu,
+    // the console or a change of its mode) isn't there again. Never while it is being typed in
+    if (dm_console->getConsole() && !dm_console->getConsole()->IsThisOrChildActive()) {
+        dm_console->getConsole()->ClearCurrentLine();
+    }
+
     UI_SetDMConsoleMode(iMode);
     dm_console->setShow(true);
     uWinMan.ActivateControl(dm_console);

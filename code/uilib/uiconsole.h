@@ -89,6 +89,14 @@ public:
     // Added: the line being typed, the caret in it
     const str& getCurrentLine(void) const { return m_currentline; }
     size_t     getCaret(void) const { return m_caret; }
+    // Added: the line being typed dropped, as after one is sent (its place in the history and its completion too)
+    void       ClearCurrentLine(void)
+    {
+        m_currentline             = "";
+        m_caret                   = 0;
+        m_historyposition         = NULL;
+        m_refreshcompletionbuffer = true;
+    }
     void     CalcLineBreaks(item& theItem);
     void     Clear(void);
     void     FrameInitialized(void) override;
