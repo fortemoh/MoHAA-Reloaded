@@ -2911,7 +2911,8 @@ static void RL_MapObjectives(std::string objs[2])
     }
 }
 
-// the numeric columns, right-aligned, from the right
+// the numeric columns from the right, each label and its numbers centered in
+// its width
 typedef struct {
     const char *label;
     float       w;
@@ -2960,7 +2961,7 @@ static void RL_SbLabels(const rlView_t& v, float x, float y, float w, rlColor_t 
     float          r    = x + w - 16;
 
     for (int i = n - 1; i >= 0; i--) {
-        RL_Text(v, r, y, cols[i].label, RL_S2, c, true, RL_RIGHT, 1.5f, RL_MID);
+        RL_Text(v, r - cols[i].w / 2, y, cols[i].label, RL_S2, c, true, RL_CENTER, 1.5f, RL_MID);
         r -= cols[i].w;
     }
 }
@@ -3036,7 +3037,7 @@ static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, con
             if (c >= n - 2 && !me) {
                 vc = RL_Alpha(RL_MUTED, a);
             }
-            RL_Text(v, rx, cy, vals[c], fs, vc, c == 0, RL_RIGHT, 0, RL_MID);
+            RL_Text(v, rx - cols[c].w / 2, cy, vals[c], fs, vc, c == 0, RL_CENTER, 0, RL_MID);
             rx -= cols[c].w;
         }
     }
