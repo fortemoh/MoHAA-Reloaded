@@ -255,9 +255,10 @@ const char *UI_CompHud_WeaponOutline(const char *name)
     return w ? va(COMP_OUTLINES "%s.svg", w->pic) : NULL;
 }
 
-// the obituaries' English keys (fgame's), the weapon each says: s2 the text
-// after the attacker it needs ("" none at all), kind p a player's, s a
-// suicide, w the world's
+// the obituaries' English keys (fgame's, and stock 1.11's own spellings:
+// Pak0's global/localization.txt), the weapon each says: s2 the text after
+// the attacker it needs ("" none at all), kind p a player's, s a suicide, w
+// the world's. In order: a 'p' before any 's' or 'w' its words contain
 typedef struct {
     const char *s1, *s2, *cls;
     char        kind;
@@ -268,6 +269,7 @@ static const compPhrase_t comp_phrases[] = {
     {"was rifled by",                  "",                             "rifle",    'p'},
     {"was sniped by",                  "",                             "sniper",   'p'},
     {"was perforated by",              "'s' SMG",                      "smg",      'p'},
+    {"was perforated by",              "'s SMG",                       "smg",      'p'},
     {"was machine-gunned by",          "",                             "mg",       'p'},
     {"was hunted down by",             "",                             "shotgun",  'p'},
     {"was pumped full of buckshot by", "",                             "shotgun",  'p'},
@@ -287,6 +289,7 @@ static const compPhrase_t comp_phrases[] = {
     {"was impaled by",                 "",                             "none",     'p'},
     {"was blown away by",              "",                             "none",     'p'},
     {"was crushed by",                 "",                             "none",     'p'},
+    {"was crushes by",                 "",                             "none",     'p'},
     {"was telefragged by",             "",                             "none",     'p'},
     {"was killed by",                  "",                             "none",     'p'},
     {"played catch with himself",      NULL,                           "grenade",  's'},
@@ -295,6 +298,7 @@ static const compPhrase_t comp_phrases[] = {
     {"was hoist on his own pitard",    NULL,                           "none",     's'},
     {"took himself out of commision",  NULL,                           "none",     's'},
     {"blew himself up",                NULL,                           "none",     's'},
+    {"shot himself",                   NULL,                           "none",     's'},
     {"caught some shrapnel",           NULL,                           "grenade",  'w'},
     {"caught a rocket",                NULL,                           "rocket",   'w'},
     {"stepped on a land mine",         NULL,                           "none",     'w'},
@@ -302,6 +306,7 @@ static const compPhrase_t comp_phrases[] = {
     {"was burned to a crisp",          NULL,                           "none",     's'},
     {"was melted to nothing",          NULL,                           "none",     's'},
     {"blew up",                        NULL,                           "none",     'w'},
+    {"was shot",                       NULL,                           "none",     'w'},
     {"died",                           NULL,                           "none",     's'},
 };
 
@@ -466,10 +471,10 @@ Comp_AddKill
 
 A kill as the server printed it, "<victim> <s1> <attacker><s2>": its
 phrase gives its weapon, the case of the line's color its victim's team
-(lower, MESSAGE_CHAT_GREEN: ours)
+(lower, MESSAGE_CHAT_GREEN: ours). qfalse: no phrase matches, no kill
 ================
 */
-static void Comp_AddKill(const char *text, qboolean ourVictim)
+static qboolean Comp_AddKill(const char *text, qboolean ourVictim)
 {
     const compPhrase_t  *ph = NULL;
     const compKillPic_t *pic = &comp_killPics[0];
@@ -492,6 +497,9 @@ static void Comp_AddKill(const char *text, qboolean ourVictim)
         }
         ph = &comp_phrases[i];
     }
+    if (!ph) {
+        return qfalse;
+    }
     if (comp.numKills == COMP_KILLS) {
         memmove(comp.kills, comp.kills + 1, sizeof(comp.kills[0]) * (COMP_KILLS - 1));
         comp.numKills--;
@@ -499,23 +507,19 @@ static void Comp_AddKill(const char *text, qboolean ourVictim)
     k = &comp.kills[comp.numKills++];
     memset(k, 0, sizeof(*k));
     k->time = cls.realtime;
-    if (!ph) {
-        Comp_Trim(text, (int)strlen(text), k->victim, sizeof(k->victim));
-    } else {
-        Comp_Trim(text, (int)(hit - text), k->victim, sizeof(k->victim));
-        if (ph->kind == 'p') {
-            after = hit + strlen(ph->s1);
-            if (!end) {
-                end = Q_stristr(after, " in the ");
-            }
-            Comp_Trim(after, end ? (int)(end - after) : (int)strlen(after), k->killer, sizeof(k->killer));
-            k->headshot = end && (Q_stristr(end, " in the head") || Q_stristr(end, " in the helmet") || Q_stristr(end, " in the neck"));
+    Comp_Trim(text, (int)(hit - text), k->victim, sizeof(k->victim));
+    if (ph->kind == 'p') {
+        after = hit + strlen(ph->s1);
+        if (!end) {
+            end = Q_stristr(after, " in the ");
         }
-        k->suicide = ph->kind == 's';
-        for (size_t i = 0; i < ARRAY_LEN(comp_killPics); i++) {
-            if (!strcmp(comp_killPics[i].cls, ph->cls)) {
-                pic = &comp_killPics[i];
-            }
+        Comp_Trim(after, end ? (int)(end - after) : (int)strlen(after), k->killer, sizeof(k->killer));
+        k->headshot = end && (Q_stristr(end, " in the head") || Q_stristr(end, " in the helmet") || Q_stristr(end, " in the neck"));
+    }
+    k->suicide = ph->kind == 's';
+    for (size_t i = 0; i < ARRAY_LEN(comp_killPics); i++) {
+        if (!strcmp(comp_killPics[i].cls, ph->cls)) {
+            pic = &comp_killPics[i];
         }
     }
     client        = Comp_FindName(k->victim);
@@ -536,6 +540,7 @@ static void Comp_AddKill(const char *text, qboolean ourVictim)
     if (client >= 0) {
         comp.dead[client] = qtrue;
     }
+    return qtrue;
 }
 
 static void Comp_AddLine(compLine_t *lines, int *count, const char *text, float r, float g, float b, qboolean bold)
@@ -578,7 +583,12 @@ void UI_CompHud_Print(const char *msg)
         break;
     case MESSAGE_CHAT_RED:
     case MESSAGE_CHAT_GREEN:
-        Comp_AddKill(msg + 1, (byte)msg[0] == MESSAGE_CHAT_GREEN);
+        // (a line no phrase matches: a game message in its color, as the stock HUD prints it)
+        if (!Comp_AddKill(msg + 1, (byte)msg[0] == MESSAGE_CHAT_GREEN)) {
+            const UColor& c = (byte)msg[0] == MESSAGE_CHAT_GREEN ? UGreenChatMessageColor : URedChatMessageColor;
+
+            Comp_AddLine(comp.msgs, &comp.numMsgs, msg + 1, c.r, c.g, c.b, qfalse);
+        }
         break;
     }
 }
