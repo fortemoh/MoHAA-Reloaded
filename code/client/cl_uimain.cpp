@@ -2209,7 +2209,7 @@ enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW
 #define OF_GUN     4   // the gun's position: the preset sets the offsets, an offset not the preset's makes it custom
 #define OF_NOT     8   // a switch on at 0
 #define OF_NEG     16  // a switch on below 0, the value's sign (the mouse inverted: m_pitch)
-#define OF_DISPLAY 64  // r_fullscreen and r_noborder: fullscreen, windowed, borderless
+#define OF_DISPLAY 64  // r_fullscreen and r_noborder: fullscreen, windowed, borderless (RL_BorderlessFull)
 #define OF_ANISO   128 // r_ext_texture_filter_anisotropic and r_ext_max_anisotropy: off, or how much
 #define OF_RES     256 // r_mode: the desktop's, or a size of the display's (r_customwidth, r_customheight)
 #define OF_THIRD   512 // a section in the third column (CONTROLS' alone have three; else the right one)
@@ -2460,6 +2460,20 @@ static cvar_t *RL_OptMade(const char *name)
     return cv && !(cv->flags & CVAR_USER_CREATED) ? cv : NULL;
 }
 
+// borderless a fullscreen mode, r_fullscreen 1 + r_noborder 1: the Mac's window layer's (macos_window.m, which makes
+// r_borderlessWindow), a fullscreen Space (or r_borderlessWindow's window over the screen) that goes direct to the
+// display; there r_noborder 1 in a window is a window macOS composites. Elsewhere a window's, r_fullscreen 0 + r_noborder 1
+static bool RL_BorderlessFull(void)
+{
+    return RL_OptMade("r_borderlessWindow") != NULL;
+}
+
+// a setting's description (Display Mode's as its borderless is)
+static const char *RL_OptDesc(const rlOpt_t& o)
+{
+    return o.flags & OF_DISPLAY && RL_BorderlessFull() ? "Borderless: macOS's own full screen." : o.desc;
+}
+
 // a config file's lines, each tokenized as a command (Cmd_Argv) for fn
 template <typename F>
 static void RL_EachLine(const char *file, F fn)
@@ -2615,7 +2629,7 @@ static bool RL_OptShown(int i)
         }
         return false;
     }
-    return o.kind != OC_SECTION && (RL_OptHas(o.label) || RL_OptHas(o.desc));
+    return o.kind != OC_SECTION && (RL_OptHas(o.label) || RL_OptHas(RL_OptDesc(o)));
 }
 
 /*
@@ -2726,7 +2740,13 @@ static int RL_OptChoice(int i)
     const char *const value = RL_OptValue(i);
 
     if (o.flags & OF_DISPLAY) {
-        return atoi(value) ? 0 : atoi(RL_Latched(RL_OptOther("r_noborder"))) ? 2 : 1;
+        const bool full = atoi(value) != 0, frameless = atoi(RL_Latched(RL_OptOther("r_noborder"))) != 0;
+
+        // (the Mac's: a frameless window none of them)
+        if (RL_BorderlessFull()) {
+            return full ? (frameless ? 2 : 0) : frameless ? -1 : 1;
+        }
+        return full ? 0 : frameless ? 2 : 1;
     }
     if (o.flags & OF_RES) {
         const std::string own = va("%d x %d", atoi(RL_Latched(RL_OptOther("r_customwidth"))), atoi(RL_Latched(RL_OptOther("r_customheight"))));
@@ -2816,7 +2836,7 @@ static void RL_OptPick(int i, int k)
     const rlOpt_t& o = rl_opts[i];
 
     if (o.flags & OF_DISPLAY) {
-        RL_OptCvarSet("r_fullscreen", k ? "0" : "1");
+        RL_OptCvarSet("r_fullscreen", k == 0 || (k == 2 && RL_BorderlessFull()) ? "1" : "0");
         RL_OptCvarSet("r_noborder", k == 2 ? "1" : "0");
     } else if (o.flags & OF_ANISO) {
         RL_OptCvarSet("r_ext_texture_filter_anisotropic", k ? "1" : "0");
@@ -3220,9 +3240,10 @@ static void RL_KeyRow(UIReloadedMenu *m, const rlView_t& v, int a, float x, floa
 // a setting's row: its label (and its description), its control at the right edge, a line under it
 static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, float y, float w, float h)
 {
-    const rlOpt_t& o   = rl_opts[i];
-    const int      id  = ID_OPT + i * 16;
-    const float    mid = y + 32, right = x + w;
+    const rlOpt_t&    o    = rl_opts[i];
+    const int         id   = ID_OPT + i * 16;
+    const float       mid  = y + 32, right = x + w;
+    const char *const desc = RL_OptDesc(o);
 
     if (o.kind == OC_SECTION) {
         const char *tab = rl_optTabs[o.tab];
@@ -3252,9 +3273,9 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
             cw += o.kind == OC_SWATCH ? 34 : RL_TextW(v, o.choices[k], 15, true, 1.6f) + 40;
         }
     }
-    RL_Text(v, x, o.desc[0] ? y + 21 : mid, o.label, 19, RL_TEXT, false, RL_LEFT, 0, RL_MID, w - cw - 24);
-    if (o.desc[0]) {
-        RL_Text(v, x, y + 45, o.desc, 14, RL_MUTED, false, RL_LEFT, 0, RL_MID, w - cw - 24);
+    RL_Text(v, x, desc[0] ? y + 21 : mid, o.label, 19, RL_TEXT, false, RL_LEFT, 0, RL_MID, w - cw - 24);
+    if (desc[0]) {
+        RL_Text(v, x, y + 45, desc, 14, RL_MUTED, false, RL_LEFT, 0, RL_MID, w - cw - 24);
     }
     switch (o.kind) {
     case OC_SEG:
