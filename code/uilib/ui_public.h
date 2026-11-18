@@ -213,11 +213,8 @@ typedef struct uiexport_s {
     void        UI_Shutdown(void);
     void        UI_InitExports();
     int         UI_GetCvarInt(const char *name, int def);
-    float       UI_GetCvarFloat(const char *name, float def);
     const char *UI_GetCvarString(const char *cvar, char *def);
     cvar_t     *UI_FindCvar(const char *cvar);
-    void        UI_SetCvarInt(const char *cvar, int value);
-    void        UI_SetCvarFloat(const char *cvar, float value);
     void        UI_UpdateCenterPrint(const char *s, float alpha);
     void        UI_UpdateLocationPrint(int x, int y, const char *s, float alpha);
     void        UI_PrintConsole(const char *msg);

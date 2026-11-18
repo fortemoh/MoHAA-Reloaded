@@ -54,21 +54,6 @@ int UI_GetCvarInt(const char *name, int def)
     return cvar->integer;
 }
 
-float UI_GetCvarFloat(const char *name, float def)
-{
-    cvar_t *cvar = uii.Cvar_Find(name);
-
-    if (!cvar) {
-        return def;
-    }
-
-    if (cvar->latchedString) {
-        return atof(cvar->latchedString);
-    }
-
-    return cvar->value;
-}
-
 const char *UI_GetCvarString(const char *cvar, char *def)
 {
     return uii.Cvar_GetString(cvar, def);
@@ -77,22 +62,6 @@ const char *UI_GetCvarString(const char *cvar, char *def)
 cvar_t *UI_FindCvar(const char *cvar)
 {
     return uii.Cvar_Find(cvar);
-}
-
-void UI_SetCvarInt(const char *cvar, int value)
-{
-    char s[16];
-
-    Com_sprintf(s, sizeof(s), "%d", value);
-    uii.Cvar_Set(cvar, s);
-}
-
-void UI_SetCvarFloat(const char *cvar, float value)
-{
-    char s[16];
-
-    Com_sprintf(s, sizeof(s), "%f", value);
-    uii.Cvar_Set(cvar, s);
 }
 
 void UI_Init(void)

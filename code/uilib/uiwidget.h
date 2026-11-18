@@ -341,8 +341,6 @@ public:
     void               LayoutDrawCache(Event *ev);
     virtual qboolean   KeyEvent(int key, unsigned int time);
     virtual void       CharEvent(int ch);
-    virtual void       UpdateData(void);
-    virtual void       UpdateUIElement(void);
     bool               CanActivate(void);
     void               AllowActivate(bool canactivate);
     bool               IsActive(void);

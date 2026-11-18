@@ -121,8 +121,6 @@ void Menu::ShowMenu(Event *ev)
         if (wid->isEnabled()) {
             wid->setShow(true);
             wid->ResetMotion(MOTION_IN);
-            wid->UpdateUIElement();
-            wid->UpdateData();
         }
     }
 

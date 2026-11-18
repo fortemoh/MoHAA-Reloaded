@@ -2189,10 +2189,6 @@ qboolean UIWidget::KeyEvent(int key, unsigned int time)
 
 void UIWidget::CharEvent(int ch) {}
 
-void UIWidget::UpdateData(void) {}
-
-void UIWidget::UpdateUIElement(void) {}
-
 bool UIWidget::CanActivate(void)
 {
     if (!m_canactivate || m_dying) {
