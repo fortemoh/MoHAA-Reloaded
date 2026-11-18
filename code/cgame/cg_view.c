@@ -1212,6 +1212,9 @@ void CG_DrawActiveFrame(int serverTime, int frameTime, stereoFrame_t stereoView,
     // Added in OPM
     CG_ProcessPlayerModel();
 
+    // Added in Reloaded: the player aimed at, tagged in place of their head icon
+    CG_TeamTagFrame();
+
     // build the render lists
     if (!cg.hyperspace) {
         CG_AddPacketEntities(); // after calcViewValues, so predicted player state is correct

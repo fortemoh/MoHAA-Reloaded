@@ -63,6 +63,128 @@ static const char *CG_TeamHeadIcon(qboolean allies)
 
 /*
 ===============
+The team tag
+
+Added in Reloaded: the player aimed at (the server's STAT_INFOCLIENT: a team
+mate, or anyone while spectating free; kept 1.5 s after looking away) shown
+CS2's way in place of their head icon: their name, their health under it and
+an arrow down to their head, drawn by the client in the HUD's look
+(cgi.UI_DrawTeamTag). Not while following a player (the HUD names them),
+under the Reloaded menus, with the HUD hidden or cg_hud_targetinfo 0; not
+behind the world
+===============
+*/
+static int      cg_tagClient = -1; // the player tagged this frame, -1 none
+static qboolean cg_tagEyesSet;     // their eyes found this frame (their model added)
+static vec3_t   cg_tagEyes;
+
+/*
+===============
+CG_TeamTagFrame
+
+Who is tagged this frame, before the entities are added
+===============
+*/
+void CG_TeamTagFrame(void)
+{
+    static cvar_t       *targetinfo, *menucover;
+    const playerState_t *ps   = &cg.snap->ps;
+    const int            info = ps->stats[STAT_INFOCLIENT];
+
+    if (!targetinfo) {
+        targetinfo = cgi.Cvar_Get("cg_hud_targetinfo", "1", CVAR_ARCHIVE);
+        menucover  = cgi.Cvar_Get("ui_menucover", "0", 0);
+    }
+    cg_tagClient  = -1;
+    cg_tagEyesSet = qfalse;
+    if (!cg_hud->integer || !targetinfo->integer || menucover->integer
+        || (ps->pm_flags & (PMF_NO_HUD | PMF_INTERMISSION))) {
+        return;
+    }
+    // following a player: from behind, or through their eyes (the snapshot is theirs)
+    if ((ps->pm_flags & PMF_SPECTATING) && ((ps->pm_flags & PMF_CAMERA_VIEW) || ps->clientNum != cg.clientNum)) {
+        return;
+    }
+    if (info < 0 || info >= MAX_CLIENTS || info == ps->clientNum || ps->stats[STAT_INFOCLIENT_HEALTH] <= 0) {
+        return;
+    }
+    cg_tagClient = info;
+}
+
+/*
+===============
+CG_TeamTagEyes
+
+The tagged player's eyes, as their model is added (their head icon's point)
+===============
+*/
+static void CG_TeamTagEyes(refEntity_t *pModel, entityState_t *pPlayerState)
+{
+    int i, iTag;
+
+    if (pPlayerState->number != cg_tagClient) {
+        return;
+    }
+    VectorCopy(pModel->origin, cg_tagEyes);
+    iTag = cgi.Tag_NumForName(pModel->tiki, "eyes bone");
+    if (iTag == -1) {
+        cg_tagEyes[2] += 76.0f;
+    } else {
+        orientation_t oEyes = cgi.TIKI_Orientation(pModel, iTag);
+
+        for (i = 0; i < 3; ++i) {
+            VectorMA(cg_tagEyes, oEyes.origin[i], pModel->axis[i], cg_tagEyes);
+        }
+    }
+    cg_tagEyesSet = qtrue;
+}
+
+/*
+===============
+CG_DrawTeamTag
+
+The tag at the point over the tagged player's head on the screen, if they are
+seen (nothing of the world between)
+===============
+*/
+void CG_DrawTeamTag(void)
+{
+    vec3_t  top, d;
+    trace_t tr;
+    float   z, tx, ty;
+    int     health;
+
+    if (cg_tagClient < 0 || !cg_tagEyesSet) {
+        return;
+    }
+    CG_Trace(
+        &tr, cg.refdef.vieworg, vec3_origin, vec3_origin, cg_tagEyes, ENTITYNUM_NONE, CONTENTS_SOLID, qfalse, qfalse,
+        "CG_DrawTeamTag"
+    );
+    if (tr.fraction < 1.0f) {
+        return;
+    }
+    VectorCopy(cg_tagEyes, top);
+    top[2] += 16.0f;
+    VectorSubtract(top, cg.refdef.vieworg, d);
+    z = DotProduct(d, cg.refdef.viewaxis[0]);
+    if (z < 1.0f) {
+        return;
+    }
+    // (the view's left and up over its forward, the half fov's tangent the screen's edge)
+    tx     = DotProduct(d, cg.refdef.viewaxis[1]) / (z * tan(DEG2RAD(cg.refdef.fov_x * 0.5f)));
+    ty     = DotProduct(d, cg.refdef.viewaxis[2]) / (z * tan(DEG2RAD(cg.refdef.fov_y * 0.5f)));
+    health = cg.snap->ps.stats[STAT_INFOCLIENT_HEALTH];
+    cgi.UI_DrawTeamTag(
+        cg_tagClient,
+        cg.refdef.x + cg.refdef.width * 0.5f * (1.0f - tx),
+        cg.refdef.y + cg.refdef.height * 0.5f * (1.0f - ty),
+        health > 100 ? 100 : health
+    );
+}
+
+/*
+===============
 CG_PlayerTeamIcon
 ===============
 */
@@ -81,6 +203,10 @@ void CG_PlayerTeamIcon(refEntity_t *pModel, entityState_t *pPlayerState)
     }
 
     if (pPlayerState->number == cg.snap->ps.clientNum) {
+        return;
+    }
+    // Added in Reloaded: the tagged player's tag is drawn in its place
+    if (pPlayerState->number == cg_tagClient && cg_tagEyesSet) {
         return;
     }
 
@@ -1447,6 +1573,8 @@ void CG_ModelAnim(centity_t *cent, qboolean bDoShaderTime)
     }
 
     if (cent->currentState.eType == ET_PLAYER && !(cent->currentState.eFlags & EF_DEAD)) {
+        // Added in Reloaded
+        CG_TeamTagEyes(&model, &cent->currentState);
         CG_PlayerTeamIcon(&model, &cent->currentState);
     }
 

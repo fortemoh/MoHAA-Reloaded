@@ -505,21 +505,30 @@ static void UI_CompHuds(bool show, bool messages)
 {
     static Menu     *menus[UI_COMPHUD_MENUS];
     static UIWidget *containers[UI_COMPHUD_MENUS]; // (asked if shown every frame: the widget, not through the menu)
+    static bool      kept[UI_COMPHUD_MENUS];       // shown with the messages only
     static int       generation = -1;
 
     // found again when the menus change
     if (generation != menuManager.Generation()) {
+        // (messages only: the menus with the game messages, the chat, the kills and the vote)
+        static const char *const messageMenus[] = {
+            "hud_comp_topleft_compass", "hud_comp_killfeed", "hud_comp_chat", "hud_comp_vote"
+        };
+
         generation = menuManager.Generation();
         for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
             menus[i]      = menuManager.FindMenu(ui_compHudMenus[i]);
             containers[i] = menus[i] ? menus[i]->GetContainerWidget() : NULL;
+            kept[i]       = false;
+            for (const char *name : messageMenus) {
+                kept[i] = kept[i] || !strcmp(ui_compHudMenus[i], name);
+            }
         }
     }
     for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
         Menu      *hud = menus[i];
-        // (messages only: the menus with the game messages, the chat, the kills and the vote;
-        // the bottom's health and ammo: cg_hudstyle's preset's)
-        const bool on  = (show && ui_compHudInLayout[i]) || (messages && (i == 1 || i == 3 || i == 4 || i == 11));
+        // (the bottom's health and ammo: cg_hudstyle's preset's)
+        const bool on  = (show && ui_compHudInLayout[i]) || (messages && kept[i]);
 
         if (containers[i] && on != containers[i]->IsVisible()) {
             if (on) {

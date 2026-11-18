@@ -52,8 +52,7 @@ static cvar_t *cg_hudstyle;
 const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
     "hud_comp_topleft",     "hud_comp_topleft_compass", "hud_comp_score",      "hud_comp_killfeed", "hud_comp_chat",
     "hud_comp_strip",       "hud_comp_weapons",         "hud_comp_damage",     "hud_comp_bars",     "hud_comp_killer",
-    "hud_comp_target",      "hud_comp_vote",            "hud_comp_csgo_health",
-    "hud_comp_csgo_ammo",
+    "hud_comp_vote",        "hud_comp_csgo_health",     "hud_comp_csgo_ammo",
 };
 
 // cg_hudstyle's presets, the bottom's health and ammo: 1 CS:GO's corners
@@ -61,7 +60,7 @@ const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
 // them); each menu's preset (0 both's). The other's menus are hidden (cl_ui.cpp
 // UI_CompHuds), not drawn; all are baked (a change of preset bakes nothing)
 static const signed char comp_menuLayout[UI_COMPHUD_MENUS] = {
-    0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 1, 1,
+    0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 1, 1,
 };
 
 bool ui_compHudInLayout[UI_COMPHUD_MENUS];
@@ -87,8 +86,7 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_killer_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
     "ui_hud_north", "ui_hud_obj0", "ui_hud_obj0_on", "ui_hud_obj1", "ui_hud_obj1_on", "ui_hud_obj2", "ui_hud_obj2_on",
     "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
-    "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_target", "ui_hud_target_col",
-    "ui_hud_target_hp", "ui_hud_target_hpcol", "ui_hud_target_on", "ui_hud_timer", "ui_hud_vote_on",
+    "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_timer", "ui_hud_vote_on",
     "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_weapons_on",
     "ui_hud_cards_allies", "ui_hud_cards_axis", "ui_hud_cards_on", "ui_hud_feed_under", "ui_hud_never",
 };
@@ -1123,18 +1121,14 @@ void UI_CompHud_Frame(void)
         }
     }
 
-    // who killed you, the player aimed at, who you follow, who last hurt you
+    // who killed you, who you follow, who last hurt you (the player aimed at:
+    // the cgame's tag over their head, UI_DrawTeamTag)
     if (full) {
         const qboolean killer = health <= 0 && !spectating && attacker >= 0 && attacker < MAX_CLIENTS && attacker != ps->clientNum;
-        const int      info   = ps->stats[STAT_INFOCLIENT], infoHealth = ps->stats[STAT_INFOCLIENT_HEALTH];
-        const qboolean target = info >= 0 && info < MAX_CLIENTS && infoHealth > 0 && !following;
+        const int      info   = ps->stats[STAT_INFOCLIENT];
 
         Comp_Set("ui_hud_killer", killer ? Comp_Name(attacker) : "");
         Comp_Set("ui_hud_killer_col", killer ? Comp_TeamColor(Comp_Team(attacker)) : "1 1 1 1");
-        Comp_Set("ui_hud_target", target ? Comp_Name(info) : "");
-        Comp_Set("ui_hud_target_col", target ? Comp_TeamColor(Comp_Team(info)) : "1 1 1 1");
-        Comp_SetF("ui_hud_target_hp", target ? Com_Clamp(0, 100, infoHealth) / 100.0f : 0.0f);
-        Comp_Set("ui_hud_target_hpcol", infoHealth < 40 ? "0.753 0.188 0.129 1" : "1 1 1 0.612");
         Comp_Set("ui_hud_follow", following ? Comp_Name(info) : "");
         Comp_Set("ui_hud_follow_col", following ? Comp_TeamColor(Comp_Team(info)) : "1 1 1 1");
         Comp_Set("ui_hud_hurt", attacker >= 0 && attacker < MAX_CLIENTS ? Comp_Name(attacker) : "");
@@ -1231,7 +1225,6 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_ammo_on", strip && ammo && Comp_Int("cg_hud_ammo"));
         flag("ui_hud_weapons_on", strip && Comp_Int("cg_hud_ammo"));
         flag("ui_hud_killer_on", Comp_Cvar("ui_hud_killer")->string[0] && Comp_Int("cg_hud_killer"));
-        flag("ui_hud_target_on", Comp_Cvar("ui_hud_target")->string[0] && Comp_Int("cg_hud_targetinfo"));
         flag("ui_hud_follow_on", following && Comp_Int("cg_hud_following") && show);
         flag("ui_hud_hurt_on", Comp_Cvar("ui_hud_hurt")->string[0] && Comp_Int("cg_hud_attacker") && show);
         flag("ui_hud_charge_on", comp.charging && Comp_Int("cg_hud_grenadecharge"));
@@ -1258,6 +1251,85 @@ void UI_CompHud_Frame(void)
             Comp_SetF(comp_obj[i], (stats[i] - 1800) / 10.0f);
         }
     }
+}
+
+/*
+====================================================================
+
+THE TEAM TAG
+
+The player aimed at, over their head (the cgame's, in place of their head
+icon), CS2's way: their name, their health under it and an arrow down to
+their head, in their team's color (the health red under cg_hud_lowhealth),
+with the HUD's drop shadow, the same size whatever the distance
+
+====================================================================
+*/
+
+#define TTAG_NAME    22.0f  // the name's size (bold)
+#define TTAG_HEALTH  18.0f  // the health's (bold)
+#define TTAG_ARROW_W 14.0f  // the arrow's width and height
+#define TTAG_ARROW_H 9.0f
+#define TTAG_GAP     4.0f   // between the arrow and the health, the health and the name (over their capitals)
+#define TTAG_MAXW    220.0f // a longer name cut with "…"
+
+static const char *const ttag_arrow = "poly 1 1 1 1 0 0 1 0 0.5 1";
+// the teams' colors (the HUD's names'), the health's under cg_hud_lowhealth
+static const rlColor_t ttag_allies = {0.533f, 0.569f, 0.8f, 1.0f}, ttag_axis = {0.8f, 0.533f, 0.533f, 1.0f};
+static const rlColor_t ttag_low    = {0.753f, 0.188f, 0.129f, 1.0f};
+
+// the HUD's units (cg_hud_scale)
+static rlView_t Comp_HudView(void)
+{
+    rlView_t v;
+
+    v.s  = UI_DesignScale(1920.0f, 1080.0f);
+    v.dw = uid.vidWidth / v.s;
+    v.dh = uid.vidHeight / v.s;
+    return v;
+}
+
+// the arrow's box in pixels, its tip at (cx, tip) in units
+static void TTag_ArrowBox(const rlView_t& v, float cx, float tip, int *x, int *y, int *w, int *h)
+{
+    *w = RL_P(v, TTAG_ARROW_W);
+    *h = RL_P(v, TTAG_ARROW_H);
+    *x = RL_P(v, cx) - *w / 2;
+    *y = RL_P(v, tip) - *h;
+}
+
+void UI_DrawTeamTag(int client, float x, float y, int health)
+{
+    const rlView_t    v     = Comp_HudView();
+    const int         team  = Comp_Team(client);
+    const rlColor_t   c     = team == TEAM_AXIS ? ttag_axis : team == TEAM_ALLIES ? ttag_allies : rlColor_t{1, 1, 1, 1};
+    const rlColor_t   hc    = health < Comp_Cvar("cg_hud_lowhealth")->value * 100.0f ? ttag_low : c;
+    const std::string name  = RL_Ellipsize(v, Comp_Name(client), TTAG_NAME, true, TTAG_MAXW);
+    const float       capN  = TTAG_NAME * 0.81f, capH = TTAG_HEALTH * 0.81f; // (Oswald's capitals)
+    const float       half  = Q_max(RL_TextW(v, name.c_str(), TTAG_NAME, true), TTAG_ARROW_W) * 0.5f + 4.0f;
+    float             cx    = x / v.s, tip = y / v.s, base;
+    char              hs[8];
+    int               ax, ay, aw, ah, o;
+
+    // (the head off the screen: looked away while the server keeps who was aimed at)
+    if (!name[0] || cx < 0.0f || cx > v.dw || tip > v.dh) {
+        return;
+    }
+    Com_sprintf(hs, sizeof(hs), "%d", health);
+    // kept on the screen: a team mate close by, aimed at below the head, has it at the top
+    tip = Q_max(tip, 8.0f + capN + TTAG_GAP + capH + TTAG_GAP + TTAG_ARROW_H);
+    cx  = Com_Clamp(half, Q_max(half, v.dw - half), cx);
+
+    // the arrow, its shadow under it
+    TTag_ArrowBox(v, cx, tip, &ax, &ay, &aw, &ah);
+    o = Q_max(1, RL_P(v, 1.5f));
+    RL_Shape(ax + o, ay + o, aw, ah, ttag_arrow, {0.0f, 0.0f, 0.0f, 0.55f}, v.s);
+    RL_Shape(ax, ay, aw, ah, ttag_arrow, c, v.s);
+    // the health over it, the name over that (baselines)
+    base = tip - TTAG_ARROW_H - TTAG_GAP;
+    RL_Text(v, cx, base, hs, TTAG_HEALTH, hc, true, RL_CENTER, 0.0f, RL_BASE, 0.0f, true);
+    base -= capH + TTAG_GAP;
+    RL_Text(v, cx, base, name.c_str(), TTAG_NAME, c, true, RL_CENTER, 0.0f, RL_BASE, 0.0f, true);
 }
 
 // the HUD's menus, faces, pictures, outlines and shader script compiled in (cmake/utils/embed_files.cmake)
@@ -2557,6 +2629,18 @@ void UI_CompHud_PreBake(qboolean ahead)
     Comp_ArrowShader(k, s, &d);
     Comp_ObjectiveShader(qtrue, k, s, &d);
     Comp_ObjectiveShader(qfalse, k, s, &d);
+    // the team tag's faces and arrow (UI_DrawTeamTag)
+    {
+        const rlView_t v = Comp_HudView();
+        int            ax, ay, aw, ah;
+
+        RL_Face(v, TTAG_NAME, true, true);
+        RL_Face(v, TTAG_HEALTH, true, true);
+        TTag_ArrowBox(v, 0.0f, 0.0f, &ax, &ay, &aw, &ah);
+        rl_bakeOnly = true;
+        RL_Shape(ax, ay, aw, ah, ttag_arrow, {1.0f, 1.0f, 1.0f, 1.0f}, v.s);
+        rl_bakeOnly = false;
+    }
     UI_BakeAhead(0);
     Com_DPrintf("Competitive HUD: %s in %d ms\n", ahead ? "begun ahead" : "baked", Sys_Milliseconds() - start);
 }

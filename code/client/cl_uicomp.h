@@ -41,9 +41,12 @@ void     UI_CompHud_PreBake(qboolean ahead); // the pictures (after the renderer
 void     CL_InitRadar(radarClient_t *radars, int clientNum);
 // a weapon's outline (ui/outlines/weapons/) by its name (its configstring's, its item name), NULL none
 const char *UI_CompHud_WeaponOutline(const char *name);
+// the player aimed at's tag (the cgame's cgi.UI_DrawTeamTag): their name, health (1 to 100) and an arrow, its tip at
+// x, y (screen pixels: over their head)
+void        UI_DrawTeamTag(int client, float x, float y, int health);
 
 // the HUD's menus (ui/hud_comp_*.urc), in the order they are baked (the atlas is filled in it)
-#define UI_COMPHUD_MENUS 14
+#define UI_COMPHUD_MENUS 13
 extern const char *const ui_compHudMenus[UI_COMPHUD_MENUS];
 // which of them cg_hudstyle's preset shows (the bottom's health and ammo: CS2's strip or CS:GO's corners), set when it changes
 extern bool ui_compHudInLayout[UI_COMPHUD_MENUS];
