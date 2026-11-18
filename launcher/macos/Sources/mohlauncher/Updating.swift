@@ -201,7 +201,6 @@ extension LauncherModel {
     /// The newer build found, offered when nothing stands in the way: no other question open, and the game not running
     func offerUpdate() {
         guard updateOffer != nil, !updateDeclined, updateDialog == .none, !running, !starting, !askForFolder, alertMessage == nil,
-              !importingCode,
               let folder = updateFolder(launcherBundle: launcherBundle), !gameIsRunning(folder: folder) else { return }
         updateDialog = .offer
     }
