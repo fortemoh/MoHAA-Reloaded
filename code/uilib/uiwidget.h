@@ -279,6 +279,10 @@ public:
     void             LayoutFitWidth(Event *ev);
     cvar_t *CvarOf(int i, const str& name);
     bool DesignFrame(void);
+    // a design-size menu's widget: its rect in design units (the URC's, or as set), and set anew while the game runs
+    // (its menu drawn again)
+    UIRect2D DesignRect(void);
+    void     SetDesignRect(const UIRect2D& r);
     void DrawShapes(void);
     void BakeShapes(void); // its shape baked at its size now (a load), not at its first draw
     Container<str>& getShapes(void) { return m_shapes; }

@@ -915,6 +915,62 @@ static str Comp_Wrap(UIFont *font, const char *p, float width, int lines)
     return text;
 }
 
+/*
+================
+Comp_RadarSize
+
+cg_hud_radar_size (0.5 to 1.5): the radar's layers (hud_comp_topleft: its
+disc and map, the damage's wedge, the ring) their URC's size times it from
+the same top left, the game messages under it (hud_comp_topleft_compass)
+moved down by what it grew. The same ground shown at any size (HudRadar: its
+range is to its edge, its marks sized with it). Set again when the menus
+are loaded again
+================
+*/
+static void Comp_RadarSize(void)
+{
+    static const char *const layers[3] = {"radar", "radarwedge", "radarring"};
+    static int               generation = -1, read = -1;
+    static UIWidget         *widgets[4]; // the layers, the messages
+    static UIRect2D          urc[4];
+    cvar_t                  *cv = Comp_Cvar("cg_hud_radar_size");
+    float                    k;
+
+    if (generation != menuManager.Generation()) {
+        Menu     *radar    = menuManager.FindMenu("hud_comp_topleft");
+        Menu     *messages = menuManager.FindMenu("hud_comp_topleft_compass");
+        UIWidget *rc       = radar ? radar->GetContainerWidget() : NULL;
+        UIWidget *mc       = messages ? messages->GetContainerWidget() : NULL;
+
+        generation = menuManager.Generation();
+        read       = -1;
+        for (int i = 0; i < 4; i++) {
+            widgets[i] = i < 3 ? (rc ? rc->FindWidget(layers[i]) : NULL) : (mc ? mc->FindWidget("messages") : NULL);
+            if (widgets[i]) {
+                urc[i] = widgets[i]->DesignRect();
+            }
+        }
+    }
+    if (cv->modificationCount == read || !widgets[0]) {
+        return;
+    }
+    read = cv->modificationCount;
+    k    = Com_Clamp(0.5f, 1.5f, cv->value);
+    for (int i = 0; i < 3; i++) {
+        const UIRect2D& r = urc[i];
+
+        if (widgets[i]) {
+            widgets[i]->SetDesignRect(UIRect2D(r.pos.x, r.pos.y, r.size.width * k, r.size.height * k));
+        }
+    }
+    if (widgets[3]) {
+        const UIRect2D& r    = urc[3];
+        const float     down = urc[0].size.height * (k - 1.0f);
+
+        widgets[3]->SetDesignRect(UIRect2D(r.pos.x, r.pos.y + down, r.size.width, r.size.height));
+    }
+}
+
 static const char *const comp_arcAlpha[3] = {"ui_hud_arc0_alpha", "ui_hud_arc1_alpha", "ui_hud_arc2_alpha"};
 static const char *const comp_arcAngle[3] = {"ui_hud_arc0_angle", "ui_hud_arc1_angle", "ui_hud_arc2_angle"};
 static const char *const comp_objOn[3]    = {"ui_hud_obj0_on", "ui_hud_obj1_on", "ui_hud_obj2_on"};
@@ -965,6 +1021,8 @@ void UI_CompHud_Frame(void)
             }
         }
     }
+    // cg_hud_radar_size: the radar's size, the messages under it
+    Comp_RadarSize();
     // cg_hud_accent: the shades again (what reads them is drawn and baked
     // again), the health's color with them
     {
@@ -1454,6 +1512,8 @@ void UI_CompHud_Init(void)
     // the HUD's size: its 1080 lines fitted in the screen's (a screen narrower than 4:3: its 1440 across), times this
     // (0.25 to 2)
     Cvar_Get("cg_hud_scale", "1", CVAR_ARCHIVE);
+    // the radar's size alone, times its own (0.5 to 1.5; Comp_RadarSize)
+    Cvar_CheckRange(Cvar_Get("cg_hud_radar_size", "1", CVAR_ARCHIVE), 0.5f, 1.5f, qfalse);
     // the accent: "f6f67a", "#f6f67a" or "R G B" (0 to 1)
     Cvar_Get("cg_hud_accent", "f6f67a", CVAR_ARCHIVE);
     // the top's teams, beside the score: 0 a card per player, 1 how many are alive (CS2's)
@@ -2664,6 +2724,8 @@ void UI_CompHud_PreBake(qboolean ahead)
         return;
     }
     UI_BakeAhead(ahead);
+    // (the radar at its size: its layers baked at it)
+    Comp_RadarSize();
     for (i = 0; i < UI_COMPHUD_MENUS; i++) {
         Menu *m = menuManager.FindMenu(ui_compHudMenus[i]);
 

@@ -1206,6 +1206,35 @@ bool UIWidget::DesignFrame(void)
     return true;
 }
 
+UIRect2D UIWidget::DesignRect(void)
+{
+    DesignFrame();
+    return m_baseSet ? m_designBase : m_designRect;
+}
+
+void UIWidget::SetDesignRect(const UIRect2D& r)
+{
+    UIRect2D frame;
+
+    if (!DesignFrame()) {
+        return;
+    }
+    m_designRect = r;
+    if (m_baseSet) {
+        m_designBase = r;
+    }
+    // the frame as the design's (DesignFrame), its children's with it
+    frame.pos.x       = floorf(r.pos.x * m_vVirtualScale[0] + 0.5f);
+    frame.pos.y       = floorf(r.pos.y * m_vVirtualScale[1] + 0.5f);
+    frame.size.width  = floorf((r.pos.x + r.size.width) * m_vVirtualScale[0] + 0.5f) - frame.pos.x;
+    frame.size.height = floorf((r.pos.y + r.size.height) * m_vVirtualScale[1] + 0.5f) - frame.pos.y;
+    setFrame(frame);
+    // (the draw cache keeps a menu's list while its own frames stay: drawn again)
+    for (UIWidget *w = this; w; w = w->m_parent) {
+        w->m_drawValid = false;
+    }
+}
+
 void UIWidget::LayoutShape(Event *ev)
 {
     str line;

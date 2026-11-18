@@ -2334,6 +2334,7 @@ static const rlOpt_t rl_opts[] = {
     O_SECTION(OT_HUD, "HUD", 0),
     O_SEG("HUD Style", "The CS:GO or CS2 look.", "cg_hudstyle", "1", rl_oHudStyles, rl_oHudValues, 0),
     O_SLIDER("HUD Scale", "Bigger or smaller, the whole HUD.", "cg_hud_scale", "1", 0.25f, 2, 0.05f, 0),
+    O_SLIDER("Radar Size", "Bigger or smaller, the radar alone.", "cg_hud_radar_size", "1", 0.5f, 1.5f, 0.05f, OF_PCT),
     O_SWATCH("Accent Colour", "The HUD's highlight.", "cg_hud_accent", "f6f67a", rl_oAccents),
     O_SLIDER("Low Health", "Health turns red below this.", "cg_hud_lowhealth", "0.4", 0, 1, 0.05f, OF_PCT),
     O_TOGGLE("Players Alive", "A count of each side by the score, not a card each.", "cg_hud_alivecount", "0", 0),
