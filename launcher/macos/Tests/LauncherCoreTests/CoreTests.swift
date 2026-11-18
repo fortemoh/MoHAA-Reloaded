@@ -204,6 +204,30 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(list.count, 3)
         XCTAssertEqual(list[0].server.password, "x")
         XCTAssertTrue(listedServers(s, .spearhead).isEmpty)
+
+        // four rows at most, Forte FFA's among them: a new server isn't kept when they're full, one already there
+        // and the built-in one still keep their passwords
+        XCTAssertEqual(s.rows(.alliedAssault), 3)
+        XCTAssertTrue(s.remember(.alliedAssault, address: "third:12203", password: "", rcon: ""))
+        XCTAssertEqual(s.rows(.alliedAssault), listRows)
+        XCTAssertFalse(s.canBookmark(.alliedAssault, address: "fourth"))
+        XCTAssertFalse(s.remember(.alliedAssault, address: "fourth", password: "", rcon: ""))
+        XCTAssertEqual(s.slots[0].servers.count, 4) // a:1, host, Forte's passwords, third
+        XCTAssertTrue(s.canBookmark(.alliedAssault, address: "host"))
+        XCTAssertTrue(s.remember(.alliedAssault, address: "host", password: "pw3", rcon: ""))
+        XCTAssertTrue(s.remember(.alliedAssault, address: "151.80.234.90", password: "y", rcon: ""))
+        XCTAssertEqual(listedServers(s, .alliedAssault).map { $0.server.password }, ["y", "", "pw3", ""])
+        // Spearhead has no built-in server: four of the player's
+        for k in 1...5 {
+            XCTAssertEqual(s.remember(.spearhead, address: "sh\(k)", password: "", rcon: ""), k <= 4)
+        }
+        XCTAssertEqual(listedServers(s, .spearhead).count, 4)
+        // a list saved with more shows its first four; removing one brings the next into view
+        s.slots[2].servers = (1...6).map { Server(label: "bt\($0)", address: "bt\($0)") }
+        XCTAssertEqual(listedServers(s, .breakthrough).map { $0.server.label }, ["bt1", "bt2", "bt3", "bt4"])
+        XCTAssertFalse(s.canBookmark(.breakthrough, address: "bt7"))
+        s.slots[2].servers.remove(at: 0)
+        XCTAssertEqual(listedServers(s, .breakthrough).map { $0.server.label }, ["bt2", "bt3", "bt4", "bt5"])
     }
 
     func testGameData() throws {

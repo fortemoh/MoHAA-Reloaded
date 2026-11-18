@@ -238,11 +238,13 @@ struct PlayerAndServers: View {
                     Field("Server", accessory: {
                         LabelAction(systemImage: model.bookmarked ? "bookmark.fill" : "bookmark",
                                     title: model.bookmarked ? "Bookmarked" : "Bookmark",
-                                    enabled: !trimmed(model.address).isEmpty) {
+                                    enabled: model.canBookmark) {
                             model.bookmark()
                         }
                         .help(model.bookmarked ? "In the list: click to keep its passwords too"
-                              : "Add it to the list without joining")
+                              : !trimmed(model.address).isEmpty && !model.canBookmark
+                              ? "The list is full (\(listRows) servers): remove one first"
+                              : "Keep it in the list (only bookmarked servers are kept)")
                     }) {
                         TextField("Server", text: $model.address, prompt: Text("host:port"))
                             .onSubmit { model.start(connect: true) }
@@ -288,38 +290,33 @@ struct PlayerAndServers: View {
     }
 }
 
+/// The built-in servers and the bookmarked ones, listRows at most: all in view, nothing to scroll
 struct ServerList: View {
-    /// the rows in view
-    static let rows = 4
     @EnvironmentObject var model: LauncherModel
 
     var body: some View {
         let listed = model.listed
-        ScrollView {
-            VStack(spacing: 0) {
-                ForEach(listed) { item in
-                    ServerRow(item: item)
-                }
+        VStack(spacing: 0) {
+            ForEach(listed) { item in
+                ServerRow(item: item)
             }
-            .frame(maxWidth: .infinity)
-            .padding(2)
         }
-        // the row's width even with nothing in it (an empty ScrollView has none of its own)
+        .padding(2)
         .frame(maxWidth: .infinity)
-        .frame(height: CGFloat(ServerList.rows) * Metrics.row + 4)
+        .frame(height: CGFloat(listRows) * Metrics.row + 4, alignment: .top)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color.black.opacity(0.19)))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.white.opacity(0.04)))
         .overlay(alignment: .bottom) {
             // the room the list doesn't fill yet
-            if listed.count < ServerList.rows {
-                Text(listed.isEmpty ? "The servers you join are kept here: double-click one to join it again."
-                     : "The servers you join are kept here.")
+            if listed.count < listRows {
+                Text(listed.isEmpty ? "Bookmark a server to keep it here: double-click one to join it."
+                     : "Bookmark a server to keep it here.")
                     .font(.system(size: 12))
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, Metrics.gap)
                     .frame(maxWidth: .infinity)
-                    .frame(height: CGFloat(ServerList.rows - listed.count) * Metrics.row)
+                    .frame(height: CGFloat(listRows - listed.count) * Metrics.row)
                     .allowsHitTesting(false)
             }
         }

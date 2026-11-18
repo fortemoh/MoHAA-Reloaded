@@ -199,6 +199,11 @@ final class LauncherModel: ObservableObject {
         !trimmed(address).isEmpty && listed.contains { sameAddress($0.server.address, address) }
     }
 
+    /// Bookmark can keep the server in the fields: it's in the list, or the list has room (listRows)
+    var canBookmark: Bool {
+        !trimmed(address).isEmpty && settings.canBookmark(game, address: trimmed(address))
+    }
+
     func isSelected(_ item: Listed) -> Bool {
         !trimmed(address).isEmpty && sameAddress(item.server.address, address)
     }
@@ -237,7 +242,6 @@ final class LauncherModel: ObservableObject {
         start(connect: true)
     }
 
-    /// The server in the fields, kept in the list without joining it (or its passwords updated)
     var closeOnStart: Bool {
         get { settings.closeOnStart }
         set {
@@ -246,10 +250,11 @@ final class LauncherModel: ObservableObject {
         }
     }
 
+    /// The server in the fields kept in the list (or its passwords updated): only Bookmark keeps one, and a new one
+    /// only while the list has room
     func bookmark() {
         let a = trimmed(address)
-        guard !a.isEmpty else { return }
-        settings.remember(game, address: a, password: password, rcon: rcon)
+        guard !a.isEmpty, settings.remember(game, address: a, password: password, rcon: rcon) else { return }
         save()
     }
 
@@ -455,7 +460,6 @@ final class LauncherModel: ObservableObject {
             launch.address = slot.address
             launch.password = slot.password
             launch.rcon = slot.rcon
-            settings.remember(game, address: slot.address, password: slot.password, rcon: slot.rcon)
         }
         save()
 

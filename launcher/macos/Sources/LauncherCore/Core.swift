@@ -446,16 +446,39 @@ public struct LauncherSettings: Codable {
         data.flatMap { try? JSONDecoder().decode(LauncherSettings.self, from: $0) } ?? LauncherSettings()
     }
 
-    /// Keeps the server in the game's list (added at the end), with the passwords used
-    public mutating func remember(_ game: Game, address: String, password: String, rcon: String) {
+    /// Bookmarks the server in the game's list (added at the end), with the passwords used: a server already there
+    /// (or a built-in one) has its passwords kept; a new one only while the list has room (listRows), else false
+    @discardableResult
+    public mutating func remember(_ game: Game, address: String, password: String, rcon: String) -> Bool {
         if let k = slots[game.rawValue].servers.firstIndex(where: { sameAddress($0.address, address) }) {
             slots[game.rawValue].servers[k].address = address
             slots[game.rawValue].servers[k].password = password
             slots[game.rawValue].servers[k].rcon = rcon
-        } else {
-            slots[game.rawValue].servers.append(Server(label: address, address: address, password: password, rcon: rcon))
+            return true
         }
+        guard canBookmark(game, address: address) else { return false }
+        slots[game.rawValue].servers.append(Server(label: address, address: address, password: password, rcon: rcon))
+        return true
     }
+
+    /// The rows the game's servers take in the list: its built-in ones and the others saved
+    public func rows(_ game: Game) -> Int {
+        builtinServers.filter { $0.game == game }.count
+            + slots[game.rawValue].servers.filter { !isBuiltin(game, $0.address) }.count
+    }
+
+    /// Bookmark can keep the server: it's in the list (its passwords then), built in, or the list has room
+    public func canBookmark(_ game: Game, address: String) -> Bool {
+        slots[game.rawValue].servers.contains { sameAddress($0.address, address) } || isBuiltin(game, address)
+            || rows(game) < listRows
+    }
+}
+
+/// The rows the server list has, the built-in servers' among them: no more are kept, so it never scrolls
+public let listRows = 4
+
+func isBuiltin(_ game: Game, _ address: String) -> Bool {
+    builtinServers.contains { $0.game == game && sameAddress($0.address, address) }
 }
 
 /// The servers the launcher comes with, first in their game's list: they can't be renamed or removed
@@ -473,8 +496,9 @@ public struct Listed: Identifiable {
     public var id: String { builtin ? "builtin:" + server.address : server.id.uuidString }
 }
 
-/// The game's list: its built-in servers, then the ones the player joined (a built-in one's entry, which keeps the
-/// passwords used, isn't listed twice)
+/// The game's list: its built-in servers, then the ones the player bookmarked (a built-in one's entry, which keeps the
+/// passwords used, isn't listed twice); the first listRows (a list saved with more before they were capped shows its
+/// first ones, and removing one brings the next into view)
 public func listedServers(_ settings: LauncherSettings, _ game: Game) -> [Listed] {
     let saved = settings.slots[game.rawValue].servers
     var list: [Listed] = []
@@ -484,9 +508,8 @@ public func listedServers(_ settings: LauncherSettings, _ game: Game) -> [Listed
                             rcon: k.map { saved[$0].rcon } ?? "")
         list.append(Listed(server: server, saved: k, builtin: true))
     }
-    for (k, s) in saved.enumerated()
-    where !builtinServers.contains(where: { $0.game == game && sameAddress($0.address, s.address) }) {
+    for (k, s) in saved.enumerated() where !isBuiltin(game, s.address) {
         list.append(Listed(server: s, saved: k, builtin: false))
     }
-    return list
+    return Array(list.prefix(listRows))
 }
