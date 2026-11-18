@@ -81,7 +81,7 @@ enum { HF_TIME, HF_FRAG, HF_PLAYERS, HF_BOTS, HF_NAME, HF_NUM }; // Host's field
 // the field typed in: the browser's search, the name, Options' search, a crosshair code, a slider's value, a vote's
 // number or text, Host's (F_HOST + its)
 enum { F_NONE, F_SEARCH, F_NAME, F_OSEARCH, F_CODE, F_VALUE, F_VOTE, F_HOST };
-enum { OT_INPUT, OT_KEYS, OT_VIDEO, OT_AUDIO, OT_GAMEPLAY, OT_HUD, OT_NUM }; // Options' tabs
+enum { OT_CONTROLS, OT_VIDEO, OT_AUDIO, OT_GAMEPLAY, OT_HUD, OT_NUM }; // Options' tabs (the mouse and the keys: CONTROLS)
 
 // the browser's gametype tabs (Omaha's; round-based, Tug of War and Liberation under OTHER) and sortable columns
 enum { TAB_ALL, TAB_FFA, TAB_TDM, TAB_OBJ, TAB_OTHER, TAB_NUM };
@@ -2200,7 +2200,7 @@ APPLY; DEFAULTS resets the settings shown
 ====================================================================
 */
 
-static const char *const rl_optTabs[OT_NUM] = {"INPUT", "KEYS", "VIDEO", "AUDIO", "GAMEPLAY", "HUD"};
+static const char *const rl_optTabs[OT_NUM] = {"CONTROLS", "VIDEO", "AUDIO", "GAMEPLAY", "HUD"};
 
 enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW, OC_CODE, OC_KEYS };
 
@@ -2212,9 +2212,10 @@ enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW
 #define OF_DISPLAY 64  // r_fullscreen and r_noborder: fullscreen, windowed, borderless
 #define OF_ANISO   128 // r_ext_texture_filter_anisotropic and r_ext_max_anisotropy: off, or how much
 #define OF_RES     256 // r_mode: the desktop's, or a size of the display's (r_customwidth, r_customheight)
-#define OF_THIRD   512 // a section in the third column (keys alone have three; else the right one)
+#define OF_THIRD   512 // a section in the third column (CONTROLS' alone have three; else the right one)
 #define OF_REND    1024 // the renderer's own: shown where it made it, never made here (the Vulkan renderer's: Metal
                         // has no multisampling, no limit on the dynamic lights, no submit thread, no mailbox present)
+#define OF_LEFT2   2048 // a section in the left column where there are two (else its own)
 
 typedef struct {
     int                kind, tab, flags; // the tab: a section's
@@ -2264,18 +2265,18 @@ static const char *const rl_oOutlines[]    = {"OFF", "FULL", "HALF", NULL};
 
 // (the defaults the cvars' own, set here for those the game makes later, at a map's load)
 static const rlOpt_t rl_opts[] = {
-    O_SECTION(OT_INPUT, "MOUSE", 0),
-    O_SLIDER("Sensitivity", "How far the view turns as the mouse moves.", "sensitivity", "5", 0.1f, 20, 0.05f, 0),
+    O_SECTION(OT_CONTROLS, "MOUSE", 0),
+    O_SLIDER("Sensitivity", "How far the view turns.", "sensitivity", "5", 0.1f, 20, 0.05f, 0),
     O_TOGGLE("Invert Mouse", "Moving the mouse up looks down.", "m_pitch", "0.022", OF_NEG),
-    O_SECTION(OT_KEYS, "ATTACK", 0),
+    O_SECTION(OT_CONTROLS, "ATTACK", OF_RIGHT | OF_LEFT2),
     O_KEYS("+attackprimary"),
-    O_SECTION(OT_KEYS, "MOVEMENT", 0),
+    O_SECTION(OT_CONTROLS, "MOVEMENT", 0),
     O_KEYS("+forward"),
-    O_SECTION(OT_KEYS, "WEAPONS", OF_RIGHT),
+    O_SECTION(OT_CONTROLS, "WEAPONS", OF_RIGHT),
     O_KEYS("+use"),
-    O_SECTION(OT_KEYS, "GAME", OF_RIGHT),
+    O_SECTION(OT_CONTROLS, "GAME", OF_THIRD | OF_LEFT2),
     O_KEYS("+scores"),
-    O_SECTION(OT_KEYS, "MULTIPLAYER", OF_THIRD),
+    O_SECTION(OT_CONTROLS, "MULTIPLAYER", OF_THIRD),
     O_KEYS("weapdrop"),
     O_SECTION(OT_VIDEO, "DISPLAY", 0),
     O_SEG("Display Mode", "Borderless: a window without its frame.", "r_fullscreen", "1", rl_oDisplay, NULL, OF_DISPLAY),
@@ -2380,7 +2381,7 @@ static struct {
     std::string applied[RL_RESTARTS]; // the restart's settings as the renderer and the sound took them
     int         refSeq;               // the renderer's start then
     std::vector<std::string> sizes;   // the resolutions offered: "DESKTOP", then the display's ("1920 x 1080")
-} rl_opt = {false, OT_INPUT, "", "", "", 0, 0, 0, -1, false, "", {}, {}, {}, -1, {}};
+} rl_opt = {false, OT_CONTROLS, "", "", "", 0, 0, 0, -1, false, "", {}, {}, {}, -1, {}};
 
 // a place in the layout: the setting (a row of keys: its O_KEYS and its action), its box (the content's top y 0)
 typedef struct {
@@ -2622,17 +2623,18 @@ static bool RL_OptShown(int i)
 RL_OptLayout
 
 The settings shown placed: the sections in their column (fewer columns:
-the later ones' in the last), a section's title 40 high, 14 over it past
-the first, a row 66 (keys 44), the preview 0.32 of its column (220 at
-most) and 12 under it. The columns: keys alone alike, three as the width
-has room for (two, one); else 0.55 and 0.45 of it, one below 1100. The
-content's height; the columns' lines (their x)
+the later ones' in the last, OF_LEFT2's in the first of two), a
+section's title 40 high, 14 over it past the first, a row 66 (keys 44),
+the preview 0.32 of its column (220 at most) and 12 under it. The
+columns: CONTROLS' alone (the mouse and the keys) alike, three as the
+width has room for (two, one); else 0.55 and 0.45 of it, one below 1100.
+The content's height; the columns' lines (their x)
 ----------------
 */
 static float RL_OptLayout(float x, float w, std::vector<rlOptPlace_t>& out, std::vector<float>& lines)
 {
     std::vector<int> secs; // the sections shown
-    bool             alone = true; // keys alone
+    bool             alone = true; // CONTROLS' alone (the mouse and the keys)
     float            cx[3], cw[3], cy[3] = {0, 0, 0};
 
     for (int s = 0; s < RL_OPTS; s++) {
@@ -2643,7 +2645,7 @@ static float RL_OptLayout(float x, float w, std::vector<rlOptPlace_t>& out, std:
         }
         if (any) {
             secs.push_back(s);
-            alone = alone && rl_opts[s + 1].kind == OC_KEYS;
+            alone = alone && rl_opts[s].tab == OT_CONTROLS;
         }
     }
     alone = alone && !secs.empty();
@@ -2663,9 +2665,9 @@ static float RL_OptLayout(float x, float w, std::vector<rlOptPlace_t>& out, std:
     out.clear();
     for (int col = 0; col < 3; col++) {
         for (const int s : secs) {
-            const int c = Q_min(col, n - 1);
+            const int c = Q_min(col, n - 1), f = rl_opts[s].flags;
 
-            if ((rl_opts[s].flags & OF_THIRD ? 2 : rl_opts[s].flags & OF_RIGHT ? 1 : 0) != col) {
+            if ((n == 2 && (f & OF_LEFT2) ? 0 : f & OF_THIRD ? 2 : f & OF_RIGHT ? 1 : 0) != col) {
                 continue;
             }
             cy[c] += cy[c] > 0 ? 14 : 0;
@@ -3820,7 +3822,7 @@ void RL_MainShow(int what)
         rl_mm.page  = what == RL_SHOW_PLAY ? PAGE_PLAY : PAGE_CAMPAIGN;
         rl_camp.tab = what == RL_SHOW_SAVES ? CT_SAVES : CT_MISSIONS;
     } else {
-        rl_opt.tab = OT_KEYS;
+        rl_opt.tab = OT_CONTROLS;
         rl_opt.search.clear();
         rl_opt.scroll = 0;
         // (in a game the Options over the Esc menu's: the main menu's page kept, unless it is up)
