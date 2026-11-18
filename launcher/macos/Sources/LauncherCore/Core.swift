@@ -7,6 +7,8 @@ public enum Game: Int, CaseIterable, Identifiable, Codable {
 
     public var id: Int { rawValue }
     public var title: String { ["Allied Assault", "Spearhead", "Breakthrough"][rawValue] }
+    /// as the launcher's tabs show it, beside the game's icon
+    public var short: String { ["AA", "SH", "BT"][rawValue] }
     /// The game's data folder, which is also its folder for configs
     public var dataDir: String { ["main", "mainta", "maintt"][rawValue] }
 }

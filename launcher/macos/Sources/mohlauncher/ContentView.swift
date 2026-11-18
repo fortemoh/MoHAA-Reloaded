@@ -168,7 +168,8 @@ struct LabelAction: View {
     }
 }
 
-/// The games, each its icon over its name, as tall as a field (label and control) beside them
+/// The games, each its icon with its abbreviation beside it (the name when hovered), as tall as a field (label and
+/// control) beside them
 struct GameTabs: View {
     var body: some View {
         HStack(spacing: Metrics.gap / 2) {
@@ -191,14 +192,15 @@ struct GameTab: View {
         Button {
             model.select(game)
         } label: {
-            VStack(spacing: 2) {
-                // the game's icon, straight on the tab: the tab's fill, its edge and the bold name show the selection
+            HStack(spacing: 8) {
+                // the game's icon at its own size (32 points: the 64-pixel picture at 2x), straight on the tab: the
+                // tab's fill, its edge and the bold letters show the selection
                 Image(nsImage: model.icon(for: game))
                     .resizable()
                     .interpolation(.high)
-                    .frame(width: 20, height: 20)
-                Text(game.title)
-                    .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                    .frame(width: 32, height: 32)
+                Text(game.short)
+                    .font(.system(size: 16, weight: selected ? .semibold : .regular))
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
