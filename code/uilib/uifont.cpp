@@ -229,7 +229,7 @@ float UIFont::getWidth(const char *text, int maxlen)
     return UI_FontStringWidth(m_font, text, maxlen) * widthRatio * m_fit;
 }
 
-float UIFont::getCharWidth(unsigned short ch)
+float UIFont::getCharWidth(unsigned char ch)
 {
     int   indirected;
     float widthMul = 1.0f; // Added in OPM for easier readability
