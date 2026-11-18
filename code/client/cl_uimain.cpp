@@ -2324,6 +2324,7 @@ static const rlOpt_t rl_opts[] = {
     O_SECTION(OT_GAMEPLAY, "MOVEMENT", OF_RIGHT),
     O_SEG("Movement Rate", "Moves a second, apart from the frame rate.", "cl_movefps", "100", rl_oMoveRates, rl_oMoveValues, 0),
     O_TOGGLE("Shots and Jumps Sooner", "Sent half a move sooner.", "cl_movesubgrid", "1", 0),
+    O_TOGGLE("Newest Key Wins", "Opposite keys: the one pressed last counts.", "cl_nullbinds", "0", 0),
     O_SECTION(OT_GAMEPLAY, "DEMOS", OF_RIGHT),
     O_TOGGLE("Record Every Match", "A demo of each match you play.", "cl_autoRecordDemo", "0", 0),
     O_SLIDER("Video Export FPS", "A demo's video, frames a second.", "cl_aviFrameRate", "25", 10, 120, 1, 0),
