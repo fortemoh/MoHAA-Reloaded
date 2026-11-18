@@ -24,8 +24,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // design drawn by URC menus (ui/hud_comp_*.urc). What the menus show is
 // published here as cvars (ui_hud_*) their labels link to; what changes in
 // number or width has a widget: the kill feed, the chat and the game
-// messages (HudFeed), the players' cards (HudCards), the weapons carried
-// (HudWeapons) and the radar's map (HudRadar).
+// messages (HudFeed), the players' cards (HudCards), the player followed
+// (HudFollow), the weapons carried (HudWeapons) and the radar's map (HudRadar).
 
 #include "client.h"
 #include "cl_ui.h"
@@ -52,7 +52,7 @@ static cvar_t *cg_hudstyle;
 const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
     "hud_comp_topleft",     "hud_comp_topleft_compass", "hud_comp_score",      "hud_comp_killfeed", "hud_comp_chat",
     "hud_comp_strip",       "hud_comp_weapons",         "hud_comp_damage",     "hud_comp_bars",     "hud_comp_killer",
-    "hud_comp_vote",        "hud_comp_csgo_health",     "hud_comp_csgo_ammo",
+    "hud_comp_vote",        "hud_comp_csgo_health",     "hud_comp_csgo_ammo", "hud_comp_follow",
 };
 
 // cg_hudstyle's presets, the bottom's health and ammo: 1 CS:GO's corners
@@ -60,7 +60,7 @@ const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
 // them); each menu's preset (0 both's). The other's menus are hidden (cl_ui.cpp
 // UI_CompHuds), not drawn; all are baked (a change of preset bakes nothing)
 static const signed char comp_menuLayout[UI_COMPHUD_MENUS] = {
-    0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 1, 1,
+    0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 1, 1, 0,
 };
 
 bool ui_compHudInLayout[UI_COMPHUD_MENUS];
@@ -88,7 +88,8 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
     "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_timer", "ui_hud_vote_on",
     "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_weapons_on",
-    "ui_hud_cards_allies", "ui_hud_cards_axis", "ui_hud_cards_on", "ui_hud_feed_under", "ui_hud_never",
+    "ui_hud_cards_allies", "ui_hud_cards_axis", "ui_hud_cards_on", "ui_hud_feed_under", "ui_hud_follow_team",
+    "ui_hud_never",
 };
 
 // the accent (cg_hud_accent, the HUD's pale yellow by default) and its
@@ -1000,12 +1001,15 @@ void UI_CompHud_Frame(void)
     Comp_Roster(gametype);
     Comp_Weapons(weapon);
 
-    // the strip: health, badge, ammo, weapons (not while free spectating)
+    // the strip: health, badge, ammo, weapons (not while free spectating); the
+    // badge the followed player's team (from behind the snapshot's is ours)
     {
-        const qboolean icon = teams && (!spectating || following) && Comp_Int("cg_hud_badge") && Comp_Int("cg_hud_teamicon");
+        const qboolean icon =
+            teams && (!spectating || following) && Comp_Int("cg_hud_badge") && Comp_Int("cg_hud_teamicon");
+        const int shown = following ? Comp_Team(ps->stats[STAT_INFOCLIENT]) : team;
 
-        Comp_Set("ui_hud_allies", icon && team == TEAM_ALLIES ? "1" : "0");
-        Comp_Set("ui_hud_axis", icon && team == TEAM_AXIS ? "1" : "0");
+        Comp_Set("ui_hud_allies", icon && shown == TEAM_ALLIES ? "1" : "0");
+        Comp_Set("ui_hud_axis", icon && shown == TEAM_AXIS ? "1" : "0");
     }
     if (following && !(ps->stats[STAT_WEAPONS] & 0x3F) && ps->stats[STAT_INFOCLIENT_HEALTH] > 0) {
         health    = ps->stats[STAT_INFOCLIENT_HEALTH];
@@ -1126,11 +1130,13 @@ void UI_CompHud_Frame(void)
     if (full) {
         const qboolean killer = health <= 0 && !spectating && attacker >= 0 && attacker < MAX_CLIENTS && attacker != ps->clientNum;
         const int      info   = ps->stats[STAT_INFOCLIENT];
+        const int      fteam  = following ? Comp_Team(info) : 0;
 
         Comp_Set("ui_hud_killer", killer ? Comp_Name(attacker) : "");
         Comp_Set("ui_hud_killer_col", killer ? Comp_TeamColor(Comp_Team(attacker)) : "1 1 1 1");
         Comp_Set("ui_hud_follow", following ? Comp_Name(info) : "");
         Comp_Set("ui_hud_follow_col", following ? Comp_TeamColor(Comp_Team(info)) : "1 1 1 1");
+        Comp_Set("ui_hud_follow_team", fteam == TEAM_AXIS ? "axis" : fteam == TEAM_ALLIES ? "allies" : "");
         Comp_Set("ui_hud_hurt", attacker >= 0 && attacker < MAX_CLIENTS ? Comp_Name(attacker) : "");
         Comp_Set("ui_hud_hurt_col", Comp_TeamColor(Comp_Team(attacker)));
     }
@@ -1974,6 +1980,83 @@ void UIHudCards::Draw(void)
 
 /*
 ================
+UIHudFollow
+
+The player followed (ui_hud_follow, their team's color ui_hud_follow_col,
+their team ui_hud_follow_team: allies or axis), CS2's way: a plate at the
+bottom's middle, SPECTATING over their name, their team's icon at its left
+(CS:GO's corners, ui_hud_corners: CS2's strip has it in its badge under the
+plate), a line of their team's color under it; as wide as the name. Over
+the strip, else the HUD's margin, from the widget's bottom (the screen's)
+================
+*/
+#define FP_NAME    26.0f  // the name's size (bold)
+#define FP_CAPTION 14.0f  // SPECTATING's
+#define FP_TRACK   1.0f   // SPECTATING's spacing
+#define FP_ICON    38.0f  // the team's icon
+#define FP_LINE    3.0f   // the line under it
+#define FP_PAD     18.0f  // the plate's padding left and right
+#define FP_GAP     12.0f  // between the icon and the text
+#define FP_MAXW    320.0f // a longer name cut with "…"
+
+class UIHudFollow : public UIWidget
+{
+public:
+    CLASS_PROTOTYPE(UIHudFollow);
+
+    void Draw(void) override;
+    bool CacheDraw(void) override { return true; }
+};
+
+CLASS_DECLARATION(UIWidget, UIHudFollow, NULL) {
+    {NULL, NULL}
+};
+
+void UIHudFollow::Draw(void)
+{
+    static cvar_t *const name    = Cvar_Get("ui_hud_follow", "", 0);
+    static cvar_t *const col     = Cvar_Get("ui_hud_follow_col", "", 0);
+    static cvar_t *const team    = Cvar_Get("ui_hud_follow_team", "", 0);
+    static cvar_t *const corners = Cvar_Get("ui_hud_corners", "", 0);
+    static const rlColor_t fill = {0.047f, 0.055f, 0.071f, 0.78f}, caption = {1.0f, 1.0f, 1.0f, 0.612f};
+    rlView_t               v;
+    rlColor_t              c = {1.0f, 1.0f, 1.0f, 1.0f};
+
+    UI_DrawDep(name);
+    UI_DrawDep(col);
+    UI_DrawDep(team);
+    UI_DrawDep(corners);
+    if (!name->string[0]) {
+        return;
+    }
+    v.s  = m_vVirtualScale[0];
+    v.dw = m_frame.size.width / v.s;
+    v.dh = m_frame.size.height / v.s;
+    sscanf(col->string, "%f %f %f %f", &c.r, &c.g, &c.b, &c.a);
+    {
+        const int         t     = !strcmp(team->string, "axis") ? 1 : !strcmp(team->string, "allies") ? 0 : -1;
+        const bool        icon  = corners->integer && t >= 0;
+        const std::string shown = RL_Ellipsize(v, name->string, FP_NAME, true, FP_MAXW);
+        const float       nw    = RL_TextW(v, shown.c_str(), FP_NAME, true);
+        const float       tw    = Q_max(nw, RL_TextW(v, "SPECTATING", FP_CAPTION, false, FP_TRACK));
+        const float       w     = FP_PAD + (icon ? FP_ICON + FP_GAP : 0.0f) + tw + FP_PAD;
+        const float       h     = COMP_FOLLOW_H - FP_LINE;
+        const float       x     = floorf((v.dw - w) * 0.5f);
+        const float       y     = v.dh - (corners->integer ? 24.0f : 88.0f) - COMP_FOLLOW_H;
+        const float       tx    = x + FP_PAD + (icon ? FP_ICON + FP_GAP : 0.0f);
+
+        RL_Box(v, x, y, w, h, fill);
+        RL_Box(v, x, y + h, w, FP_LINE, c);
+        if (icon) {
+            RL_TeamIcon(v, t, x + FP_PAD + FP_ICON * 0.5f, y + h * 0.5f, FP_ICON);
+        }
+        RL_Text(v, tx, y + 9.0f, "SPECTATING", FP_CAPTION, caption, false, RL_LEFT, FP_TRACK, RL_TOP);
+        RL_Text(v, tx, y + h - 10.0f, shown.c_str(), FP_NAME, c, true, RL_LEFT, 0.0f, RL_BASE);
+    }
+}
+
+/*
+================
 UIHudWeapons
 
 The weapons carried at the widget's bottom right, CS:GO's order from the
@@ -2636,9 +2719,14 @@ void UI_CompHud_PreBake(qboolean ahead)
 
         RL_Face(v, TTAG_NAME, true, true);
         RL_Face(v, TTAG_HEALTH, true, true);
+        // (and the followed player's plate's, HudFollow)
+        RL_Face(v, FP_NAME, true);
+        RL_Face(v, FP_CAPTION, false);
         TTag_ArrowBox(v, 0.0f, 0.0f, &ax, &ay, &aw, &ah);
         rl_bakeOnly = true;
         RL_Shape(ax, ay, aw, ah, ttag_arrow, {1.0f, 1.0f, 1.0f, 1.0f}, v.s);
+        RL_TeamIcon(v, 0, 0.0f, 0.0f, FP_ICON);
+        RL_TeamIcon(v, 1, 0.0f, 0.0f, FP_ICON);
         rl_bakeOnly = false;
     }
     UI_BakeAhead(0);

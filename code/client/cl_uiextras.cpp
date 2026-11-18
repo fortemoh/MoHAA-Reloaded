@@ -53,6 +53,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "client.h"
 #include "cl_lagometer.h"
 #include "cl_ui.h"
+#include "cl_uicomp.h"
 #include "cl_uiextras.h"
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
@@ -528,15 +529,17 @@ static rlView_t EX_HudView(void)
 }
 
 // the bottom's middle free up to: over CS2's strip (cg_hudstyle 2: its health,
-// badge and ammo, 80 units high), else the HUD's margin (24)
+// badge and ammo, 80 units high), else the HUD's margin (24); over the
+// followed player's plate while it is shown (cl_uicomp.cpp, HudFollow)
 static float EX_Bottom(const rlView_t& v)
 {
-    static cvar_t *style;
+    static cvar_t *style, *follow;
 
     if (!style) {
-        style = Cvar_Get("cg_hudstyle", "1", CVAR_ARCHIVE);
+        style  = Cvar_Get("cg_hudstyle", "1", CVAR_ARCHIVE);
+        follow = Cvar_Get("ui_hud_follow_on", "", 0);
     }
-    return v.dh - (style->integer == 2 ? 88.0f : 24.0f);
+    return v.dh - (style->integer == 2 ? 88.0f : 24.0f) - (follow->integer ? COMP_FOLLOW_H + 8.0f : 0.0f);
 }
 
 void UI_DrawStatusIcon(int icon, qboolean raised)
