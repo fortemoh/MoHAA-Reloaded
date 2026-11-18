@@ -256,10 +256,11 @@ const char *UI_CompHud_WeaponOutline(const char *name)
     return w ? va(COMP_OUTLINES "%s.svg", w->pic) : NULL;
 }
 
-// the obituaries' English keys (fgame's, and stock 1.11's own spellings:
-// Pak0's global/localization.txt), the weapon each says: s2 the text after
-// the attacker it needs ("" none at all), kind p a player's, s a suicide, w
-// the world's. In order: a 'p' before any 's' or 'w' its words contain
+// the obituaries' English keys (fgame's, and the stock games' own spellings:
+// their global/localization.txt, Allied Assault's in Pak0, Breakthrough's
+// petard in its pak4), the weapon each says: s2 the text after the attacker
+// it needs ("" none at all), kind p a player's, s a suicide, w the world's.
+// In order: a 'p' before any 's' or 'w' its words contain
 typedef struct {
     const char *s1, *s2, *cls;
     char        kind;
@@ -297,6 +298,7 @@ static const compPhrase_t comp_phrases[] = {
     {"tripped on his own grenade",     NULL,                           "grenade",  's'},
     {"rocketed himself",               NULL,                           "rocket",   's'},
     {"was hoist on his own pitard",    NULL,                           "none",     's'},
+    {"was hoist on his own petard",    NULL,                           "none",     's'},
     {"took himself out of commision",  NULL,                           "none",     's'},
     {"blew himself up",                NULL,                           "none",     's'},
     {"shot himself",                   NULL,                           "none",     's'},
