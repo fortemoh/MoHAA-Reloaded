@@ -39,7 +39,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 static qboolean             ui_hud;
 static UIFloatingConsole   *fakk_console;
 static UIFloatingDMConsole *dm_console;
-static FakkMiniconsole     *mini_console;
 static View3D              *view3d;
 qboolean                    server_loading;
 static qboolean             server_loading_waiting;
@@ -70,7 +69,6 @@ cvar_t        *ui_gotmedal;
 cvar_t        *ui_success;
 cvar_t        *ui_failed;
 cvar_t        *ui_drawcoords;
-cvar_t        *ui_minicon;
 cvar_t        *ui_consoleposition;
 cvar_t        *ui_console;
 // Added: the lines the ~ console keeps
@@ -606,12 +604,9 @@ void UI_PrintConsole(const char *msg)
         }
     }
 
+    // (a line for FAKK's mini console, which the client no longer has: the console's, as other lines)
     if (*pszString == '\a') {
         pszString++;
-        if (mini_console) {
-            mini_console->Print(pszString);
-            return;
-        }
     }
 
     if (fakk_console) {
@@ -622,10 +617,6 @@ void UI_PrintConsole(const char *msg)
         }
 
         fakk_console->AddText(pszString, pColor);
-
-        if (mini_console) {
-            mini_console->Print(pszString);
-        }
     } else {
         if (!s_intermediateconsole) {
             s_intermediateconsole = new str;
@@ -1021,17 +1012,6 @@ void UI_Update(void)
         view3d->Display(frame, 1.0);
 
         return;
-    }
-
-    if (fakk_console) {
-        if (ui_minicon->integer) {
-            // toggle the mini-console
-            if (mini_console) {
-                mini_console->setRealShow(fakk_console->getShow() ^ 1);
-            }
-        } else if (mini_console) {
-            mini_console->setRealShow(false);
-        }
     }
 
     // Added: no HUD under the Reloaded weapon and Esc menus (cl_uimenus.cpp), the
@@ -2661,10 +2641,6 @@ void CL_ShutdownUI(void)
         delete dm_console;
         dm_console = NULL;
     }
-    if (mini_console) {
-        delete mini_console;
-        mini_console = NULL;
-    }
 
     // shutdown the UI
     uie.Shutdown();
@@ -2770,7 +2746,6 @@ void CL_InitializeUI(void)
     int    i;
 
     // Register all variables
-    ui_minicon         = Cvar_Get("ui_minicon", "0", 1);
     ui_consoleposition = Cvar_Get("ui_consoleposition", "", 1);
     // the console key works by default (MoHAA Reloaded's default, upstream's is 0)
     ui_console         = Cvar_Get("ui_console", "1", 1);
@@ -2857,18 +2832,8 @@ void CL_InitializeUI(void)
     ui_static_materials.loading = uWinMan.RegisterShader("textures/menu/loading");
 
     if (ui_console->integer || developer->integer > 0) {
-        UColor bgColor = UWindowColor;
-
         // Create the console
         fakk_console = getNewConsole();
-
-        bgColor = UColor(0.0, 0.5, 1.0, 1.0);
-
-        // Create the mini console
-        mini_console = new FakkMiniconsole;
-        mini_console->Create(UISize2D(500, 100), UWhite, bgColor, 0.2f);
-        mini_console->setAlwaysOnBottom(true);
-        mini_console->setBorderStyle(border_none);
     }
 
     // Create the dm console

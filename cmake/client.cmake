@@ -23,7 +23,6 @@ set(CLIENT_SOURCES
     ${SOURCE_DIR}/client/cl_parse.cpp
     ${SOURCE_DIR}/client/cl_scrn.cpp
     ${SOURCE_DIR}/client/cl_ui.cpp
-    ${SOURCE_DIR}/client/cl_uiminicon.cpp
     ${SOURCE_DIR}/client/cl_uicomp.cpp
     ${SOURCE_DIR}/client/cl_uimenus.cpp
     ${SOURCE_DIR}/client/cl_uimain.cpp
