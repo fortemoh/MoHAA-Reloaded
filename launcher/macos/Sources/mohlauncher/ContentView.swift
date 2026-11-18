@@ -290,6 +290,8 @@ struct PlayerAndServers: View {
 }
 
 struct ServerList: View {
+    /// the rows in view
+    static let rows = 4
     @EnvironmentObject var model: LauncherModel
 
     var body: some View {
@@ -305,12 +307,12 @@ struct ServerList: View {
         }
         // the row's width even with nothing in it (an empty ScrollView has none of its own)
         .frame(maxWidth: .infinity)
-        .frame(height: 3 * Metrics.row + 4)
+        .frame(height: CGFloat(ServerList.rows) * Metrics.row + 4)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color.black.opacity(0.19)))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.white.opacity(0.04)))
         .overlay(alignment: .bottom) {
             // the room the list doesn't fill yet
-            if listed.count < 3 {
+            if listed.count < ServerList.rows {
                 Text(listed.isEmpty ? "The servers you join are kept here: double-click one to join it again."
                      : "The servers you join are kept here.")
                     .font(.system(size: 12))
@@ -318,7 +320,7 @@ struct ServerList: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, Metrics.gap)
                     .frame(maxWidth: .infinity)
-                    .frame(height: CGFloat(3 - listed.count) * Metrics.row)
+                    .frame(height: CGFloat(ServerList.rows - listed.count) * Metrics.row)
                     .allowsHitTesting(false)
             }
         }
@@ -333,15 +335,20 @@ struct ServerRow: View {
     var body: some View {
         let selected = model.isSelected(item)
         HStack(spacing: 2) {
-            // two even columns, whatever the texts' lengths
-            Text(item.server.label)
-                .fontWeight(item.builtin ? .semibold : .regular)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(item.server.label == item.server.address ? "" : item.server.address)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // the name, and under it the address when the name isn't the address
+            VStack(alignment: .leading, spacing: 0) {
+                Text(item.server.label)
+                    .fontWeight(item.builtin ? .semibold : .regular)
+                    .lineLimit(1)
+                if item.server.label != item.server.address {
+                    Text(item.server.address)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(item.server.address)
             if item.builtin {
                 // the same columns as the other rows, and a pin for a server that stays
                 Color.clear.frame(width: 28, height: 28)
