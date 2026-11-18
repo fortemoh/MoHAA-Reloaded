@@ -2495,7 +2495,6 @@ UIWidgetContainer::UIWidgetContainer()
     m_bgfill        = UColor(0, 0, 0, 0);
     m_fullscreen    = false;
     m_currentwidnum = 0;
-    m_maxordernum   = 0;
     m_layout        = NULL;
     AllowActivate(false);
 }
@@ -2577,64 +2576,6 @@ void UIWidgetContainer::SetFullscreen(Event *ev)
 qboolean UIWidgetContainer::isFullscreen(void)
 {
     return m_fullscreen;
-}
-
-UIWidget *UIWidgetContainer::GetNextWidgetInOrder(void)
-{
-    int i;
-
-    if (!m_maxordernum) {
-        for (i = 1; i <= m_children.NumObjects(); i++) {
-            if (m_children.ObjectAt(i)->getOrderNum()) {
-                m_maxordernum++;
-            }
-        }
-    }
-
-    m_currentwidnum++;
-
-    if (m_currentwidnum > m_maxordernum) {
-        m_currentwidnum = m_maxordernum;
-    }
-
-    for (i = 1; i <= m_children.NumObjects(); i++) {
-        UIWidget *wid = m_children.ObjectAt(i);
-
-        if (wid->getOrderNum() == m_currentwidnum) {
-            return wid;
-        }
-    }
-
-    return NULL;
-}
-
-UIWidget *UIWidgetContainer::GetPrevWidgetInOrder(void)
-{
-    int i;
-
-    if (!m_maxordernum) {
-        for (i = 1; i <= m_children.NumObjects(); i++) {
-            if (m_children.ObjectAt(i)->getOrderNum()) {
-                m_maxordernum++;
-            }
-        }
-    }
-
-    m_currentwidnum--;
-
-    if (m_currentwidnum <= 0) {
-        m_currentwidnum = m_maxordernum;
-    }
-
-    for (i = 1; i <= m_children.NumObjects(); i++) {
-        UIWidget *wid = m_children.ObjectAt(i);
-
-        if (wid->getOrderNum() == m_currentwidnum) {
-            return wid;
-        }
-    }
-
-    return NULL;
 }
 
 void UIWidgetContainer::SetActiveWidgetOrderNum(UIWidget *wid)

@@ -444,65 +444,14 @@ void UIWindowManager::CharEvent(int ch)
 
 qboolean UIWindowManager::KeyEvent(int key, unsigned int time)
 {
-    UIWidget *selwidget = NULL;
-
-    if (key == K_TAB && uii.Sys_IsKeyDown(K_CTRL)) {
-        UIWidget *wid;
-
-        if (m_activeControl && m_activeControl != this) {
-            for (selwidget = m_activeControl; selwidget != NULL; selwidget = selwidget->getParent()) {
-                if (selwidget->getParent() == this) {
-                    break;
-                }
-            }
-        }
-
-        if (!selwidget) {
-            selwidget = getFirstChild();
-        }
-
-        for (wid = getNextChild(selwidget); wid != NULL; wid = getNextChild(wid)) {
-            if (!(selwidget->m_flags & WF_ALWAYS_BOTTOM) && selwidget->CanActivate()) {
-                ActivateControl(wid);
-                return true;
-            }
-        }
-        for (wid = getFirstChild(); wid != selwidget && wid != NULL; wid = getNextChild(wid)) {
-            if (!(selwidget->m_flags & WF_ALWAYS_BOTTOM) && selwidget->CanActivate()) {
-                ActivateControl(wid);
-                return true;
-            }
-        }
-    } else {
-        if (m_bindactive) {
-            m_bindactive->KeyEvent(key, time);
-        } else if (!(m_activeControl && m_activeControl->KeyEvent(key, time))
-                   && (key == K_DOWNARROW || key == K_UPARROW)) {
-            selwidget = m_activeControl;
-            if (selwidget && selwidget != this) {
-                for (selwidget = m_activeControl; selwidget != NULL; selwidget = selwidget->getParent()) {
-                    if (selwidget->getParent() == this) {
-                        break;
-                    }
-                }
-            }
-
-            if (selwidget != NULL) {
-                if (selwidget->isSubclassOf(UIWidgetContainer)) {
-                    UIWidgetContainer *widcon = (UIWidgetContainer *)selwidget;
-
-                    if (key == K_DOWNARROW) {
-                        selwidget = widcon->GetNextWidgetInOrder();
-                    } else if (key == K_UPARROW) {
-                        selwidget = widcon->GetPrevWidgetInOrder();
-                    }
-
-                    if (selwidget) {
-                        ActivateControl(selwidget);
-                    }
-                }
-            }
-        }
+    // Changed: Ctrl+Tab no longer moves the keys to the next top-level window (the console, the chat, a menu: often a
+    // hidden one, and the chat's line was lost), nor Up and Down a control doesn't take to a menu's next or previous
+    // widget by ordernumber (no menu the games load has two such widgets; with none, the menu's first widget was
+    // activated and brought to the front: the Reloaded main menu's photo then hid the profile's figures)
+    if (m_bindactive) {
+        m_bindactive->KeyEvent(key, time);
+    } else if (m_activeControl) {
+        m_activeControl->KeyEvent(key, time);
     }
 
     return true;

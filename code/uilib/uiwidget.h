@@ -375,7 +375,6 @@ class UIWidgetContainer : public UIWidget
     UColor   m_bgfill;
     qboolean m_fullscreen;
     int      m_currentwidnum;
-    int      m_maxordernum;
 
 public:
     class UILayout *m_layout;
@@ -393,8 +392,6 @@ public:
     void      SetBGFill(Event *ev);
     void      SetFullscreen(Event *ev);
     qboolean  isFullscreen(void);
-    UIWidget *GetNextWidgetInOrder(void);
-    UIWidget *GetPrevWidgetInOrder(void);
     void      SetActiveWidgetOrderNum(UIWidget *wid);
     void      SetActiveWidgetOrderNum(int num);
     void      SetLastActiveWidgetOrderNum(void);
