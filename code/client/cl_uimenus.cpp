@@ -2827,7 +2827,8 @@ The scoreboard: CS2's structure in our look. A header band (the map and
 mode, ALLIES 4 : 3 AXIS, the time left), a section per team, the leading
 one first (its band: emblem, name, players, alive in round modes, the
 columns), a row per player (name, K, D, K/D, TIME, PING; from round-based
-on name, K, ROUND, TIME, PING), the spectators under it. Rows from the player configstrings, filled from the latest
+on the stock board's name, KILLS, TOTAL, TIME, PING), the spectators under
+it. Rows from the player configstrings, filled from the latest
 "scores" ("\x96" where it has no row). Rows tighten from 34 to 22, then the
 header slims from 104 to 72, then rows go to 18; past that each team keeps
 its top players and folds the rest into "+ N more". FFA: one table ranked
@@ -2926,10 +2927,10 @@ static const rlCol_t rl_cols[] = {
 
 // from round-based on the server counts no deaths: a row's numbers are the
 // player's kills this round and in the match (fgame's DM_Team::AddKills and
-// its sort; the stock board's "Kills" and "Total"), here the match's first
+// its sort), the stock board's "Kills" and "Total"
 static const rlCol_t rl_colsTotals[] = {
-    {"K",     58},
-    {"ROUND", 84},
+    {"KILLS", 72},
+    {"TOTAL", 84},
     {"TIME",  88},
     {"PING",  78},
 };
@@ -3008,9 +3009,9 @@ static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, con
 
         Q_strncpyz(ping, r.sc ? (!Q_stricmp(r.sc->ping, "bot") ? "BOT" : r.sc->ping) : "\x96", sizeof(ping));
         if (totals) {
-            // (the match's kills, the round's)
-            Com_sprintf(k, sizeof(k), "%d", r.sc ? r.sc->deaths : 0);
-            Com_sprintf(d, sizeof(d), "%d", r.sc ? r.sc->kills : 0);
+            // (this round's kills, the match's)
+            Com_sprintf(k, sizeof(k), "%d", r.sc ? r.sc->kills : 0);
+            Com_sprintf(d, sizeof(d), "%d", r.sc ? r.sc->deaths : 0);
             vals[0] = r.sc ? k : "\x96";
             vals[1] = r.sc ? d : "\x96";
             vals[2] = r.sc ? r.sc->time : "\x96";
