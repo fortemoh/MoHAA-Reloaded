@@ -524,11 +524,6 @@ extern "C" {
     extern cvar_t *vm_offset_vel_up;
     extern cvar_t *vm_offset_upvel;
     extern cvar_t *vm_lean_lower;
-    extern cvar_t *cg_viewmodel_offset_x;
-    extern cvar_t *cg_viewmodel_offset_y;
-    extern cvar_t *cg_viewmodel_offset_z;
-    extern cvar_t *cg_viewmodel_presetpos;
-    extern cvar_t *cg_viewmodel_yaw;
     extern cvar_t *cg_viewmodel_movedrop;
     extern cvar_t *cg_righthand;
     extern cvar_t *voiceChat;
