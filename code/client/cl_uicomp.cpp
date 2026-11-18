@@ -31,6 +31,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cl_ui.h"
 #include "cl_uicomp.h"
 #include "cl_uiextras.h"
+#include "cl_uimenus.h"
 #include "../uilib/uibake.h"
 #include "../qcommon/localization.h"
 
@@ -352,7 +353,7 @@ static struct {
     qboolean floodProtect;
     char     map[MAX_QPATH];
     char     name[MAX_CLIENTS][MAX_NAME_LENGTH];
-    int      team[MAX_CLIENTS];
+    int      team[MAX_CLIENTS]; // the "team" key's, -1 none (stock servers)
     int      objFlags[MAX_OBJECTIVES], objCurrent;
     vec3_t   objLoc[MAX_OBJECTIVES];
     qboolean teamScoresSent;
@@ -376,8 +377,10 @@ static void Comp_ConfigStrings(void)
     cs.floodProtect = atoi(Info_ValueForKey(info, "sv_floodProtect")) != 0;
     Q_strncpyz(cs.map, Info_ValueForKey(info, "mapname"), sizeof(cs.map));
     for (int i = 0; i < MAX_CLIENTS; i++) {
+        const char *team = Info_ValueForKey(CL_ConfigString(CS_PLAYERS + i), "team");
+
         Q_strncpyz(cs.name[i], Info_ValueForKey(CL_ConfigString(CS_PLAYERS + i), "name"), sizeof(cs.name[i]));
-        cs.team[i] = atoi(Info_ValueForKey(CL_ConfigString(CS_PLAYERS + i), "team"));
+        cs.team[i] = team[0] ? atoi(team) : -1;
     }
     for (int i = 0; i < MAX_OBJECTIVES; i++) {
         const char *o = CL_ConfigString(CS_OBJECTIVES + i);
@@ -403,10 +406,15 @@ static const char *Comp_Name(int client)
     return client >= 0 && client < MAX_CLIENTS ? cs.name[client] : "";
 }
 
+// a player's team: the configstring's "team" (OpenMoHAA's servers), else
+// the latest "scores" row's (stock servers: the stock scoreboard's source)
 static int Comp_Team(int client)
 {
     Comp_ConfigStrings();
-    return client >= 0 && client < MAX_CLIENTS ? cs.team[client] : 0;
+    if (client < 0 || client >= MAX_CLIENTS) {
+        return 0;
+    }
+    return cs.team[client] >= 0 ? cs.team[client] : UI_Menus_ScoreTeam(client);
 }
 
 // the one client called name, -1 none or more
@@ -743,10 +751,13 @@ static void Comp_Roster(int gametype)
         const int team = Comp_Team(i);
 
         if (team != comp.team[i]) {
-            // a switch waits for the next round dead
-            comp.dead[i]    = comp.team[i] && (team == TEAM_ALLIES || team == TEAM_AXIS);
-            comp.team[i]    = team;
-            comp.wantScores = qtrue;
+            // a switch waits for the next round dead; a team the scores
+            // just told (a stock server's) asks for no more
+            comp.dead[i] = comp.team[i] && (team == TEAM_ALLIES || team == TEAM_AXIS);
+            if (comp.team[i] || cs.team[i] >= 0) {
+                comp.wantScores = qtrue;
+            }
+            comp.team[i] = team;
         }
     }
     // the players the snapshot shows (not our own entity: a dead player's
