@@ -43,7 +43,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../uilib/uibake.h"
 #include "../gamespy/goaceng.h"
 #include "../gamespy/sv_gamespy.h"
-#include "../cgame/cg_viewmodel.h"
 #include "../fgame/bg_voteoptions.h"
 #include "../qcommon/localization.h"
 
@@ -2206,7 +2205,6 @@ enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW
 
 #define OF_RIGHT   1   // a section in the right column (the second)
 #define OF_PCT     2   // a slider's value shown as a percentage
-#define OF_GUN     4   // the gun's position: the preset sets the offsets, an offset not the preset's makes it custom
 #define OF_NOT     8   // a switch on at 0
 #define OF_NEG     16  // a switch on below 0, the value's sign (the mouse inverted: m_pitch)
 #define OF_DISPLAY 64  // r_fullscreen and r_noborder: fullscreen, windowed, borderless (RL_BorderlessFull)
@@ -2258,7 +2256,6 @@ static const char *const rl_oHudStyles[]   = {"CS:GO", "CS2", NULL};
 static const char *const rl_oHudValues[]   = {"1", "2", NULL};
 static const char *const rl_oLagometer[]   = {"OFF", "GRAPH", "COMPACT", NULL};
 static const char *const rl_oAccents[]     = {"f6f67a", "deb250", "78c8f0", "96dc8c", "f0f0f0", NULL};
-static const char *const rl_oPresets[]     = {"CUSTOM", "DESKTOP", "COUCH", "CLASSIC", NULL};
 // (the launcher's)
 static const char *const rl_oColours[]     = {"FFFFFF", "00FF00", "FFFF00", "00FFFF", "FF0000", "FF00FF", "000000", NULL};
 static const char *const rl_oOutlines[]    = {"OFF", "FULL", "HALF", NULL};
@@ -2316,23 +2313,17 @@ static const rlOpt_t rl_opts[] = {
     O_SLIDER("Field of View", "How wide you see, in degrees.", "cg_fov", "80", 65, 120, 1, 0),
     O_SEG("Show Weapon", "", "cg_drawviewmodel", "2", rl_oWeapon, NULL, 0),
     O_TOGGLE("Left-Handed", "The weapon in the left hand.", "cg_righthand", "1", OF_NOT),
+    O_SLIDER("Weapon Dip", "How far it dips as you run: none (CS2's) to the game's own.", "cg_viewmodel_movedrop", "1", 0, 1, 0.05f, OF_PCT),
     O_TOGGLE("Always Run", "Walk while the walk key is held.", "cl_run", "1", 0),
     O_TOGGLE("Server Lag Icon", "Shown while the server stops answering.", "cg_drawsvlag", "1", 0),
     O_SEG("Lagometer", "The connection: ping, loss, updates.", "cg_lagometer", "0", rl_oLagometer, NULL, 0),
-    O_SECTION(OT_GAMEPLAY, "DEMOS", 0),
-    O_TOGGLE("Record Every Match", "A demo of each match you play.", "cl_autoRecordDemo", "0", 0),
-    O_SLIDER("Video Export FPS", "A demo's video, frames a second.", "cl_aviFrameRate", "25", 10, 120, 1, 0),
-    O_SECTION(OT_GAMEPLAY, "GUN POSITION", OF_RIGHT),
-    O_SEG("Preset", "As CS2's, or set your own below.", "cg_viewmodel_presetpos", "3", rl_oPresets, NULL, OF_GUN),
-    O_SLIDER("Left / Right", "", "cg_viewmodel_offset_x", "0", vmLimits[0][0], vmLimits[0][1], 0.1f, OF_GUN),
-    O_SLIDER("Back / Forward", "", "cg_viewmodel_offset_y", "0", vmLimits[1][0], vmLimits[1][1], 0.1f, OF_GUN),
-    O_SLIDER("Down / Up", "", "cg_viewmodel_offset_z", "0", vmLimits[2][0], vmLimits[2][1], 0.1f, OF_GUN),
-    O_SLIDER("Turn", "The muzzle out, or in to the middle.", "cg_viewmodel_yaw", "0", vmLimits[VM_YAW][0], vmLimits[VM_YAW][1], 1, 0),
-    O_SLIDER("Drop While Moving", "None (CS2's) to the game's own.", "cg_viewmodel_movedrop", "1", 0, 1, 0.05f, OF_PCT),
     O_SECTION(OT_GAMEPLAY, "MOVEMENT", OF_RIGHT),
     O_SEG("Movement Rate", "Moves a second, apart from the frame rate.", "cl_movefps", "100", rl_oMoveRates, rl_oMoveValues, 0),
     O_TOGGLE("Shots and Jumps Sooner", "Sent half a move sooner.", "cl_movesubgrid", "1", 0),
     O_TOGGLE("Newest Key Wins", "Opposite keys: the one pressed last counts.", "cl_nullbinds", "0", 0),
+    O_SECTION(OT_GAMEPLAY, "DEMOS", OF_RIGHT),
+    O_TOGGLE("Record Every Match", "A demo of each match you play.", "cl_autoRecordDemo", "0", 0),
+    O_SLIDER("Video Export FPS", "A demo's video, frames a second.", "cl_aviFrameRate", "25", 10, 120, 1, 0),
     O_SECTION(OT_HUD, "HUD", 0),
     O_SEG("HUD Style", "The CS:GO or CS2 look.", "cg_hudstyle", "1", rl_oHudStyles, rl_oHudValues, 0),
     O_SLIDER("HUD Scale", "Bigger or smaller, the whole HUD.", "cg_hud_scale", "1", 0.25f, 2, 0.05f, 0),
@@ -2801,25 +2792,6 @@ static void RL_OptSet(int i, const char *value)
         return;
     }
     RL_OptCvarSet(o.cvar, value);
-    if (o.flags & OF_GUN) {
-        // (CG_ViewModelSettings's rules, for the menu before any map)
-        const int   preset = Cvar_VariableIntegerValue("cg_viewmodel_presetpos");
-        const bool  known  = preset > 0 && preset < (int)ARRAY_LEN(vmPresets);
-        const char *xyz[3] = {"cg_viewmodel_offset_x", "cg_viewmodel_offset_y", "cg_viewmodel_offset_z"};
-
-        if (!strcmp(o.cvar, "cg_viewmodel_presetpos")) {
-            for (int k = 0; known && k < 3; k++) {
-                Cvar_Set(xyz[k], va("%g", (&vmPresets[preset].x)[k]));
-            }
-        } else if (preset) {
-            for (int k = 0; k < 3; k++) {
-                if (!known || Cvar_VariableValue(xyz[k]) != (&vmPresets[preset].x)[k]) {
-                    Cvar_Set("cg_viewmodel_presetpos", "0");
-                    break;
-                }
-            }
-        }
-    }
 }
 
 // a slider set to a value (snapped to its steps, within its ends)
