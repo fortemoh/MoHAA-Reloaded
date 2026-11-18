@@ -2209,7 +2209,6 @@ enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW
 #define OF_GUN     4   // the gun's position: the preset sets the offsets, an offset not the preset's makes it custom
 #define OF_NOT     8   // a switch on at 0
 #define OF_NEG     16  // a switch on below 0, the value's sign (the mouse inverted: m_pitch)
-#define OF_ABS     32  // a slider of the value without its sign, which stays
 #define OF_DISPLAY 64  // r_fullscreen and r_noborder: fullscreen, windowed, borderless
 #define OF_ANISO   128 // r_ext_texture_filter_anisotropic and r_ext_max_anisotropy: off, or how much
 #define OF_RES     256 // r_mode: the desktop's, or a size of the display's (r_customwidth, r_customheight)
@@ -2268,8 +2267,6 @@ static const rlOpt_t rl_opts[] = {
     O_SECTION(OT_INPUT, "MOUSE", 0),
     O_SLIDER("Sensitivity", "How far the view turns as the mouse moves.", "sensitivity", "5", 0.1f, 20, 0.05f, 0),
     O_TOGGLE("Invert Mouse", "Moving the mouse up looks down.", "m_pitch", "0.022", OF_NEG),
-    O_SLIDER("Horizontal Speed", "Turning, per count of the mouse (0.022: CS2's).", "m_yaw", "0.022", 0.005f, 0.05f, 0.001f, 0),
-    O_SLIDER("Vertical Speed", "Looking up and down, per count of the mouse.", "m_pitch", "0.022", 0.005f, 0.05f, 0.001f, OF_ABS),
     O_SECTION(OT_KEYS, "ATTACK", 0),
     O_KEYS("+attackprimary"),
     O_SECTION(OT_KEYS, "MOVEMENT", 0),
@@ -2698,12 +2695,9 @@ static const char *RL_OptValue(int i)
     return RL_Latched(rl_opt.cv[i]);
 }
 
-// a slider's number (without its sign: OF_ABS)
 static float RL_OptNumber(int i)
 {
-    const float value = (float)atof(RL_OptValue(i));
-
-    return rl_opts[i].flags & OF_ABS ? fabsf(value) : value;
+    return (float)atof(RL_OptValue(i));
 }
 
 // a value is a choice's: as numbers when both are ("1", "1.0"), else as words
@@ -2808,11 +2802,10 @@ static void RL_OptSet(int i, const char *value)
 // a slider set to a value (snapped to its steps, within its ends)
 static void RL_OptSlide(int i, float value)
 {
-    const rlOpt_t& o   = rl_opts[i];
-    const float    sign = (o.flags & OF_ABS) && atof(RL_OptValue(i)) < 0 ? -1.0f : 1.0f;
+    const rlOpt_t& o = rl_opts[i];
 
     value = Q_max(o.lo, Q_min(o.hi, value));
-    RL_OptSet(i, va("%g", sign * (o.lo + floorf((value - o.lo) / o.step + 0.5f) * o.step)));
+    RL_OptSet(i, va("%g", o.lo + floorf((value - o.lo) / o.step + 0.5f) * o.step));
 }
 
 // a choice picked (segments, a cycle): its value, or the cvars it stands for
