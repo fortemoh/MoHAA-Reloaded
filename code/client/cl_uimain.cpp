@@ -2233,7 +2233,6 @@ typedef struct {
 // a row of keys a stock action (ui/bind.scr's), from the action of command from up to the next O_KEYS's
 #define O_KEYS(from)                                             {OC_KEYS, 0, 0, from, "", NULL, NULL, NULL, NULL, 0, 0, 0}
 
-static const char *const rl_oAccelStyles[] = {"LINEAR", "POWER", NULL};
 static const char *const rl_oDisplay[]     = {"FULLSCREEN", "WINDOWED", "BORDERLESS", NULL};
 static const char *const rl_oTextures[]    = {"HIGH", "MEDIUM", "LOW", NULL};
 static const char *const rl_oFilters[]     = {"BILINEAR", "TRILINEAR", NULL};
@@ -2267,10 +2266,6 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Invert Mouse", "Moving the mouse up looks down.", "m_pitch", "0.022", OF_NEG),
     O_SLIDER("Horizontal Speed", "Turning, per count of the mouse (0.022: CS2's).", "m_yaw", "0.022", 0.005f, 0.05f, 0.001f, 0),
     O_SLIDER("Vertical Speed", "Looking up and down, per count of the mouse.", "m_pitch", "0.022", 0.005f, 0.05f, 0.001f, OF_ABS),
-    O_SECTION(OT_INPUT, "ACCELERATION", OF_RIGHT),
-    O_SLIDER("Acceleration", "Faster moves turn further. 0: off.", "cl_mouseAccel", "0", 0, 5, 0.05f, 0),
-    O_SEG("Style", "How it grows with the speed.", "cl_mouseAccelStyle", "0", rl_oAccelStyles, NULL, 0),
-    O_SLIDER("Offset", "Power: the speed that doubles the turn.", "cl_mouseAccelOffset", "5", 1, 50, 1, 0),
     O_SECTION(OT_KEYS, "ATTACK", 0),
     O_KEYS("+attackprimary"),
     O_SECTION(OT_KEYS, "MOVEMENT", 0),
