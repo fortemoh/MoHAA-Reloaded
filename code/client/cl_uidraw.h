@@ -88,7 +88,8 @@ void RL_RoundFrame(const rlView_t& v, float x, float y, float w, float h, float 
 void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b);
 bool RL_Outline(const rlView_t& v, const char *name, float cx, float cy, float bw, float bh, rlColor_t c, bool mirror = false);
 void RL_TeamIcon(const rlView_t& v, int t, float cx, float cy, float d);
-rlFace_t RL_Face(const rlView_t& v, float size, bool bold);
+// shadow: with the HUD's drop shadow (its labels')
+rlFace_t RL_Face(const rlView_t& v, float size, bool bold, bool shadow = false);
 float RL_Advance(const rlFace_t& face, unsigned char ch);
 float RL_WidthPx(const rlFace_t& face, const char *text, float trackPx);
 float RL_TextW(const rlView_t& v, const char *str, float size, bool bold, float track = 0.0f);
@@ -103,7 +104,8 @@ float RL_Text(
     int             anchor = RL_LEFT,
     float           track  = 0.0f,
     int             valign = RL_TOP,
-    float           maxw   = 0.0f
+    float           maxw   = 0.0f,
+    bool            shadow = false
 );
 // a name cut with "…" to fit maxw
 std::string RL_Ellipsize(const rlView_t& v, const char *text, float size, bool bold, float maxw);

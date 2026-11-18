@@ -24,8 +24,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // design drawn by URC menus (ui/hud_comp_*.urc). What the menus show is
 // published here as cvars (ui_hud_*) their labels link to; what changes in
 // number or width has a widget: the kill feed, the chat and the game
-// messages (HudFeed), the players' cards (HudCards), the weapons carried
-// (HudWeapons) and the radar's map (HudRadar).
+// messages (HudFeed), the players' cards (HudCards), the player followed
+// (HudFollow), the weapons carried (HudWeapons) and the radar's map (HudRadar).
 
 #include "client.h"
 #include "cl_ui.h"
@@ -54,8 +54,7 @@ static cvar_t *cg_hudstyle;
 const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
     "hud_comp_topleft",     "hud_comp_topleft_compass", "hud_comp_score",      "hud_comp_killfeed", "hud_comp_chat",
     "hud_comp_strip",       "hud_comp_weapons",         "hud_comp_damage",     "hud_comp_bars",     "hud_comp_killer",
-    "hud_comp_target",      "hud_comp_vote",            "hud_comp_csgo_health",
-    "hud_comp_csgo_ammo",
+    "hud_comp_vote",        "hud_comp_csgo_health",     "hud_comp_csgo_ammo", "hud_comp_follow",
 };
 
 // cg_hudstyle's presets, the bottom's health and ammo: 1 CS:GO's corners
@@ -63,7 +62,7 @@ const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
 // them); each menu's preset (0 both's). The other's menus are hidden (cl_ui.cpp
 // UI_CompHuds), not drawn; all are baked (a change of preset bakes nothing)
 static const signed char comp_menuLayout[UI_COMPHUD_MENUS] = {
-    0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 1, 1,
+    0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 1, 1, 0,
 };
 
 bool ui_compHudInLayout[UI_COMPHUD_MENUS];
@@ -89,10 +88,10 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_killer_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
     "ui_hud_north", "ui_hud_obj0", "ui_hud_obj0_on", "ui_hud_obj1", "ui_hud_obj1_on", "ui_hud_obj2", "ui_hud_obj2_on",
     "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
-    "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_target", "ui_hud_target_col",
-    "ui_hud_target_hp", "ui_hud_target_hpcol", "ui_hud_target_on", "ui_hud_timer", "ui_hud_vote_on",
+    "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_timer", "ui_hud_vote_on",
     "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_weapons_on",
-    "ui_hud_cards_allies", "ui_hud_cards_axis", "ui_hud_cards_on", "ui_hud_feed_under", "ui_hud_never",
+    "ui_hud_cards_allies", "ui_hud_cards_axis", "ui_hud_cards_on", "ui_hud_feed_under", "ui_hud_follow_team",
+    "ui_hud_never",
 };
 
 // the accent (cg_hud_accent, the HUD's pale yellow by default) and its
@@ -941,6 +940,62 @@ static str Comp_Wrap(UIFont *font, const char *p, float width, int lines)
     return text;
 }
 
+/*
+================
+Comp_RadarSize
+
+cg_hud_radar_size (0.5 to 1.5): the radar's layers (hud_comp_topleft: its
+disc and map, the damage's wedge, the ring) their URC's size times it from
+the same top left, the game messages under it (hud_comp_topleft_compass)
+moved down by what it grew. The same ground shown at any size (HudRadar: its
+range is to its edge, its marks sized with it). Set again when the menus
+are loaded again
+================
+*/
+static void Comp_RadarSize(void)
+{
+    static const char *const layers[3] = {"radar", "radarwedge", "radarring"};
+    static int               generation = -1, read = -1;
+    static UIWidget         *widgets[4]; // the layers, the messages
+    static UIRect2D          urc[4];
+    cvar_t                  *cv = Comp_Cvar("cg_hud_radar_size");
+    float                    k;
+
+    if (generation != menuManager.Generation()) {
+        Menu     *radar    = menuManager.FindMenu("hud_comp_topleft");
+        Menu     *messages = menuManager.FindMenu("hud_comp_topleft_compass");
+        UIWidget *rc       = radar ? radar->GetContainerWidget() : NULL;
+        UIWidget *mc       = messages ? messages->GetContainerWidget() : NULL;
+
+        generation = menuManager.Generation();
+        read       = -1;
+        for (int i = 0; i < 4; i++) {
+            widgets[i] = i < 3 ? (rc ? rc->FindWidget(layers[i]) : NULL) : (mc ? mc->FindWidget("messages") : NULL);
+            if (widgets[i]) {
+                urc[i] = widgets[i]->DesignRect();
+            }
+        }
+    }
+    if (cv->modificationCount == read || !widgets[0]) {
+        return;
+    }
+    read = cv->modificationCount;
+    k    = Com_Clamp(0.5f, 1.5f, cv->value);
+    for (int i = 0; i < 3; i++) {
+        const UIRect2D& r = urc[i];
+
+        if (widgets[i]) {
+            widgets[i]->SetDesignRect(UIRect2D(r.pos.x, r.pos.y, r.size.width * k, r.size.height * k));
+        }
+    }
+    if (widgets[3]) {
+        const UIRect2D& r    = urc[3];
+        const float     down = urc[0].size.height * (k - 1.0f);
+
+        widgets[3]->SetDesignRect(UIRect2D(r.pos.x, r.pos.y + down, r.size.width, r.size.height));
+    }
+}
+
 static const char *const comp_arcAlpha[3] = {"ui_hud_arc0_alpha", "ui_hud_arc1_alpha", "ui_hud_arc2_alpha"};
 static const char *const comp_arcAngle[3] = {"ui_hud_arc0_angle", "ui_hud_arc1_angle", "ui_hud_arc2_angle"};
 static const char *const comp_objOn[3]    = {"ui_hud_obj0_on", "ui_hud_obj1_on", "ui_hud_obj2_on"};
@@ -991,6 +1046,8 @@ void UI_CompHud_Frame(void)
             }
         }
     }
+    // cg_hud_radar_size: the radar's size, the messages under it
+    Comp_RadarSize();
     // cg_hud_accent: the shades again (what reads them is drawn and baked
     // again), the health's color with them
     {
@@ -1027,12 +1084,15 @@ void UI_CompHud_Frame(void)
     Comp_Roster(gametype);
     Comp_Weapons(weapon);
 
-    // the strip: health, badge, ammo, weapons (not while free spectating)
+    // the strip: health, badge, ammo, weapons (not while free spectating); the
+    // badge the followed player's team (from behind the snapshot's is ours)
     {
-        const qboolean icon = teams && (!spectating || following) && Comp_Int("cg_hud_badge") && Comp_Int("cg_hud_teamicon");
+        const qboolean icon =
+            teams && (!spectating || following) && Comp_Int("cg_hud_badge") && Comp_Int("cg_hud_teamicon");
+        const int shown = following ? Comp_Team(ps->stats[STAT_INFOCLIENT]) : team;
 
-        Comp_Set("ui_hud_allies", icon && team == TEAM_ALLIES ? "1" : "0");
-        Comp_Set("ui_hud_axis", icon && team == TEAM_AXIS ? "1" : "0");
+        Comp_Set("ui_hud_allies", icon && shown == TEAM_ALLIES ? "1" : "0");
+        Comp_Set("ui_hud_axis", icon && shown == TEAM_AXIS ? "1" : "0");
     }
     if (following && !(ps->stats[STAT_WEAPONS] & 0x3F) && ps->stats[STAT_INFOCLIENT_HEALTH] > 0) {
         health    = ps->stats[STAT_INFOCLIENT_HEALTH];
@@ -1148,20 +1208,18 @@ void UI_CompHud_Frame(void)
         }
     }
 
-    // who killed you, the player aimed at, who you follow, who last hurt you
+    // who killed you, who you follow, who last hurt you (the player aimed at:
+    // the cgame's tag over their head, UI_DrawTeamTag)
     if (full) {
         const qboolean killer = health <= 0 && !spectating && attacker >= 0 && attacker < MAX_CLIENTS && attacker != ps->clientNum;
-        const int      info   = ps->stats[STAT_INFOCLIENT], infoHealth = ps->stats[STAT_INFOCLIENT_HEALTH];
-        const qboolean target = info >= 0 && info < MAX_CLIENTS && infoHealth > 0 && !following;
+        const int      info   = ps->stats[STAT_INFOCLIENT];
+        const int      fteam  = following ? Comp_Team(info) : 0;
 
         Comp_Set("ui_hud_killer", killer ? Comp_Name(attacker) : "");
         Comp_Set("ui_hud_killer_col", killer ? Comp_TeamColor(Comp_Team(attacker)) : "1 1 1 1");
-        Comp_Set("ui_hud_target", target ? Comp_Name(info) : "");
-        Comp_Set("ui_hud_target_col", target ? Comp_TeamColor(Comp_Team(info)) : "1 1 1 1");
-        Comp_SetF("ui_hud_target_hp", target ? Com_Clamp(0, 100, infoHealth) / 100.0f : 0.0f);
-        Comp_Set("ui_hud_target_hpcol", infoHealth < 40 ? "0.753 0.188 0.129 1" : "1 1 1 0.612");
         Comp_Set("ui_hud_follow", following ? Comp_Name(info) : "");
         Comp_Set("ui_hud_follow_col", following ? Comp_TeamColor(Comp_Team(info)) : "1 1 1 1");
+        Comp_Set("ui_hud_follow_team", fteam == TEAM_AXIS ? "axis" : fteam == TEAM_ALLIES ? "allies" : "");
         Comp_Set("ui_hud_hurt", attacker >= 0 && attacker < MAX_CLIENTS ? Comp_Name(attacker) : "");
         Comp_Set("ui_hud_hurt_col", Comp_TeamColor(Comp_Team(attacker)));
     }
@@ -1256,7 +1314,6 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_ammo_on", strip && ammo && Comp_Int("cg_hud_ammo"));
         flag("ui_hud_weapons_on", strip && Comp_Int("cg_hud_ammo"));
         flag("ui_hud_killer_on", Comp_Cvar("ui_hud_killer")->string[0] && Comp_Int("cg_hud_killer"));
-        flag("ui_hud_target_on", Comp_Cvar("ui_hud_target")->string[0] && Comp_Int("cg_hud_targetinfo"));
         flag("ui_hud_follow_on", following && Comp_Int("cg_hud_following") && show);
         flag("ui_hud_hurt_on", Comp_Cvar("ui_hud_hurt")->string[0] && Comp_Int("cg_hud_attacker") && show);
         flag("ui_hud_charge_on", comp.charging && Comp_Int("cg_hud_grenadecharge"));
@@ -1283,6 +1340,85 @@ void UI_CompHud_Frame(void)
             Comp_SetF(comp_obj[i], (stats[i] - 1800) / 10.0f);
         }
     }
+}
+
+/*
+====================================================================
+
+THE TEAM TAG
+
+The player aimed at, over their head (the cgame's, in place of their head
+icon), CS2's way: their name, their health under it and an arrow down to
+their head, in their team's color (the health red under cg_hud_lowhealth),
+with the HUD's drop shadow, the same size whatever the distance
+
+====================================================================
+*/
+
+#define TTAG_NAME    22.0f  // the name's size (bold)
+#define TTAG_HEALTH  18.0f  // the health's (bold)
+#define TTAG_ARROW_W 14.0f  // the arrow's width and height
+#define TTAG_ARROW_H 9.0f
+#define TTAG_GAP     4.0f   // between the arrow and the health, the health and the name (over their capitals)
+#define TTAG_MAXW    220.0f // a longer name cut with "…"
+
+static const char *const ttag_arrow = "poly 1 1 1 1 0 0 1 0 0.5 1";
+// the teams' colors (the HUD's names'), the health's under cg_hud_lowhealth
+static const rlColor_t ttag_allies = {0.533f, 0.569f, 0.8f, 1.0f}, ttag_axis = {0.8f, 0.533f, 0.533f, 1.0f};
+static const rlColor_t ttag_low    = {0.753f, 0.188f, 0.129f, 1.0f};
+
+// the HUD's units (cg_hud_scale)
+static rlView_t Comp_HudView(void)
+{
+    rlView_t v;
+
+    v.s  = UI_DesignScale(1920.0f, 1080.0f);
+    v.dw = uid.vidWidth / v.s;
+    v.dh = uid.vidHeight / v.s;
+    return v;
+}
+
+// the arrow's box in pixels, its tip at (cx, tip) in units
+static void TTag_ArrowBox(const rlView_t& v, float cx, float tip, int *x, int *y, int *w, int *h)
+{
+    *w = RL_P(v, TTAG_ARROW_W);
+    *h = RL_P(v, TTAG_ARROW_H);
+    *x = RL_P(v, cx) - *w / 2;
+    *y = RL_P(v, tip) - *h;
+}
+
+void UI_DrawTeamTag(int client, float x, float y, int health)
+{
+    const rlView_t    v     = Comp_HudView();
+    const int         team  = Comp_Team(client);
+    const rlColor_t   c     = team == TEAM_AXIS ? ttag_axis : team == TEAM_ALLIES ? ttag_allies : rlColor_t{1, 1, 1, 1};
+    const rlColor_t   hc    = health < Comp_Cvar("cg_hud_lowhealth")->value * 100.0f ? ttag_low : c;
+    const std::string name  = RL_Ellipsize(v, Comp_Name(client), TTAG_NAME, true, TTAG_MAXW);
+    const float       capN  = TTAG_NAME * 0.81f, capH = TTAG_HEALTH * 0.81f; // (Oswald's capitals)
+    const float       half  = Q_max(RL_TextW(v, name.c_str(), TTAG_NAME, true), TTAG_ARROW_W) * 0.5f + 4.0f;
+    float             cx    = x / v.s, tip = y / v.s, base;
+    char              hs[8];
+    int               ax, ay, aw, ah, o;
+
+    // (the head off the screen: looked away while the server keeps who was aimed at)
+    if (!name[0] || cx < 0.0f || cx > v.dw || tip > v.dh) {
+        return;
+    }
+    Com_sprintf(hs, sizeof(hs), "%d", health);
+    // kept on the screen: a team mate close by, aimed at below the head, has it at the top
+    tip = Q_max(tip, 8.0f + capN + TTAG_GAP + capH + TTAG_GAP + TTAG_ARROW_H);
+    cx  = Com_Clamp(half, Q_max(half, v.dw - half), cx);
+
+    // the arrow, its shadow under it
+    TTag_ArrowBox(v, cx, tip, &ax, &ay, &aw, &ah);
+    o = Q_max(1, RL_P(v, 1.5f));
+    RL_Shape(ax + o, ay + o, aw, ah, ttag_arrow, {0.0f, 0.0f, 0.0f, 0.55f}, v.s);
+    RL_Shape(ax, ay, aw, ah, ttag_arrow, c, v.s);
+    // the health over it, the name over that (baselines)
+    base = tip - TTAG_ARROW_H - TTAG_GAP;
+    RL_Text(v, cx, base, hs, TTAG_HEALTH, hc, true, RL_CENTER, 0.0f, RL_BASE, 0.0f, true);
+    base -= capH + TTAG_GAP;
+    RL_Text(v, cx, base, name.c_str(), TTAG_NAME, c, true, RL_CENTER, 0.0f, RL_BASE, 0.0f, true);
 }
 
 // the HUD's menus, faces, pictures, outlines and shader script compiled in (cmake/utils/embed_files.cmake)
@@ -1401,6 +1537,8 @@ void UI_CompHud_Init(void)
     // the HUD's size: its 1080 lines fitted in the screen's (a screen narrower than 4:3: its 1440 across), times this
     // (0.25 to 2)
     Cvar_Get("cg_hud_scale", "1", CVAR_ARCHIVE);
+    // the radar's size alone, times its own (0.5 to 1.5; Comp_RadarSize)
+    Cvar_CheckRange(Cvar_Get("cg_hud_radar_size", "1", CVAR_ARCHIVE), 0.5f, 1.5f, qfalse);
     // the accent: "f6f67a", "#f6f67a" or "R G B" (0 to 1)
     Cvar_Get("cg_hud_accent", "f6f67a", CVAR_ARCHIVE);
     // the top's teams, beside the score: 0 a card per player, 1 how many are alive (CS2's)
@@ -1922,6 +2060,83 @@ void UIHudCards::Draw(void)
             m_team == TEAM_AXIS ? 2.0f + fit * (size + 4) : w - 2.0f - fit * (size + 4) - m_font->getWidth(more, -1),
             size * 0.5f, more, UColor(0.988f, 0.988f, 0.988f, 1.0f), getVirtualScale()
         );
+    }
+}
+
+/*
+================
+UIHudFollow
+
+The player followed (ui_hud_follow, their team's color ui_hud_follow_col,
+their team ui_hud_follow_team: allies or axis), CS2's way: a plate at the
+bottom's middle, SPECTATING over their name, their team's icon at its left
+(CS:GO's corners, ui_hud_corners: CS2's strip has it in its badge under the
+plate), a line of their team's color under it; as wide as the name. Over
+the strip, else the HUD's margin, from the widget's bottom (the screen's)
+================
+*/
+#define FP_NAME    26.0f  // the name's size (bold)
+#define FP_CAPTION 14.0f  // SPECTATING's
+#define FP_TRACK   1.0f   // SPECTATING's spacing
+#define FP_ICON    38.0f  // the team's icon
+#define FP_LINE    3.0f   // the line under it
+#define FP_PAD     18.0f  // the plate's padding left and right
+#define FP_GAP     12.0f  // between the icon and the text
+#define FP_MAXW    320.0f // a longer name cut with "…"
+
+class UIHudFollow : public UIWidget
+{
+public:
+    CLASS_PROTOTYPE(UIHudFollow);
+
+    void Draw(void) override;
+    bool CacheDraw(void) override { return true; }
+};
+
+CLASS_DECLARATION(UIWidget, UIHudFollow, NULL) {
+    {NULL, NULL}
+};
+
+void UIHudFollow::Draw(void)
+{
+    static cvar_t *const name    = Cvar_Get("ui_hud_follow", "", 0);
+    static cvar_t *const col     = Cvar_Get("ui_hud_follow_col", "", 0);
+    static cvar_t *const team    = Cvar_Get("ui_hud_follow_team", "", 0);
+    static cvar_t *const corners = Cvar_Get("ui_hud_corners", "", 0);
+    static const rlColor_t fill = {0.047f, 0.055f, 0.071f, 0.78f}, caption = {1.0f, 1.0f, 1.0f, 0.612f};
+    rlView_t               v;
+    rlColor_t              c = {1.0f, 1.0f, 1.0f, 1.0f};
+
+    UI_DrawDep(name);
+    UI_DrawDep(col);
+    UI_DrawDep(team);
+    UI_DrawDep(corners);
+    if (!name->string[0]) {
+        return;
+    }
+    v.s  = m_vVirtualScale[0];
+    v.dw = m_frame.size.width / v.s;
+    v.dh = m_frame.size.height / v.s;
+    sscanf(col->string, "%f %f %f %f", &c.r, &c.g, &c.b, &c.a);
+    {
+        const int         t     = !strcmp(team->string, "axis") ? 1 : !strcmp(team->string, "allies") ? 0 : -1;
+        const bool        icon  = corners->integer && t >= 0;
+        const std::string shown = RL_Ellipsize(v, name->string, FP_NAME, true, FP_MAXW);
+        const float       nw    = RL_TextW(v, shown.c_str(), FP_NAME, true);
+        const float       tw    = Q_max(nw, RL_TextW(v, "SPECTATING", FP_CAPTION, false, FP_TRACK));
+        const float       w     = FP_PAD + (icon ? FP_ICON + FP_GAP : 0.0f) + tw + FP_PAD;
+        const float       h     = COMP_FOLLOW_H - FP_LINE;
+        const float       x     = floorf((v.dw - w) * 0.5f);
+        const float       y     = v.dh - (corners->integer ? 24.0f : 88.0f) - COMP_FOLLOW_H;
+        const float       tx    = x + FP_PAD + (icon ? FP_ICON + FP_GAP : 0.0f);
+
+        RL_Box(v, x, y, w, h, fill);
+        RL_Box(v, x, y + h, w, FP_LINE, c);
+        if (icon) {
+            RL_TeamIcon(v, t, x + FP_PAD + FP_ICON * 0.5f, y + h * 0.5f, FP_ICON);
+        }
+        RL_Text(v, tx, y + 9.0f, "SPECTATING", FP_CAPTION, caption, false, RL_LEFT, FP_TRACK, RL_TOP);
+        RL_Text(v, tx, y + h - 10.0f, shown.c_str(), FP_NAME, c, true, RL_LEFT, 0.0f, RL_BASE);
     }
 }
 
@@ -2664,6 +2879,8 @@ void UI_CompHud_PreBake(qboolean ahead)
         return;
     }
     UI_BakeAhead(ahead);
+    // (the radar at its size: its layers baked at it)
+    Comp_RadarSize();
     for (i = 0; i < UI_COMPHUD_MENUS; i++) {
         Menu *m = menuManager.FindMenu(ui_compHudMenus[i]);
 
@@ -2712,6 +2929,23 @@ void UI_CompHud_PreBake(qboolean ahead)
     Comp_ArrowShader(k, s, &d);
     Comp_ObjectiveShader(qtrue, k, s, &d);
     Comp_ObjectiveShader(qfalse, k, s, &d);
+    // the team tag's faces and arrow (UI_DrawTeamTag)
+    {
+        const rlView_t v = Comp_HudView();
+        int            ax, ay, aw, ah;
+
+        RL_Face(v, TTAG_NAME, true, true);
+        RL_Face(v, TTAG_HEALTH, true, true);
+        // (and the followed player's plate's, HudFollow)
+        RL_Face(v, FP_NAME, true);
+        RL_Face(v, FP_CAPTION, false);
+        TTag_ArrowBox(v, 0.0f, 0.0f, &ax, &ay, &aw, &ah);
+        rl_bakeOnly = true;
+        RL_Shape(ax, ay, aw, ah, ttag_arrow, {1.0f, 1.0f, 1.0f, 1.0f}, v.s);
+        RL_TeamIcon(v, 0, 0.0f, 0.0f, FP_ICON);
+        RL_TeamIcon(v, 1, 0.0f, 0.0f, FP_ICON);
+        rl_bakeOnly = false;
+    }
     UI_BakeAhead(0);
     Com_DPrintf("Competitive HUD: %s in %d ms\n", ahead ? "begun ahead" : "baked", Sys_Milliseconds() - start);
 }

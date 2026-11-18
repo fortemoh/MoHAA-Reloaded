@@ -861,6 +861,7 @@ void CL_InitCGameDLL( clientGameImport_t *cgi, clientGameExport_t **cge ) {
 	cgi->UI_DrawObjectives			= UI_Menus_DrawObjectives;
 	cgi->UI_DrawStatusIcon			= UI_DrawStatusIcon;
 	cgi->UI_DrawLagometer			= UI_DrawLagometer;
+	cgi->UI_DrawTeamTag				= UI_DrawTeamTag;
 	// FIXME
 	//cgi->pUnknownVar				= NULL;
 

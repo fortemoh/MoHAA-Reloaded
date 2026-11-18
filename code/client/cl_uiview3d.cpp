@@ -283,43 +283,6 @@ void View3D::DrawProf(void)
     // FIXME: unimplemented
 }
 
-void View3D::PrintSound(int channel, const char *name, float vol, int rvol, float pitch, float base, int& line)
-{
-    char  buf[255];
-    float x;
-    float xStep;
-    float height;
-
-    height = m_font->getHeight(getHighResScale());
-    xStep  = height;
-
-    x = 0;
-    Com_sprintf(buf, sizeof(buf), "%d", channel);
-    m_font->Print(x, height * line + m_frame.pos.y, buf, -1, getHighResScale());
-
-    x += xStep + xStep;
-    Com_sprintf(buf, sizeof(buf), "%s", name);
-    m_font->Print(x, height * line + m_frame.pos.y, buf, -1, getHighResScale());
-
-    x += xStep * 30.0;
-    Com_sprintf(buf, sizeof(buf), "vol:%.2f", vol);
-    m_font->Print(x, height * line + m_frame.pos.y, buf, -1, getHighResScale());
-
-    x += xStep * 8;
-    Com_sprintf(buf, sizeof(buf), "rvol:%.2f", (float)(rvol / 128.f));
-    m_font->Print(x, height * line + m_frame.pos.y, buf, -1, getHighResScale());
-
-    x += xStep * 5;
-    Com_sprintf(buf, sizeof(buf), "pit:%.2f", pitch);
-    m_font->Print(x, height * line + m_frame.pos.y, buf, -1, getHighResScale());
-
-    x += xStep * 5;
-    Com_sprintf(buf, sizeof(buf), "base:%d", (int)base);
-    m_font->Print(x, height * line + m_frame.pos.y, buf, -1, getHighResScale());
-
-    line++;
-}
-
 void View3D::DrawSoundOverlay(void)
 {
     setFont("verdana-14");
@@ -755,6 +718,24 @@ void View3D::InitSubtitle(void)
     avWidth = totalWidth / 26.0;
 }
 
+// a subtitle's next piece to lay out: a word and the spaces or dashes after it (a character below a space alone), 0 at
+// the end; what UIFont's two-byte word count (gone) gave for the games' one-byte fonts
+static int UI_SubtitleWord(const char *text)
+{
+    const unsigned char *p = (const unsigned char *)text;
+    int                  len;
+
+    if (!p[0]) {
+        return 0;
+    }
+    if (p[0] < ' ') {
+        return 1;
+    }
+    for (len = 1; p[len] >= ' ' && !((p[len - 1] == ' ' || p[len - 1] == '-') && p[len] != ' ' && p[len] != '-'); len++) {
+    }
+    return len;
+}
+
 void View3D::DrawSubtitleOverlay(void)
 {
     cvar_t *subAlpha;
@@ -820,7 +801,7 @@ void View3D::DrawSubtitleOverlay(void)
             buf[0] = 0;
 
             while (*c) {
-                blockcount = m_font->DBCSGetWordBlockCount(c, -1);
+                blockcount = UI_SubtitleWord(c);
                 if (!blockcount) {
                     break;
                 }
@@ -917,9 +898,3 @@ qboolean View3D::LetterboxActive(void)
 {
     return m_letterbox_active;
 }
-
-CLASS_DECLARATION(UIWidget, ConsoleView, NULL) {
-    {NULL, NULL}
-};
-
-void ConsoleView::Draw(void) {}

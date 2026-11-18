@@ -28,7 +28,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 class Menu : public Listener
 {
     qboolean m_fullscreen;
-    int      m_vidmode;
 
 public:
     CLASS_PROTOTYPE(Menu);
@@ -42,7 +41,6 @@ public:
     Menu(str name);
 
     void      AddMenuItem(UIWidget *item);
-    void      DeleteMenuItem(UIWidget *item);
     void      setName(str name);
     void      ShowMenu(Event *ev);
     void      HideMenu(Event *ev);
@@ -50,21 +48,15 @@ public:
     void      ForceHide(void);
     UIWidget *GetContainerWidget(void);
     UIWidget *GetNamedWidget(const char *pszName);
-    void      Update(void);
     void      RealignWidgets(void);
     float     GetMaxMotionTime(void);
     void      ActivateMenu(void);
     qboolean  isFullscreen(void);
     void      setFullscreen(qboolean bFullScreen);
-    int       getVidMode(void);
-    void      setVidMode(int iMode);
     qboolean  isVisible(void);
     void      SaveCVars(void);
     void      RestoreCVars(void);
-    void      ResetCVars(void);
     void      PassEventToWidget(str name, Event *ev);
-    void      PassEventToAllWidgets(Event& ev);
-    void      CheckRestart(void);
 };
 
 class MenuManager : public Listener
@@ -86,7 +78,6 @@ public:
 
     void  RealignMenus(void);
     void  AddMenu(Menu *m);
-    void  DeleteMenu(Menu *m);
     void  DeleteAllMenus(void);
     Menu *FindMenu(str name);
     int   Generation(void);
@@ -98,13 +89,9 @@ public:
     Menu *CurrentMenu(void);
     bool  ClearMenus(bool force);
     void  ListMenus(void);
-    void  UpdateAllMenus(void);
     void  Lock(Event *ev);
     void  Unlock(Event *ev);
     void  PassEventToWidget(str name, Event *ev);
-    void  PassEventToAllWidgets(Event& ev);
-    void  ResetCVars(void);
-    void  CheckRestart(void);
     bool  ForceMenu(str name);
 };
 

@@ -411,12 +411,6 @@ void QDECL Com_DPrintf2( const char *fmt, ...) {
 	va_end (argptr);
 
 	Com_Printf ("%s", msg);
-
-#ifndef DEDICATED
-	if (com_dedicated && !com_dedicated->integer) {
-		UI_PrintDeveloperConsole(msg);
-	}
-#endif
 }
 
 /*

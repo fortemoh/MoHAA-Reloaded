@@ -520,17 +520,6 @@ void CL_GetMouseState( int *x, int *y, unsigned int *buttons )
 
 /*
 =================
-CL_SetMousePos
-=================
-*/
-void CL_SetMousePos( int x, int y )
-{
-	cl.mousex = x;
-	cl.mousey = y;
-}
-
-/*
-=================
 CL_MouseEvent
 =================
 */

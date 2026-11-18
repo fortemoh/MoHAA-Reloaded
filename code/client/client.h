@@ -649,7 +649,6 @@ void	CL_GlobalServers_f( void );
 void	CL_FavoriteServers_f( void );
 void	CL_Ping_f( void );
 void	CL_SaveShot_f( void );
-void	CL_Dialog_f( void );
 void	CL_ServerRestarted( void );
 qboolean CL_UpdateVisiblePings_f( int source );
 
@@ -721,8 +720,6 @@ void CL_InitializeUI( void );
 void CL_ShutdownUI( void );
 int Key_GetCatcher( void );
 void Key_SetCatcher( int catcher );
-void LAN_LoadCachedServers( void );
-void LAN_SaveServersToCache( void );
 */
 
 

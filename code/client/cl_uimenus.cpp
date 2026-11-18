@@ -541,14 +541,14 @@ least on the screen
 #define RL_S1 20.0f // an item's name: weapons, tiles, buttons, teams in the lists, players
 #define RL_S2 14.0f // captions: modes, counts, classes, columns
 
-rlFace_t RL_Face(const rlView_t& v, float size, bool bold)
+rlFace_t RL_Face(const rlView_t& v, float size, bool bold, bool shadow)
 {
     rlFace_t face;
 
     char name[64];
 
     face.px = Q_max(9, (int)floorf(size * v.s + 0.5f));
-    Com_sprintf(name, sizeof(name), "oswald-%s-%dp", bold ? "semibold" : "medium", face.px);
+    Com_sprintf(name, sizeof(name), "oswald-%s-%dp%s", bold ? "semibold" : "medium", face.px, shadow ? "s" : "");
     face.f    = UI_BakeFont(name);
     face.page = face.f ? UI_BakedFontScale(face.f) : 0.0f;
     return face;
@@ -599,12 +599,13 @@ float RL_Text(
     int             anchor,
     float           track,
     int             valign,
-    float           maxw
+    float           maxw,
+    bool            shadow
 )
 {
     const std::string copy(str); // (a string from va: kept while faces are baked)
     const char       *text = copy.c_str();
-    rlFace_t          face = RL_Face(v, size, bold);
+    rlFace_t          face = RL_Face(v, size, bold, shadow);
     float             w, lineH, capH, base, px, py;
 
     if (!face.f || face.page <= 0.0f) {
@@ -612,7 +613,7 @@ float RL_Text(
     }
     while (maxw > 0.0f && size > 8.0f && RL_WidthPx(face, text, track * v.s) > maxw * v.s) {
         size -= 1.0f;
-        face = RL_Face(v, size, bold);
+        face = RL_Face(v, size, bold, shadow);
         if (face.px <= 9) {
             break;
         }

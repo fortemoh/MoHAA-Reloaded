@@ -37,11 +37,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <chrono>
 
 static qboolean             ui_hud;
-static class UIFont        *globalFont;
 static UIFloatingConsole   *fakk_console;
 static UIFloatingDMConsole *dm_console;
-static UIFloatingConsole   *developer_console;
-static FakkMiniconsole     *mini_console;
 static View3D              *view3d;
 qboolean                    server_loading;
 static qboolean             server_loading_waiting;
@@ -72,7 +69,6 @@ cvar_t        *ui_gotmedal;
 cvar_t        *ui_success;
 cvar_t        *ui_failed;
 cvar_t        *ui_drawcoords;
-cvar_t        *ui_minicon;
 cvar_t        *ui_consoleposition;
 cvar_t        *ui_console;
 // Added: the lines the ~ console keeps
@@ -85,8 +81,6 @@ static char          server_mapname[64];
 static Menu         *scoreboard_menu;
 // Added: the scoreboard is up (the Reloaded scoreboard)
 static qboolean      scoreboard_up;
-
-unsigned char        UIListCtrlItem[8];
 
 static const float maxWidthRes  = 1920;
 static const float maxHeightRes = 1080;
@@ -201,628 +195,6 @@ static DMConsoleHider s_dmconsolehider;
 
 /*
 ====================
-GetClientState
-====================
-*/
-static void GetClientState(uiClientState_t *state)
-{
-    state->connectPacketCount = clc.connectPacketCount;
-    state->connState          = clc.state;
-    Q_strncpyz(state->servername, clc.servername, sizeof(state->servername));
-    Q_strncpyz(state->updateInfoString, cls.updateInfoString, sizeof(state->updateInfoString));
-    Q_strncpyz(state->messageString, clc.serverMessage, sizeof(state->messageString));
-    state->clientNum = cl.snap.ps.clientNum;
-}
-
-/*
-====================
-LAN_LoadCachedServers
-====================
-*/
-void LAN_LoadCachedServers(void)
-{
-    int          size;
-    fileHandle_t fileIn;
-    cls.numglobalservers = cls.nummplayerservers = cls.numfavoriteservers = 0;
-    cls.numGlobalServerAddresses                                          = 0;
-    if (FS_BaseDir_FOpenFileRead("servercache.dat", &fileIn)) {
-        FS_Read(&cls.numglobalservers, sizeof(int), fileIn);
-        FS_Read(&cls.nummplayerservers, sizeof(int), fileIn);
-        FS_Read(&cls.numfavoriteservers, sizeof(int), fileIn);
-        FS_Read(&size, sizeof(int), fileIn);
-        if (size == sizeof(cls.globalServers) + sizeof(cls.favoriteServers) + sizeof(cls.mplayerServers)) {
-            FS_Read(&cls.globalServers, sizeof(cls.globalServers), fileIn);
-            FS_Read(&cls.mplayerServers, sizeof(cls.mplayerServers), fileIn);
-            FS_Read(&cls.favoriteServers, sizeof(cls.favoriteServers), fileIn);
-        } else {
-            cls.numglobalservers = cls.nummplayerservers = cls.numfavoriteservers = 0;
-            cls.numGlobalServerAddresses                                          = 0;
-        }
-        FS_FCloseFile(fileIn);
-    }
-}
-
-/*
-====================
-LAN_SaveServersToCache
-====================
-*/
-void LAN_SaveServersToCache(void)
-{
-    int          size;
-    fileHandle_t fileOut = FS_BaseDir_FOpenFileWrite_HomeData("servercache.dat");
-    FS_Write(&cls.numglobalservers, sizeof(int), fileOut);
-    FS_Write(&cls.nummplayerservers, sizeof(int), fileOut);
-    FS_Write(&cls.numfavoriteservers, sizeof(int), fileOut);
-    size = sizeof(cls.globalServers) + sizeof(cls.favoriteServers) + sizeof(cls.mplayerServers);
-    FS_Write(&size, sizeof(int), fileOut);
-    FS_Write(&cls.globalServers, sizeof(cls.globalServers), fileOut);
-    FS_Write(&cls.mplayerServers, sizeof(cls.mplayerServers), fileOut);
-    FS_Write(&cls.favoriteServers, sizeof(cls.favoriteServers), fileOut);
-    FS_FCloseFile(fileOut);
-}
-
-/*
-====================
-LAN_ResetPings
-====================
-*/
-static void LAN_ResetPings(int source)
-{
-    int           count, i;
-    serverInfo_t *servers = NULL;
-    count                 = 0;
-
-    switch (source) {
-    case AS_LOCAL:
-        servers = &cls.localServers[0];
-        count   = MAX_OTHER_SERVERS;
-        break;
-    case AS_MPLAYER:
-        servers = &cls.mplayerServers[0];
-        count   = MAX_OTHER_SERVERS;
-        break;
-    case AS_GLOBAL:
-        servers = &cls.globalServers[0];
-        count   = MAX_GLOBAL_SERVERS;
-        break;
-    case AS_FAVORITES:
-        servers = &cls.favoriteServers[0];
-        count   = MAX_OTHER_SERVERS;
-        break;
-    }
-    if (servers) {
-        for (i = 0; i < count; i++) {
-            servers[i].ping = -1;
-        }
-    }
-}
-
-/*
-====================
-LAN_AddServer
-====================
-*/
-static int LAN_AddServer(int source, const char *name, const char *address)
-{
-    int           max, *count, i;
-    netadr_t      adr;
-    serverInfo_t *servers = NULL;
-    max                   = MAX_OTHER_SERVERS;
-    count                 = NULL;
-
-    switch (source) {
-    case AS_LOCAL:
-        count   = &cls.numlocalservers;
-        servers = &cls.localServers[0];
-        break;
-    case AS_MPLAYER:
-        count   = &cls.nummplayerservers;
-        servers = &cls.mplayerServers[0];
-        break;
-    case AS_GLOBAL:
-        max     = MAX_GLOBAL_SERVERS;
-        count   = &cls.numglobalservers;
-        servers = &cls.globalServers[0];
-        break;
-    case AS_FAVORITES:
-        count   = &cls.numfavoriteservers;
-        servers = &cls.favoriteServers[0];
-        break;
-    }
-    if (servers && *count < max) {
-        NET_StringToAdr(address, &adr, NA_IP);
-        for (i = 0; i < *count; i++) {
-            if (NET_CompareAdr(servers[i].adr, adr)) {
-                break;
-            }
-        }
-        if (i >= *count) {
-            servers[*count].adr = adr;
-            Q_strncpyz(servers[*count].hostName, name, sizeof(servers[*count].hostName));
-            servers[*count].visible = qtrue;
-            (*count)++;
-            return 1;
-        }
-        return 0;
-    }
-    return -1;
-}
-
-/*
-====================
-LAN_RemoveServer
-====================
-*/
-static void LAN_RemoveServer(int source, const char *addr)
-{
-    int          *count, i;
-    serverInfo_t *servers = NULL;
-    count                 = NULL;
-    switch (source) {
-    case AS_LOCAL:
-        count   = &cls.numlocalservers;
-        servers = &cls.localServers[0];
-        break;
-    case AS_MPLAYER:
-        count   = &cls.nummplayerservers;
-        servers = &cls.mplayerServers[0];
-        break;
-    case AS_GLOBAL:
-        count   = &cls.numglobalservers;
-        servers = &cls.globalServers[0];
-        break;
-    case AS_FAVORITES:
-        count   = &cls.numfavoriteservers;
-        servers = &cls.favoriteServers[0];
-        break;
-    }
-    if (servers) {
-        netadr_t comp;
-        NET_StringToAdr(addr, &comp, NA_IP);
-        for (i = 0; i < *count; i++) {
-            if (NET_CompareAdr(comp, servers[i].adr)) {
-                int j = i;
-                while (j < *count - 1) {
-                    Com_Memcpy(&servers[j], &servers[j + 1], sizeof(servers[j]));
-                    j++;
-                }
-                (*count)--;
-                break;
-            }
-        }
-    }
-}
-
-/*
-====================
-LAN_GetServerCount
-====================
-*/
-static int LAN_GetServerCount(int source)
-{
-    switch (source) {
-    case AS_LOCAL:
-        return cls.numlocalservers;
-        break;
-    case AS_MPLAYER:
-        return cls.nummplayerservers;
-        break;
-    case AS_GLOBAL:
-        return cls.numglobalservers;
-        break;
-    case AS_FAVORITES:
-        return cls.numfavoriteservers;
-        break;
-    }
-    return 0;
-}
-
-/*
-====================
-LAN_GetLocalServerAddressString
-====================
-*/
-static void LAN_GetServerAddressString(int source, int n, char *buf, int buflen)
-{
-    switch (source) {
-    case AS_LOCAL:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            Q_strncpyz(buf, NET_AdrToString(cls.localServers[n].adr), buflen);
-            return;
-        }
-        break;
-    case AS_MPLAYER:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            Q_strncpyz(buf, NET_AdrToString(cls.mplayerServers[n].adr), buflen);
-            return;
-        }
-        break;
-    case AS_GLOBAL:
-        if (n >= 0 && n < MAX_GLOBAL_SERVERS) {
-            Q_strncpyz(buf, NET_AdrToString(cls.globalServers[n].adr), buflen);
-            return;
-        }
-        break;
-    case AS_FAVORITES:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            Q_strncpyz(buf, NET_AdrToString(cls.favoriteServers[n].adr), buflen);
-            return;
-        }
-        break;
-    }
-    buf[0] = '\0';
-}
-
-/*
-====================
-LAN_GetServerInfo
-====================
-*/
-static void LAN_GetServerInfo(int source, int n, char *buf, int buflen)
-{
-    char          info[MAX_STRING_CHARS];
-    serverInfo_t *server = NULL;
-    info[0]              = '\0';
-    switch (source) {
-    case AS_LOCAL:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            server = &cls.localServers[n];
-        }
-        break;
-    case AS_MPLAYER:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            server = &cls.mplayerServers[n];
-        }
-        break;
-    case AS_GLOBAL:
-        if (n >= 0 && n < MAX_GLOBAL_SERVERS) {
-            server = &cls.globalServers[n];
-        }
-        break;
-    case AS_FAVORITES:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            server = &cls.favoriteServers[n];
-        }
-        break;
-    }
-    if (server && buf) {
-        buf[0] = '\0';
-        Info_SetValueForKey(info, "hostname", server->hostName);
-        Info_SetValueForKey(info, "mapname", server->mapName);
-        Info_SetValueForKey(info, "clients", va("%i", server->clients));
-        Info_SetValueForKey(info, "sv_maxclients", va("%i", server->maxClients));
-        Info_SetValueForKey(info, "ping", va("%i", server->ping));
-        Info_SetValueForKey(info, "minping", va("%i", server->minPing));
-        Info_SetValueForKey(info, "maxping", va("%i", server->maxPing));
-        Info_SetValueForKey(info, "game", server->game);
-        Info_SetValueForKey(info, "gametype", va("%i", server->gameType));
-        Info_SetValueForKey(info, "nettype", va("%i", server->netType));
-        Info_SetValueForKey(info, "addr", NET_AdrToString(server->adr));
-        Q_strncpyz(buf, info, buflen);
-    } else {
-        if (buf) {
-            buf[0] = '\0';
-        }
-    }
-}
-
-/*
-====================
-LAN_GetServerPing
-====================
-*/
-static int LAN_GetServerPing(int source, int n)
-{
-    serverInfo_t *server = NULL;
-    switch (source) {
-    case AS_LOCAL:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            server = &cls.localServers[n];
-        }
-        break;
-    case AS_MPLAYER:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            server = &cls.mplayerServers[n];
-        }
-        break;
-    case AS_GLOBAL:
-        if (n >= 0 && n < MAX_GLOBAL_SERVERS) {
-            server = &cls.globalServers[n];
-        }
-        break;
-    case AS_FAVORITES:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            server = &cls.favoriteServers[n];
-        }
-        break;
-    }
-    if (server) {
-        return server->ping;
-    }
-    return -1;
-}
-
-/*
-====================
-LAN_GetServerPtr
-====================
-*/
-static serverInfo_t *LAN_GetServerPtr(int source, int n)
-{
-    switch (source) {
-    case AS_LOCAL:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            return &cls.localServers[n];
-        }
-        break;
-    case AS_MPLAYER:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            return &cls.mplayerServers[n];
-        }
-        break;
-    case AS_GLOBAL:
-        if (n >= 0 && n < MAX_GLOBAL_SERVERS) {
-            return &cls.globalServers[n];
-        }
-        break;
-    case AS_FAVORITES:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            return &cls.favoriteServers[n];
-        }
-        break;
-    }
-    return NULL;
-}
-
-/*
-====================
-LAN_CompareServers
-====================
-*/
-static int LAN_CompareServers(int source, int sortKey, int sortDir, int s1, int s2)
-{
-    int           res;
-    serverInfo_t *server1, *server2;
-
-    server1 = LAN_GetServerPtr(source, s1);
-    server2 = LAN_GetServerPtr(source, s2);
-    if (!server1 || !server2) {
-        return 0;
-    }
-
-    res = 0;
-    switch (sortKey) {
-    case SORT_HOST:
-        res = Q_stricmp(server1->hostName, server2->hostName);
-        break;
-
-    case SORT_MAP:
-        res = Q_stricmp(server1->mapName, server2->mapName);
-        break;
-    case SORT_CLIENTS:
-        if (server1->clients < server2->clients) {
-            res = -1;
-        } else if (server1->clients > server2->clients) {
-            res = 1;
-        } else {
-            res = 0;
-        }
-        break;
-    case SORT_GAME:
-        if (server1->gameType < server2->gameType) {
-            res = -1;
-        } else if (server1->gameType > server2->gameType) {
-            res = 1;
-        } else {
-            res = 0;
-        }
-        break;
-    case SORT_PING:
-        if (server1->ping < server2->ping) {
-            res = -1;
-        } else if (server1->ping > server2->ping) {
-            res = 1;
-        } else {
-            res = 0;
-        }
-        break;
-    }
-
-    if (sortDir) {
-        if (res < 0) {
-            return 1;
-        }
-        if (res > 0) {
-            return -1;
-        }
-        return 0;
-    }
-    return res;
-}
-
-/*
-====================
-LAN_GetPingQueueCount
-====================
-*/
-static int LAN_GetPingQueueCount(void)
-{
-    return (CL_GetPingQueueCount());
-}
-
-/*
-====================
-LAN_ClearPing
-====================
-*/
-static void LAN_ClearPing(int n)
-{
-    CL_ClearPing(n);
-}
-
-/*
-====================
-LAN_GetPing
-====================
-*/
-static void LAN_GetPing(int n, char *buf, int buflen, int *pingtime)
-{
-    CL_GetPing(n, buf, buflen, pingtime);
-}
-
-/*
-====================
-LAN_GetPingInfo
-====================
-*/
-static void LAN_GetPingInfo(int n, char *buf, int buflen)
-{
-    CL_GetPingInfo(n, buf, buflen);
-}
-
-/*
-====================
-LAN_MarkServerVisible
-====================
-*/
-static void LAN_MarkServerVisible(int source, int n, qboolean visible)
-{
-    if (n == -1) {
-        int           count  = MAX_OTHER_SERVERS;
-        serverInfo_t *server = NULL;
-        switch (source) {
-        case AS_LOCAL:
-            server = &cls.localServers[0];
-            break;
-        case AS_MPLAYER:
-            server = &cls.mplayerServers[0];
-            break;
-        case AS_GLOBAL:
-            server = &cls.globalServers[0];
-            count  = MAX_GLOBAL_SERVERS;
-            break;
-        case AS_FAVORITES:
-            server = &cls.favoriteServers[0];
-            break;
-        }
-        if (server) {
-            for (n = 0; n < count; n++) {
-                server[n].visible = visible;
-            }
-        }
-
-    } else {
-        switch (source) {
-        case AS_LOCAL:
-            if (n >= 0 && n < MAX_OTHER_SERVERS) {
-                cls.localServers[n].visible = visible;
-            }
-            break;
-        case AS_MPLAYER:
-            if (n >= 0 && n < MAX_OTHER_SERVERS) {
-                cls.mplayerServers[n].visible = visible;
-            }
-            break;
-        case AS_GLOBAL:
-            if (n >= 0 && n < MAX_GLOBAL_SERVERS) {
-                cls.globalServers[n].visible = visible;
-            }
-            break;
-        case AS_FAVORITES:
-            if (n >= 0 && n < MAX_OTHER_SERVERS) {
-                cls.favoriteServers[n].visible = visible;
-            }
-            break;
-        }
-    }
-}
-
-/*
-=======================
-LAN_ServerIsVisible
-=======================
-*/
-static int LAN_ServerIsVisible(int source, int n)
-{
-    switch (source) {
-    case AS_LOCAL:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            return cls.localServers[n].visible;
-        }
-        break;
-    case AS_MPLAYER:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            return cls.mplayerServers[n].visible;
-        }
-        break;
-    case AS_GLOBAL:
-        if (n >= 0 && n < MAX_GLOBAL_SERVERS) {
-            return cls.globalServers[n].visible;
-        }
-        break;
-    case AS_FAVORITES:
-        if (n >= 0 && n < MAX_OTHER_SERVERS) {
-            return cls.favoriteServers[n].visible;
-        }
-        break;
-    }
-    return qfalse;
-}
-
-/*
-=======================
-LAN_UpdateVisiblePings
-=======================
-*/
-qboolean LAN_UpdateVisiblePings(int source)
-{
-    return CL_UpdateVisiblePings_f(source);
-}
-
-/*
-====================
-LAN_GetServerStatus
-====================
-*/
-int LAN_GetServerStatus(const char *serverAddress, char *serverStatus, int maxLen)
-{
-    return CL_ServerStatus(serverAddress, serverStatus, maxLen);
-}
-
-/*
-====================
-CL_GetGlConfig
-====================
-*/
-static void CL_GetGlconfig(glconfig_t *config)
-{
-    *config = cls.glconfig;
-}
-
-/*
-====================
-CL_GetClipboardData
-====================
-*/
-static void CL_GetClipboardData(char *buf, int buflen)
-{
-    char *cbd;
-
-    cbd = Sys_GetClipboardData();
-
-    if (!cbd) {
-        *buf = 0;
-        return;
-    }
-
-    Q_strncpyz(buf, cbd, buflen);
-
-    Z_Free(cbd);
-}
-
-/*
-====================
 UI_CompleteLine
 
 Added: Tab in the ~ console. The engine's completion (Field_AutoComplete, as in the
@@ -867,78 +239,6 @@ static void UI_CompleteLine(char *line, int size)
     if (var) {
         Com_Printf("    %s = \"%s\"\n", var->name, var->string);
     }
-}
-
-/*
-====================
-Key_KeynumToStringBuf
-====================
-*/
-static void Key_KeynumToStringBuf(int keynum, char *buf, int buflen)
-{
-    Q_strncpyz(buf, Key_KeynumToString(keynum), buflen);
-}
-
-/*
-====================
-Key_GetBindingBuf
-====================
-*/
-static void Key_GetBindingBuf(int keynum, char *buf, int buflen)
-{
-    const char *value;
-
-    value = Key_GetBinding(keynum);
-    if (value) {
-        Q_strncpyz(buf, value, buflen);
-    } else {
-        *buf = 0;
-    }
-}
-
-/*
-====================
-GetConfigString
-====================
-*/
-static int GetConfigString(int index, char *buf, int size)
-{
-    int offset;
-
-    if (index < 0 || index >= MAX_CONFIGSTRINGS) {
-        return qfalse;
-    }
-
-    offset = cl.gameState.stringOffsets[index];
-    if (!offset) {
-        if (size) {
-            buf[0] = 0;
-        }
-        return qfalse;
-    }
-
-    Q_strncpyz(buf, cl.gameState.stringData + offset, size);
-
-    return qtrue;
-}
-
-/*
-====================
-FloatAsInt
-====================
-*/
-static int FloatAsInt(float f)
-{
-    int temp;
-
-    *(float *)&temp = f;
-
-    return temp;
-}
-
-qboolean UI_usesUniqueCDKey(void)
-{
-    return qfalse;
 }
 
 /*
@@ -1205,21 +505,30 @@ static void UI_CompHuds(bool show, bool messages)
 {
     static Menu     *menus[UI_COMPHUD_MENUS];
     static UIWidget *containers[UI_COMPHUD_MENUS]; // (asked if shown every frame: the widget, not through the menu)
+    static bool      kept[UI_COMPHUD_MENUS];       // shown with the messages only
     static int       generation = -1;
 
     // found again when the menus change
     if (generation != menuManager.Generation()) {
+        // (messages only: the menus with the game messages, the chat, the kills and the vote)
+        static const char *const messageMenus[] = {
+            "hud_comp_topleft_compass", "hud_comp_killfeed", "hud_comp_chat", "hud_comp_vote"
+        };
+
         generation = menuManager.Generation();
         for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
             menus[i]      = menuManager.FindMenu(ui_compHudMenus[i]);
             containers[i] = menus[i] ? menus[i]->GetContainerWidget() : NULL;
+            kept[i]       = false;
+            for (const char *name : messageMenus) {
+                kept[i] = kept[i] || !strcmp(ui_compHudMenus[i], name);
+            }
         }
     }
     for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
         Menu      *hud = menus[i];
-        // (messages only: the menus with the game messages, the chat, the kills and the vote;
-        // the bottom's health and ammo: cg_hudstyle's preset's)
-        const bool on  = (show && ui_compHudInLayout[i]) || (messages && (i == 1 || i == 3 || i == 4 || i == 11));
+        // (the bottom's health and ammo: cg_hudstyle's preset's)
+        const bool on  = (show && ui_compHudInLayout[i]) || (messages && kept[i]);
 
         if (containers[i] && on != containers[i]->IsVisible()) {
             if (on) {
@@ -1304,12 +613,9 @@ void UI_PrintConsole(const char *msg)
         }
     }
 
+    // (a line for FAKK's mini console, which the client no longer has: the console's, as other lines)
     if (*pszString == '\a') {
         pszString++;
-        if (mini_console) {
-            mini_console->Print(pszString);
-            return;
-        }
     }
 
     if (fakk_console) {
@@ -1320,10 +626,6 @@ void UI_PrintConsole(const char *msg)
         }
 
         fakk_console->AddText(pszString, pColor);
-
-        if (mini_console) {
-            mini_console->Print(pszString);
-        }
     } else {
         if (!s_intermediateconsole) {
             s_intermediateconsole = new str;
@@ -1337,20 +639,6 @@ void UI_PrintConsole(const char *msg)
             *s_intermediateconsole += pszString;
         }
     }
-}
-
-/*
-====================
-UI_PrintDeveloperConsole
-====================
-*/
-void UI_PrintDeveloperConsole(const char *msg)
-{
-    if (!developer_console) {
-        return;
-    }
-
-    developer_console->AddText(msg, NULL);
 }
 
 /*
@@ -1546,53 +834,6 @@ void UI_ToggleDMConsole(int iMode)
 
 /*
 ====================
-UI_OpenDeveloperConsole
-====================
-*/
-void UI_OpenDeveloperConsole(void)
-{
-    if (!developer_console) {
-        return;
-    }
-
-    developer_console->setShow(true);
-    uWinMan.ActivateControl(developer_console);
-    IN_MouseOn();
-}
-
-/*
-====================
-UI_CloseDeveloperConsole
-====================
-*/
-void UI_CloseDeveloperConsole(void)
-{
-    if (developer_console && developer_console->getShow()) {
-        developer_console->setShow(false);
-    }
-    UI_FocusMenuIfExists();
-}
-
-/*
-====================
-UI_ToggleDeveloperConsole_f
-====================
-*/
-void UI_ToggleDeveloperConsole_f(void)
-{
-    if (!developer_console) {
-        return;
-    }
-
-    if (developer_console->IsThisOrChildActive()) {
-        UI_CloseDeveloperConsole();
-    } else {
-        UI_OpenDeveloperConsole();
-    }
-}
-
-/*
-====================
 UI_KeyEvent
 ====================
 */
@@ -1711,17 +952,6 @@ void UI_Update(void)
         view3d->Display(frame, 1.0);
 
         return;
-    }
-
-    if (fakk_console) {
-        if (ui_minicon->integer) {
-            // toggle the mini-console
-            if (mini_console) {
-                mini_console->setRealShow(fakk_console->getShow() ^ 1);
-            }
-        } else if (mini_console) {
-            mini_console->setRealShow(false);
-        }
     }
 
     // Added: no HUD under the Reloaded weapon and Esc menus (cl_uimenus.cpp), the
@@ -1881,11 +1111,6 @@ void UI_PopMenu(qboolean restore_cvars)
     //   Close any active floating windows (e.g. maplist)
     //
     UI_DeactiveFloatingWindows();
-
-    if (uWinMan.DialogExists()) {
-        uWinMan.RemoveAllDialogBoxes();
-        return;
-    }
 
     if (menuManager.CurrentMenu()) {
         menuManager.PopMenu(restore_cvars);
@@ -2271,11 +1496,6 @@ void UI_MenuEscape(const char *name)
         return;
     }
 
-    if (uWinMan.DialogExists()) {
-        uWinMan.RemoveAllDialogBoxes();
-        return;
-    }
-
     if (menuManager.CurrentMenu()) {
         menuManager.PopMenu(qtrue);
     } else if (!Q_stricmp(name, "main") && clc.state > CA_PRIMED) {
@@ -2301,103 +1521,12 @@ void UI_ForceMenuOff(bool force)
 
 /*
 ====================
-UI_UpdateConnectionString
-====================
-*/
-void UI_UpdateConnectionString(void) {}
-
-/*
-====================
-UI_ParseServerInfoMessage
-====================
-*/
-void UI_ParseServerInfoMessage(msg_t *msg) {}
-
-/*
-====================
-UI_DrawConnectText
-====================
-*/
-void UI_DrawConnectText(void) {}
-
-/*
-====================
 UI_DrawConnect
 ====================
 */
 void UI_DrawConnect(void)
 {
     Com_Printf("UI_DrawConnect called\n");
-}
-
-/*
-====================
-CL_PingServers_f
-====================
-*/
-void CL_PingServers_f(void)
-{
-    int         i;
-    netadr_t    adr;
-    char        name[32];
-    const char *adrstring;
-    cvar_t     *noudp;
-    cvar_t     *noipx;
-
-    Com_Printf("pinging broadcast...\n");
-
-    noudp = Cvar_Get("noudp", "0", CVAR_INIT);
-    if (!noudp->integer) {
-        adr.type = NA_BROADCAST;
-        adr.port = BigShort(12203);
-        CL_NET_OutOfBandPrint(adr, "info %i", 8);
-    }
-
-    noipx = Cvar_Get("noipx", "0", CVAR_INIT);
-    if (!noipx->integer) {
-        adr.type = NA_BROADCAST_IPX;
-        adr.port = BigShort(12203);
-        CL_NET_OutOfBandPrint(adr, "info %i", 8);
-    }
-
-    for (i = 0; i < 16; i++) {
-        Com_sprintf(name, sizeof(name), "adr%i", i);
-        adrstring = Cvar_VariableString(name);
-
-        if (adrstring && *adrstring) {
-            Com_Printf("pinging %s...\n", adrstring);
-
-            if (NET_StringToAdr(adrstring, &adr, NA_IP)) {
-                if (!adr.port) {
-                    adr.port = BigShort(12203);
-                }
-
-                CL_NET_OutOfBandPrint(adr, "info %i", 8);
-            } else {
-                Com_Printf("Bad address: %s\n", adrstring);
-            }
-        }
-    }
-}
-
-/*
-====================
-UI_MapList_f
-====================
-*/
-void UI_MapList_f(void)
-{
-    str mappath = "maps";
-
-    if (Cmd_Argc() == 2) {
-        mappath += "/";
-        mappath += Cmd_Argv(1);
-    }
-
-    MapRunnerClass *map = new MapRunnerClass;
-    map->Setup("maps", mappath, ".bsp", "_sml");
-
-    CL_SetMousePos(uid.vidWidth / 2, uid.vidHeight / 2);
 }
 
 /*
@@ -2595,124 +1724,6 @@ void UI_GetPlayerModel_f(void)
 
 /*
 ====================
-UI_SoundPicker_f
-====================
-*/
-void UI_SoundPicker_f(void)
-{
-    new SoundPickerClass;
-}
-
-/*
-====================
-UI_ViewSpawnList_f
-====================
-*/
-void UI_ViewSpawnList_f(void)
-{
-    str modelpath = "models";
-
-    ViewSpawnerClass *picker = new ViewSpawnerClass;
-    picker->Setup("models", modelpath, ".tik");
-}
-
-/*
-====================
-UI_LODSpawnList_f
-====================
-*/
-void UI_LODSpawnList_f(void)
-{
-    str modelpath = "models";
-
-    LODSpawnerClass *picker = new LODSpawnerClass;
-    picker->Setup("models", modelpath, ".tik");
-}
-
-/*
-====================
-UI_Notepad_f
-====================
-*/
-void UI_Notepad_f(void)
-{
-    if (Cmd_Argc() > 1) {
-        UI_LoadNotepadFile(Cmd_Argv(1));
-    } else {
-        UI_LoadNotepadFile(NULL);
-    }
-}
-
-/*
-====================
-UI_EditScript_f
-====================
-*/
-void UI_EditScript_f(void)
-{
-    const char *info;
-    const char *mname;
-    str         mapname;
-    str         mappath;
-
-    // editscript only works in-game
-    if (clc.state != CA_ACTIVE) {
-        Com_Printf("You need to load a map to edit its script\n");
-        return;
-    }
-
-    mname   = Info_ValueForKey(&cl.gameState.stringData[cl.gameState.stringOffsets[CS_SERVERINFO]], "mapname");
-    mapname = mname;
-
-    // remove the spawnpoint name
-    if (strchr(mname, '$')) {
-        info                  = strchr(mname, '$');
-        mapname[info - mname] = 0;
-    }
-
-    // make sure the map is loaded
-    if (!strcmp(mapname, "")) {
-        Com_Printf("No map loaded?\n");
-        return;
-    }
-
-    mappath = "maps/" + mapname + ".scr";
-
-    if (!UI_LoadNotepadFile(mappath)) {
-        Com_Printf("Couldn't load/find script file for %s\n", mappath.c_str());
-    }
-}
-
-/*
-====================
-UI_EditShader_f
-====================
-*/
-void UI_EditShader_f(void)
-{
-    str shaderpath;
-
-    if (Cmd_Argc() != 2) {
-        Com_Printf("Usage: Editshader <file>\n");
-        return;
-    }
-
-    shaderpath = "scripts/" + str(Cmd_Argv(1)) + ".shader";
-
-    if (!UI_LoadNotepadFile(shaderpath)) {
-        Com_Printf("Couldn't open shader named %s\n", shaderpath.c_str());
-    }
-}
-
-/*
-====================
-UI_EditSpecificShader_f
-====================
-*/
-void UI_EditSpecificShader_f(void) {}
-
-/*
-====================
 UI_LoadMenu
 ====================
 */
@@ -2902,6 +1913,16 @@ void UI_StartLocalSoundDialog(const char *sound_name)
 
 /*
 ====================
+UI_PickFile
+
+Changed: nothing, the file picker (a developer's tool) is gone; the UI
+import table keeps its slot (uii.File_PickFile)
+====================
+*/
+static void UI_PickFile(const char *name, Listener *obj, Event& event) {}
+
+/*
+====================
 CL_FillUIImports
 ====================
 */
@@ -2927,7 +1948,7 @@ void CL_FillUIImports(void)
     uii.Cvar_Reset                  = Cvar_Reset;
     uii.Cvar_Find                   = Cvar_FindVar;
     uii.Cvar_Set                    = UI_Cvar_Set;
-    uii.File_PickFile               = PickFile;
+    uii.File_PickFile               = UI_PickFile;
     uii.File_FreeFile               = FS_FreeFile;
     uii.File_ListFiles              = ListFilesForUI;
     uii.File_OpenFile               = FS_ReadFile;
@@ -3013,41 +2034,6 @@ void CL_EndRegistration(void)
 
 /*
 ====================
-UI_CreateDialog
-====================
-*/
-void UI_CreateDialog(
-    const char *title,
-    char       *cvarname,
-    const char *command,
-    const char *cancelCommand,
-    int         width,
-    int         height,
-    const char *shader,
-    const char *okshader,
-    const char *cancelshader
-)
-{
-    UIDialog *dlg     = new UIDialog;
-    UIRect2D  rect    = UIRect2D((uid.vidWidth - width) / 2, (uid.vidHeight - height) / 2, width, height);
-    UColor    bgColor = UWindowColor;
-
-    dlg->Create(NULL, rect, title, bgColor, UHudColor);
-    dlg->LinkCvar(cvarname);
-    dlg->SetOKCommand(command);
-    dlg->SetCancelCommand(cancelCommand);
-    dlg->SetLabelMaterial(uWinMan.RegisterShader(shader));
-    dlg->SetOkMaterial(uWinMan.RegisterShader(okshader));
-
-    if (cancelshader) {
-        dlg->SetCancelMaterial(uWinMan.RegisterShader(cancelshader));
-    }
-
-    uWinMan.ActivateControl(dlg);
-}
-
-/*
-====================
 UI_ResolutionChange
 ====================
 */
@@ -3091,11 +2077,6 @@ void UI_ResolutionChange(void)
         }
 
         dm_console->setFrame(frame);
-    }
-
-    if (developer_console) {
-        frame = getDefaultConsoleRectangle();
-        developer_console->setFrame(frame);
     }
 
     uie.ResolutionChange();
@@ -3325,56 +2306,6 @@ void UI_ClearState(void)
 
 /*
 ====================
-UI_CheckRestart
-====================
-*/
-void UI_CheckRestart(void)
-{
-    if (ui_console->integer && !fakk_console) {
-        fakk_console = getNewConsole();
-    }
-
-    if (!dm_console) {
-        dm_console = getNewDMConsole();
-    }
-
-    if (!ui_console->integer && fakk_console) {
-        fakk_console->SendSignal(W_Destroyed);
-    }
-
-    if (ui_minicon->integer) {
-        if (!mini_console) {
-            UISize2D size;
-            UColor   back = UColor(0.0, 0.5, 1.0, 1.0);
-
-            size.width  = 500;
-            size.height = 100;
-
-            mini_console = new FakkMiniconsole;
-            mini_console->Create(size, UHudColor, back, 0.3f);
-            mini_console->setAlwaysOnBottom(true);
-            mini_console->setBorderStyle(border_none);
-        }
-    } else if (mini_console) {
-        delete mini_console;
-        mini_console = NULL;
-    }
-
-    menuManager.CheckRestart();
-}
-
-/*
-====================
-UI_ResetCvars
-====================
-*/
-void UI_ResetCvars(void)
-{
-    menuManager.ResetCVars();
-}
-
-/*
-====================
 UI_ShowMouse_f
 ====================
 */
@@ -3395,53 +2326,6 @@ void UI_HideMouse_f(void)
     if (!view3d->IsActive()) {
         uWinMan.ActivateControl(view3d);
         IN_MouseOff();
-    }
-}
-
-class TestListItem : public UIListCtrlItem
-{
-    str strings[3];
-
-public:
-    virtual griditemtype_t getListItemType(int which) const;
-    virtual str            getListItemString(int i) const;
-    virtual int            getListItemValue(int which) const;
-    virtual void           DrawListItem(int iColumn, const UIRect2D& drawRect, bool bSelected, UIFont *pFont);
-    virtual qboolean       IsHeaderEntry(void) const;
-};
-
-/*
-====================
-UI_TestListCtrl_f
-====================
-*/
-void UI_TestListCtrl_f(void)
-{
-    UIFloatingWindow *wnd = new UIFloatingWindow;
-    UIListCtrl       *control;
-    UIRect2D          frame = UIRect2D(20, 20, 400, 300);
-    TestListItem     *i1, *i2, *i3;
-
-    wnd->Create(NULL, frame, "Test list control", UWindowColor, UHudColor);
-
-    control = new UIListCtrl;
-    control->InitFrame(
-        wnd->getChildSpace(), frame.pos.x, frame.pos.y, frame.size.width, frame.size.height, border_none, "verdana-12"
-    );
-    control->setBackgroundColor(UWhite, true);
-    control->AddColumn("name", 0, 100, false, false);
-    control->AddColumn("ping", 1, 64, false, false);
-    control->AddColumn("IP", 2, 64, false, false);
-
-    for (int i = 0; i < 100; i++) {
-        i1 = new TestListItem;
-        control->AddItem(i1);
-
-        i2 = new TestListItem;
-        control->AddItem(i2);
-
-        i3 = new TestListItem;
-        control->AddItem(i3);
     }
 }
 
@@ -3585,9 +2469,6 @@ void UI_ClearConsole_f(void)
         dm_console->Clear();
     }
 
-    if (developer_console) {
-        developer_console->Clear();
-    }
 }
 
 /*
@@ -3673,28 +2554,17 @@ void CL_ShutdownUI(void)
     Cmd_RemoveCommand("listmenus");
     Cmd_RemoveCommand("togglemenu");
     Cmd_RemoveCommand("loadmenu");
-    Cmd_RemoveCommand("maplist");
     Cmd_RemoveCommand("ui_startdmmap");
-    Cmd_RemoveCommand("viewspawnlist");
-    Cmd_RemoveCommand("lod_spawnlist");
-    Cmd_RemoveCommand("soundpicker");
-    Cmd_RemoveCommand("notepad");
-    Cmd_RemoveCommand("editscript");
-    Cmd_RemoveCommand("editshader");
     Cmd_RemoveCommand("ui_showmouse");
     Cmd_RemoveCommand("ui_hidemouse");
     Cmd_RemoveCommand("ui_saveconsolepos");
     Cmd_RemoveCommand("ui_loadconsolepos");
-    Cmd_RemoveCommand("ui_testlist");
     Cmd_RemoveCommand("clear");
     Cmd_RemoveCommand("ui_hud");
-    Cmd_RemoveCommand("ui_resetcvars");
-    Cmd_RemoveCommand("ui_checkrestart");
     Cmd_RemoveCommand("centerprint");
     Cmd_RemoveCommand("locationprint");
     Cmd_RemoveCommand("finishloadingscreen");
     Cmd_RemoveCommand("ui_getplayermodel");
-    Cmd_RemoveCommand("devcon");
 
     ui_pConnectingMenu = menuManager.FindMenu("connecting");
 
@@ -3710,14 +2580,6 @@ void CL_ShutdownUI(void)
     if (dm_console) {
         delete dm_console;
         dm_console = NULL;
-    }
-    if (developer_console) {
-        delete developer_console;
-        developer_console = NULL;
-    }
-    if (mini_console) {
-        delete mini_console;
-        mini_console = NULL;
     }
 
     // shutdown the UI
@@ -3738,8 +2600,9 @@ the URC HUD are its screens): not loaded. Named one by one, the games'
 own (Allied Assault's, Spearhead's and Breakthrough's pk3s): a map's or a
 mod's menus load, under these names too (FS_FileInGamePak). What still loads: the load screens (the Reloaded load
 screen shows their pictures), the end of a level's (StatsScreen_*,
-mission_*: the end screen's), what the game scripts show (the briefings,
-the title cards, credits1, dday1 and 2) and the developer tools' menus
+mission_*: the end screen's) and what the game scripts show (the
+briefings, the title cards, credits1, dday1 and 2); none of the developer
+tools' menus
 ====================
 */
 static qboolean UI_StockMenuGone(const char *file)
@@ -3787,6 +2650,15 @@ static qboolean UI_StockMenuGone(const char *file)
         // slides no briefing uses
         "eascreen", "patch_available", "demohelp", "crosshair", "briefing2c", "briefing2d", "briefing3f", "briefing3g",
         "briefing3h",
+        // the developer tools whose button only ran a removed file picker: the animation viewer's (viewspawnlist), the
+        // LOD tool's (lod_spawnlist)
+        "animate2", "lodtool",
+        // the developer tools made of the stock pull-down menus (removed): the decal, emitter and smoke editors, the
+        // sound editor (its soundpicker removed too)
+        "decals", "emitter", "smoke", "zound",
+        // the last developer tools, the only users of the stock field, checkbox, list and list box (removed): the
+        // camera tool and its quick menu, the level designers' F1 menu, a test page
+        "cinematicmenu", "cinemaquickmenu", "leveldesign", "greytest",
     };
     char name[MAX_QPATH];
 
@@ -3814,7 +2686,6 @@ void CL_InitializeUI(void)
     int    i;
 
     // Register all variables
-    ui_minicon         = Cvar_Get("ui_minicon", "0", 1);
     ui_consoleposition = Cvar_Get("ui_consoleposition", "", 1);
     // the console key works by default (the Metal port's default, upstream's is 0)
     ui_console         = Cvar_Get("ui_console", "1", 1);
@@ -3851,8 +2722,6 @@ void CL_InitializeUI(void)
     ui_success             = Cvar_Get("ui_success", "0", 0);
     ui_failed              = Cvar_Get("ui_failed", "0", 0);
     cl_greenfps            = Cvar_Get("cl_greenfps", "0", 1);
-    Cvar_Get("ui_startmap", "", 1);
-    Cvar_Get("dlg_badsave", "This save game is invalid", 0);
 
     Cvar_Set("cg_hud", ui_hud ? "1" : "0");
 
@@ -3880,45 +2749,17 @@ void CL_InitializeUI(void)
     Cmd_AddCommand("listmenus", UI_ListMenus_f);
     Cmd_AddCommand("togglemenu", UI_ToggleMenu_f);
     Cmd_AddCommand("loadmenu", UI_LoadMenu_f);
-    Cmd_AddCommand("maplist", UI_MapList_f);
     Cmd_AddCommand("ui_startdmmap", UI_StartDMMap_f);
-    Cmd_AddCommand("viewspawnlist", UI_ViewSpawnList_f);
-    Cmd_AddCommand("lod_spawnlist", UI_LODSpawnList_f);
-    Cmd_AddCommand("soundpicker", UI_SoundPicker_f);
-    Cmd_AddCommand("notepad", UI_Notepad_f);
-    Cmd_AddCommand("editscript", UI_EditScript_f);
-    Cmd_AddCommand("editshader", UI_EditShader_f);
-    Cmd_AddCommand("editspecificshader", UI_EditSpecificShader_f);
     Cmd_AddCommand("ui_showmouse", UI_ShowMouse_f);
     Cmd_AddCommand("ui_hidemouse", UI_HideMouse_f);
     Cmd_AddCommand("ui_saveconsolepos", SaveConsoleRectangle);
     Cmd_AddCommand("ui_loadconsolepos", LoadConsoleRectangle);
-    Cmd_AddCommand("ui_testlist", UI_TestListCtrl_f);
     Cmd_AddCommand("clear", UI_ClearConsole_f);
     Cmd_AddCommand("ui_hud", UI_Hud_f);
-    Cmd_AddCommand("ui_resetcvars", UI_ResetCvars);
-    Cmd_AddCommand("ui_checkrestart", UI_CheckRestart);
     Cmd_AddCommand("centerprint", UI_CenterPrint_f);
     Cmd_AddCommand("locationprint", UI_LocationPrint_f);
     Cmd_AddCommand("finishloadingscreen", UI_FinishLoadingScreen_f);
     Cmd_AddCommand("ui_getplayermodel", UI_GetPlayerModel_f);
-
-    if (developer->integer) {
-        UColor bgColor;
-
-        Cmd_AddCommand("devcon", UI_ToggleDeveloperConsole_f);
-
-        developer_console = new UIFloatingConsole;
-
-        bgColor = UWindowColor;
-
-        developer_console->Create(NULL, getDefaultConsoleRectangle(), "Developer Console", bgColor, UHudColor);
-        developer_console->setConsoleHandler(ConsoleCommandHandler);
-        developer_console->setConsoleBackground(UBlack, 0.800000011920929);
-        developer_console->setShow(false);
-        developer_console->Connect(&s_consolehider, UIFloatingWindow::W_ClosePressed, UIFloatingWindow::W_ClosePressed);
-        developer_console->Connect(&s_consolehider, W_Destroyed, W_Destroyed);
-    }
 
     // Create the 3D view
     view3d = new View3D;
@@ -3931,18 +2772,8 @@ void CL_InitializeUI(void)
     ui_static_materials.loading = uWinMan.RegisterShader("textures/menu/loading");
 
     if (ui_console->integer || developer->integer > 0) {
-        UColor bgColor = UWindowColor;
-
         // Create the console
         fakk_console = getNewConsole();
-
-        bgColor = UColor(0.0, 0.5, 1.0, 1.0);
-
-        // Create the mini console
-        mini_console = new FakkMiniconsole;
-        mini_console->Create(UISize2D(500, 100), UWhite, bgColor, 0.2f);
-        mini_console->setAlwaysOnBottom(true);
-        mini_console->setBorderStyle(border_none);
     }
 
     // Create the dm console
@@ -4578,47 +3409,10 @@ void UI_EndLoad(void)
 
 /*
 ====================
-UI_AbortLoad
-====================
-*/
-void UI_AbortLoad(void)
-{
-    if (cls.loading != LOAD_PROGRESS_FALSE) {
-        if (cls.loading == LOAD_PROGRESS_SAVE) {
-            UI_DeleteLoadInfo();
-        }
-        cls.loading = LOAD_PROGRESS_FALSE;
-    }
-}
-
-/*
-====================
 CL_FontStringWidth
 ====================
 */
 int CL_FontStringWidth(fontheader_t *pFont, const char *pszString, int iMaxLen)
 {
     return uie.FontStringWidth(pFont, pszString, iMaxLen);
-}
-
-griditemtype_t TestListItem::getListItemType(int which) const
-{
-    return TYPE_STRING;
-}
-
-str TestListItem::getListItemString(int i) const
-{
-    return strings[i];
-}
-
-int TestListItem::getListItemValue(int i) const
-{
-    return atoi(strings[i]);
-}
-
-void TestListItem::DrawListItem(int iColumn, const UIRect2D& drawRect, bool bSelected, UIFont *pFont) {}
-
-qboolean TestListItem::IsHeaderEntry(void) const
-{
-    return qfalse;
 }

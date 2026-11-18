@@ -132,15 +132,6 @@ Event W_Draw
     "Draw the widget." 
 );
 
-Event EV_Layout_Size
-(
-    "size",
-    EV_DEFAULT,
-    "ffff",
-    "x y width height",
-    "Set the size of the widget" 
-);
-
 Event EV_Layout_Rect
 (
     "rect",
@@ -204,15 +195,6 @@ Event EV_Layout_Borderstyle
     "Set the borderstyle of the widget(NONE, 3D_BORDER, INDENT_BORDER) "
 );
 
-Event EV_Layout_BorderColor
-(
-    "bordercolor",
-    EV_DEFAULT,
-    "ffff",
-    "red green blue alpha",
-    "Set the border color of the widget"
-);
-
 Event EV_Layout_Shader
 (
     "shader",
@@ -220,15 +202,6 @@ Event EV_Layout_Shader
     "s",
     "shaderName",
     "Set the shader to draw on the background of the widget"
-);
-
-Event EV_Layout_TileShader
-(
-    "tileshader",
-    EV_DEFAULT,
-    "s",
-    "shaderName",
-    "Set the shader to draw tiled on the background of the widget"
 );
 
 Event EV_Layout_HoverShader
@@ -240,15 +213,6 @@ Event EV_Layout_HoverShader
     "Set the shader to on the background of the widget when the mouse is over the widget"
 );
 
-Event EV_Layout_PressedShader
-(
-    "pressedshader",
-    EV_DEFAULT,
-    "s",
-    "shaderName",
-    "Set the shader to on the background of the widget when it is pressed in"
-);
-
 Event EV_Layout_FadeIn
 (
     "fadein",
@@ -256,15 +220,6 @@ Event EV_Layout_FadeIn
     "f",
     "fadetime",
     "Set the amount of time it takes for the widget to fade in"
-);
-
-Event EV_Layout_StopSound
-(
-    "stopsound",
-    EV_DEFAULT,
-    "s",
-    "soundName",
-    "Set the sound to be played when the widget stops moving"
 );
 
 Event EV_Layout_ClickSound
@@ -276,15 +231,6 @@ Event EV_Layout_ClickSound
     "Set the sound to be played when the widget is clicked"
 );
 
-Event EV_Layout_Stretch
-(
-    "stretch",
-    EV_DEFAULT,
-    "s",
-    "stretchdir",
-    "Set the widget to be stretched horizontally or vertically across the screen"
-);
-
 Event EV_Layout_VirtualRes
 (
     "virtualres",
@@ -293,24 +239,6 @@ Event EV_Layout_VirtualRes
     "usevirtualres design_width design_height",
     "Set the widget to be modified horizontally or vertically across the screen to account for resolutions != 640x480"
     " (Added: with a design's size, scaled alike both ways to fit the screen, on whole pixels)"
-);
-
-Event EV_Layout_InitData
-(
-    "initdata",
-    EV_DEFAULT,
-    "s",
-    "datastring",
-    "Set the linkcvar to be initialized to this value"
-);
-
-Event EV_Layout_Direction
-(
-    "direction",
-    EV_DEFAULT,
-    "sF",
-    "direction time",
-    "Set the direction the widget will appear from on the screen\n(from_top, from_bottom, from_left, or from_right)\nTime is specified to determine how fast the widget will scroll in\n"
 );
 
 Event EV_Layout_Align
@@ -340,24 +268,6 @@ Event EV_Layout_LinkCvar
     "Set the cvar that will be updated when the widget is changed"
 );
 
-Event EV_Layout_NoParentClipping
-(
-    "noparentclip",
-    EV_DEFAULT,
-    NULL,
-    NULL,
-    "Set the widget to not be clipped by the parent widget"
-);
-
-Event EV_Layout_NoParentAdjustment
-(
-    "noparentadjust",
-    EV_DEFAULT,
-    NULL,
-    NULL,
-    "Set the widget to not be adjusted by the parent widget"
-);
-
 Event EV_Widget_OrderNumber
 (
     "ordernumber",
@@ -383,15 +293,6 @@ Event EV_Widget_EnabledCvar
     "s",
     "cvar_name",
     "Set the cvar to check to see if this button is enabled or not"
-);
-
-Event EV_Layout_AliasCache
-(
-    "aliascache",
-    EV_DEFAULT,
-    "ssSSSSSS",
-    "alias realPath arg1 arg2 arg3 arg4 arg5 arg6",
-    "Create an alias to the specified path and cache the resource"
 );
 
 // Added
@@ -476,24 +377,6 @@ Event EV_Layout_FitBelow
     "Its bottom pad design units under a sibling's text (or its bottom edge)"
 );
 
-Event EV_Layout_FitTo
-(
-    "fitto",
-    EV_DEFAULT,
-    "sfF",
-    "widget_name pad min",
-    "As wide as a sibling's text and pad on each side (no narrower than min), about its middle"
-);
-
-Event EV_Layout_FitText
-(
-    "fittext",
-    EV_DEFAULT,
-    "fFF",
-    "pad min max",
-    "As wide as its text and pad on each side, between min and max, about where its text is aligned"
-);
-
 Event EV_Layout_MoveIf
 (
     "moveif",
@@ -558,19 +441,9 @@ Event EV_Layout_Fullscreen
     "Set container to be fullscreen.  This will disable the game rendering if it's active"
 );
 
-Event EV_Layout_VidMode
-(
-    "vidmode",
-    EV_DEFAULT,
-    "i",
-    "vidmode",
-    "Set container's vidmode to change to when it's active"
-);
-
 CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Widget_Hide,               &UIWidget::Hide                    },
     {&EV_Widget_Activate,           &UIWidget::Activate                },
-    {&EV_Layout_Size,               &UIWidget::LayoutSize              },
     {&EV_Layout_Rect,               &UIWidget::LayoutRect              },
     {&EV_Layout_Name,               &UIWidget::LayoutName              },
     {&EV_Layout_Title,              &UIWidget::LayoutTitle             },
@@ -578,24 +451,14 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Layout_BGColor,            &UIWidget::LayoutBgColor           },
     {&EV_Layout_FGColor,            &UIWidget::LayoutFgColor           },
     {&EV_Layout_Borderstyle,        &UIWidget::LayoutBorderStyle       },
-    {&EV_Layout_BorderColor,        &UIWidget::LayoutBorderColor       },
     {&EV_Layout_Shader,             &UIWidget::LayoutShader            },
-    {&EV_Layout_TileShader,         &UIWidget::LayoutTileShader        },
     {&EV_Layout_HoverShader,        &UIWidget::LayoutHoverShader       },
-    {&EV_Layout_PressedShader,      &UIWidget::LayoutPressedShader     },
     {&EV_Layout_FadeIn,             &UIWidget::LayoutFadeIn            },
-    {&EV_Layout_StopSound,          &UIWidget::LayoutStopSound         },
     {&EV_Layout_ClickSound,         &UIWidget::LayoutClickSound        },
-    {&EV_Layout_Stretch,            &UIWidget::LayoutStretch           },
     {&EV_Layout_VirtualRes,         &UIWidget::LayoutVirtualRes        },
-    {&EV_Layout_InitData,           &UIWidget::LayoutInitData          },
-    {&EV_Layout_Direction,          &UIWidget::LayoutDirection         },
     {&EV_Layout_Align,              &UIWidget::LayoutAlign             },
-    {&EV_Layout_NoParentClipping,   &UIWidget::LayoutNoParentClipping  },
-    {&EV_Layout_NoParentAdjustment, &UIWidget::LayoutNoParentAdjustment},
     {&EV_Layout_StuffCommand,       &UIWidget::LayoutStuffCommand      },
     {&EV_Layout_LinkCvar,           &UIWidget::LayoutLinkCvar          },
-    {&EV_Layout_AliasCache,         &UIWidget::LayoutAliasCache        },
     {&EV_Widget_OrderNumber,        &UIWidget::LayoutOrderNumber       },
     {&EV_Widget_TextAlignment,      &UIWidget::TextAlignment           },
     {&EV_Widget_Enable,             &UIWidget::EnableEvent             },
@@ -618,8 +481,6 @@ CLASS_DECLARATION(USignal, UIWidget, NULL) {
     {&EV_Layout_FlowBefore,         &UIWidget::LayoutFlowBefore        },
     {&EV_Layout_FlowBelow,          &UIWidget::LayoutFlowBelow         },
     {&EV_Layout_FitBelow,           &UIWidget::LayoutFitBelow          },
-    {&EV_Layout_FitTo,              &UIWidget::LayoutFitTo             },
-    {&EV_Layout_FitText,            &UIWidget::LayoutFitText           },
     {&EV_Layout_MoveIf,             &UIWidget::LayoutMoveIf            },
     {&EV_Layout_FitWidth,           &UIWidget::LayoutFitWidth          },
     {&EV_Layout_Anchor,             &UIWidget::LayoutAnchor            },
@@ -761,13 +622,6 @@ void UIReggedMaterial::SetMaterial(const str& name)
     this->name = name;
 }
 
-void UIReggedMaterial::RefreshMaterial(void)
-{
-    if (isGot) {
-        this->hMat = uii.Rend_RefreshMaterial(name.c_str());
-    }
-}
-
 str UIReggedMaterial::GetName(void)
 {
     return name;
@@ -800,25 +654,19 @@ UIWidget::UIWidget()
     m_visible                  = true;
     m_enabled                  = true;
     m_canactivate              = false;
-    m_commandhandler           = NULL;
     m_font                     = NULL;
     m_material                 = NULL;
     m_hovermaterial            = NULL;
-    m_pressedmaterial          = NULL;
     m_hovermaterial_active     = false;
-    m_pressedmaterial_active   = false;
-    m_direction                = D_NONE;
     m_fadetime                 = 0.0f;
     m_alpha                    = 1.0f;
     m_motiontime               = 0.0f;
     m_starttime                = 0.0f;
-    m_direction_orig           = D_NONE;
     m_motiontype               = MOTION_IN;
     m_align                    = 0;
     m_flags                    = 0;
     m_dying                    = false;
     m_ordernum                 = 0;
-    m_configstring_index       = -1;
     m_iFontAlignmentHorizontal = FONT_JUSTHORZ_CENTER;
     m_iFontAlignmentVertical   = FONT_JUSTVERT_CENTER;
     m_bVirtual                 = false;
@@ -890,8 +738,7 @@ bool UIWidget::addChild(UIWidget *widget)
     m_children.AddObject(widget);
     if (m_children.NumObjects() != 1) {
         UIWidget *child = m_children.ObjectAt(m_children.NumObjects() - 1);
-        if ((child->m_flags & (WF_ALWAYS_TOP | WF_ALWAYS_BOTTOM))
-            != (widget->m_flags & (WF_ALWAYS_TOP | WF_ALWAYS_BOTTOM))) {
+        if ((child->m_flags & WF_ALWAYS_BOTTOM) != (widget->m_flags & WF_ALWAYS_BOTTOM)) {
             ArrangeWidgetList(m_children);
         }
     }
@@ -1029,8 +876,6 @@ void UIWidget::Motion(void)
 {
     float t;
     float frac;
-    int   i;
-    float nx, ny;
 
     t = uid.time / 1000.0;
 
@@ -1094,102 +939,6 @@ void UIWidget::Motion(void)
             m_alpha = 1.0 - m_alpha;
         }
     }
-
-    if (m_direction) {
-        frac = (t - m_starttime) / m_motiontime;
-
-        if (m_motiontype == MOTION_OUT) {
-            frac = 1.0 - frac;
-            if (frac <= 0.0) {
-                switch (m_direction) {
-                case D_FROM_BOTTOM:
-                    setFrame(UIRect2D(m_frame.pos.x, uid.vidHeight, m_frame.size.width, m_frame.size.height));
-                    break;
-                case D_FROM_TOP:
-                    setFrame(UIRect2D(
-                        m_frame.pos.x,
-                        -m_frame.size.height - m_parent->m_screenorigin.y,
-                        m_frame.size.width,
-                        m_frame.size.height
-                    ));
-                    break;
-                case D_FROM_LEFT:
-                    setFrame(UIRect2D(
-                        -m_frame.size.width - m_parent->m_screenorigin.x,
-                        m_frame.pos.y,
-                        m_frame.size.width,
-                        m_frame.size.height
-                    ));
-                    break;
-                case D_FROM_RIGHT:
-                    setFrame(UIRect2D(uid.vidWidth, m_frame.pos.y, m_frame.size.width, m_frame.size.height));
-                    break;
-                default:
-                    setFrame(UIRect2D(m_frame.pos.x, m_frame.pos.y, m_frame.size.width, m_frame.size.height));
-                    break;
-                }
-
-                m_direction = D_NONE;
-            }
-        } else {
-            if (frac >= 1.0) {
-                // done moving
-                setFrame(UIRect2D(m_startingpos, m_frame.size));
-                FrameInitialized();
-
-                for (i = 1; i <= m_children.NumObjects(); i++) {
-                    m_children.ObjectAt(i)->FrameInitialized();
-                }
-
-                m_direction = D_NONE;
-            }
-        }
-    }
-
-    switch (m_direction) {
-    case D_FROM_LEFT:
-        nx = 0;
-        if (m_parent) {
-            nx = m_frame.size.width + m_parent->m_screenorigin.x;
-        }
-        nx = (m_startingpos.x + nx) * frac - nx;
-        ny = m_frame.pos.y;
-
-        setFrame(UIRect2D(nx, ny, m_frame.size.width, m_frame.size.height));
-        break;
-    case D_FROM_RIGHT:
-        nx = uid.vidWidth - (uid.vidWidth - m_startingpos.x) * frac;
-        ny = m_frame.pos.y;
-
-        setFrame(UIRect2D(nx, ny, m_frame.size.width, m_frame.size.height));
-        break;
-    case D_FROM_BOTTOM:
-        nx = m_frame.pos.x;
-        ny = uid.vidHeight - (uid.vidHeight - m_startingpos.y) * frac;
-
-        setFrame(UIRect2D(nx, ny, m_frame.size.width, m_frame.size.height));
-        break;
-    case D_FROM_TOP:
-        nx = m_frame.pos.y;
-        ny = 0;
-        if (m_parent) {
-            ny = m_frame.size.height + m_parent->m_screenorigin.y;
-        }
-        ny = (m_startingpos.y + ny) * frac - ny;
-
-        setFrame(UIRect2D(nx, ny, m_frame.size.width, m_frame.size.height));
-        break;
-    default:
-        break;
-    }
-
-    if (m_direction == D_NONE) {
-        //
-        // play a sound to indicate the motion has finished
-        if (m_stopsound.length()) {
-            uii.Snd_PlaySound(m_stopsound);
-        }
-    }
 }
 
 void UIWidget::AlignPosition(void)
@@ -1207,15 +956,6 @@ void UIWidget::AlignPosition(void)
     } else {
         vec2_t vNewVirtualScale = {1.0, 1.0};
         scaleFrameVirtualRes(m_frame, m_vVirtualScale, vNewVirtualScale);
-    }
-
-    if (m_flags & WF_STRETCH_VERTICAL) {
-        m_frame.pos.y       = 0;
-        m_frame.size.height = uid.vidHeight;
-    }
-    if (m_flags & WF_STRETCH_HORIZONTAL) {
-        m_frame.pos.x      = 0;
-        m_frame.size.width = uid.vidWidth;
     }
 
     if (m_align & WA_CENTERX) {
@@ -1261,66 +1001,39 @@ void UIWidget::BringToFront(void)
             m_parent->m_children.RemoveObject(this);
             m_parent->m_children.AddObject(this);
 
-            if ((m_parent->m_children.ObjectAt(m_parent->m_children.NumObjects() - 1)->m_flags & 0x30)
-                != (m_flags & 0x30)) {
+            if ((m_parent->m_children.ObjectAt(m_parent->m_children.NumObjects() - 1)->m_flags & WF_ALWAYS_BOTTOM)
+                != (m_flags & WF_ALWAYS_BOTTOM)) {
                 ArrangeWidgetList(m_parent->m_children);
             }
         }
     }
 }
 
-void UIWidget::SplitWidgets(
-    Container<UIWidget *>& src, Container<UIWidget *>& bottom, Container<UIWidget *>& normal, Container<UIWidget *>& top
-)
-{
-    int i;
-
-    bottom.FreeObjectList();
-    normal.FreeObjectList();
-    top.FreeObjectList();
-
-    for (i = 1; i <= src.NumObjects(); i++) {
-        UIWidget *wid = src.ObjectAt(i);
-
-        if (wid->m_flags & 0x10) {
-            bottom.AddObject(wid);
-        } else if (wid->m_flags & 0x20) {
-            top.AddObject(wid);
-        } else {
-            normal.AddObject(wid);
-        }
-    }
-}
-
-void UIWidget::CombineWidgets(
-    Container<UIWidget *>& dst, Container<UIWidget *>& bottom, Container<UIWidget *>& normal, Container<UIWidget *>& top
-)
-{
-    Container<UIWidget *> *lists[3];
-    int                    list;
-    int                    i;
-
-    dst.ClearObjectList();
-
-    lists[0] = &bottom;
-    lists[1] = &normal;
-    lists[2] = &top;
-
-    for (list = 0; list < 3; list++) {
-        for (i = 1; i <= lists[list]->NumObjects(); i++) {
-            dst.AddObject(lists[list]->ObjectAt(i));
-        }
-    }
-}
-
+// Changed: the always-on-bottom widgets first, the rest after, each in their order (the always-on-top layer is gone:
+// nothing set it)
 void UIWidget::ArrangeWidgetList(Container<UIWidget *>& list)
 {
     Container<UIWidget *> bottom;
     Container<UIWidget *> normal;
-    Container<UIWidget *> top;
+    int                   i;
 
-    SplitWidgets(list, bottom, normal, top);
-    CombineWidgets(list, bottom, normal, top);
+    for (i = 1; i <= list.NumObjects(); i++) {
+        UIWidget *wid = list.ObjectAt(i);
+
+        if (wid->m_flags & WF_ALWAYS_BOTTOM) {
+            bottom.AddObject(wid);
+        } else {
+            normal.AddObject(wid);
+        }
+    }
+
+    list.ClearObjectList();
+    for (i = 1; i <= bottom.NumObjects(); i++) {
+        list.AddObject(bottom.ObjectAt(i));
+    }
+    for (i = 1; i <= normal.NumObjects(); i++) {
+        list.AddObject(normal.ObjectAt(i));
+    }
 }
 
 void UIWidget::Shutdown(void)
@@ -1361,8 +1074,6 @@ void UIWidget::InitFrame(
         setParent(&uWinMan);
     }
 
-    m_startingpos = m_frame.pos;
-
     setFont(fontname);
 
     FrameInitialized();
@@ -1371,11 +1082,6 @@ void UIWidget::InitFrame(
 void UIWidget::InitFrame(UIWidget *parentview, const UIRect2D& r, int border, const char *fontname)
 {
     InitFrame(parentview, r.pos.x, r.pos.y, r.size.width, r.size.height, border, fontname);
-}
-
-void UIWidget::LayoutSize(Event *ev)
-{
-    LayoutRect(ev);
 }
 
 void UIWidget::LayoutRect(Event *ev)
@@ -1390,8 +1096,6 @@ void UIWidget::LayoutRect(Event *ev)
         size.height = ev->GetFloat(4);
 
         setFrame(UIRect2D(pos, size));
-
-        m_startingpos = pos;
     }
 }
 
@@ -1433,31 +1137,14 @@ void UIWidget::LayoutBorderStyle(Event *ev)
     }
 }
 
-void UIWidget::LayoutBorderColor(Event *ev)
-{
-    setBorderColor(UColor(ev->GetFloat(1), ev->GetFloat(2), ev->GetFloat(3), ev->GetFloat(4)));
-}
-
 void UIWidget::LayoutShader(Event *ev)
 {
     setMaterial(uWinMan.RegisterShader(ev->GetString(1)));
-    m_flags &= ~WF_TILESHADER;
-}
-
-void UIWidget::LayoutTileShader(Event *ev)
-{
-    setMaterial(uWinMan.RegisterShader(ev->GetString(1)));
-    m_flags |= WF_TILESHADER;
 }
 
 void UIWidget::LayoutHoverShader(Event *ev)
 {
     setHoverMaterial(uWinMan.RegisterShader(ev->GetString(1)));
-}
-
-void UIWidget::LayoutPressedShader(Event *ev)
-{
-    setPressedMaterial(uWinMan.RegisterShader(ev->GetString(1)));
 }
 
 void UIWidget::LayoutFadeIn(Event *ev)
@@ -1468,31 +1155,10 @@ void UIWidget::LayoutFadeIn(Event *ev)
     }
 }
 
-void UIWidget::LayoutStopSound(Event *ev)
-{
-    m_stopsound = ev->GetString(1);
-    uii.Snd_RegisterSound(m_stopsound, false);
-}
-
 void UIWidget::LayoutClickSound(Event *ev)
 {
     m_clicksound = ev->GetString(1);
     uii.Snd_RegisterSound(m_clicksound, false);
-}
-
-void UIWidget::LayoutStretch(Event *ev)
-{
-    str stretch = ev->GetString(1);
-
-    if (!stricmp(stretch, "vertical")) {
-        m_flags |= WF_STRETCH_VERTICAL;
-    } else if (!stricmp(stretch, "horizontal")) {
-        m_flags |= WF_STRETCH_HORIZONTAL;
-    } else if (!stricmp(stretch, "both")) {
-        m_flags |= WF_STRETCH_VERTICAL | WF_STRETCH_HORIZONTAL;
-    }
-
-    m_flags |= WF_NOPARENTADJUST | WF_DIRECTED;
 }
 
 void UIWidget::LayoutVirtualRes(Event *ev)
@@ -1538,6 +1204,35 @@ bool UIWidget::DesignFrame(void)
     m_frame.size.width  = floorf((m_designRect.pos.x + m_designRect.size.width) * s + 0.5f) - m_frame.pos.x;
     m_frame.size.height = floorf((m_designRect.pos.y + m_designRect.size.height) * s + 0.5f) - m_frame.pos.y;
     return true;
+}
+
+UIRect2D UIWidget::DesignRect(void)
+{
+    DesignFrame();
+    return m_baseSet ? m_designBase : m_designRect;
+}
+
+void UIWidget::SetDesignRect(const UIRect2D& r)
+{
+    UIRect2D frame;
+
+    if (!DesignFrame()) {
+        return;
+    }
+    m_designRect = r;
+    if (m_baseSet) {
+        m_designBase = r;
+    }
+    // the frame as the design's (DesignFrame), its children's with it
+    frame.pos.x       = floorf(r.pos.x * m_vVirtualScale[0] + 0.5f);
+    frame.pos.y       = floorf(r.pos.y * m_vVirtualScale[1] + 0.5f);
+    frame.size.width  = floorf((r.pos.x + r.size.width) * m_vVirtualScale[0] + 0.5f) - frame.pos.x;
+    frame.size.height = floorf((r.pos.y + r.size.height) * m_vVirtualScale[1] + 0.5f) - frame.pos.y;
+    setFrame(frame);
+    // (the draw cache keeps a menu's list while its own frames stay: drawn again)
+    for (UIWidget *w = this; w; w = w->m_parent) {
+        w->m_drawValid = false;
+    }
 }
 
 void UIWidget::LayoutShape(Event *ev)
@@ -1610,16 +1305,15 @@ void UIWidget::LayoutAnchor(Event *ev)
     m_anchor[1] = ev->GetFloat(2);
 }
 
-enum { RULE_FLOWAFTER, RULE_FLOWBEFORE, RULE_FLOWBELOW, RULE_FITBELOW, RULE_FITTO, RULE_FITTEXT, RULE_MOVEIF };
+enum { RULE_FLOWAFTER, RULE_FLOWBEFORE, RULE_FLOWBELOW, RULE_FITBELOW, RULE_MOVEIF };
 
 void UIWidget::AddRule(int kind, Event *ev, int floats)
 {
-    const int first = kind == RULE_FITTEXT ? 1 : 2;
-    uiRule_t  r     = {kind, kind == RULE_FITTEXT ? str() : ev->GetString(1), NULL, 0, 0, 0};
-    float    *v[3]  = {&r.a, &r.b, &r.c};
+    uiRule_t r    = {kind, ev->GetString(1), NULL, 0, 0};
+    float   *v[2] = {&r.a, &r.b};
 
-    for (int i = 0; i < floats && first + i <= ev->NumArgs(); i++) {
-        *v[i] = ev->GetFloat(first + i);
+    for (int i = 0; i < floats && 2 + i <= ev->NumArgs(); i++) {
+        *v[i] = ev->GetFloat(2 + i);
     }
     m_rules.push_back(r);
 }
@@ -1628,8 +1322,6 @@ void UIWidget::LayoutFlowAfter(Event *ev) { AddRule(RULE_FLOWAFTER, ev, 1); }
 void UIWidget::LayoutFlowBefore(Event *ev) { AddRule(RULE_FLOWBEFORE, ev, 1); }
 void UIWidget::LayoutFlowBelow(Event *ev) { AddRule(RULE_FLOWBELOW, ev, 1); }
 void UIWidget::LayoutFitBelow(Event *ev) { AddRule(RULE_FITBELOW, ev, 1); }
-void UIWidget::LayoutFitTo(Event *ev) { AddRule(RULE_FITTO, ev, 2); }
-void UIWidget::LayoutFitText(Event *ev) { AddRule(RULE_FITTEXT, ev, 3); }
 void UIWidget::LayoutMoveIf(Event *ev) { AddRule(RULE_MOVEIF, ev, 2); }
 void UIWidget::LayoutFitWidth(Event *ev) { m_fitWidth = ev->GetFloat(1); }
 
@@ -1662,7 +1354,7 @@ void UIWidget::Flow(void)
     for (uiRule_t& rule : m_rules) {
         UIRect2D b;
 
-        if (rule.kind != RULE_FITTEXT && !rule.sibling) {
+        if (!rule.sibling) {
             rule.sibling = m_parent ? m_parent->FindWidget(rule.name) : NULL;
             if (!rule.sibling || rule.sibling == this) {
                 rule.sibling = NULL;
@@ -1674,23 +1366,6 @@ void UIWidget::Flow(void)
                 r.pos.x += rule.a;
                 r.pos.y += rule.b;
             }
-            continue;
-        }
-        if (rule.kind == RULE_FITTEXT) {
-            // its own text's width, about where it is aligned
-            float w;
-
-            m_designRect = r;
-            b            = ContentBox();
-            w            = b.size.width + rule.a * 2.0f;
-            w            = Q_max(w, rule.b);
-            w            = rule.c > 0.0f ? Q_min(w, rule.c) : w;
-            if (m_iFontAlignmentHorizontal == FONT_JUSTHORZ_CENTER) {
-                r.pos.x += (r.size.width - w) * 0.5f;
-            } else if (m_iFontAlignmentHorizontal == FONT_JUSTHORZ_RIGHT) {
-                r.pos.x += r.size.width - w;
-            }
-            r.size.width = w;
             continue;
         }
         // (a gap after a sibling only when it has something)
@@ -1708,13 +1383,6 @@ void UIWidget::Flow(void)
         case RULE_FITBELOW:
             r.size.height = Q_max(0.0f, b.pos.y + b.size.height + rule.a - r.pos.y);
             break;
-        case RULE_FITTO: {
-            const float w = Q_max(b.size.width + rule.a * 2.0f, rule.b);
-
-            r.pos.x += (r.size.width - w) * 0.5f;
-            r.size.width = w;
-            break;
-        }
         }
     }
     depth--;
@@ -1825,36 +1493,6 @@ void UIWidget::BakeShapes(void)
     }
 }
 
-void UIWidget::LayoutInitData(Event *ev)
-{
-    if (m_cvarname.length()) {
-        uii.Cvar_Set(m_cvarname, ev->GetString(1));
-    }
-}
-
-void UIWidget::LayoutDirection(Event *ev)
-{
-    str direction = ev->GetString(1);
-
-    if (!stricmp(direction, "from_bottom")) {
-        setDirection(D_FROM_BOTTOM);
-    } else if (!stricmp(direction, "from_top")) {
-        setDirection(D_FROM_TOP);
-    } else if (!stricmp(direction, "from_left")) {
-        setDirection(D_FROM_LEFT);
-    } else if (!stricmp(direction, "from_right")) {
-        setDirection(D_FROM_RIGHT);
-    } else {
-        setDirection(D_NONE);
-    }
-
-    if (ev->NumArgs() > 1) {
-        setMotionTime(ev->GetFloat(2));
-    }
-
-    m_flags |= WF_DIRECTED;
-}
-
 void UIWidget::LayoutAlign(Event *ev)
 {
     for (int i = 1; i <= ev->NumArgs(); i++) {
@@ -1890,16 +1528,6 @@ void UIWidget::LayoutLinkCvar(Event *ev)
     LinkCvar(ev->GetString(1));
 }
 
-void UIWidget::LayoutNoParentClipping(Event *ev)
-{
-    m_flags |= WF_DIRECTED;
-}
-
-void UIWidget::LayoutNoParentAdjustment(Event *ev)
-{
-    m_flags |= WF_NOPARENTADJUST;
-}
-
 void UIWidget::LayoutOrderNumber(Event *ev)
 {
     m_ordernum = ev->GetInteger(1);
@@ -1923,30 +1551,6 @@ void UIWidget::TextAlignment(Event *ev)
         } else if (!stricmp(align, "centery")) {
             setFontVerticalAlignment(FONT_JUSTVERT_CENTER);
         }
-    }
-}
-
-void UIWidget::LayoutAliasCache(Event *ev)
-{
-    int i;
-    str parms;
-    str realSound;
-
-    if (ev->NumArgs() <= 1) {
-        return;
-    }
-
-    for (i = 3; i <= ev->NumArgs(); i++) {
-        parms += ev->GetToken(i);
-        parms += " ";
-    }
-
-    realSound = ev->GetString(2);
-
-    uii.Alias_Add(parms, realSound, parms);
-
-    if (strstr(realSound, ".wav") || strstr(realSound, ".mp3")) {
-        uii.Snd_RegisterSound(realSound, false);
     }
 }
 
@@ -1974,15 +1578,6 @@ UIWidget *UIWidget::getFirstChild(void)
 {
     if (m_children.NumObjects() > 0) {
         return m_children.ObjectAt(1);
-    }
-
-    return NULL;
-}
-
-UIWidget *UIWidget::getNextSibling(void)
-{
-    if (m_parent) {
-        return m_parent->getNextChild(this);
     }
 
     return NULL;
@@ -2025,15 +1620,6 @@ UIWidget *UIWidget::getPrevSibling(void)
     return NULL;
 }
 
-UIWidget *UIWidget::getPrevSibling(UIWidget *curr)
-{
-    if (m_parent) {
-        return m_parent->getPrevChild(curr);
-    }
-
-    return NULL;
-}
-
 UIWidget *UIWidget::getLastSibling(void)
 {
     if (m_parent && m_children.NumObjects()) {
@@ -2046,19 +1632,6 @@ UIWidget *UIWidget::getLastSibling(void)
     } else {
         return NULL;
     }
-}
-
-UIWidget *UIWidget::findSibling(str name)
-{
-    UIWidget *wid;
-
-    for (wid = getLastSibling(); wid != NULL; wid = getPrevSibling(wid)) {
-        if (wid->getName() == name) {
-            return wid;
-        }
-    }
-
-    return NULL;
 }
 
 void UIWidget::Enable(void)
@@ -2217,11 +1790,6 @@ void UIWidget::setBackgroundColor(const UColor& color, bool setbordercolor)
     }
 }
 
-UBorderColor UIWidget::getBorderColor(void)
-{
-    return m_border_color;
-}
-
 void UIWidget::setBorderColor(const UBorderColor& color)
 {
     m_border_color = color;
@@ -2235,11 +1803,6 @@ UColor UIWidget::getForegroundColor(void)
 void UIWidget::setForegroundColor(const UColor& color)
 {
     m_foreground_color = color;
-}
-
-borderstyle_t UIWidget::getBorderStyle(void)
-{
-    return m_borderStyle;
 }
 
 void UIWidget::setBorderStyle(borderstyle_t style)
@@ -2282,19 +1845,6 @@ void UIWidget::setFrame(const UIRect2D& newframe)
     }
 }
 
-UIPoint2D UIWidget::getOrigin(void)
-{
-    return m_origin;
-}
-
-void UIWidget::setOrigin(const UIPoint2D& neworigin)
-{
-    if (neworigin != m_origin) {
-        m_origin = neworigin;
-        PropogateCoordinateSystem();
-    }
-}
-
 void UIWidget::setName(str name)
 {
     m_name = name;
@@ -2315,22 +1865,6 @@ const char *UIWidget::getTitle(void)
     return m_title;
 }
 
-void UIWidget::setDirection(direction_t dir)
-{
-    m_direction      = dir;
-    m_direction_orig = dir;
-}
-
-direction_t UIWidget::getDirection(void)
-{
-    return m_direction;
-}
-
-void UIWidget::setMotionType(motion_t type)
-{
-    m_motiontype = type;
-}
-
 motion_t UIWidget::getMotionType(void)
 {
     return m_motiontype;
@@ -2344,16 +1878,6 @@ void UIWidget::setMotionTime(float time)
 float UIWidget::getMotionTime(void)
 {
     return m_motiontime;
-}
-
-void UIWidget::setAlign(int align)
-{
-    m_align = align;
-}
-
-int UIWidget::getAlign(void)
-{
-    return m_align;
 }
 
 void UIWidget::setMaterial(UIReggedMaterial *mat)
@@ -2371,28 +1895,9 @@ void UIWidget::setHoverMaterial(UIReggedMaterial *mat)
     m_hovermaterial = mat;
 }
 
-void UIWidget::setPressedMaterial(UIReggedMaterial *mat)
-{
-    m_pressedmaterial = mat;
-}
-
-UIPoint2D UIWidget::getGlobalPoint(const UIPoint2D& pos)
-{
-    if (m_parent) {
-        return UIPoint2D(pos.x + m_screenframe.pos.x, pos.y + m_screenframe.pos.y);
-    } else {
-        return pos;
-    }
-}
-
 void UIWidget::setBackgroundAlpha(float f)
 {
     m_alpha = f;
-}
-
-float UIWidget::getBackgroundAlpha(void)
-{
-    return m_alpha;
 }
 
 /*
@@ -2622,7 +2127,7 @@ void UIWidget::DisplayNow(const UIRect2D& drawframe, float parent_alpha)
         return;
     }
 
-    if (m_direction || m_fadetime || m_fadeSequenceState != fadesequence_t::SEQUENCE_NONE) {
+    if (m_fadetime || m_fadeSequenceState != fadesequence_t::SEQUENCE_NONE) {
         UI_DrawLive();
         Motion();
     }
@@ -2682,31 +2187,12 @@ void UIWidget::DisplayNow(const UIRect2D& drawframe, float parent_alpha)
         col[3] = m_foreground_color.a * m_local_alpha;
         uii.Rend_SetColor(col);
 
-        if (m_flags & WF_TILESHADER) {
-            if (m_bVirtual) {
-                float fvWidth =
-                    m_frame.size.width / m_vVirtualScale[0] / uii.Rend_GetShaderWidth(m_material->GetMaterial());
-                float fvHeight =
-                    m_frame.size.height / m_vVirtualScale[1] / uii.Rend_GetShaderHeight(m_material->GetMaterial());
-
-                uii.Rend_DrawPicStretched(
-                    0, 0, m_frame.size.width, m_frame.size.height, 0, 0, fvWidth, fvHeight, m_material->GetMaterial()
-                );
-            } else {
-                uii.Rend_DrawPicTiled(0, 0, m_frame.size.width, m_frame.size.height, m_material->GetMaterial());
-            }
-        } else {
-            uii.Rend_DrawPicStretched(
-                0, 0, m_frame.size.width, m_frame.size.height, 0, 0, 1, 1, m_material->GetMaterial()
-            );
-        }
+        uii.Rend_DrawPicStretched(
+            0, 0, m_frame.size.width, m_frame.size.height, 0, 0, 1, 1, m_material->GetMaterial()
+        );
     }
 
-    if (m_pressedmaterial_active && m_pressedmaterial != NULL) {
-        uii.Rend_DrawPicStretched(
-            0, 0, m_frame.size.width, m_frame.size.height, 0, 0, 1, 1, m_pressedmaterial->GetMaterial()
-        );
-    } else if (m_hovermaterial_active && m_hovermaterial != NULL) {
+    if (m_hovermaterial_active && m_hovermaterial != NULL) {
         uii.Rend_DrawPicStretched(
             0, 0, m_frame.size.width, m_frame.size.height, 0, 0, 1, 1, m_hovermaterial->GetMaterial()
         );
@@ -2731,20 +2217,6 @@ qboolean UIWidget::KeyEvent(int key, unsigned int time)
 }
 
 void UIWidget::CharEvent(int ch) {}
-
-void UIWidget::UpdateData(void) {}
-
-void UIWidget::UpdateUIElement(void) {}
-
-float UIWidget::getTitleWidth(void)
-{
-    return m_font->getWidth(getTitle(), -1);
-}
-
-float UIWidget::getTitleHeight(void)
-{
-    return m_font->getHeight(getVirtualScale());
-}
 
 bool UIWidget::CanActivate(void)
 {
@@ -2786,11 +2258,6 @@ void UIWidget::LinkCommand(str cmd)
     m_command = cmd;
 }
 
-void UIWidget::InitializeCommandHandler(void (*fcn)(const char *, void *))
-{
-    m_commandhandler = fcn;
-}
-
 UIWidget *UIWidget::FindWidget(str name)
 {
     int i;
@@ -2816,26 +2283,11 @@ void UIWidget::ResetMotion(motion_t type)
 {
     AlignPosition();
 
-    m_direction  = m_direction_orig;
     m_motiontype = type;
 
     if (type == MOTION_IN) {
-        if (m_direction == D_FROM_BOTTOM) {
-            UIPoint2D point(m_frame.pos.x, uid.vidHeight);
-            setFrame(UIRect2D(point, m_frame.size));
-        } else if (m_direction == D_FROM_TOP) {
-            UIPoint2D point(m_frame.pos.x, -m_frame.size.height - m_parent->m_screenorigin.y);
-            setFrame(UIRect2D(point, m_frame.size));
-        } else if (m_direction == D_FROM_LEFT) {
-            UIPoint2D point(-m_frame.size.width - m_parent->m_screenorigin.x, m_frame.pos.y);
-            setFrame(UIRect2D(point, m_frame.size));
-        } else if (m_direction == D_FROM_RIGHT) {
-            UIPoint2D point(uid.vidWidth, m_frame.pos.y);
-            setFrame(UIRect2D(point, m_frame.size));
-        } else {
-            setFrame(m_frame);
-            FrameInitialized();
-        }
+        setFrame(m_frame);
+        FrameInitialized();
     }
 
     m_starttime = uid.time / 1000.0;
@@ -2865,15 +2317,6 @@ void UIWidget::Realign(void)
         bScaled                 = scaleFrameVirtualRes(m_frame, m_vVirtualScale, vNewVirtualScale);
     }
 
-    if (m_flags & WF_STRETCH_VERTICAL) {
-        m_frame.pos.y       = 0;
-        m_frame.size.height = uid.vidHeight;
-    }
-    if (m_flags & WF_STRETCH_HORIZONTAL) {
-        m_frame.pos.x      = 0;
-        m_frame.size.width = uid.vidWidth;
-    }
-
     if (m_align & WA_CENTERX) {
         m_frame.pos.x = uid.vidWidth * 0.5 - m_frame.size.width * 0.5;
     }
@@ -2894,9 +2337,8 @@ void UIWidget::Realign(void)
         m_frame.pos.y = 0;
     }
 
-    if ((m_align & WA_FULL) || (m_flags & (WF_STRETCH_HORIZONTAL | WF_STRETCH_VERTICAL)) || bScaled) {
+    if ((m_align & WA_FULL) || bScaled) {
         setFrame(m_frame);
-        m_startingpos = m_frame.pos;
     }
 }
 
@@ -2945,26 +2387,9 @@ void UIWidget::setAlwaysOnBottom(bool b)
 {
     if (getAlwaysOnBottom() != b) {
         if (b) {
-            m_flags &= ~WF_ALWAYS_TOP;
             m_flags |= WF_ALWAYS_BOTTOM;
         } else {
             m_flags &= ~WF_ALWAYS_BOTTOM;
-        }
-
-        if (m_parent) {
-            ArrangeWidgetList(m_parent->m_children);
-        }
-    }
-}
-
-void UIWidget::setAlwaysOnTop(bool b)
-{
-    if (getAlwaysOnTop() != b) {
-        if (b) {
-            m_flags &= ~WF_ALWAYS_BOTTOM;
-            m_flags |= WF_ALWAYS_TOP;
-        } else {
-            m_flags &= ~WF_ALWAYS_TOP;
         }
 
         if (m_parent) {
@@ -2978,11 +2403,6 @@ bool UIWidget::getAlwaysOnBottom(void)
     return (m_flags & WF_ALWAYS_BOTTOM) ? true : false;
 }
 
-bool UIWidget::getAlwaysOnTop(void)
-{
-    return (m_flags & WF_ALWAYS_TOP) ? true : false;
-}
-
 bool UIWidget::SendSignal(Event& event)
 {
     if (uWinMan.IsDead()) {
@@ -2992,29 +2412,14 @@ bool UIWidget::SendSignal(Event& event)
     }
 }
 
-void UIWidget::AddFlag(int flag)
-{
-    m_flags |= flag;
-}
-
 void UIWidget::SetHovermaterialActive(bool a)
 {
     m_hovermaterial_active = a;
 }
 
-void UIWidget::SetPressedmaterialActive(bool a)
-{
-    m_pressedmaterial_active = a;
-}
-
 int UIWidget::getOrderNum(void)
 {
     return m_ordernum;
-}
-
-str UIWidget::getCommand(void)
-{
-    return m_command;
 }
 
 void UIWidget::ActivateOrder(void)
@@ -3041,16 +2446,6 @@ void UIWidget::EnableEvent(Event *ev)
 void UIWidget::DisableEvent(Event *ev)
 {
     Disable();
-}
-
-void UIWidget::setConfigstringIndex(int cs)
-{
-    m_configstring_index = cs;
-}
-
-int UIWidget::getConfigstringIndex(void)
-{
-    return m_configstring_index;
 }
 
 bool UIWidget::PassEventToWidget(str name, Event *ev)
@@ -3080,11 +2475,6 @@ bool UIWidget::PassEventToWidget(str name, Event *ev)
 UIFont *UIWidget::getFont() const
 {
     return m_font;
-}
-
-bool UIWidget::isVirtual() const
-{
-    return m_bVirtual;
 }
 
 const vec2_t& UIWidget::getVirtualScale() const
@@ -3123,15 +2513,9 @@ void UIWidget::EventFadeSequence(Event *ev)
     m_fadeSequenceState         = fadesequence_t::SEQUENCE_STARTING;
 }
 
-void UIWidget::SetDontLocalize()
-{
-    m_flags |= WF_DONTLOCALIZE;
-}
-
 CLASS_DECLARATION(UIWidget, UIWidgetContainer, NULL) {
     {&EV_Layout_BGFill,     &UIWidgetContainer::SetBGFill    },
     {&EV_Layout_Fullscreen, &UIWidgetContainer::SetFullscreen},
-    {&EV_Layout_VidMode,    &UIWidgetContainer::SetVidMode   },
     {NULL,                  NULL                             }
 };
 
@@ -3139,9 +2523,7 @@ UIWidgetContainer::UIWidgetContainer()
 {
     m_bgfill        = UColor(0, 0, 0, 0);
     m_fullscreen    = false;
-    m_vidmode       = -1;
     m_currentwidnum = 0;
-    m_maxordernum   = 0;
     m_layout        = NULL;
     AllowActivate(false);
 }
@@ -3188,7 +2570,6 @@ void UIWidgetContainer::AlignPosition(void)
     }
 
     setFrame(m_frame);
-    m_startingpos = m_frame.pos;
 }
 
 void UIWidgetContainer::Draw(void)
@@ -3221,77 +2602,9 @@ void UIWidgetContainer::SetFullscreen(Event *ev)
     m_fullscreen = ev->GetBoolean(1);
 }
 
-void UIWidgetContainer::SetVidMode(Event *ev)
-{
-    m_vidmode = ev->GetInteger(1);
-}
-
-int UIWidgetContainer::getVidMode(void)
-{
-    return m_vidmode;
-}
-
 qboolean UIWidgetContainer::isFullscreen(void)
 {
     return m_fullscreen;
-}
-
-UIWidget *UIWidgetContainer::GetNextWidgetInOrder(void)
-{
-    int i;
-
-    if (!m_maxordernum) {
-        for (i = 1; i <= m_children.NumObjects(); i++) {
-            if (m_children.ObjectAt(i)->getOrderNum()) {
-                m_maxordernum++;
-            }
-        }
-    }
-
-    m_currentwidnum++;
-
-    if (m_currentwidnum > m_maxordernum) {
-        m_currentwidnum = m_maxordernum;
-    }
-
-    for (i = 1; i <= m_children.NumObjects(); i++) {
-        UIWidget *wid = m_children.ObjectAt(i);
-
-        if (wid->getOrderNum() == m_currentwidnum) {
-            return wid;
-        }
-    }
-
-    return NULL;
-}
-
-UIWidget *UIWidgetContainer::GetPrevWidgetInOrder(void)
-{
-    int i;
-
-    if (!m_maxordernum) {
-        for (i = 1; i <= m_children.NumObjects(); i++) {
-            if (m_children.ObjectAt(i)->getOrderNum()) {
-                m_maxordernum++;
-            }
-        }
-    }
-
-    m_currentwidnum--;
-
-    if (m_currentwidnum <= 0) {
-        m_currentwidnum = m_maxordernum;
-    }
-
-    for (i = 1; i <= m_children.NumObjects(); i++) {
-        UIWidget *wid = m_children.ObjectAt(i);
-
-        if (wid->getOrderNum() == m_currentwidnum) {
-            return wid;
-        }
-    }
-
-    return NULL;
 }
 
 void UIWidgetContainer::SetActiveWidgetOrderNum(UIWidget *wid)
@@ -3317,7 +2630,6 @@ void UIWidgetContainer::SetActiveWidgetOrderNum(int num)
             uWinMan.ActivateControl(wid);
         } else {
             wid->SetHovermaterialActive(false);
-            wid->SetPressedmaterialActive(false);
         }
     }
 }

@@ -77,11 +77,6 @@ void UIConsole::setMaxItems(int count)
 	Clear();
 }
 
-int UIConsole::getFirstItem(void)
-{
-	return m_firstitem;
-}
-
 int UIConsole::getNextItem(int prev)
 {
 	if (prev == -1) {
@@ -524,6 +519,12 @@ void UIConsole::CharEvent(int ch)
 		return;
 	}
 
+	// Fixed: a letter past the fonts' 256 (€, ł, Russian) as '?'; char(ch) kept only its low byte, so ł came out
+	// as 'B', some as control characters, л as ';' (the typed line then ran a second command)
+	if (ch > 255) {
+		ch = '?';
+	}
+
 	m_refreshcompletionbuffer = true;
 
 	if (m_caret > m_currentline.length()) {
@@ -547,21 +548,42 @@ void UIConsole::CharEvent(int ch)
 }
 
 // Added: the clipboard's text put in at the caret, its line breaks and tabs as spaces, the characters
-// CharEvent would drop left out
+// CharEvent would drop left out. Fixed: the clipboard is UTF-8 (SDL, AppKit); its letters 160 to 255 (é ü ß) are put
+// in as typed, one byte each, the ones past 255 as '?' (all of them were dropped)
 void UIConsole::Paste(void)
 {
-	const char *clip = uii.Sys_GetClipboard();
-	str         text;
+	const unsigned char *clip = (const unsigned char *)uii.Sys_GetClipboard();
+	str                  text;
 
 	if (!clip) {
 		return;
 	}
 
-	for (; *clip; clip++) {
-		if (*clip == '\n' || *clip == '\t') {
+	while (*clip) {
+		int c = *clip++;
+
+		if (c >= 0xC0) {
+			// a sequence's lead byte (2, 3 or 4 bytes): its code point, '?' if cut short
+			int more = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : 1;
+
+			c &= 0x3F >> more;
+			for (; more && (*clip & 0xC0) == 0x80; more--) {
+				c = (c << 6) | (*clip++ & 0x3F);
+			}
+			if (more) {
+				c = '?';
+			}
+		} else if (c >= 0x80) {
+			// a stray continuation byte
+			c = '?';
+		}
+
+		if (c == '\n' || c == '\t') {
 			text += ' ';
-		} else if ((unsigned char)*clip > 31 && (unsigned char)*clip < 128) {
-			text += *clip;
+		} else if ((c > 31 && c < 128) || (c >= 160 && c <= 255)) {
+			text += char(c);
+		} else if (c > 255) {
+			text += '?';
 		}
 	}
 

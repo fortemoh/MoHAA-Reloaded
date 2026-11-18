@@ -543,6 +543,9 @@ extern "C" {
     void CG_ServerModelLoaded(const char* name, qhandle_t handle);
     void CG_ServerModelUnloaded(qhandle_t handle);
     void CG_ModelAnim(centity_t *cent, qboolean bDoShaderTime);
+    // Added in Reloaded: the player aimed at's tag: who, each frame before the entities; drawn
+    void CG_TeamTagFrame(void);
+    void CG_DrawTeamTag(void);
     void CG_AttachEntity(
         refEntity_t *entity, refEntity_t *parent, dtiki_t *tiki, int tagnum, qboolean use_angles, vec3_t attach_offset
     );

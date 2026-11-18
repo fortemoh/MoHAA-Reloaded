@@ -75,17 +75,12 @@ public:
     float m_fit;
     void setAlpha(float alpha);
     void setFont(const char *fontname);
-    int  getMaxWidthIndex(const char *text, int maxlen);
     void setVirtualScale(const float *virtualScale);
     float getWidth(const char *text, int maxlen);
-    float getCharWidth(unsigned short ch);
+    // Fixed: a byte (was unsigned short: a plain char above 127, é ü ß, became 0xFFxx, read past the 256 widths)
+    float getCharWidth(unsigned char ch);
     int  getHeight(const char *text, int maxlen, const float *virtualScale = NULL);
     int  getHeight(const float *virtualScale = NULL);
-    int  CodeSearch(unsigned short uch);
-    bool DBCSIsLeadByte(unsigned short uch);
-    bool DBCSIsMaekin(unsigned short uch);
-    bool DBCSIsAtokin(unsigned short uch);
-    int  DBCSGetWordBlockCount(const char *text, int maxlen);
 
 private:
     void CheckRefreshFont();

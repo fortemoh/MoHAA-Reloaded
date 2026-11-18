@@ -1,6 +1,7 @@
 // The Competitive HUD (cg_hudstyle 1): top left, the compass (no radar),
-// the game messages under the radar (hud_comp_topleft) or under the compass
-menu "hud_comp_topleft_compass" 420 420 NONE 0
+// the game messages under the radar (hud_comp_topleft; moved down with its
+// size, cg_hud_radar_size) or under the compass
+menu "hud_comp_topleft_compass" 420 560 NONE 0
 virtualres 1 1920 1080
 drawcache 1
 align left top

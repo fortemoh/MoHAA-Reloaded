@@ -70,7 +70,6 @@ public:
     CLASS_PROTOTYPE(UIConsole);
 
 protected:
-    int  getFirstItem(void);
     int  getNextItem(int prev);
     int  getLastItem(void);
     int  AddLine(void);

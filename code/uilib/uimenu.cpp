@@ -98,16 +98,6 @@ void Menu::AddMenuItem(UIWidget *item)
     }
 }
 
-void Menu::DeleteMenuItem(UIWidget *item)
-{
-    // remove all item's children
-    for (int i = item->m_children.NumObjects(); i > 0; i--) {
-        m_itemlist.RemoveObject(item->m_children.ObjectAt(i));
-    }
-
-    m_itemlist.RemoveObject(item);
-}
-
 void Menu::setName(str name)
 {
     m_name = name;
@@ -132,8 +122,6 @@ void Menu::ShowMenu(Event *ev)
         if (wid->isEnabled()) {
             wid->setShow(true);
             wid->ResetMotion(MOTION_IN);
-            wid->UpdateUIElement();
-            wid->UpdateData();
         }
     }
 
@@ -237,19 +225,6 @@ UIWidget *Menu::GetNamedWidget(const char *pszName)
     return NULL;
 }
 
-void Menu::Update(void)
-{
-    int i;
-    int n;
-
-    n = m_itemlist.NumObjects();
-    for (i = 1; i <= n; i++) {
-        UIWidget *wid = m_itemlist.ObjectAt(i);
-        wid->UpdateUIElement();
-        wid->UpdateData();
-    }
-}
-
 void Menu::RealignWidgets(void)
 {
     int i;
@@ -300,16 +275,6 @@ void Menu::setFullscreen(qboolean bFullScreen)
     m_fullscreen = bFullScreen;
 }
 
-int Menu::getVidMode(void)
-{
-    return m_vidmode;
-}
-
-void Menu::setVidMode(int iMode)
-{
-    m_vidmode = iMode;
-}
-
 qboolean Menu::isVisible(void)
 {
     UIWidget *wid = GetContainerWidget();
@@ -355,21 +320,6 @@ void Menu::RestoreCVars(void)
     }
 }
 
-void Menu::ResetCVars(void)
-{
-    int i;
-    int n;
-
-    n = m_itemlist.NumObjects();
-    for (i = 1; i <= n; i++) {
-        UIWidget *wid = m_itemlist.ObjectAt(i);
-
-        if (wid->m_cvarname.length()) {
-            uii.Cvar_Reset(wid->m_cvarname);
-        }
-    }
-}
-
 void Menu::PassEventToWidget(str name, Event *ev)
 {
     int i;
@@ -381,62 +331,6 @@ void Menu::PassEventToWidget(str name, Event *ev)
         if (wid->getName() == name && wid->ValidEvent(ev->getName())) {
             wid->ProcessEvent(ev);
             return;
-        }
-    }
-}
-
-void Menu::PassEventToAllWidgets(Event& ev)
-{
-    int i;
-    int n;
-
-    n = m_itemlist.NumObjects();
-    for (i = 1; i <= n; i++) {
-        UIWidget *wid = m_itemlist.ObjectAt(i);
-        if (wid->ValidEvent(ev.getName())) {
-            wid->ProcessEvent(ev);
-        }
-    }
-}
-
-void Menu::CheckRestart(void)
-{
-    cvar_t  *cvar;
-    qboolean do_restart     = false;
-    qboolean do_snd_restart = false;
-    qboolean do_ter_restart = false;
-    int      i;
-    int      n;
-
-    n = m_itemlist.NumObjects();
-    for (i = 1; i <= n; i++) {
-        UIWidget *wid = m_itemlist.ObjectAt(i);
-
-        if (wid->m_cvarname.length()) {
-            cvar = uii.Cvar_Find(wid->m_cvarname);
-            if (cvar && cvar->latchedString) {
-                if (str::icmp(wid->m_cvarvalue, cvar->latchedString)) {
-                    if (cvar->flags & CVAR_LATCH) {
-                        do_restart = true;
-                    } else if (cvar->flags & CVAR_SOUND_LATCH) {
-                        do_snd_restart = true;
-                    } else if (cvar->flags & CVAR_TERRAIN_LATCH) {
-                        do_ter_restart = true;
-                    }
-                }
-            }
-        }
-    }
-
-    if (do_restart) {
-        uii.Cmd_Stuff("vid_restart\n");
-    } else {
-        if (do_snd_restart) {
-            uii.Cmd_Stuff("snd_restart\n");
-        }
-
-        if (do_ter_restart) {
-            uii.Cmd_Stuff("ter_restart\n");
         }
     }
 }
@@ -468,12 +362,6 @@ void MenuManager::RealignMenus(void)
 void MenuManager::AddMenu(Menu *m)
 {
     m_menulist.AddObject(m);
-    m_generation++;
-}
-
-void MenuManager::DeleteMenu(Menu *m)
-{
-    m_menulist.RemoveObject(m);
     m_generation++;
 }
 
@@ -777,18 +665,6 @@ void MenuManager::ListMenus(void)
     }
 }
 
-void MenuManager::UpdateAllMenus(void)
-{
-    int i;
-    int num;
-
-    num = m_menulist.NumObjects();
-    for (i = 1; i <= num; i++) {
-        Menu *menu = m_menulist.ObjectAt(i);
-        menu->Update();
-    }
-}
-
 void MenuManager::Lock(Event *ev)
 {
     m_lock = true;
@@ -805,36 +681,6 @@ void MenuManager::PassEventToWidget(str name, Event *ev)
 
     if (head) {
         head->PassEventToWidget(name, ev);
-    }
-}
-
-void MenuManager::PassEventToAllWidgets(Event& ev)
-{
-    int i;
-    int iMenuCount;
-
-    iMenuCount = m_menulist.NumObjects();
-    for (i = 1; i <= iMenuCount; i++) {
-        Menu *pMenu = m_menulist.ObjectAt(i);
-        pMenu->PassEventToAllWidgets(ev);
-    }
-}
-
-void MenuManager::ResetCVars(void)
-{
-    Menu *head = CurrentMenu();
-
-    if (head) {
-        head->ResetCVars();
-    }
-}
-
-void MenuManager::CheckRestart(void)
-{
-    Menu *head = CurrentMenu();
-
-    if (head) {
-        head->CheckRestart();
     }
 }
 

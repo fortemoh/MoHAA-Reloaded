@@ -73,17 +73,6 @@ qboolean UI_MenuActive(void);
 qboolean UI_MenuUp(void);
 void     UI_FocusMenuIfExists(void);
 void     UI_DrawConnect(void);
-void     UI_CreateDialog(
-        const char *title,
-        char       *cvarname,
-        const char *command,
-        const char *cancelCommand,
-        int         width,
-        int         height,
-        const char *shader,
-        const char *okshader,
-        const char *cancelshader
-    );
 void UI_ToggleDMConsole(int iMode);
 void UI_ShowScoreboard_f(const char *pszMenuName);
 void UI_HideScoreboard_f(void);
@@ -108,7 +97,6 @@ void UI_DeleteScoreBoardItems(int iMaxIndex);
 //
 void     UI_BeginLoad(const char *pszMapName);
 void     UI_EndLoad(void);
-void     UI_AbortLoad(void);
 int      CL_FontStringWidth(fontheader_t *pFont, const char *pszString, int iMaxLen);
 void     UI_BeginLoadResource(void);
 void     UI_EndLoadResource(void);
@@ -143,8 +131,6 @@ qboolean UI_DMConsoleState(int *mode, const char **line, int *caret);
 // Added: a scoreboard is shown
 qboolean UI_ScoreboardShown(void);
 void     UI_ToggleDMConsole(int iMode);
-void     UI_OpenDeveloperConsole(void);
-void     UI_CloseDeveloperConsole(void);
 void     UI_PrintConsole(const char *msg);
 
 //

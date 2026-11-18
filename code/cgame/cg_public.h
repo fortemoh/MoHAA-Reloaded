@@ -485,6 +485,11 @@ functions exported to the main executable
         // Added: the lagometer drawn by the client (1 the graph, 2 compact)
         void (*UI_DrawLagometer)(int style);
 
+        // Added: the player aimed at's tag drawn by the client in the HUD's look:
+        // their name, their health (1 to 100) and an arrow whose tip is at x, y
+        // (screen pixels: over their head)
+        void (*UI_DrawTeamTag)(int clientNum, float x, float y, int health);
+
     } clientGameImport_t;
 
     /*

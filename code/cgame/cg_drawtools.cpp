@@ -668,6 +668,8 @@ void CG_Draw2D(void)
     }
     CG_DrawLagometer();
     CG_HudDrawElements();
+    // Added: the player aimed at's tag over their head (the client's, in the HUD's look)
+    CG_DrawTeamTag();
     // Added: a mission's objectives on TAB as the Reloaded menus' card (the
     // client's, at once as their scoreboard; no crosshair over it)
     cgi.UI_DrawObjectives(cg.ObjectivesDesiredAlpha > 0.0f ? qtrue : qfalse);

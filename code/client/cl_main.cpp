@@ -3548,7 +3548,6 @@ void CL_Init( void ) {
 	Cmd_AddCommand ("tiki", CL_TikiInfoCommand_f );
 	Cmd_AddCommand ("vidmode", CL_VidMode_f );
 	Cmd_AddCommand ("saveshot", CL_SaveShot_f );
-	Cmd_AddCommand ("dialog", CL_Dialog_f );
 	Cmd_AddCommand ("aliasdump", Alias_Dump );
 	Cmd_AddCommand ("fastconnect", CL_FastConnect_f );
 	Cmd_AddCommand ("serverstatus", CL_ServerStatus_f );
@@ -4448,61 +4447,6 @@ void CL_SaveShot_f( void ) {
 	UpdateStereoSide( STEREO_CENTER );
 	Cbuf_ExecuteText( EXEC_NOW, expanded );
 	cls.no_menus = qfalse;
-}
-
-/*
-==================
-CL_Dialog_f
-==================
-*/
-void CL_Dialog_f( void ) {
-	char		title[ 64 ];
-	char		cvar[ 64 ];
-	char		command[ 64 ];
-	char		cancelCommand[ 64 ];
-	char		shader[ 64 ];
-	char		okshader[ 64 ];
-	char		cancelshader[ 64 ];
-	int			width, height;
-
-	if( Cmd_Argc() <= 3 ) {
-		Com_Printf( "usage: dialog title cvar_name command [width] [height]\n" );
-		return;
-	}
-
-	Q_strncpyz( title, Cmd_Argv( 1 ), sizeof( title ) );
-	Q_strncpyz( cvar, Cmd_Argv( 2 ), sizeof( cvar ) );
-	Q_strncpyz( command, Cmd_Argv( 3 ), sizeof( command ) );
-	Q_strncpyz( cancelCommand, Cmd_Argv( 4 ), sizeof( cancelCommand ) );
-
-	if( Cmd_Argc() > 5 ) {
-		width = atoi( Cmd_Argv( 5 ) );
-	} else {
-		width = 300;
-	}
-	if( Cmd_Argc() > 6 ) {
-		height = atoi( Cmd_Argv( 6 ) );
-	} else {
-		height = 200;
-	}
-
-	if( Cmd_Argc() > 7 ) {
-		Q_strncpyz( shader, Cmd_Argv( 7 ), sizeof( shader ) );
-	} else {
-		shader[ 0 ] = 0;
-	}
-	if( Cmd_Argc() > 8 ) {
-		Q_strncpyz( okshader, Cmd_Argv( 8 ), sizeof(okshader) );
-	} else {
-		okshader[ 0 ] = 0;
-	}
-	if( Cmd_Argc() > 9 ) {
-		Q_strncpyz( cancelshader, Cmd_Argv( 9 ), sizeof(cancelshader) );
-	} else {
-		cancelshader[ 0 ] = 0;
-	}
-
-	UI_CreateDialog( title, cvar, command, cancelCommand, width, height, shader, okshader, cancelshader );
 }
 
 /*
