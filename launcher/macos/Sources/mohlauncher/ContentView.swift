@@ -1,5 +1,6 @@
 // The launcher's window, as the Windows and Linux launcher's (launcher/desktop/ui/app.slint) with macOS's own
-// controls: the games along the top, the player, the servers and the display, and the buttons.
+// controls: in one card where to play on the left (the game, the server, the servers played on) and the player's
+// settings on the right (the name, the passwords, the display); under it the buttons.
 //
 // One spacing system throughout (Metrics): every field is a block of a label over its control (labelGap apart),
 // and blocks, cards and sections are `gap` apart, with `gap` of padding inside each card and around the window.
@@ -13,6 +14,7 @@ enum Metrics {
     static let labelHeight: CGFloat = 16
     static let control: CGFloat = 32 // a control's height, where rows must line up (as on Windows and Linux)
     static let row: CGFloat = 34
+    static let field: CGFloat = labelHeight + labelGap + control // a field's block: its label over its control
 }
 
 extension Color {
@@ -30,7 +32,6 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: Metrics.gap) {
-            GameTabs()
             Card {
                 PlayerAndServers()
             }
@@ -167,6 +168,7 @@ struct LabelAction: View {
     }
 }
 
+/// The games, each its icon over its name, as tall as a field (label and control) beside them
 struct GameTabs: View {
     var body: some View {
         HStack(spacing: Metrics.gap / 2) {
@@ -174,6 +176,7 @@ struct GameTabs: View {
                 GameTab(game: game)
             }
         }
+        .frame(height: Metrics.field)
     }
 }
 
@@ -188,31 +191,21 @@ struct GameTab: View {
         Button {
             model.select(game)
         } label: {
-            HStack(spacing: 0) {
-                // the game's icon, straight on the tab: only the tab shows the selection
+            VStack(spacing: 2) {
+                // the game's icon, straight on the tab: the tab's fill, its edge and the bold name show the selection
                 Image(nsImage: model.icon(for: game))
                     .resizable()
                     .interpolation(.high)
-                    .frame(width: 28, height: 28)
-                    .frame(width: 36, height: 36)
-                // the name, centered in the rest, and the selection bar as wide as it
+                    .frame(width: 20, height: 20)
                 Text(game.title)
-                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                    .padding(.vertical, 6)
-                    .overlay(alignment: .bottom) {
-                        if selected {
-                            Capsule().fill(Color.accentColor).frame(height: 3)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                Color.clear.frame(width: 12)
+                    .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                    .lineLimit(1)
             }
-            .padding(5)
-            .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 8)
-                .fill(selected ? Color.selectedFill : hover ? Color.hoverFill : Color.card))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.stroke))
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: 6)
+                .fill(selected ? Color.selectedFill : hover ? Color.hoverFill : Color.black.opacity(0.19)))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.white.opacity(selected ? 0.1 : 0.04)))
+            .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
         .disabled(!available)
@@ -222,7 +215,7 @@ struct GameTab: View {
     }
 }
 
-/// The player, the server, and under them side by side the servers played on and the display
+/// Two columns: the game, the server and the servers played on; the player's name, the passwords and the display
 struct PlayerAndServers: View {
     @EnvironmentObject var model: LauncherModel
 
@@ -230,6 +223,7 @@ struct PlayerAndServers: View {
         VStack(spacing: Metrics.gap) {
             Grid(horizontalSpacing: Metrics.gap, verticalSpacing: Metrics.gap) {
                 GridRow {
+                    GameTabs()
                     Field("Player name", accessory: {
                         LabelAction(systemImage: model.discordPresence ? "checkmark.square.fill" : "square",
                                     title: "Discord presence", active: model.discordPresence) {
@@ -239,6 +233,8 @@ struct PlayerAndServers: View {
                     }) {
                         TextField("Player name", text: model.name, prompt: Text("UnnamedSoldier"))
                     }
+                }
+                GridRow {
                     Field("Server", accessory: {
                         LabelAction(systemImage: model.bookmarked ? "bookmark.fill" : "bookmark",
                                     title: model.bookmarked ? "Bookmarked" : "Bookmark",
@@ -251,15 +247,18 @@ struct PlayerAndServers: View {
                         TextField("Server", text: $model.address, prompt: Text("host:port"))
                             .onSubmit { model.start(connect: true) }
                     }
-                }
-                GridRow {
-                    Field("Server password") {
-                        SecureField("Server password", text: $model.password, prompt: Text("If the server has one"))
-                            .onSubmit { model.start(connect: true) }
-                    }
-                    Field("RCON password") {
-                        SecureField("RCON password", text: $model.rcon, prompt: Text("For server admins"))
-                            .onSubmit { model.start(connect: true) }
+                    // the server's two passwords, half the column each
+                    HStack(spacing: Metrics.gap) {
+                        Field("Server password") {
+                            SecureField("Server password", text: $model.password, prompt: Text("If it has one"))
+                                .onSubmit { model.start(connect: true) }
+                        }
+                        .frame(maxWidth: .infinity)
+                        Field("RCON password") {
+                            SecureField("RCON password", text: $model.rcon, prompt: Text("For admins"))
+                                .onSubmit { model.start(connect: true) }
+                        }
+                        .frame(maxWidth: .infinity)
                     }
                 }
                 // (each half the width, under the fields' columns)
