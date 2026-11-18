@@ -85,7 +85,7 @@ enum { NAT_US, NAT_UK, NAT_RU, NAT_DE, NAT_IT };
 
 typedef struct {
     int      team; // TEAM_*: the row's own, or its header's (free-for-all)
-    int      kills, deaths;
+    int      kills, deaths; // round modes (from round-based on): this round's kills, the match's (no deaths counted)
     char     time[16], ping[16];
     qboolean dead;
     int      order; // its place in the server's list
@@ -2819,8 +2819,8 @@ bool RL_EscClick(int x, int y)
 The scoreboard: CS2's structure in our look. A header band (the map and
 mode, ALLIES 4 : 3 AXIS, the time left), a section per team, the leading
 one first (its band: emblem, name, players, alive in round modes, the
-columns), a row per player (name, K, D, K/D, TIME, PING), the spectators
-under it. Rows from the player configstrings, filled from the latest
+columns), a row per player (name, K, D, K/D, TIME, PING; from round-based
+on name, K, ROUND, TIME, PING), the spectators under it. Rows from the player configstrings, filled from the latest
 "scores" ("\x96" where it has no row). Rows tighten from 34 to 22, then the
 header slims from 104 to 72, then rows go to 18; past that each team keeps
 its top players and folds the rest into "+ N more". FFA: one table ranked
@@ -2904,10 +2904,12 @@ static void RL_MapObjectives(std::string objs[2])
 }
 
 // the numeric columns, right-aligned, from the right
-static const struct {
+typedef struct {
     const char *label;
     float       w;
-} rl_cols[] = {
+} rlCol_t;
+
+static const rlCol_t rl_cols[] = {
     {"K",    58},
     {"D",    58},
     {"K/D",  72},
@@ -2915,27 +2917,47 @@ static const struct {
     {"PING", 78},
 };
 
-static float RL_ColsW(void)
-{
-    float w = 0;
+// from round-based on the server counts no deaths: a row's numbers are the
+// player's kills this round and in the match (fgame's DM_Team::AddKills and
+// its sort; the stock board's "Kills" and "Total"), here the match's first
+static const rlCol_t rl_colsTotals[] = {
+    {"K",     58},
+    {"ROUND", 84},
+    {"TIME",  88},
+    {"PING",  78},
+};
 
-    for (const auto& c : rl_cols) {
-        w += c.w;
+static const rlCol_t *RL_Cols(bool totals, int *n)
+{
+    *n = totals ? (int)ARRAY_LEN(rl_colsTotals) : (int)ARRAY_LEN(rl_cols);
+    return totals ? rl_colsTotals : rl_cols;
+}
+
+static float RL_ColsW(bool totals)
+{
+    int            n;
+    const rlCol_t *cols = RL_Cols(totals, &n);
+    float          w    = 0;
+
+    for (int i = 0; i < n; i++) {
+        w += cols[i].w;
     }
     return w;
 }
 
-static void RL_SbLabels(const rlView_t& v, float x, float y, float w, rlColor_t c)
+static void RL_SbLabels(const rlView_t& v, float x, float y, float w, rlColor_t c, bool totals)
 {
-    float r = x + w - 16;
+    int            n;
+    const rlCol_t *cols = RL_Cols(totals, &n);
+    float          r    = x + w - 16;
 
-    for (int i = (int)ARRAY_LEN(rl_cols) - 1; i >= 0; i--) {
-        RL_Text(v, r, y, rl_cols[i].label, RL_S2, c, true, RL_RIGHT, 1.5f, RL_MID);
-        r -= rl_cols[i].w;
+    for (int i = n - 1; i >= 0; i--) {
+        RL_Text(v, r, y, cols[i].label, RL_S2, c, true, RL_RIGHT, 1.5f, RL_MID);
+        r -= cols[i].w;
     }
 }
 
-static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, const rlRow_t& r, int i, int rank, bool rounds, int self)
+static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, const rlRow_t& r, int i, int rank, bool rounds, bool totals, int self)
 {
     const rlTeam_t& T    = rl_teams[r.side];
     const bool      me   = r.p->client == self;
@@ -2964,44 +2986,57 @@ static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, con
         nx = x + 66;
     }
     {
-        const float nameW = x + w - 16 - RL_ColsW() - 14 - nx;
+        const float nameW = x + w - 16 - RL_ColsW(totals) - 14 - nx;
         std::string name  = RL_Ellipsize(v, r.p->name, fs, me, nameW);
 
         RL_Text(v, nx, cy, name.c_str(), fs, col, me, RL_LEFT, 0, RL_MID);
     }
     {
-        const char *vals[5];
-        float       rx = x + w - 16;
-        char        k[16], d[16], ping[16], kd[16];
-        const float ratio = !r.sc ? 0.0f : r.sc->deaths ? (float)r.sc->kills / r.sc->deaths : (float)r.sc->kills;
+        int            n;
+        const rlCol_t *cols = RL_Cols(totals, &n);
+        const char    *vals[5];
+        float          rx = x + w - 16;
+        char           k[16], d[16], ping[16], kd[16];
+        const float    ratio = !r.sc ? 0.0f : r.sc->deaths ? (float)r.sc->kills / r.sc->deaths : (float)r.sc->kills;
 
-        Com_sprintf(k, sizeof(k), "%d", r.sc ? r.sc->kills : 0);
-        Com_sprintf(d, sizeof(d), "%d", r.sc ? r.sc->deaths : 0);
-        Com_sprintf(kd, sizeof(kd), "%.2f", ratio);
         Q_strncpyz(ping, r.sc ? (!Q_stricmp(r.sc->ping, "bot") ? "BOT" : r.sc->ping) : "\x96", sizeof(ping));
-        vals[0] = r.sc ? k : "\x96";
-        vals[1] = r.sc ? d : "\x96";
-        vals[2] = r.sc ? kd : "\x96";
-        vals[3] = r.sc ? r.sc->time : "\x96";
-        vals[4] = ping;
-        for (int c = 4; c >= 0; c--) {
+        if (totals) {
+            // (the match's kills, the round's)
+            Com_sprintf(k, sizeof(k), "%d", r.sc ? r.sc->deaths : 0);
+            Com_sprintf(d, sizeof(d), "%d", r.sc ? r.sc->kills : 0);
+            vals[0] = r.sc ? k : "\x96";
+            vals[1] = r.sc ? d : "\x96";
+            vals[2] = r.sc ? r.sc->time : "\x96";
+            vals[3] = ping;
+        } else {
+            Com_sprintf(k, sizeof(k), "%d", r.sc ? r.sc->kills : 0);
+            Com_sprintf(d, sizeof(d), "%d", r.sc ? r.sc->deaths : 0);
+            Com_sprintf(kd, sizeof(kd), "%.2f", ratio);
+            vals[0] = r.sc ? k : "\x96";
+            vals[1] = r.sc ? d : "\x96";
+            vals[2] = r.sc ? kd : "\x96";
+            vals[3] = r.sc ? r.sc->time : "\x96";
+            vals[4] = ping;
+        }
+        for (int c = n - 1; c >= 0; c--) {
             rlColor_t vc = col;
 
-            if (c == 2 && r.sc && !dead && !me) {
+            if (!totals && c == 2 && r.sc && !dead && !me) {
                 vc = ratio >= 1.0f ? RL_Rgb(150, 205, 140) : RL_Rgb(220, 140, 120);
             }
-            if (c >= 3 && !me) {
+            // (the time and the ping)
+            if (c >= n - 2 && !me) {
                 vc = RL_Alpha(RL_MUTED, a);
             }
             RL_Text(v, rx, cy, vals[c], fs, vc, c == 0, RL_RIGHT, 0, RL_MID);
-            rx -= rl_cols[c].w;
+            rx -= cols[c].w;
         }
     }
 }
 
 // a team's section: its band, then its players; over most, its lowest-ranked fold into "+ N more"; its height
-static float RL_SbTeam(const rlView_t& v, float x, float y, float w, int t, const std::vector<rlRow_t>& rows, bool rounds, float rh, int most, int self,
-                       const std::string& objective)
+static float RL_SbTeam(const rlView_t& v, float x, float y, float w, int t, const std::vector<rlRow_t>& rows, bool rounds, bool totals, float rh, int most,
+                       int self, const std::string& objective)
 {
     const rlTeam_t& T  = rl_teams[t];
     const float     bh = 46;
@@ -3023,7 +3058,7 @@ static float RL_SbTeam(const rlView_t& v, float x, float y, float w, int t, cons
     }
     {
         const float iw = RL_TextW(v, T.name, RL_S1, true, 2), end = x + 52 + iw + 16 + RL_TextW(v, info, RL_S2, false, 2);
-        const float cols = x + w - 16 - RL_ColsW() - 12;
+        const float cols = x + w - 16 - RL_ColsW(totals) - 12;
 
         if (end <= cols) {
             RL_Text(v, x + 52 + iw + 16, y + bh / 2, info, RL_S2, RL_T(T.pale, 220), false, RL_LEFT, 2, RL_MID);
@@ -3036,9 +3071,9 @@ static float RL_SbTeam(const rlView_t& v, float x, float y, float w, int t, cons
             RL_Text(v, ox + 18, y + bh / 2, objective.c_str(), 18, RL_T(T.pale), false, RL_LEFT, 0, RL_MID, cols - ox - 18);
         }
     }
-    RL_SbLabels(v, x, y + bh / 2, w, RL_T(T.pale, 200));
+    RL_SbLabels(v, x, y + bh / 2, w, RL_T(T.pale, 200), totals);
     for (int i = 0; i < shown; i++) {
-        RL_SbRow(v, x, y + bh + 4 + i * rh, w, rh, rows[i], i, 0, rounds, self);
+        RL_SbRow(v, x, y + bh + 4 + i * rh, w, rh, rows[i], i, 0, rounds, totals, self);
     }
     if (shown < n) {
         RL_Text(v, x + 14, y + bh + 4 + shown * rh + rh / 2 - 1, va("+ %d more", n - shown), Q_min(RL_S1, rh * 0.66f), RL_FAINT, false, RL_LEFT, 0,
@@ -3198,9 +3233,9 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
         RL_Round(v, x, y0, w, 40, 4, RL_Rgb(30, 33, 36, 235));
         RL_Text(v, x + 14, y0 + 20, "#", RL_S2, RL_MUTED, true, RL_LEFT, 1.5f, RL_MID);
         RL_Text(v, x + 66, y0 + 20, "PLAYER", RL_S2, RL_MUTED, true, RL_LEFT, 1.5f, RL_MID);
-        RL_SbLabels(v, x, y0 + 20, w, RL_MUTED);
+        RL_SbLabels(v, x, y0 + 20, w, RL_MUTED, false);
         for (int j = 0; j < shown; j++) {
-            RL_SbRow(v, x, y0 + 44 + j * rh, w, rh, ffaRows[j], j, j + 1, false, in.self);
+            RL_SbRow(v, x, y0 + 44 + j * rh, w, rh, ffaRows[j], j, j + 1, false, false, in.self);
         }
         if (shown < (int)ffaRows.size()) {
             RL_Text(v, x + 14, y0 + 44 + shown * rh + rh / 2 - 1, va("+ %d more", (int)ffaRows.size() - shown), Q_min(RL_S1, rh * 0.66f), RL_FAINT,
@@ -3260,7 +3295,7 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
             RL_MapObjectives(objs);
         }
         for (int k = 0; k < 2; k++) {
-            y += RL_SbTeam(v, x, y, w, order[k], teams[order[k]], rounds, rh, caps[k], in.self, objs[order[k]]) + gapT;
+            y += RL_SbTeam(v, x, y, w, order[k], teams[order[k]], rounds, in.gametype >= GT_TEAM_ROUNDS, rh, caps[k], in.self, objs[order[k]]) + gapT;
         }
         spectators(y + 4);
     }
