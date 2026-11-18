@@ -80,11 +80,6 @@ public:
     float getCharWidth(unsigned short ch);
     int  getHeight(const char *text, int maxlen, const float *virtualScale = NULL);
     int  getHeight(const float *virtualScale = NULL);
-    int  CodeSearch(unsigned short uch);
-    bool DBCSIsLeadByte(unsigned short uch);
-    bool DBCSIsMaekin(unsigned short uch);
-    bool DBCSIsAtokin(unsigned short uch);
-    int  DBCSGetWordBlockCount(const char *text, int maxlen);
 
 private:
     void CheckRefreshFont();
