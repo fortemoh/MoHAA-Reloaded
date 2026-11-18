@@ -2751,9 +2751,9 @@ void R_CreateBuiltinImages(void) {
 	tr.scratchImage = R_CreateImageOld("*scratch", (byte*)data, DEFAULT_SIZE, DEFAULT_SIZE, 0, 1, r_picmip->integer, qfalse, qfalse, qfalse, MB_CLAMP, MB_CLAMP);
 	tr.scratchImage->r_sequence = -1;
 
-	// the frame blurred (the Reloaded menus' backdrop), about a 16th of the screen's size (each side the nearest
-	// power of two: uploaded unscaled), black until it is drawn, filled where it is (mbFrameBlur); clamped as its 2D
-	// shader looks it up (R_FindShader)
+	// the frame blurred (the Reloaded menus' backdrop): black, about a 16th of the screen's size (each side the
+	// nearest power of two: uploaded unscaled) until it is first drawn, when its texture becomes the blur's own, a
+	// quarter of the screen's size (mbFrameBlur); clamped as its 2D shader looks it up (R_FindShader)
 	{
 		const int	w = 1 << Q_max( 0, (int)( log2f( glConfig.vidWidth / 16.0f ) + 0.5f ) );
 		const int	h = 1 << Q_max( 0, (int)( log2f( glConfig.vidHeight / 16.0f ) + 0.5f ) );

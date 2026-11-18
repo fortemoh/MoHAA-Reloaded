@@ -20,9 +20,9 @@ vertex MbBlurVertexOut mb_blur_vs( uint vid [[vertex_id]] )
 	return out;
 }
 
-// Four taps a texel of the source either side of the target texel's place, each the average of the 2x2 texels around
-// it: the average of a 4x4 block when the source is four times the target's size. spread 0: one tap (a 2x2 block
-// when the source is twice the size, bilinear scaling otherwise). Opaque: the image samples alpha 1 anyway.
+// Four taps spread either side of the target texel's place, each bilinear. A texel of the source: the average of a 4x4
+// block when the source is four times the target's size; 0: one tap (a 2x2 block at half the size); half a texel at
+// twice the size: a tent over 3x3 source texels, smooth where they meet. Opaque: the image samples alpha 1 anyway.
 fragment float4 mb_blur_fs( MbBlurVertexOut in [[stage_in]],
 	texture2d<float> source [[texture(0)]],
 	constant float2 &spread [[buffer(0)]] )

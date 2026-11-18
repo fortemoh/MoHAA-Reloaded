@@ -261,11 +261,11 @@ static int							mb_queryKeep;
 static qboolean						mb_encQueries;		// the current pass has the visibility buffer
 static id<MTLRenderPipelineState>	mb_queryPipeline;
 
-// the frame blurred (mbFrameBlur): its steps' targets, a 4th, a 16th and a 32nd of the scene target's size, made at
-// the first blur for that size
-#define MB_BLUR_STEPS		3
+// the frame blurred (mbFrameBlur): its steps' targets, a 4th (the image the menus draw), a 16th, a 32nd and an 8th of
+// the scene target's size, made at the first blur for that size
+#define MB_BLUR_TARGETS		4
 static id<MTLRenderPipelineState>	mb_blurPipeline;
-static id<MTLTexture>				mb_blurTargets[MB_BLUR_STEPS];
+static id<MTLTexture>				mb_blurTargets[MB_BLUR_TARGETS];
 static int							mb_blurWidth, mb_blurHeight;	// the scene target's size they were made for
 static uint64_t						mb_blurSerial;					// the frame last blurred
 
@@ -2265,7 +2265,7 @@ void mbShutdown( void )
 
 	mb_sceneColor = nil;
 	mb_sceneDepth = nil;
-	for ( i = 0; i < MB_BLUR_STEPS; i++ ) {
+	for ( i = 0; i < MB_BLUR_TARGETS; i++ ) {
 		mb_blurTargets[i] = nil;
 	}
 	mb_blurWidth = mb_blurHeight = 0;
@@ -4976,17 +4976,19 @@ static id<MTLTexture> MB_BlurTarget( int width, int height, MTLStorageMode stora
 /*
 ** MB_BlurStep
 **
-** dst covered with src sampled bilinearly (tr_mtl_blur.metal): wide, four taps a texel of src either side of each
-** texel's place, the average of a 4x4 block where src is four times dst's size; else one tap.
+** dst covered with src sampled bilinearly (tr_mtl_blur.metal): four taps spread texels of src either side of each
+** texel's place. 1 down to a quarter of src's size: the average of a 4x4 block; 0: one tap (a 2x2 block at half the
+** size); 0.5 up to twice src's size: a tent over 3x3 texels of src, a smooth curve with no crease where src's texels
+** meet (a single bilinear step that far up shows src's grid).
 */
-static void MB_BlurStep( id<MTLTexture> src, id<MTLTexture> dst, qboolean wide )
+static void MB_BlurStep( id<MTLTexture> src, id<MTLTexture> dst, float texels )
 {
 	MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
 	id<MTLRenderCommandEncoder> enc;
 	float spread[2];
 
-	spread[0] = wide ? 1.0f / src.width : 0.0f;
-	spread[1] = wide ? 1.0f / src.height : 0.0f;
+	spread[0] = texels / src.width;
+	spread[1] = texels / src.height;
 	pass.colorAttachments[0].texture = dst;
 	pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
 	pass.colorAttachments[0].storeAction = MTLStoreActionStore;
@@ -5002,20 +5004,23 @@ static void MB_BlurStep( id<MTLTexture> src, id<MTLTexture> dst, qboolean wide )
 /*
 ** mbFrameBlur
 **
-** The Reloaded menus' backdrop, as the Vulkan renderer's: the scene target averaged over blocks of 4x4 texels, those
-** over 4x4 and those over 2x2 (a box 32 texels wide: the Vulkan renderer's five halvings, in three steps), and that
-** scaled into the texture (a power of two about a 16th of the screen's size, tr_image.c) with bilinear filtering; the
-** texture is drawn stretched over the screen. Four passes, the largest a 16th of the screen's texels, while the image
-** is drawn; nothing otherwise.
+** The Reloaded menus' backdrop: down, the scene target averaged over blocks of 4x4 texels, those over 4x4 and those
+** over 2x2 (a box 32 texels wide, as the Vulkan renderer's five halvings), then up again to a quarter of the screen's
+** size, a tent at each doubling, into the texture the menus draw stretched over the screen. Up to a quarter, not
+** straight into a 16th: stretched 16 times, bilinear filtering showed its grid (squares and creases 16 pixels apart);
+** stretched 4 times from a smooth image it shows nothing. Six passes, the largest a 16th of the screen's texels, while
+** the image is drawn; nothing otherwise. The image is the first step's target, written again by the last: its memory
+** (with the 16th, the 32nd and the 8th, ~0.7 MB at 1920x1080, ~2.8 at 3840x2160) stays for the next time, at no cost
+** per frame while the menus are closed.
 **
 ** The scene pass ends without storing depth and stencil: a 3D view drawn after this clears them first, and a 2D
 ** draw passes the depth test against a cleared depth buffer as against any.
 */
 void mbFrameBlur( unsigned int texture )
 {
-	static const int shifts[MB_BLUR_STEPS] = { 2, 4, 5 };
+	static const int shifts[MB_BLUR_TARGETS] = { 2, 4, 5, 3 };
 	mbTexture_t *t = MB_TextureForName( texture );
-	id<MTLTexture> dst;
+	id<MTLTexture> image;
 	int i;
 
 	if ( !t || !t->texture || !mb_blurPipeline || !mb_sceneColor || mb_blurSerial == mb_frameSerial
@@ -5025,8 +5030,10 @@ void mbFrameBlur( unsigned int texture )
 
 	@autoreleasepool {
 		if ( mb_blurWidth != mb_width || mb_blurHeight != mb_height ) {
-			for ( i = 0; i < MB_BLUR_STEPS; i++ ) {
-				mb_blurTargets[i] = MB_BlurTarget( mb_width >> shifts[i], mb_height >> shifts[i], MTLStorageModePrivate );
+			for ( i = 0; i < MB_BLUR_TARGETS; i++ ) {
+				// (the image shared, as uploads are: one more would write it as any)
+				mb_blurTargets[i] = MB_BlurTarget( mb_width >> shifts[i], mb_height >> shifts[i],
+					i ? MTLStorageModePrivate : MTLStorageModeShared );
 				if ( !mb_blurTargets[i] ) {
 					mb_blurWidth = mb_blurHeight = 0;
 					return;
@@ -5036,17 +5043,12 @@ void mbFrameBlur( unsigned int texture )
 			mb_blurHeight = mb_height;
 		}
 
-		// the front end's upload is only sampled: the name gets a texture of its size the GPU renders into (shared, as
-		// uploads are: one more would write it as any). The old one goes once its frames are done.
-		dst = MB_OBJ( t->texture );
-		if ( !( dst.usage & MTLTextureUsageRenderTarget ) || dst.pixelFormat != MTLPixelFormatRGBA8Unorm
-			|| dst.mipmapLevelCount != 1 ) {
-			dst = MB_BlurTarget( t->width, t->height, MTLStorageModeShared );
-			if ( !dst ) {
-				return;
-			}
+		// the name's texture is the image (the front end's upload, then an image of an older size, go once their
+		// frames are done); sampled as before, by its texture coordinates, whatever its size
+		image = mb_blurTargets[0];
+		if ( t->texture != (__bridge void *)image ) {
 			MB_Retire( (__bridge_transfer id)t->texture );
-			t->texture = (__bridge_retained void *)dst;
+			t->texture = (__bridge_retained void *)image;
 			t->format = MTLPixelFormatRGBA8Unorm;
 			t->levels = t->definedLevels = 1;
 			t->samplerDirty = qtrue;
@@ -5060,10 +5062,12 @@ void mbFrameBlur( unsigned int texture )
 		MB_EndPass( qfalse );
 		MB_BeginCommandBuffer();
 
-		MB_BlurStep( mb_sceneColor, mb_blurTargets[0], qtrue );
-		MB_BlurStep( mb_blurTargets[0], mb_blurTargets[1], qtrue );
-		MB_BlurStep( mb_blurTargets[1], mb_blurTargets[2], qfalse );
-		MB_BlurStep( mb_blurTargets[2], dst, qfalse );
+		MB_BlurStep( mb_sceneColor, image, 1.0f );					// a 4th
+		MB_BlurStep( image, mb_blurTargets[1], 1.0f );				// a 16th
+		MB_BlurStep( mb_blurTargets[1], mb_blurTargets[2], 0.0f );	// a 32nd
+		MB_BlurStep( mb_blurTargets[2], mb_blurTargets[1], 0.5f );	// up: a 16th
+		MB_BlurStep( mb_blurTargets[1], mb_blurTargets[3], 0.5f );	// an 8th
+		MB_BlurStep( mb_blurTargets[3], image, 0.5f );				// a 4th, the image
 	}
 	mb_blurSerial = mb_frameSerial;
 }

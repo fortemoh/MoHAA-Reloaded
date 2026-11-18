@@ -403,8 +403,8 @@ int		mbDepthQueryResult( int handle );
 
 // The frame as drawn so far, blurred into the texture (the Reloaded menus' backdrop, "*frameblur", tr_draw.c), once a
 // frame: the scene pass ends there and the frame goes on in a new one, its color loaded, depth and stencil cleared.
-// The texture becomes one the GPU renders into (its size and sampling kept); before anything is drawn, it keeps what
-// it holds.
+// The texture becomes the blur's own, a quarter of the screen's size (sampled as before: by its texture coordinates);
+// before anything is drawn, it keeps what it holds.
 void	mbFrameBlur( unsigned int texture );
 
 static ID_INLINE int mbGetError( void ) { return MB_NO_ERROR; }
