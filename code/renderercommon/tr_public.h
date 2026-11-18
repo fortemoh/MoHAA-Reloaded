@@ -28,10 +28,40 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 extern "C" {
 #endif
 
-#define	REF_API_VERSION		21	// 15: DrawBoxes, 16: FrameToken, PresentGate, 17: RegisterImage2D, 18: 2D lists, 19: DrawPolygon2D, 20: RegisterTexture2D, 21: refdef_t viewmodel_fov_x/_y
+#define	REF_API_VERSION		22	// 15: DrawBoxes, 16: FrameToken, PresentGate, 17: RegisterImage2D, 18: 2D lists, 19: DrawPolygon2D, 20: RegisterTexture2D, 21: refdef_t viewmodel_fov_x/_y, 22: RegisterRadar2D, Radar2DHeight
 
 typedef struct dtiki_s dtiki_t;
 typedef struct skelAnimFrame_s skelAnimFrame_t;
+
+// Added: the Competitive HUD radar's floors (RegisterRadar2D). A floor, 12
+// bytes, as the GPU reads it
+typedef struct {
+    float         z;     // its height
+    float         fill;  // alpha / 255.0f
+    unsigned char alpha; // its inside's alpha
+    unsigned char sides; // bits 0-3: an edge toward its cell's left, right, north and south neighbour; 4-7: a stair
+    unsigned short pad;  // (drawn at the cell's left, right, bottom and top texels, as the UI's own picture has them)
+} radarFloor_t;
+
+// A picture of cw x ch cells, texels x texels each, the top row the map's
+// north. Cell c (cy * cw + cx) has the floors cellFloors[c] up to
+// cellFloors[c + 1] (the first of equals nearest a height drawn); the cells a
+// height can change (more than one floor, or a side) listed in changing. A
+// texel: no floor, clear; else 235 240 245 and its floor's alpha, at a side
+// with an edge (0.3 + 0.6 * focus) * 255, a stair (fill + (0.22 + 0.3 * focus
+// - fill) * 0.8) * 255, where focus = (120 - |z - height|) / 56 in 0..1. All
+// three in memory (page-aligned, memoryBytes a multiple of 16384: the
+// renderer may read it in place), freed by release
+typedef struct {
+    int                 cw, ch, texels;
+    const unsigned int *cellFloors; // cw * ch + 1, at memory's start
+    const radarFloor_t *floors;
+    const unsigned int *changing;
+    int                 numFloors, numChanging;
+    void               *memory;
+    int                 memoryBytes;
+    void (*release)(void *memory);
+} radar2D_t;
 
 
 //
@@ -204,6 +234,17 @@ typedef struct {
     // a big picture drawn whole (the zoom overlays' masks), which would make
     // the atlas's page grow
     qhandle_t (*RegisterTexture2D)(const char *name, byte *rgba, int width, int height);
+
+    // Added for the Competitive HUD's radar; both may be NULL (the UI then
+    // makes its picture itself, RegisterImage2D). The picture made by the
+    // renderer from each cell's floors, so a storey's change costs a number,
+    // not a picture: RegisterRadar2D makes it (under a name, as
+    // RegisterImage2D) for height z and returns its 2D shader, 0 if it
+    // failed; the renderer owns radar->memory from then on, in every case
+    // (radar->release( memory ) once it is done with it). Radar2DHeight: its
+    // texels for height z, for the draws after it
+    qhandle_t (*RegisterRadar2D)(const char *name, const radar2D_t *radar, float z);
+    void (*Radar2DHeight)(qhandle_t shader, float z);
 } refexport_t;
 
 //

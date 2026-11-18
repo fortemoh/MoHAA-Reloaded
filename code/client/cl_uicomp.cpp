@@ -36,6 +36,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../qcommon/localization.h"
 
 #include <atomic>
+#include <new>
 #include <thread>
 #include <vector>
 
@@ -2286,11 +2287,14 @@ down from a jump's height above each floor, on the world and the brush
 entities: crates, bridges) from the spawn points and the tops of the
 ladders at the map's load, and again from where a player stands that the
 walk didn't reach (every 250 ms, a few thousand cells a frame). Drawn top
-down into a picture on a thread of its own, again when the player changes
-storey or the walk grew: each cell's floor nearest the player's height
-filled, brighter the higher, its edges (no floor beside, or a ledge) as
-lines, stairs and ramps striped across the way up, the player's storey's
-bright
+down into a picture: each cell's floor nearest the player's height filled,
+brighter the higher, its edges (no floor beside, or a ledge) as lines,
+stairs and ramps striped across the way up, the player's storey's bright.
+The cells' floors are listed on a thread of their own (at the load, on
+this one) and given to the renderer, which makes the picture on the GPU:
+a change of storey is then a number (re.Radar2DHeight). A renderer without
+it (RegisterRadar2D NULL): the picture painted on that thread from the
+same list and uploaded, again at each change of storey
 
 ====================================================================
 */
@@ -2299,6 +2303,7 @@ bright
 #define RM_RANGE    1000.0f // units from the radar's middle to its edge
 #define RM_STAIR    7.0f    // a floor this much higher beside: a stair (to a ledge's 40)
 #define RM_PER_STEP 2000    // cells walked a frame after the load
+#define RM_PAGE     16384   // the floors' memory in whole pages: the renderer reads it in place
 
 typedef struct {
     float z;
@@ -2332,9 +2337,15 @@ static struct {
     float     focusZ;
     qhandle_t shader;
     int       stamp;
-    // ... made on its thread
+    float     width;     // the radar's, pixels across (the last seen: the load's picture is made for it)
+    qboolean  onGpu;     // the picture is the renderer's (RegisterRadar2D): a storey's change is a number
+    qboolean  gpuFailed; // the renderer's failed: the UI's own picture, this map
+    // ... made on its thread (the floors, then the UI's own picture of them, or the floors for the renderer's)
     std::thread       worker;
     std::atomic<bool> done{false};
+    qboolean          gpu;    // the floors for the renderer, not painted here
+    float             paintZ; // the height painted here
+    radar2D_t         floors; // memory NULL: none
     std::vector<byte> px;
     int               pxW, pxH;
 } rm;
@@ -2570,52 +2581,136 @@ static int RM_Nearest(int cx, int cy, float z)
     return best;
 }
 
-// the picture's texels (on the worker thread: the walk doesn't change meanwhile)
-static void RM_Draw(void)
+static void RM_Release(void *memory)
 {
-    const int t = rm.texels, w = rm.cw * t, h = rm.ch * t;
+    ::operator delete(memory, std::align_val_t(RM_PAGE));
+}
 
-    rm.px.assign(w * h * 4, 0);
+// each cell's floors in the order RM_Nearest walks them (its first of equals
+// drawn), their shade and sides, and the cells a height can change: more
+// than one floor, or a side (on the worker thread, or at the load: the walk
+// doesn't change meanwhile)
+static radar2D_t RM_Floors(void)
+{
+    const int    cells = rm.cw * rm.ch, n = (int)rm.nodes.size();
+    const size_t floorsAt = ((size_t)(cells + 1) * sizeof(unsigned int) + 15) & ~(size_t)15;
+    const size_t changingAt = floorsAt + (size_t)n * sizeof(radarFloor_t);
+    const size_t bytes = (changingAt + (size_t)Q_min(n, cells) * sizeof(unsigned int) + RM_PAGE - 1) & ~(size_t)(RM_PAGE - 1);
+    byte        *memory = (byte *)::operator new(bytes, std::align_val_t(RM_PAGE));
+    unsigned int *cellFloors = (unsigned int *)memory, *changing = (unsigned int *)(memory + changingAt);
+    radarFloor_t *floors = (radarFloor_t *)(memory + floorsAt);
+    radar2D_t     r;
+    int           f = 0, m = 0;
+
     for (int cy = 0; cy < rm.ch; cy++) {
         for (int cx = 0; cx < rm.cw; cx++) {
-            const int n = RM_Nearest(cx, cy, rm.focusZ);
-            float     z, focus;
-            byte      fill, line, stairLine, edge[4], stair[4]; // left, right, north, south
+            const int c     = cy * rm.cw + cx;
+            int       sides = 0;
 
-            if (n < 0) {
+            cellFloors[c] = f;
+            for (int node = rm.head[c]; node >= 0; node = rm.nodes[node].next) {
+                const float   z    = rm.nodes[node].z;
+                const byte    fill = (byte)((0.2f + 0.24f * (rm.zMax > rm.zMin ? (z - rm.zMin) / (rm.zMax - rm.zMin) : 1.0f)) * 255.0f);
+                radarFloor_t *fl   = &floors[f++];
+
+                fl->z     = z;
+                fl->fill  = fill / 255.0f;
+                fl->alpha = fill;
+                fl->sides = 0;
+                fl->pad   = 0;
+                // the edges: no floor beside within a step (a wall, a drop, a
+                // ledge); a stair: one a little higher, striped every other cell
+                for (int k = 0; k < 4; k++) {
+                    const int   nb = RM_Nearest(cx + (k == 1) - (k == 0), cy + (k == 2) - (k == 3), z);
+                    const float dz = nb < 0 ? 0.0f : rm.nodes[nb].z - z;
+
+                    if (nb < 0 || fabsf(dz) > 40.0f) {
+                        fl->sides |= 1 << k;
+                    } else if (dz >= RM_STAIR && ((k < 2 ? cx : cy) & 1) == 0) {
+                        fl->sides |= 16 << k;
+                    }
+                }
+                sides |= fl->sides;
+            }
+            if (f - (int)cellFloors[c] > 1 || sides) {
+                changing[m++] = c;
+            }
+        }
+    }
+    cellFloors[cells] = f;
+
+    r.cw          = rm.cw;
+    r.ch          = rm.ch;
+    r.texels      = rm.texels;
+    r.cellFloors  = cellFloors;
+    r.floors      = floors;
+    r.changing    = changing;
+    r.numFloors   = f;
+    r.numChanging = m;
+    r.memory      = memory;
+    r.memoryBytes = (int)bytes;
+    r.release     = RM_Release;
+    return r;
+}
+
+// the picture's texels for height z, from the floors (the renderer's
+// mb_radar_cs makes the same bytes)
+static void RM_Paint(const radar2D_t *r, float z, std::vector<byte> *px)
+{
+    const int t = r->texels, w = r->cw * t;
+
+    px->assign((size_t)w * r->ch * t * 4, 0);
+    for (int cy = 0; cy < r->ch; cy++) {
+        for (int cx = 0; cx < r->cw; cx++) {
+            const int c = cy * r->cw + cx, first = r->cellFloors[c], last = r->cellFloors[c + 1];
+            int       n = first;
+            byte      a[5]; // left, right, north, south (as drawn: the bottom, the top), inside
+
+            if (first == last) {
                 continue;
             }
-            z         = rm.nodes[n].z;
-            focus     = Com_Clamp(0.0f, 1.0f, (120.0f - fabsf(z - rm.focusZ)) / 56.0f);
-            fill      = (byte)((0.2f + 0.24f * (rm.zMax > rm.zMin ? (z - rm.zMin) / (rm.zMax - rm.zMin) : 1.0f)) * 255.0f);
-            line      = (byte)((0.3f + 0.6f * focus) * 255.0f);
-            stairLine = (byte)((fill / 255.0f + (0.22f + 0.3f * focus - fill / 255.0f) * 0.8f) * 255.0f);
-            // the edges: no floor beside within a step (a wall, a drop, a
-            // ledge); a stair: one a little higher, striped every other cell
-            for (int k = 0; k < 4; k++) {
-                const int nb = RM_Nearest(cx + (k == 1) - (k == 0), cy + (k == 2) - (k == 3), z);
-                const float dz = nb < 0 ? 0.0f : rm.nodes[nb].z - z;
-
-                edge[k]  = nb < 0 || fabsf(dz) > 40.0f;
-                stair[k] = !edge[k] && dz >= RM_STAIR && ((k < 2 ? cx : cy) & 1) == 0;
+            for (int i = first + 1; i < last; i++) {
+                if (fabsf(r->floors[i].z - z) < fabsf(r->floors[n].z - z)) {
+                    n = i;
+                }
             }
+            const radarFloor_t *f         = &r->floors[n];
+            const float         focus     = Com_Clamp(0.0f, 1.0f, (120.0f - fabsf(f->z - z)) / 56.0f);
+            const byte          line      = (byte)((0.3f + 0.6f * focus) * 255.0f);
+            const byte          stairLine = (byte)((f->fill + (0.22f + 0.3f * focus - f->fill) * 0.8f) * 255.0f);
+
+            for (int k = 0; k < 4; k++) {
+                a[k] = (f->sides & (1 << k)) ? line : (f->sides & (16 << k)) ? stairLine : f->alpha;
+            }
+            a[4] = f->alpha;
             // the picture's top row is the map's north (y up)
             for (int j = 0; j < t; j++) {
-                byte *o = &rm.px[(((rm.ch - 1 - cy) * t + j) * w + cx * t) * 4];
+                byte *o = &(*px)[(((size_t)(r->ch - 1 - cy) * t + j) * w + cx * t) * 4];
 
                 for (int i = 0; i < t; i++, o += 4) {
-                    const int side = i == 0 ? 0 : i == t - 1 ? 1 : j == t - 1 ? 2 : j == 0 ? 3 : -1;
+                    const int side = i == 0 ? 0 : i == t - 1 ? 1 : j == t - 1 ? 2 : j == 0 ? 3 : 4;
 
                     o[0] = 235;
                     o[1] = 240;
                     o[2] = 245;
-                    o[3] = side >= 0 && edge[side] ? line : side >= 0 && stair[side] ? stairLine : fill;
+                    o[3] = a[side];
                 }
             }
         }
     }
-    rm.pxW = w;
-    rm.pxH = h;
+}
+
+// the worker: the floors, and without the renderer's picture the UI's own
+static void RM_Draw(void)
+{
+    rm.floors = RM_Floors();
+    if (!rm.gpu) {
+        RM_Paint(&rm.floors, rm.paintZ, &rm.px);
+        rm.pxW = rm.floors.cw * rm.floors.texels;
+        rm.pxH = rm.floors.ch * rm.floors.texels;
+        RM_Release(rm.floors.memory);
+        rm.floors.memory = NULL;
+    }
     rm.done = true;
 }
 
@@ -2625,14 +2720,36 @@ static void RM_Picture(void)
     if (rm.worker.joinable()) {
         return;
     }
+    rm.gpu    = re.RegisterRadar2D && re.Radar2DHeight && !rm.gpuFailed;
+    rm.paintZ = rm.focusZ;
     rm.done   = false;
     rm.worker = std::thread(RM_Draw);
+}
+
+// the floors given to the renderer (its memory from now on): its picture for
+// rm.focusZ, a storey's change from then a number
+static void RM_GiveFloors(void)
+{
+    if (re.RegisterRadar2D) {
+        rm.shader = re.RegisterRadar2D("ui_bake/radar", &rm.floors, rm.focusZ);
+    } else {
+        RM_Release(rm.floors.memory);
+        rm.shader = 0;
+    }
+    rm.floors.memory = NULL;
+    rm.onGpu         = rm.shader != 0;
+    rm.stamp         = rm.shader ? UI_BakeStamp() : -1;
+    rm.gpuFailed     = !rm.shader; // (the UI's own picture next)
 }
 
 void UI_CompHud_Shutdown(void)
 {
     if (rm.worker.joinable()) {
         rm.worker.join();
+    }
+    if (rm.floors.memory) {
+        RM_Release(rm.floors.memory);
+        rm.floors.memory = NULL;
     }
     // (no picture's texels made after the UI)
     UI_BakeRelease();
@@ -2645,8 +2762,22 @@ static void RM_PictureDone(void)
         return;
     }
     rm.worker.join();
+    if (rm.floors.memory) {
+        RM_GiveFloors();
+        return;
+    }
     rm.shader = uii.Rend_RegisterImage2D("ui_bake/radar", rm.px.data(), rm.pxW, rm.pxH);
     rm.stamp  = UI_BakeStamp();
+    rm.onGpu  = qfalse;
+}
+
+// a cell's texels across in the picture for a radar width pixels across (a
+// very large map's fewer, its picture at most 4096 across)
+static int RM_Texels(float width)
+{
+    const float upp = RM_RANGE / (width * 0.5f); // world units a pixel
+
+    return Q_min(Q_max(1, Q_min(6, (int)(RM_CELL / upp + 0.5f))), 4096 / Q_max(rm.cw, rm.ch));
 }
 
 // a mark's shader and size kept while its scale and the baked images stay
@@ -2831,9 +2962,24 @@ void UI_CompHud_MapLoaded(void)
     if (rm.worker.joinable()) {
         rm.worker.join();
     }
+    if (rm.floors.memory) {
+        RM_Release(rm.floors.memory); // (the last map's)
+        rm.floors.memory = NULL;
+    }
     Q_strncpyz(rm.map, map, sizeof(rm.map));
     RM_Walk();
-    rm.stamp = -1;
+    rm.stamp     = -1;
+    rm.onGpu     = qfalse;
+    rm.gpuFailed = qfalse;
+    // the renderer's picture made with the load, for the radar's size (its
+    // first frame then gives the height), at the lowest floor till then
+    if (re.RegisterRadar2D && re.Radar2DHeight && rm.width > 0.0f && !rm.nodes.empty()) {
+        rm.texels = RM_Texels(rm.width);
+        rm.focusZ = rm.zMin;
+        rm.walked = (int)rm.nodes.size();
+        rm.floors = RM_Floors();
+        RM_GiveFloors();
+    }
 }
 
 void CL_InitRadar(radarClient_t *radars, int clientNum)
@@ -2934,19 +3080,27 @@ void UIHudRadar::Draw(void)
         UI_CompHud_MapLoaded();
     }
     if (!rm.nodes.empty()) {
-        // (a very large map's fewer, its picture at most 4096 across: tested as kept, or it is made again each time)
-        const int texels = Q_min(Q_max(1, Q_min(6, (int)(RM_CELL / upp + 0.5f))), 4096 / Q_max(rm.cw, rm.ch));
+        // (tested as kept, or it is made again each time)
+        const int      texels = RM_Texels(m_frame.size.width);
         float          focusZ;
         const qboolean known = RM_StoreyZ(eye, &focusZ);
+        const qboolean moved = known && fabsf(focusZ - rm.focusZ) > 24.0f;
 
+        rm.width = m_frame.size.width;
         // (the walk changes only while no picture is being made of it)
         RM_PictureDone();
         if (!rm.worker.joinable()) {
             RM_SeedPlayers(eye);
             RM_Step(RM_PER_STEP);
         }
+        // the renderer's picture: another storey is a number (also while the
+        // floors are listed again: that picture is made for this height)
+        if (moved && rm.onGpu && rm.stamp == UI_BakeStamp()) {
+            rm.focusZ = focusZ;
+            re.Radar2DHeight(rm.shader, focusZ);
+        }
         if (!rm.worker.joinable()
-            && (rm.stamp != UI_BakeStamp() || texels != rm.texels || (known && fabsf(focusZ - rm.focusZ) > 24.0f)
+            && (rm.stamp != UI_BakeStamp() || texels != rm.texels || (moved && !rm.onGpu)
                 || (rm.walked != (int)rm.nodes.size() && rm.queue.empty()))) {
             rm.texels = texels;
             if (known) {
@@ -3076,6 +3230,9 @@ static void Comp_PreBakeWidget(UIWidget *w)
     }
     if (w->isSubclassOf(UIHudWeapons) && ((UIHudWeapons *)w)->m_countFont && faces) {
         ((UIHudWeapons *)w)->m_countFont->getHeight((const float *)NULL);
+    }
+    if (w->isSubclassOf(UIHudRadar)) {
+        rm.width = w->getFrame().size.width; // (its picture made with the map's load for it)
     }
     for (UIWidget *c = w->getFirstChild(); c; c = w->getNextChild(c)) {
         Comp_PreBakeWidget(c);
