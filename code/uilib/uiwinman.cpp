@@ -1001,8 +1001,21 @@ void UIWindowManager::RemoveAllDialogBoxes(void)
 
 void UIWindowManager::refreshCursor()
 {
-    byte *pic;
-    int   width, height;
+    byte       *pic;
+    int         width, height;
+    uihandle_t  shader = 0;
+    // Added: another picture (ui_cursorPicture) is the system's cursor at once,
+    // not the stock one until a menu draws (a vid_restart, Alt+Enter, a map's
+    // load: the stock cursor showed over a window)
+    const byte *other = ui_cursorPicture ? ui_cursorPicture(&width, &height, &shader) : NULL;
+
+    if (other) {
+        IN_SetCursorFromImage(other, width, height, NULL);
+        m_cursorPic = other;
+        m_cursorW   = width;
+        m_cursorH   = height;
+        return;
+    }
 
     // Added: the stock picture's (UpdateViews sets another again)
     m_cursorPic = NULL;
