@@ -22,8 +22,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 // cl_uimain.cpp: the Reloaded main menu (Added), ui/reloaded_main.urc, shown
 // for the stock "main" (cl_uimenus.cpp's aliases), its confirmations (Quit,
-// Disconnect, Delete), ui/reloaded_confirm.urc, shown over it, and the
-// connect's box, ui/reloaded_connect.urc (CONNECTING). Project: Omaha's
+// Disconnect, Delete), ui/reloaded_confirm.urc, shown over it, the
+// connect's box, ui/reloaded_connect.urc (CONNECTING), and the HDR
+// calibration's screens, ui/hdr_calibrate_*.urc. Project: Omaha's
 // screens, stripped down, in our look: a side rail (the star and the
 // wordmark, MULTIPLAYER / CAMPAIGN / HOST / OPTIONS, QUIT at its foot) over
 // maps' photos blurred once to the screen's shape (no map loaded behind
@@ -130,6 +131,7 @@ enum {
     ID_VNO,
     ID_VCALL,
     ID_VFIELD,
+    ID_HDRSLIDE, // the HDR calibration's slider (its button: ID_CONFIRM)
     ID_ROW  = 1000, // + the row shown
     ID_FAV  = ID_ROW + 1000,
     ID_PICK = ID_FAV + 1000, // + the model
@@ -3926,6 +3928,136 @@ void UIReloadedMenu::DrawConfirm(const rlView_t& v)
     RL_Text(v, x + 24, y + 100, k == 4 ? RL_KeyQuestion().c_str() : says[k][1], 22, RL_SOFT, false, RL_LEFT, 0, RL_MID, w - 48);
     RL_Button(this, v, x + w - 24 - 328, by, 150, 48, "CANCEL", false, ID_CANCEL);
     RL_Button(this, v, x + w - 24 - 170, by, 170, 48, says[k][2], true, ID_CONFIRM);
+}
+
+/*
+================
+The HDR calibration (r_hdrOutputTest; cl_ui.cpp's UI_HdrCalibrationUpdate
+opens and closes them): the black level's screen (r_hdrBlack, NEXT) and
+the peak's (r_hdrPeak, FINISH), what NEXT and FINISH run the menu's
+stuffcommand (ui/hdr_calibrate_*.urc). The renderer draws its pattern in
+the top four fifths, where the menu left black (output.frag); in the
+bottom fifth a band the screen wide, a line along its top, and in it,
+1104 across in its middle, the title (the step on its right) over what to
+do (Escape's word on its right) over the slider: Omaha's (Options') made
+wide, its track, the part to the value brass, the knob, the value in a
+box, the button beside it. The track is clicked or dragged; the arrow keys
+and the wheel step it; Enter is the button. The HDR look's (r_hdrOutput 2)
+peak says what its pattern shows
+================
+*/
+
+typedef struct {
+    const char *cvar, *def; // as vk_output.c has them
+    float       lo, hi, step;
+} rlHdrSlider_t;
+
+static const rlHdrSlider_t rl_hdrSliders[2] = {
+    {"r_hdrBlack", "0",    -0.5f,  1.0f,     0.05f},
+    {"r_hdrPeak",  "1000", 100.0f, 10000.0f, 50.0f},
+};
+
+static struct {
+    bool drag; // the slider dragged
+    bool down; // the mouse's button, last frame
+} rl_hdr;
+
+static cvar_t *RL_HdrCvar(int page)
+{
+    return Cvar_Get(rl_hdrSliders[page].cvar, rl_hdrSliders[page].def, CVAR_ARCHIVE);
+}
+
+// the slider set to a value (snapped to its steps, within its ends)
+static void RL_HdrSlide(int page, float value)
+{
+    const rlHdrSlider_t& s = rl_hdrSliders[page];
+
+    value = Q_max(s.lo, Q_min(s.hi, value));
+    Cvar_Set(s.cvar, va("%g", s.lo + floorf((value - s.lo) / s.step + 0.5f) * s.step));
+}
+
+void UIReloadedMenu::DrawHdr(const rlView_t& v)
+{
+    const int            page = m_screen == SCR_HDRPEAK;
+    const rlHdrSlider_t& s    = rl_hdrSliders[page];
+    cvar_t *const        cv   = RL_HdrCvar(page);
+    cvar_t *const        out  = Cvar_FindVar("r_hdrOutput");
+    const bool           look = out && out->integer == 2;
+    // the band (the pattern above it: output.frag's uv.y < 0.8), the content 116 high in its middle
+    const float top = v.dh * 0.8f, w = Q_min(v.dw - 2 * RL_EDGE, 1104.0f), x = (v.dw - w) / 2, y = top + (v.dh - top - 116) / 2;
+    const float ry = y + 74, bw = 190, vw = 96, tw = w - bw - vw - 2 * RL_PAD - 8, vx = x + tw + RL_PAD + 8;
+    const float frac = Q_max(0.0f, Q_min(1.0f, (cv->value - s.lo) / (s.hi - s.lo)));
+    const bool  hot  = Hot(ID_HDRSLIDE) || rl_hdr.drag;
+    const char *say  = !page ? "Move the slider until the box in the middle is barely visible"
+                     : look  ? "Raise the slider to lift the box toward the white around it"
+                             : "Raise the slider until the box disappears into the background";
+
+    UI_DrawDep(cv);
+    if (out) {
+        UI_DrawDep(out);
+    }
+    RL_Box(v, 0, top, v.dw, v.dh - top, RL_Rgb(12, 13, 15));
+    RL_Box(v, 0, top, v.dw, 1, RL_LINE);
+    RL_Text(v, x, y + 12, page ? "PEAK BRIGHTNESS" : "BLACK LEVEL", 24, RL_TEXT, true, RL_LEFT, 2, RL_MID);
+    RL_Text(v, x + w, y + 12, va("HDR CALIBRATION  \xb7  %d OF 2", page + 1), 15, RL_BRASS, true, RL_RIGHT, 2.6f, RL_MID);
+    RL_Text(v, x, y + 46, say, 18, RL_SOFT, false, RL_LEFT, 0, RL_MID, w - 160);
+    RL_Text(v, x + w, y + 46, page ? "ESC  BACK" : "ESC  CLOSES", 15, RL_MUTED, true, RL_RIGHT, 2, RL_MID);
+    // the slider, its value, the button
+    RL_Box(v, x, ry + 19, tw, 4, RL_Rgb(255, 255, 255, 40));
+    RL_Box(v, x, ry + 19, tw * frac, 4, RL_BRASS);
+    RL_Round(v, x + tw * frac - 10, ry + 11, 20, 20, 10, hot ? RL_BRASS : RL_TEXT);
+    Hit(v, x - 10, ry, tw + 20, RL_CTRL, ID_HDRSLIDE);
+    RL_Panel(v, vx, ry, vw, RL_CTRL, RL_Rgb(0, 0, 0, 120));
+    RL_Text(v, vx + vw / 2, ry + RL_CTRL / 2, page ? va("%.0f", cv->value) : va("%.2f", cv->value), 18, RL_TEXT, false, RL_CENTER, 0, RL_MID);
+    RL_Button(this, v, x + w - bw, ry, bw, RL_CTRL, page ? "FINISH" : "NEXT", true, ID_CONFIRM);
+}
+
+// NEXT, FINISH: the menu's command (NEXT pushes the peak's menu over the black level's, FINISH sets r_hdrOutputTest 0)
+void UIReloadedMenu::ChooseHdr(int id)
+{
+    if (id == ID_CONFIRM && m_command.length()) {
+        Cbuf_AddText((m_command + "\n").c_str());
+    }
+}
+
+qboolean UIReloadedMenu::HdrKey(int key)
+{
+    const int   page = m_screen == SCR_HDRPEAK;
+    const float step = key == K_RIGHTARROW || key == K_MWHEELUP ? 1.0f : key == K_LEFTARROW || key == K_MWHEELDOWN ? -1.0f : 0.0f;
+
+    if (key == K_ENTER || key == K_KP_ENTER) {
+        ChooseHdr(ID_CONFIRM);
+        return qtrue;
+    }
+    if (step) {
+        RL_HdrSlide(page, RL_HdrCvar(page)->value + step * rl_hdrSliders[page].step);
+        return qtrue;
+    }
+    return qfalse;
+}
+
+// each frame: the slider pressed dragged to the mouse while its button is down
+void UIReloadedMenu::HdrTick(void)
+{
+    const bool down = (uid.mouseFlags & 1) != 0;
+    const int  page = m_screen == SCR_HDRPEAK;
+
+    if (down && !rl_hdr.down && m_focus == ID_HDRSLIDE) {
+        rl_hdr.drag = true;
+    }
+    rl_hdr.down = down;
+    if (!down) {
+        rl_hdr.drag = false;
+    }
+    for (const rlHit_t& h : m_hits) {
+        if (rl_hdr.drag && h.id == ID_HDRSLIDE) {
+            // (the hit reaches the knob's half past the track's ends)
+            const float pad = RL_View().s * 10, frac = (uid.mouseX - (int)m_screenframe.pos.x - h.x - pad) / (h.w - 2 * pad);
+            const rlHdrSlider_t& s = rl_hdrSliders[page];
+
+            RL_HdrSlide(page, s.lo + (s.hi - s.lo) * frac);
+        }
+    }
 }
 
 /*

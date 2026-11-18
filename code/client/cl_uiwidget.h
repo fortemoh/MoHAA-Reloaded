@@ -32,14 +32,15 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <vector>
 
 /*
-ReloadedMenu: "screen weapon|esc|scoreboard|loading|main|confirm|end|connect|options", "layer
-back|front". The back layer draws what is under the 3D model views and
+ReloadedMenu: "screen weapon|esc|scoreboard|loading|main|confirm|end|connect|options|hdrblack|hdrpeak",
+"layer back|front". The back layer draws what is under the 3D model views and
 places them (labels the menu names); the front layer draws what is over
 them and takes the mouse and the keys. Both lay the screen out alike from
 the same data
 */
 
-enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD, SCR_LOADING, SCR_MAIN, SCR_CONFIRM, SCR_END, SCR_CONNECT, SCR_OPTIONS, SCR_NUM };
+// (SCR_HDRBLACK, SCR_HDRPEAK: the HDR calibration's, r_hdrOutputTest: the black level's, the peak's)
+enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD, SCR_LOADING, SCR_MAIN, SCR_CONFIRM, SCR_END, SCR_CONNECT, SCR_OPTIONS, SCR_HDRBLACK, SCR_HDRPEAK, SCR_NUM };
 
 
 typedef struct {
@@ -108,6 +109,13 @@ public:
     void     MainChar(int ch);
     void     MainTick(bool opened);
     int      MainDrawKey(void);
+
+    // the HDR calibration's screens (cl_uimain.cpp)
+    bool     Hdr(void) const { return m_screen == SCR_HDRBLACK || m_screen == SCR_HDRPEAK; }
+    void     DrawHdr(const rlView_t& v);
+    void     ChooseHdr(int id);
+    qboolean HdrKey(int key);
+    void     HdrTick(void);
 };
 
 // Options over the Esc menu clicked off its page, at x y (a ReloadedMenu's, all of them the screen's): the Esc menu's

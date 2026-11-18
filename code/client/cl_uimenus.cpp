@@ -1748,9 +1748,11 @@ ReloadedMenu (cl_uiwidget.h)
 */
 
 // the front layer's hot item, for the back layer (a frame later)
-static int rl_hot[SCR_NUM] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
+static int rl_hot[SCR_NUM] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
 
-Event EV_ReloadedMenu_Screen("screen", EV_DEFAULT, "s", "screen", "weapon, esc, scoreboard, loading, main, confirm, end, connect or options");
+Event EV_ReloadedMenu_Screen(
+    "screen", EV_DEFAULT, "s", "screen", "weapon, esc, scoreboard, loading, main, confirm, end, connect, options, hdrblack or hdrpeak"
+);
 Event EV_ReloadedMenu_Layer("layer", EV_DEFAULT, "s", "layer", "back (under the model views) or front");
 
 CLASS_DECLARATION(UIWidget, UIReloadedMenu, NULL) {
@@ -1773,6 +1775,8 @@ void UIReloadedMenu::SetScreen(Event *ev)
              : !str::icmp(s, "end")        ? SCR_END
              : !str::icmp(s, "connect")    ? SCR_CONNECT
              : !str::icmp(s, "options")    ? SCR_OPTIONS
+             : !str::icmp(s, "hdrblack")   ? SCR_HDRBLACK
+             : !str::icmp(s, "hdrpeak")    ? SCR_HDRPEAK
                                            : SCR_WEAPON;
     AllowActivate(m_screen != SCR_SCOREBOARD && m_screen != SCR_LOADING);
 }
@@ -1813,6 +1817,8 @@ void UIReloadedMenu::MouseUp(Event *ev)
     if (Main()) {
         // (a click on nothing too: it closes what is open)
         ChooseMain(id);
+    } else if (Hdr()) {
+        ChooseHdr(id);
     } else if (id >= 0) {
         Choose(id);
     }
@@ -1839,6 +1845,9 @@ qboolean UIReloadedMenu::KeyEvent(int key, unsigned int time)
 
     if (!m_back && Main()) {
         return MainKey(key);
+    }
+    if (Hdr()) {
+        return HdrKey(key);
     }
     if (m_back || m_screen == SCR_SCOREBOARD || !n) {
         return qfalse;
@@ -1978,6 +1987,9 @@ void UIReloadedMenu::Tick(void)
         m_focus = id;
     }
     rl_hot[m_screen] = m_focus;
+    if (Hdr()) {
+        HdrTick();
+    }
 }
 
 int UIReloadedMenu::DrawKey(void)
@@ -2040,8 +2052,8 @@ void UIReloadedMenu::Draw(void)
         uii.Rend_SetColor(white);
         return;
     }
-    // (the main menu's and the connect's before any map)
-    if (clc.state < CA_PRIMED && m_screen != SCR_MAIN && m_screen != SCR_CONFIRM && m_screen != SCR_CONNECT) {
+    // (the main menu's, the connect's and the HDR calibration's before any map)
+    if (clc.state < CA_PRIMED && m_screen != SCR_MAIN && m_screen != SCR_CONFIRM && m_screen != SCR_CONNECT && !Hdr()) {
         return;
     }
     if (!rl_bakeOnly) {
@@ -2062,6 +2074,10 @@ void UIReloadedMenu::Draw(void)
         break;
     case SCR_OPTIONS:
         DrawOptions(v);
+        break;
+    case SCR_HDRBLACK:
+    case SCR_HDRPEAK:
+        DrawHdr(v);
         break;
     case SCR_WEAPON:
         RL_Info(&in);
