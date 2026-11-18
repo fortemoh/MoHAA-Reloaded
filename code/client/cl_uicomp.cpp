@@ -2863,6 +2863,48 @@ CLASS_DECLARATION(UIWidget, UIHudRadar, NULL) {
     {NULL, NULL}
 };
 
+/*
+================
+RM_StoreyZ
+
+The storey the radar shows (its floors brightest): from the feet of the
+player or of the one followed, while on the ground, where a standing eye
+puts it (DEFAULT_VIEWHEIGHT); a free spectator's from the eye. qfalse
+while it isn't known (in the air, the followed player not sent): the last
+kept. (From the eye always, a crouch, a jump or the view's bob, the
+followed player's too, made the picture again every few seconds, its
+upload ~1 ms of this thread each time.)
+================
+*/
+static qboolean RM_StoreyZ(const vec3_t eye, float *z)
+{
+    const playerState_t *ps     = &cl.snap.ps;
+    const int            follow = ps->stats[STAT_INFOCLIENT];
+
+    if (!(ps->pm_flags & PMF_SPECTATING)) {
+        *z = ps->origin[2] + DEFAULT_VIEWHEIGHT - 64.0f;
+        return ps->groundEntityNum != ENTITYNUM_NONE;
+    }
+    // (following as the HUD tells it: from behind, or through their eyes, the snapshot theirs)
+    if (!((ps->pm_flags & PMF_CAMERA_VIEW) || ps->clientNum != clc.clientNum) || follow < 0 || follow >= MAX_CLIENTS) {
+        *z = eye[2] - 64.0f;
+        return qtrue;
+    }
+    if (ps->clientNum == follow) {
+        *z = ps->origin[2] + DEFAULT_VIEWHEIGHT - 64.0f;
+        return ps->groundEntityNum != ENTITYNUM_NONE;
+    }
+    for (int i = 0; i < cl.snap.numEntities; i++) {
+        const entityState_t *es = &cl.parseEntities[(cl.snap.parseEntitiesNum + i) & (MAX_PARSE_ENTITIES - 1)];
+
+        if (es->number == follow) {
+            *z = es->origin[2] + DEFAULT_VIEWHEIGHT - 64.0f;
+            return es->groundEntityNum != ENTITYNUM_NONE;
+        }
+    }
+    return qfalse;
+}
+
 void UIHudRadar::Draw(void)
 {
     const float s = m_vVirtualScale[0], r = m_frame.size.width * 0.5f, k = m_frame.size.width / s / 220.0f;
@@ -2894,6 +2936,8 @@ void UIHudRadar::Draw(void)
     if (!rm.nodes.empty()) {
         // (a very large map's fewer, its picture at most 4096 across: tested as kept, or it is made again each time)
         const int texels = Q_min(Q_max(1, Q_min(6, (int)(RM_CELL / upp + 0.5f))), 4096 / Q_max(rm.cw, rm.ch));
+        float          focusZ;
+        const qboolean known = RM_StoreyZ(eye, &focusZ);
 
         // (the walk changes only while no picture is being made of it)
         RM_PictureDone();
@@ -2902,10 +2946,12 @@ void UIHudRadar::Draw(void)
             RM_Step(RM_PER_STEP);
         }
         if (!rm.worker.joinable()
-            && (rm.stamp != UI_BakeStamp() || texels != rm.texels || fabsf(eye[2] - 64.0f - rm.focusZ) > 24.0f
+            && (rm.stamp != UI_BakeStamp() || texels != rm.texels || (known && fabsf(focusZ - rm.focusZ) > 24.0f)
                 || (rm.walked != (int)rm.nodes.size() && rm.queue.empty()))) {
             rm.texels = texels;
-            rm.focusZ = eye[2] - 64.0f;
+            if (known) {
+                rm.focusZ = focusZ;
+            }
             rm.walked = (int)rm.nodes.size();
             RM_Picture();
         }
