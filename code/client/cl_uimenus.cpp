@@ -73,8 +73,10 @@ static cvar_t *ui_reloaded_nation;
 DATA
 
 What the menus show, read when drawn: the serverinfo, the player
-configstrings (every connected player's name and team) and the latest
-"scores" the server sent (UI_Menus_ServerCommand)
+configstrings (every connected player's name and, from OpenMoHAA's
+servers, team) and the latest "scores" the server sent
+(UI_Menus_ServerCommand; each player's team there too, the stock
+scoreboard's own source)
 
 ====================================================================
 */
@@ -82,6 +84,7 @@ configstrings (every connected player's name and team) and the latest
 enum { NAT_US, NAT_UK, NAT_RU, NAT_DE, NAT_IT };
 
 typedef struct {
+    int      team; // TEAM_*: the row's own, or its header's (free-for-all)
     int      kills, deaths;
     char     time[16], ping[16];
     qboolean dead;
@@ -138,6 +141,15 @@ static void RL_MapFile(char *out, const char *map)
     }
 }
 
+// a player's team: the configstring's "team" (OpenMoHAA's servers add it),
+// else the latest "scores" row's (stock servers send no key)
+static int RL_Team(int client, const char *cs)
+{
+    const char *team = Info_ValueForKey(cs, "team");
+
+    return team[0] ? atoi(team) : UI_Menus_ScoreTeam(client);
+}
+
 static void RL_Info(rlInfo_t *in)
 {
     const char *info = CL_ConfigString(CS_SERVERINFO);
@@ -163,7 +175,7 @@ static void RL_Info(rlInfo_t *in)
             continue;
         }
         p.client = i;
-        team     = atoi(Info_ValueForKey(cs, "team"));
+        team     = RL_Team(i, cs);
         in->connected++;
         if (team == TEAM_ALLIES) {
             in->allies.push_back(p);
@@ -192,13 +204,14 @@ static void RL_WantScores(void)
 }
 
 // a player's row of "scores": the kills, deaths, time and ping from the argument at (a client out of range: none)
-static void RL_ScoreRow(int client, int at, qboolean dead, int& order)
+static void RL_ScoreRow(int client, int at, int team, qboolean dead, int& order)
 {
     if (client < 0 || client >= MAX_CLIENTS) {
         return;
     }
     rlScore_t *r = &rl_sb.client[client];
 
+    r->team   = team;
     r->kills  = atoi(Cmd_Argv(at));
     r->deaths = atoi(Cmd_Argv(at + 1));
     Q_strncpyz(r->time, Cmd_Argv(at + 2), sizeof(r->time));
@@ -272,11 +285,20 @@ void UI_Menus_ServerCommand(void)
                 }
                 continue;
             }
-            RL_ScoreRow(client, cur + 6 * i + 2, dead, order);
+            RL_ScoreRow(client, cur + 6 * i + 2, team, dead, order);
         }
     } else {
+        // (a header's client is -1 - its team: the players', the spectators')
+        int team = TEAM_FREEFORALL;
+
         for (int i = 0; i < n; i++) {
-            RL_ScoreRow(atoi(Cmd_Argv(cur + 5 * i)), cur + 5 * i + 1, qfalse, order);
+            const int client = atoi(Cmd_Argv(cur + 5 * i));
+
+            if (client < 0) {
+                team = -1 - client;
+                continue;
+            }
+            RL_ScoreRow(client, cur + 5 * i + 1, team, qfalse, order);
         }
     }
 }
@@ -284,6 +306,13 @@ void UI_Menus_ServerCommand(void)
 static const rlScore_t *RL_Score(int client)
 {
     return rl_sb.stamp && rl_sb.seen[client] == rl_sb.stamp ? &rl_sb.client[client] : NULL;
+}
+
+int UI_Menus_ScoreTeam(int client)
+{
+    const rlScore_t *r = client >= 0 && client < MAX_CLIENTS ? RL_Score(client) : NULL;
+
+    return r ? r->team : 0;
 }
 
 // the map's display name: its loading screen's (a menu named after the
@@ -1026,7 +1055,7 @@ static int RL_SmallerSide(void)
         if (!cs[0]) {
             continue;
         }
-        team = atoi(Info_ValueForKey(cs, "team"));
+        team = RL_Team(i, cs);
         if (team == TEAM_ALLIES) {
             n[0]++;
         } else if (team == TEAM_AXIS) {

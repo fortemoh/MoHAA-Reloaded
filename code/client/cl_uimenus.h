@@ -40,6 +40,9 @@ qboolean    UI_Menus_Pushing(const char *name);
 qboolean    UI_Menus_End(const char *name, class Menu *m, qboolean show);
 // a server command just tokenized (the scoreboard's "scores")
 void        UI_Menus_ServerCommand(void);
+// a player's team (TEAM_*) in the latest "scores", 0 none: stock servers'
+// only source (OpenMoHAA's add the player configstrings' "team")
+int         UI_Menus_ScoreTeam(int client);
 // the scoreboard of this (stock) name is the Reloaded one
 qboolean    UI_Menus_Scoreboard(const char *name);
 // the menu up is the Reloaded weapon or Esc menu (or Options over it): no HUD under it (the scoreboard keeps it)
