@@ -830,11 +830,14 @@ static void Comp_Weapons(const char *inHand)
     }
 
     // the grenades: the pouch's (by the ammo's name), and the one a grenade
-    // keeps loaded, which a spawn or a round gives back
+    // keeps loaded, which a spawn or a round gives back. The name's
+    // configstring: OpenMoHAA's servers send its number, stock 1.11 its
+    // place among the weapons' (CS_WEAPONS + it; the two never overlap)
     for (i = 0; i < MAX_AMMO; i++) {
         static char kinds[MAX_CONFIGSTRINGS]; // 1 none, 2 smoke, 3 frag (0: not read since a change)
         static int  read = -1;
-        const int   idx  = ps->ammo_name_index[i];
+        const int   sent = ps->ammo_name_index[i];
+        const int   idx  = sent > 0 && sent < MAX_WEAPONS ? CS_WEAPONS + sent : sent;
 
         Comp_ConfigStrings();
         if (read != cs.parsed) {
