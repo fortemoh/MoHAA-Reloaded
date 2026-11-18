@@ -3400,3 +3400,93 @@ qhandle_t RE_RegisterTexture2D(const char *name, byte *rgba, int width, int heig
 {
 	return RE_RegisterImage2D(name, rgba, width, height);
 }
+
+/*
+===============
+RE_RegisterRadar2D
+
+The Competitive HUD's radar picture, made on the GPU from each cell's floors
+(mbRadarImage), for height z: an image under a name as RE_RegisterImage2D's
+(clamped, linear, no mipmaps), its 2D shader returned; 0 if it failed. The
+floors' memory is the renderer's from now on, in every case
+===============
+*/
+qhandle_t RE_RegisterRadar2D(const char *name, const radar2D_t *radar, float z)
+{
+	char		fileName[MAX_QPATH];
+	image_t		*image;
+	int			width, height;
+	qboolean	made;
+
+	if (!radar || !radar->memory) {
+		return 0;
+	}
+	width = radar->cw * radar->texels;
+	height = radar->ch * radar->texels;
+	if (!name || !name[0] || radar->cw <= 0 || radar->ch <= 0 || radar->texels <= 0
+		|| width > glConfig.maxTextureSize || height > glConfig.maxTextureSize) {
+		radar->release(radar->memory);
+		return 0;
+	}
+	R_IssuePendingRenderCommands();
+
+	Q_strncpyz(fileName, name, sizeof(fileName));
+	COM_DefaultExtension(fileName, sizeof(fileName), ".tga");
+	for (image = hashTable[generateHashValue(fileName)]; image; image = image->next) {
+		if (!strcmp(fileName, image->imgName)) {
+			break;
+		}
+	}
+	if (!image) {
+		// (as RE_RegisterImage2D's: made 1 x 1, then the picture; clamped)
+		static byte	clear[4];
+		const int	clamp = haveClampToEdge ? MB_CLAMP_TO_EDGE : MB_CLAMP;
+
+		image = R_CreateImageOld(fileName, clear, 1, 1, 0, 0, qfalse, qtrue, qtrue, 0, clamp, clamp);
+	}
+
+	if (mbMultitexture) {
+		R_SelectTexture(image->TMU);
+	}
+	R_Bind(image);
+	made = mbRadarImage(radar->cw, radar->ch, radar->texels, radar->memory, radar->memoryBytes, radar->release,
+		(int)((const byte *)radar->floors - (const byte *)radar->memory), (int)((const byte *)radar->changing - (const byte *)radar->memory),
+		radar->numChanging, z);
+	if (made) {
+		mbTexParameterf(MB_TEXTURE_2D, MB_TEXTURE_MIN_FILTER, MB_LINEAR);
+		mbTexParameterf(MB_TEXTURE_2D, MB_TEXTURE_MAG_FILTER, MB_LINEAR);
+	}
+	mbBindTexture(MB_TEXTURE_2D, 0);
+	glState.currenttextures[image->TMU] = -1;
+	if (image->TMU == 1) {
+		R_SelectTexture(0);
+	}
+	if (!made) {
+		return 0;
+	}
+
+	image->width = image->uploadWidth = width;
+	image->height = image->uploadHeight = height;
+	image->numMipmaps = 0;
+	image->internalFormat = MB_RGBA8;
+	image->bytesUsed = width * height * 4;
+	image->r_sequence = -1;
+	return RE_RegisterShaderNoMip(name);
+}
+
+/*
+===============
+RE_Radar2DHeight
+
+The radar picture's texels for height z (RE_RegisterRadar2D's shader; any
+other: nothing), for the draws after this
+===============
+*/
+void RE_Radar2DHeight(qhandle_t shader, float z)
+{
+	const shader_t	*sh = R_GetShaderByHandle(shader);
+
+	if (sh && sh->numUnfoggedPasses && sh->unfoggedStages[0] && sh->unfoggedStages[0]->bundle[0].image[0]) {
+		mbRadarHeight(sh->unfoggedStages[0]->bundle[0].image[0]->texnum, z);
+	}
+}

@@ -1837,6 +1837,8 @@ image_t* R_CreateImageOld(
 qboolean R_ImageExists(const char* name);
 qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height);
 qhandle_t RE_RegisterTexture2D(const char *name, byte *rgba, int width, int height);
+qhandle_t RE_RegisterRadar2D(const char *name, const radar2D_t *radar, float z);
+void RE_Radar2DHeight(qhandle_t shader, float z);
 qboolean R_ShaderTextExists(const char *name);
 int R_CountTextureMemory();
 qboolean R_LoadRawImage(const char *name, byte **pic, int *width, int *height);

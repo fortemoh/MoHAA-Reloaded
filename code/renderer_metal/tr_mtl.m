@@ -202,7 +202,8 @@ static unsigned				mb_ringGeneration;			// bumped when a slot's buffer is replac
 static id<MTLCommandBuffer>			mb_cmd;				// this frame's command buffer, begun lazily
 static id<MTLRenderCommandEncoder>	mb_enc;				// the scene pass, begun lazily
 static id<MTLCommandBuffer>			mb_uploadCmd;		// texture copies for this frame, committed before mb_cmd
-static id<MTLBlitCommandEncoder>	mb_uploadBlit;
+static id<MTLBlitCommandEncoder>	mb_uploadBlit;		// its open encoder, one or the other
+static id<MTLComputeCommandEncoder>	mb_uploadCompute;
 
 // what the next scene pass must do with its attachments
 static unsigned		mb_pendingClear;					// MB_*_BUFFER_BIT folded into the pass load actions
@@ -268,6 +269,23 @@ static id<MTLRenderPipelineState>	mb_blurPipeline;
 static id<MTLTexture>				mb_blurTargets[MB_BLUR_TARGETS];
 static int							mb_blurWidth, mb_blurHeight;	// the scene target's size they were made for
 static uint64_t						mb_blurSerial;					// the frame last blurred
+
+// the Competitive HUD's radar picture (mbRadarImage): its texels made for a height on the GPU (tr_mtl_radar.metal)
+typedef struct {
+	uint32_t	cw, ch, texels;
+	float		z, zOld;
+	uint32_t	pad[3];
+} mbRadarParams_t;
+
+static id<MTLComputePipelineState>	mb_radarPipeline;		// a height's change: a thread a cell that can change
+static id<MTLComputePipelineState>	mb_radarFullPipeline;	// the whole picture: a thread a texel
+static struct {
+	unsigned int	name;			// its texture's name, 0: none
+	void			*buffer;		// id<MTLBuffer> over the UI's memory, retained (released: the memory given back)
+	NSUInteger		floorsOffset, changingOffset;
+	int				cw, ch, texels, numChanging;
+	float			z;				// the height its texels are for
+} mb_radar;
 
 static void MB_HarvestQueries( uint64_t completed );
 static void MB_ProcessReadbacks( uint64_t completed );
@@ -507,6 +525,7 @@ typedef struct {
 	qboolean		rgbOnly;		// MB_RGB-like internal format: samples alpha 1, replace keeps the incoming alpha
 	int				minFilter, magFilter, wrapS, wrapT, anisotropy;
 	qboolean		samplerDirty;
+	qboolean		gpuOnly;		// private, written by the GPU only (the radar's): a CPU image replaces it
 	qboolean		allocated;		// the name is in use
 	int				nextFree;		// name queue
 } mbTexture_t;
@@ -728,26 +747,53 @@ static void MB_BeginCommandBuffer( void )
 	}
 }
 
+// the upload command buffer, its open encoder ended
+static id<MTLCommandBuffer> MB_UploadCommands( void )
+{
+	if ( mb_uploadBlit ) {
+		[mb_uploadBlit endEncoding];
+		mb_uploadBlit = nil;
+	}
+	if ( mb_uploadCompute ) {
+		[mb_uploadCompute endEncoding];
+		mb_uploadCompute = nil;
+	}
+	if ( !mb_uploadCmd ) {
+		@autoreleasepool {
+			mb_uploadCmd = [mb_queue commandBufferWithUnretainedReferences];
+			mb_uploadCmd.label = @"texture uploads";
+		}
+	}
+	return mb_uploadCmd;
+}
+
 static id<MTLBlitCommandEncoder> MB_UploadBlit( void )
 {
 	if ( !mb_uploadBlit ) {
 		@autoreleasepool {
-			mb_uploadCmd = [mb_queue commandBufferWithUnretainedReferences];
-			mb_uploadCmd.label = @"texture uploads";
-			mb_uploadBlit = [mb_uploadCmd blitCommandEncoder];
+			mb_uploadBlit = [MB_UploadCommands() blitCommandEncoder];
 		}
 	}
 	return mb_uploadBlit;
+}
+
+static id<MTLComputeCommandEncoder> MB_UploadCompute( void )
+{
+	if ( !mb_uploadCompute ) {
+		@autoreleasepool {
+			mb_uploadCompute = [MB_UploadCommands() computeCommandEncoder];
+		}
+	}
+	return mb_uploadCompute;
 }
 
 // the upload command buffer runs before everything the frame encodes (it is committed first)
 static void MB_CommitUploads( void )
 {
 	MB_CancelLatePresent();
-	if ( mb_uploadBlit ) {
-		[mb_uploadBlit endEncoding];
+	if ( mb_uploadCmd ) {
+		MB_UploadCommands();	// (its encoder ended)
 		[mb_uploadCmd commit];
-		mb_uploadBlit = nil;
 		mb_uploadCmd = nil;
 	}
 }
@@ -1724,6 +1770,18 @@ static qboolean MB_CreatePipelines( void )
 		}
 	}
 
+	if ( !mb_radarPipeline || !mb_radarFullPipeline ) {
+		// the radar's picture for a height (the UI then makes it itself if this fails)
+		id<MTLFunction> cells = [mb_library newFunctionWithName:@"mb_radar_cs"], full = [mb_library newFunctionWithName:@"mb_radar_full_cs"];
+
+		mb_radarPipeline = cells ? [mb_device newComputePipelineStateWithFunction:cells error:&error] : nil;
+		mb_radarFullPipeline = mb_radarPipeline && full ? [mb_device newComputePipelineStateWithFunction:full error:&error] : nil;
+		if ( !mb_radarFullPipeline ) {
+			mb_radarPipeline = nil;
+			ri.Printf( PRINT_WARNING, "Metal: radar pipelines failed: %s\n", cells && full ? error.localizedDescription.UTF8String : "no function" );
+		}
+	}
+
 	return qtrue;
 }
 
@@ -2245,6 +2303,8 @@ void mbShutdown( void )
 	for ( i = 0; i < mb_maxTextures; i++ ) {
 		MB_RELEASE( mb_textures[i].texture );
 	}
+	MB_RELEASE( mb_radar.buffer );	// (the UI's memory given back)
+	memset( &mb_radar, 0, sizeof( mb_radar ) );
 	free( mb_textures );
 	mb_textures = NULL;
 	mb_maxTextures = 0;
@@ -3436,7 +3496,7 @@ static qboolean MB_SameTexture( id<MTLTexture> a, id<MTLTexture> b )
 	MTLTextureSwizzleChannels sa = a.swizzle, sb = b.swizzle;
 
 	return a.width == b.width && a.height == b.height && a.mipmapLevelCount == b.mipmapLevelCount
-		&& a.pixelFormat == b.pixelFormat && sa.alpha == sb.alpha;
+		&& a.pixelFormat == b.pixelFormat && sa.alpha == sb.alpha && a.storageMode == b.storageMode;
 }
 
 /*
@@ -3652,6 +3712,135 @@ static mbTexture_t *MB_BoundTexture( void )
 }
 
 /*
+=============================================================
+
+THE RADAR'S PICTURE
+
+The Competitive HUD's radar (RE_RegisterRadar2D, cl_uicomp.cpp): a texture the GPU writes from each cell's floors
+(the UI's memory, read in place: no copy), its texels for one height. A storey's change then costs a dispatch in the
+upload command buffer (the cells that can change, their texels that do), not a picture made and uploaded. Written in
+place: the frames that still draw it finish first (an event wait); a draw of this frame recorded before the change
+shows the new texels (the radar draws after it).
+
+=============================================================
+*/
+
+// the radar no longer has this texture (a CPU image, a delete): its memory goes back once its frames are done
+static void MB_RadarForget( mbTexture_t *t )
+{
+	if ( mb_radar.name && t == &mb_textures[mb_radar.name] ) {
+		if ( mb_radar.buffer ) {
+			MB_Retire( (__bridge_transfer id)mb_radar.buffer );
+			mb_radar.buffer = NULL;
+		}
+		mb_radar.name = 0;
+	}
+}
+
+// its texels for height z: all of them (full: a thread a texel), else those of the cells that can change that do (a
+// thread a cell). On obj_team2's floors and a match's heights, a warm GPU: 7-8 us a change, the whole picture 48 us
+// at 1920x1080 (2 texels a cell), 72 at 2560x1440 (3)
+static void MB_RadarPaint( float z, qboolean full )
+{
+	mbTexture_t *t = &mb_textures[mb_radar.name];
+	const uint64_t completed = mb_frameEvent.signaledValue;
+	const uint64_t drawn = t->usedSerial < mb_frameSerial ? t->usedSerial : mb_frameSerial - 1;	// (this frame's own: before it)
+	mbRadarParams_t params = { (uint32_t)mb_radar.cw, (uint32_t)mb_radar.ch, (uint32_t)mb_radar.texels, z, mb_radar.z, { 0, 0, 0 } };
+	id<MTLComputeCommandEncoder> enc;
+	id<MTLBuffer> buffer = MB_OBJ( mb_radar.buffer );
+
+	mb_radar.z = z;
+	if ( !full && !mb_radar.numChanging ) {
+		return;
+	}
+	if ( drawn > completed ) {
+		[MB_UploadCommands() encodeWaitForEvent:mb_frameEvent value:drawn];
+	}
+	enc = MB_UploadCompute();
+	[enc setComputePipelineState:full ? mb_radarFullPipeline : mb_radarPipeline];
+	[enc setBuffer:buffer offset:0 atIndex:0];
+	[enc setBuffer:buffer offset:mb_radar.floorsOffset atIndex:1];
+	[enc setBuffer:buffer offset:mb_radar.changingOffset atIndex:2];
+	[enc setBytes:&params length:sizeof( params ) atIndex:3];
+	[enc setTexture:MB_OBJ( t->texture ) atIndex:0];
+	if ( full ) {
+		[enc dispatchThreads:MTLSizeMake( t->width, t->height, 1 ) threadsPerThreadgroup:MTLSizeMake( 16, 4, 1 )];
+	} else {
+		[enc dispatchThreads:MTLSizeMake( mb_radar.numChanging, 1, 1 ) threadsPerThreadgroup:MTLSizeMake( 64, 1, 1 )];
+	}
+	t->blitSerial = mb_frameSerial;
+}
+
+qboolean mbRadarImage( int cw, int ch, int texels, void *memory, int bytes, void ( *release )( void *memory ),
+	int floorsOffset, int changingOffset, int numChanging, float z )
+{
+	mbTexture_t *t = MB_BoundTexture();
+	const int width = cw * texels, height = ch * texels;
+	id<MTLBuffer> buffer = nil;
+
+	if ( t && mb_radarPipeline && cw > 0 && ch > 0 && texels > 0 && width <= mbMaxTextureSize() && height <= mbMaxTextureSize() ) {
+		@autoreleasepool {
+			buffer = [mb_device newBufferWithBytesNoCopy:memory length:(NSUInteger)bytes options:MTLResourceStorageModeShared
+				deallocator:^( void *pointer, NSUInteger length ) { release( pointer ); }];
+		}
+	}
+	if ( !buffer ) {
+		release( memory );
+		return qfalse;
+	}
+
+	// the texture: the radar's own at this size kept (painted over), else a new one (the old one lives until its
+	// frames are done)
+	if ( !t->gpuOnly || t->width != width || t->height != height ) {
+		MTLTextureDescriptor *desc;
+		id<MTLTexture> picture;
+
+		@autoreleasepool {
+			desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:width height:height mipmapped:NO];
+			desc.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+			desc.storageMode = MTLStorageModePrivate;
+			picture = [mb_device newTextureWithDescriptor:desc];
+		}
+		if ( !picture ) {
+			return qfalse;	// (the buffer, released here, gives the memory back)
+		}
+		if ( t->texture ) {
+			MB_Retire( (__bridge_transfer id)t->texture );
+		}
+		t->texture = (__bridge_retained void *)picture;
+		t->width = width;
+		t->height = height;
+		t->format = MTLPixelFormatRGBA8Unorm;
+		t->rgbOnly = qfalse;
+		t->levels = t->definedLevels = 1;
+		t->usedSerial = t->blitSerial = 0;
+		t->samplerDirty = qtrue;
+		t->gpuOnly = qtrue;
+	}
+
+	if ( mb_radar.name ) {
+		MB_RadarForget( &mb_textures[mb_radar.name] );	// (an older floor list's memory)
+	}
+	mb_radar.name = (unsigned int)( t - mb_textures );
+	mb_radar.buffer = (__bridge_retained void *)buffer;
+	mb_radar.floorsOffset = (NSUInteger)floorsOffset;
+	mb_radar.changingOffset = (NSUInteger)changingOffset;
+	mb_radar.cw = cw;
+	mb_radar.ch = ch;
+	mb_radar.texels = texels;
+	mb_radar.numChanging = numChanging;
+	MB_RadarPaint( z, qtrue );
+	return qtrue;
+}
+
+void mbRadarHeight( unsigned int texture, float z )
+{
+	if ( texture && texture == mb_radar.name && z != mb_radar.z ) {
+		MB_RadarPaint( z, qfalse );
+	}
+}
+
+/*
 ** MB_DefineLevel
 **
 ** Makes sure the bound texture has a level of this size and format (glTexImage2D semantics). Returns the
@@ -3670,8 +3859,10 @@ static mbTexture_t *MB_DefineLevel( int level, int internalformat, int width, in
 	format = MB_PixelFormat( internalformat, &rgbOnly );
 
 	if ( level == 0 ) {
-		if ( !t->texture || t->width != width || t->height != height || t->format != format || t->rgbOnly != rgbOnly ) {
+		if ( !t->texture || t->width != width || t->height != height || t->format != format || t->rgbOnly != rgbOnly || t->gpuOnly ) {
 			// a new image: a new texture (the old one lives until its frames are done)
+			MB_RadarForget( t );
+			t->gpuOnly = qfalse;
 			if ( t->texture ) {
 				MB_Retire( (__bridge_transfer id)t->texture );
 				t->texture = NULL;
@@ -3692,7 +3883,7 @@ static mbTexture_t *MB_DefineLevel( int level, int internalformat, int width, in
 		return t;
 	}
 
-	if ( !t->texture || format != t->format
+	if ( !t->texture || format != t->format || t->gpuOnly
 		|| width != ( t->width >> level ? t->width >> level : 1 ) || height != ( t->height >> level ? t->height >> level : 1 ) ) {
 		return NULL;	// not a mip level of the current image
 	}
@@ -3759,6 +3950,8 @@ void mbDeleteTextures( int n, const unsigned int *textures )
 		if ( !t ) {
 			continue;
 		}
+		MB_RadarForget( t );
+		t->gpuOnly = qfalse;
 		if ( t->texture ) {
 			MB_Retire( (__bridge_transfer id)t->texture );
 			t->texture = NULL;
@@ -3878,7 +4071,8 @@ void mbTexSubImage2D( int target, int level, int xoffset, int yoffset, int width
 	mbTexture_t *t = MB_BoundTexture();
 	int w, h;
 
-	if ( !t || !t->texture || !pixels || level >= t->levels || MB_IsCompressed( t->format ) || width <= 0 || height <= 0 ) {
+	if ( !t || !t->texture || !pixels || level >= t->levels || MB_IsCompressed( t->format ) || width <= 0 || height <= 0
+		|| t->gpuOnly ) {
 		return;
 	}
 	w = t->width >> level ? t->width >> level : 1;

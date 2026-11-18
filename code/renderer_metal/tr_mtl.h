@@ -407,6 +407,15 @@ int		mbDepthQueryResult( int handle );
 // before anything is drawn, it keeps what it holds.
 void	mbFrameBlur( unsigned int texture );
 
+// The Competitive HUD's radar (RE_RegisterRadar2D): the bound texture becomes its picture, cw x ch cells of texels x
+// texels, made on the GPU for height z from memory as radar2D_t lays it out (the cells' floor lists at 0, the floors
+// and the changing cells at those offsets; page-aligned, bytes a multiple of 16384), read in place. The renderer owns
+// memory from now on: release( memory ) once the GPU is done with it, also when this fails (qfalse, the texture then
+// unchanged). mbRadarHeight: its texels for height z (a texture that isn't the radar's: nothing)
+qboolean	mbRadarImage( int cw, int ch, int texels, void *memory, int bytes, void ( *release )( void *memory ),
+	int floorsOffset, int changingOffset, int numChanging, float z );
+void		mbRadarHeight( unsigned int texture, float z );
+
 static ID_INLINE int mbGetError( void ) { return MB_NO_ERROR; }
 
 #ifdef __cplusplus
