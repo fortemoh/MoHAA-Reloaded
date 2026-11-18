@@ -267,7 +267,8 @@ void UI_Menus_ServerCommand(void)
                     if (v15) {
                         cur++; // the team's players
                     }
-                    rl_sb.teamScore[team == TEAM_AXIS] = atoi(Cmd_Argv(cur + 6 * i + 2));
+                    // (below protocol 15 a round mode's line has the wins in a row, then the wins: fgame's BuildTeamInfo_ver6)
+                    rl_sb.teamScore[team == TEAM_AXIS] = atoi(Cmd_Argv(cur + 6 * i + (!v15 && gametype >= GT_TEAM_ROUNDS ? 3 : 2)));
                 }
                 continue;
             }

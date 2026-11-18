@@ -579,7 +579,8 @@ void CG_ParseScores_ver_6()
             Q_strncpyz(szString4, cgi.Argv(3 + iCurrentEntry + iDatumCount * i), sizeof(szString4));
             Q_strncpyz(szString5, cgi.Argv(4 + iCurrentEntry + iDatumCount * i), sizeof(szString5));
             Q_strncpyz(szString6, cgi.Argv(5 + iCurrentEntry + iDatumCount * i), sizeof(szString6));
-            CG_HudScoreEntry(iClientNum, iClientTeam, bIsDead, szString3);
+            // (a round mode's team line has the wins in a row, then the wins: fgame's BuildTeamInfo_ver6)
+            CG_HudScoreEntry(iClientNum, iClientTeam, bIsDead, iClientNum == -1 && cgs.gametype >= GT_TEAM_ROUNDS ? szString4 : szString3);
 
             if (iClientNum == cg.snap->ps.clientNum) {
                 pItemTextColor = vThisClientTextColor;
