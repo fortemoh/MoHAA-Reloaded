@@ -2238,8 +2238,9 @@ typedef struct {
 static const char *const rl_oAccelStyles[] = {"LINEAR", "POWER", NULL};
 static const char *const rl_oDisplay[]     = {"FULLSCREEN", "WINDOWED", "BORDERLESS", NULL};
 static const char *const rl_oTextures[]    = {"HIGH", "MEDIUM", "LOW", NULL};
-static const char *const rl_oFilters[]     = {"BILINEAR", "TRILINEAR", NULL};
-static const char *const rl_oFilterModes[] = {"GL_LINEAR_MIPMAP_NEAREST", "GL_LINEAR_MIPMAP_LINEAR", NULL};
+// OFF: the texels as they are, nothing blended, no smaller copies
+static const char *const rl_oFilters[]     = {"OFF", "BILINEAR", "TRILINEAR", NULL};
+static const char *const rl_oFilterModes[] = {"GL_NEAREST", "GL_LINEAR_MIPMAP_NEAREST", "GL_LINEAR_MIPMAP_LINEAR", NULL};
 static const char *const rl_oAniso[]       = {"OFF", "2X", "4X", "8X", "16X", NULL};
 static const char *const rl_oAnisoValues[] = {"0", "2", "4", "8", "16", NULL};
 static const char *const rl_oMsaa[]        = {"OFF", "2X", "4X", "8X", NULL};
