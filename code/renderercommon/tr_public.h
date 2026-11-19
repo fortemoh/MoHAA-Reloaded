@@ -40,7 +40,7 @@ typedef struct {
     float         fill;  // alpha / 255.0f
     unsigned char alpha; // its inside's alpha
     unsigned char sides; // bits 0-3: an edge toward its cell's left, right, north and south neighbour; 4-7: a stair
-    unsigned short pad;  // (drawn at the cell's left, right, bottom and top texels, as the UI's own picture has them)
+    unsigned short pad;  // (drawn on the cell's left, right, top and bottom texels, an edge first at a corner)
 } radarFloor_t;
 
 // A picture of cw x ch cells, texels x texels each, the top row the map's

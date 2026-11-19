@@ -44,24 +44,31 @@ static uint mb_radar_nearest( device const MbRadarFloor *floors, uint first, uin
 	return best;
 }
 
-// a floor's alpha at its sides 0-3 and inside (4) for height z
-static void mb_radar_alphas( MbRadarFloor f, float z, thread uint a[5] )
+// a floor's look for height z: its line's alpha, its stair's, its inside's, its sides
+struct MbRadarLook
+{
+	uint	line, stair, alpha, sides;
+};
+
+static MbRadarLook mb_radar_look( MbRadarFloor f, float z )
 {
 	const float focus = clamp( ( 120.0f - fabs( f.z - z ) ) / 56.0f, 0.0f, 1.0f );
-	const uint line = uint( fma( 0.6f, focus, 0.3f ) * 255.0f );
-	const uint stair = uint( fma( fma( 0.3f, focus, 0.22f ) - f.fill, 0.8f, f.fill ) * 255.0f );
+	MbRadarLook l;
 
-	for ( int k = 0; k < 4; k++ ) {
-		a[k] = ( f.sides & ( 1u << k ) ) ? line : ( f.sides & ( 16u << k ) ) ? stair : uint( f.alpha );
-	}
-	a[4] = f.alpha;
+	l.line = uint( fma( 0.6f, focus, 0.3f ) * 255.0f );
+	l.stair = uint( fma( fma( 0.3f, focus, 0.22f ) - f.fill, 0.8f, f.fill ) * 255.0f );
+	l.alpha = f.alpha;
+	l.sides = f.sides;
+	return l;
 }
 
-// the side a cell's texel i, j (j down from its top row) shows: left, right, then the north neighbour's at the bottom
-// row and the south's at the top (as the UI's picture has always drawn them), else its inside
-static uint mb_radar_side( uint i, uint j, uint t )
+// the alpha of a cell's texel i, j (j down from its top row, the map's north up): on its left, right, top or bottom
+// row that side's edge (a line) or stair (a stripe), an edge first; else its inside
+static uint mb_radar_alpha( MbRadarLook l, uint i, uint j, uint t )
 {
-	return i == 0 ? 0 : i == t - 1 ? 1 : j == t - 1 ? 2 : j == 0 ? 3 : 4;
+	const uint at = uint( i == 0 ) | uint( i == t - 1 ) << 1 | uint( j == 0 ) << 2 | uint( j == t - 1 ) << 3;
+
+	return ( l.sides & at ) ? l.line : ( l.sides & at << 4 ) ? l.stair : l.alpha;
 }
 
 static float4 mb_radar_texel( uint alpha )
@@ -78,14 +85,13 @@ kernel void mb_radar_full_cs( device const uint *cellFloors [[buffer(0)]],
 {
 	const uint t = p.texels, c = ( p.ch - 1 - pos.y / t ) * p.cw + pos.x / t;
 	const uint first = cellFloors[c], last = cellFloors[c + 1];
-	uint a[5];
 
 	if ( first == last ) {
 		picture.write( float4( 0.0f ), pos );
 		return;
 	}
-	mb_radar_alphas( floors[mb_radar_nearest( floors, first, last, p.z )], p.z, a );
-	picture.write( mb_radar_texel( a[mb_radar_side( pos.x % t, pos.y % t, t )] ), pos );
+	const MbRadarLook l = mb_radar_look( floors[mb_radar_nearest( floors, first, last, p.z )], p.z );
+	picture.write( mb_radar_texel( mb_radar_alpha( l, pos.x % t, pos.y % t, t ) ), pos );
 }
 
 // a height's change from zOld to z: a thread a cell that can change, its texels that do
@@ -98,19 +104,19 @@ kernel void mb_radar_cs( device const uint *cellFloors [[buffer(0)]],
 {
 	const uint c = changing[id], t = p.texels, first = cellFloors[c], last = cellFloors[c + 1];
 	const uint2 origin = uint2( c % p.cw * t, ( p.ch - 1 - c / p.cw ) * t );
-	uint a[5], was[5];
+	const MbRadarLook l = mb_radar_look( floors[mb_radar_nearest( floors, first, last, p.z )], p.z );
+	const MbRadarLook was = mb_radar_look( floors[mb_radar_nearest( floors, first, last, p.zOld )], p.zOld );
 
-	mb_radar_alphas( floors[mb_radar_nearest( floors, first, last, p.z )], p.z, a );
-	mb_radar_alphas( floors[mb_radar_nearest( floors, first, last, p.zOld )], p.zOld, was );
-	if ( a[0] == was[0] && a[1] == was[1] && a[2] == was[2] && a[3] == was[3] && a[4] == was[4] ) {
-		return;
+	if ( l.alpha == was.alpha && l.sides == was.sides && ( !( l.sides & 15u ) || l.line == was.line )
+		&& ( !( l.sides & 240u ) || l.stair == was.stair ) ) {
+		return;	// (its texels the same)
 	}
 	for ( uint j = 0; j < t; j++ ) {
 		for ( uint i = 0; i < t; i++ ) {
-			const uint side = mb_radar_side( i, j, t );
+			const uint alpha = mb_radar_alpha( l, i, j, t );
 
-			if ( a[side] != was[side] ) {
-				picture.write( mb_radar_texel( a[side] ), origin + uint2( i, j ) );
+			if ( alpha != mb_radar_alpha( was, i, j, t ) ) {
+				picture.write( mb_radar_texel( alpha ), origin + uint2( i, j ) );
 			}
 		}
 	}

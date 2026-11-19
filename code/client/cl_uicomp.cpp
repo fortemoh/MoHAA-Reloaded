@@ -2660,7 +2660,6 @@ static void RM_Paint(const radar2D_t *r, float z, std::vector<byte> *px)
         for (int cx = 0; cx < r->cw; cx++) {
             const int c = cy * r->cw + cx, first = r->cellFloors[c], last = r->cellFloors[c + 1];
             int       n = first;
-            byte      a[5]; // left, right, north, south (as drawn: the bottom, the top), inside
 
             if (first == last) {
                 continue;
@@ -2675,21 +2674,20 @@ static void RM_Paint(const radar2D_t *r, float z, std::vector<byte> *px)
             const byte          line      = (byte)((0.3f + 0.6f * focus) * 255.0f);
             const byte          stairLine = (byte)((f->fill + (0.22f + 0.3f * focus - f->fill) * 0.8f) * 255.0f);
 
-            for (int k = 0; k < 4; k++) {
-                a[k] = (f->sides & (1 << k)) ? line : (f->sides & (16 << k)) ? stairLine : f->alpha;
-            }
-            a[4] = f->alpha;
-            // the picture's top row is the map's north (y up)
+            // the picture's top row is the map's north (y up): a texel on
+            // the cell's left, right, top or bottom row is on that side's
+            // edge (a line) or stair (a stripe), an edge first (a corner on
+            // two sides, a cell a texel across on all four)
             for (int j = 0; j < t; j++) {
                 byte *o = &(*px)[(((size_t)(r->ch - 1 - cy) * t + j) * w + cx * t) * 4];
 
                 for (int i = 0; i < t; i++, o += 4) {
-                    const int side = i == 0 ? 0 : i == t - 1 ? 1 : j == t - 1 ? 2 : j == 0 ? 3 : 4;
+                    const int at = (i == 0) | (i == t - 1) << 1 | (j == 0) << 2 | (j == t - 1) << 3;
 
                     o[0] = 235;
                     o[1] = 240;
                     o[2] = 245;
-                    o[3] = a[side];
+                    o[3] = (f->sides & at) ? line : (f->sides & at << 4) ? stairLine : f->alpha;
                 }
             }
         }
