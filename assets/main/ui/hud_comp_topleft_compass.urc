@@ -8,7 +8,7 @@ align left top
 bgcolor 0 0 0 0
 borderstyle NONE
 
-// the compass (no radar): a disc, its bearings turning with the view
+// the compass (no radar): a disc, N E S W turning with the view
 resource
 Label
 {
@@ -43,13 +43,9 @@ bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_compass_on
 shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 0 N
-shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 45 NE
 shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 90 E
-shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 135 SE
 shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 180 S
-shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 225 SW
 shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 270 W
-shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 315 NW
 rotatecvar ui_hud_north
 }
 
@@ -94,18 +90,6 @@ shape circle 1 1 1 0.102 0.0588 0.5 0.0294
 shape circle 0.29 0.62 1 0.502 0.0471 0.5 0.0294
 rotatecvar ui_hud_obj2
 alphacvar ui_hud_obj2_on
-}
-
-// north's slot, fixed at the top
-resource
-Label
-{
-name "compassslot"
-rect 94 27 22 22
-bgcolor 0 0 0 0
-borderstyle NONE
-enabledcvar ui_hud_compass_on
-shape frame 1 1 1 1 1
 }
 
 // the game messages under the radar, or under the compass

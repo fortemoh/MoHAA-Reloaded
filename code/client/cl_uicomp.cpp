@@ -2834,18 +2834,24 @@ static qhandle_t Comp_DotShader(int axis, qboolean clamped, float k, float s, in
     return Comp_MarkKeep(&kept[axis][clamped], k, s, *d, UI_BakeShape("comp_dot", layers, 3, *d, *d, s));
 }
 
-// the player's arrow, up
+// the player, CS2's way: a dot in the HUD's accent with a white tip up (where
+// they look), dark edged, the dot in the box's middle
 static qhandle_t Comp_ArrowShader(float k, float s, int *d)
 {
     static compMark_t kept;
+    static int        accent = -1;
 
-    if (Comp_MarkKept(&kept, k, s, d)) {
+    if (accent == comp_accentStamp && Comp_MarkKept(&kept, k, s, d)) {
         return kept.h;
     }
-    const char *layers[2] = {"poly 0.047 0.055 0.071 0.9 0.5 0.0625 0.8125 0.8125 0.1875 0.8125", "poly 1 1 1 1 0.5 0.1875 0.7232 0.7232 0.2768 0.7232"};
+    char        dot[64];
+    const char *layers[4] = {"circle 0.047 0.055 0.071 0.9 0.5", "poly 0.047 0.055 0.071 0.9 0.5 0.04 0.74 0.4 0.26 0.4",
+                             "poly 1 1 1 1 0.5 0.12 0.66 0.38 0.34 0.38", dot};
 
-    *d = (int)(16.0f * 1.4f * k * s + 0.5f);
-    return Comp_MarkKeep(&kept, k, s, *d, UI_BakeShape("comp_arrow", layers, 2, *d, *d, s));
+    Com_sprintf(dot, sizeof(dot), "circle %g %g %g 1 0.38", comp_accent[ACC_MAIN][0], comp_accent[ACC_MAIN][1], comp_accent[ACC_MAIN][2]);
+    accent = comp_accentStamp;
+    *d     = (int)(16.0f * 1.4f * k * s + 0.5f);
+    return Comp_MarkKeep(&kept, k, s, *d, UI_BakeShape("comp_arrow", layers, 4, *d, *d, s));
 }
 
 static void Comp_PreBakeWidget(UIWidget *w);
@@ -3008,7 +3014,7 @@ UIHudRadar
 
 The radar: the map turned with the view (up is where the player looks),
 the objectives, the teammates the cgame tracks (the snapshot's and the
-server's radar's: never enemies), the player's arrow, N E S W inside the
+server's radar's: never enemies), the player's dot, N E S W inside the
 edge. Its disc and ring are its URC shapes
 ================
 */
@@ -3207,7 +3213,7 @@ void UIHudRadar::Draw(void)
         }
     }
 
-    // the player: an arrow in the middle, up
+    // the player: a dot in the middle, its tip up
     {
         int             d;
         const qhandle_t sh = Comp_ArrowShader(k, s, &d);
