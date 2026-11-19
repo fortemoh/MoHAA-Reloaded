@@ -36,6 +36,7 @@ void     UI_CompHud_Clear(void);          // a new map or server
 void     UI_CompHud_Shutdown(void);       // the UI's end
 void     UI_CompHud_ConfigString(void);   // a configstring changed
 void     UI_CompHud_MapLoaded(void);      // the radar's walk and the pictures, at the load
+void     UI_CompHud_LoadEnd(void);        // the radar's picture to the renderer, at the load's end
 void     UI_CompHud_PreBake(qboolean ahead); // the pictures (after the renderer's restart); ahead: their texels begun
 // the cgame's teammates (cg.radars, the radar's), the player's place in them; NULL none
 void     CL_InitRadar(radarClient_t *radars, int clientNum);
@@ -46,7 +47,7 @@ const char *UI_CompHud_WeaponOutline(const char *name);
 void        UI_DrawTeamTag(int client, float x, float y, int health);
 
 // the HUD's menus (ui/hud_comp_*.urc), in the order they are baked (the atlas is filled in it)
-#define UI_COMPHUD_MENUS 14
+#define UI_COMPHUD_MENUS 13
 extern const char *const ui_compHudMenus[UI_COMPHUD_MENUS];
 // the followed player's plate's height at the bottom's middle (hud_comp_follow, while ui_hud_follow_on)
 #define COMP_FOLLOW_H 62.0f

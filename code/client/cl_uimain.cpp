@@ -2331,6 +2331,7 @@ static const rlOpt_t rl_opts[] = {
     O_SWATCH("Accent Colour", "The HUD's highlight.", "cg_hud_accent", "f6f67a", rl_oAccents),
     O_SLIDER("Low Health", "Health turns red below this.", "cg_hud_lowhealth", "0.4", 0, 1, 0.05f, OF_PCT),
     O_TOGGLE("Players Alive", "A count of each side by the score, not a card each.", "cg_hud_alivecount", "0", 0),
+    O_TOGGLE("Damage Indicator", "Red marks round the crosshair toward a hit.", "cg_hud_damage", "1", 0),
     O_SECTION(OT_HUD, "CROSSHAIR", OF_RIGHT),
     {OC_PREVIEW, 0, 0, "", "", NULL, NULL, NULL, NULL, 0, 0, 0},
     O_SLIDER("Length", "", "cg_crosshair_length", "8", 0, 20, 0.5f, 0),

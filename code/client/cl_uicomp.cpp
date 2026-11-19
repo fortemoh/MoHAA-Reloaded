@@ -53,8 +53,8 @@ static cvar_t *cg_hudstyle;
 
 const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
     "hud_comp_topleft",     "hud_comp_topleft_compass", "hud_comp_score",      "hud_comp_killfeed", "hud_comp_chat",
-    "hud_comp_strip",       "hud_comp_weapons",         "hud_comp_damage",     "hud_comp_bars",     "hud_comp_killer",
-    "hud_comp_vote",        "hud_comp_csgo_health",     "hud_comp_csgo_ammo", "hud_comp_follow",
+    "hud_comp_strip",       "hud_comp_weapons",         "hud_comp_damage",     "hud_comp_bars",     "hud_comp_vote",
+    "hud_comp_csgo_health", "hud_comp_csgo_ammo",       "hud_comp_follow",
 };
 
 // cg_hudstyle's presets, the bottom's health and ammo: 1 CS:GO's corners
@@ -62,7 +62,7 @@ const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
 // them); each menu's preset (0 both's). The other's menus are hidden (cl_ui.cpp
 // UI_CompHuds), not drawn; all are baked (a change of preset bakes nothing)
 static const signed char comp_menuLayout[UI_COMPHUD_MENUS] = {
-    0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 1, 1, 0,
+    0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 1, 0,
 };
 
 bool ui_compHudInLayout[UI_COMPHUD_MENUS];
@@ -71,7 +71,7 @@ bool ui_compHudInLayout[UI_COMPHUD_MENUS];
 static const char *const comp_toggles[] = {
     "cg_hud_radar", "cg_hud_killfeed", "cg_hud_chat", "cg_hud_messages", "cg_hud_health", "cg_hud_ammo",
     "cg_hud_grenades", "cg_hud_grenadecharge", "cg_hud_score", "cg_hud_timer", "cg_hud_alive", "cg_hud_teamicon",
-    "cg_hud_badge", "cg_hud_killer", "cg_hud_targetinfo", "cg_hud_vote", "cg_hud_following", "cg_hud_attacker",
+    "cg_hud_badge", "cg_hud_targetinfo", "cg_hud_vote", "cg_hud_following", "cg_hud_attacker",
     "cg_hud_stopwatch", "cg_hud_damage",
 };
 
@@ -84,8 +84,7 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_count_axis", "ui_hud_count_on", "ui_hud_dmg_alpha", "ui_hud_dmg_angle", "ui_hud_follow",
     "ui_hud_follow_col", "ui_hud_follow_on", "ui_hud_health", "ui_hud_health_col", "ui_hud_health_frac",
     "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col", "ui_hud_hurt_on", "ui_hud_jail_allies", "ui_hud_jail_axis",
-    "ui_hud_jail_on", "ui_hud_killer", "ui_hud_killer_col",
-    "ui_hud_killer_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
+    "ui_hud_jail_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
     "ui_hud_north", "ui_hud_obj0", "ui_hud_obj0_on", "ui_hud_obj1", "ui_hud_obj1_on", "ui_hud_obj2", "ui_hud_obj2_on",
     "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
     "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_timer", "ui_hud_vote_on",
@@ -256,10 +255,11 @@ const char *UI_CompHud_WeaponOutline(const char *name)
     return w ? va(COMP_OUTLINES "%s.svg", w->pic) : NULL;
 }
 
-// the obituaries' English keys (fgame's, and stock 1.11's own spellings:
-// Pak0's global/localization.txt), the weapon each says: s2 the text after
-// the attacker it needs ("" none at all), kind p a player's, s a suicide, w
-// the world's. In order: a 'p' before any 's' or 'w' its words contain
+// the obituaries' English keys (fgame's, and the stock games' own spellings:
+// their global/localization.txt, Allied Assault's in Pak0, Breakthrough's
+// petard in its pak4), the weapon each says: s2 the text after the attacker
+// it needs ("" none at all), kind p a player's, s a suicide, w the world's.
+// In order: a 'p' before any 's' or 'w' its words contain
 typedef struct {
     const char *s1, *s2, *cls;
     char        kind;
@@ -297,6 +297,7 @@ static const compPhrase_t comp_phrases[] = {
     {"tripped on his own grenade",     NULL,                           "grenade",  's'},
     {"rocketed himself",               NULL,                           "rocket",   's'},
     {"was hoist on his own pitard",    NULL,                           "none",     's'},
+    {"was hoist on his own petard",    NULL,                           "none",     's'},
     {"took himself out of commision",  NULL,                           "none",     's'},
     {"blew himself up",                NULL,                           "none",     's'},
     {"shot himself",                   NULL,                           "none",     's'},
@@ -1208,15 +1209,12 @@ void UI_CompHud_Frame(void)
         }
     }
 
-    // who killed you, who you follow, who last hurt you (the player aimed at:
-    // the cgame's tag over their head, UI_DrawTeamTag)
+    // who you follow, who last hurt you (the player aimed at: the cgame's tag
+    // over their head, UI_DrawTeamTag; who killed you: the kill feed)
     if (full) {
-        const qboolean killer = health <= 0 && !spectating && attacker >= 0 && attacker < MAX_CLIENTS && attacker != ps->clientNum;
-        const int      info   = ps->stats[STAT_INFOCLIENT];
-        const int      fteam  = following ? Comp_Team(info) : 0;
+        const int info  = ps->stats[STAT_INFOCLIENT];
+        const int fteam = following ? Comp_Team(info) : 0;
 
-        Comp_Set("ui_hud_killer", killer ? Comp_Name(attacker) : "");
-        Comp_Set("ui_hud_killer_col", killer ? Comp_TeamColor(Comp_Team(attacker)) : "1 1 1 1");
         Comp_Set("ui_hud_follow", following ? Comp_Name(info) : "");
         Comp_Set("ui_hud_follow_col", following ? Comp_TeamColor(Comp_Team(info)) : "1 1 1 1");
         Comp_Set("ui_hud_follow_team", fteam == TEAM_AXIS ? "axis" : fteam == TEAM_ALLIES ? "allies" : "");
@@ -1248,9 +1246,12 @@ void UI_CompHud_Frame(void)
     }
 
     // the damage: three crescents round the crosshair, a hit renewing the one
-    // within 30 degrees or the oldest, 1.5 s each; the radar's and compass's wedge
+    // within 30 degrees or the oldest, 1.5 s each; the radar's and compass's
+    // wedge. cg_hud_damage 0 (Options' HUD tab): no crescents, in every
+    // frame (the wedge stays)
     {
-        const int dmg = ps->stats[STAT_DAMAGEDIR];
+        const int      dmg   = ps->stats[STAT_DAMAGEDIR];
+        const qboolean shown = Comp_Int("cg_hud_damage") != 0;
 
         if (dmg != comp.lastDmg || (dmg > 0 && ps->stats[STAT_HEALTH] < comp.lastHealth)) {
             int slot = 0;
@@ -1275,8 +1276,8 @@ void UI_CompHud_Frame(void)
         for (i = 0; i < 3; i++) {
             const int age = cls.realtime - comp.arcTime[i];
 
-            Comp_SetF(comp_arcAlpha[i], comp.arcTime[i] && age < 1500 ? 1.0f - age / 1500.0f : 0.0f);
-            if (comp.arcTime[i] && age < 1500) {
+            Comp_SetF(comp_arcAlpha[i], shown && comp.arcTime[i] && age < 1500 ? 1.0f - age / 1500.0f : 0.0f);
+            if (shown && comp.arcTime[i] && age < 1500) {
                 Comp_SetF(comp_arcAngle[i], AngleSubtract(viewYaw, comp.arcStat[i] / 10.0f + 180.0f));
             }
         }
@@ -1313,19 +1314,13 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_badge_on", strip && Comp_Int("cg_hud_badge"));
         flag("ui_hud_ammo_on", strip && ammo && Comp_Int("cg_hud_ammo"));
         flag("ui_hud_weapons_on", strip && Comp_Int("cg_hud_ammo"));
-        flag("ui_hud_killer_on", Comp_Cvar("ui_hud_killer")->string[0] && Comp_Int("cg_hud_killer"));
         flag("ui_hud_follow_on", following && Comp_Int("cg_hud_following") && show);
-        flag("ui_hud_hurt_on", Comp_Cvar("ui_hud_hurt")->string[0] && Comp_Int("cg_hud_attacker") && show);
+        // (not while you lie dead: the kill feed has who killed you)
+        flag("ui_hud_hurt_on", Comp_Cvar("ui_hud_hurt")->string[0] && Comp_Int("cg_hud_attacker") && show && (health > 0 || spectating));
         flag("ui_hud_charge_on", comp.charging && Comp_Int("cg_hud_grenadecharge"));
         flag("ui_hud_vote_on", atoi(CL_ConfigString(CS_VOTE_TIME)) && Comp_Int("cg_hud_vote"));
         if (!Comp_Int("cg_hud_stopwatch")) {
             Comp_Set("ui_hud_stopwatch", "0");
-        }
-        if (!Comp_Int("cg_hud_damage")) {
-            for (i = 0; i < 3; i++) {
-                Comp_Set(comp_arcAlpha[i], "0");
-            }
-            Comp_Set("ui_hud_dmg_alpha", "0");
         }
     }
 
@@ -2340,6 +2335,7 @@ static struct {
     float     width;     // the radar's, pixels across (the last seen: the load's picture is made for it)
     qboolean  onGpu;     // the picture is the renderer's (RegisterRadar2D): a storey's change is a number
     qboolean  gpuFailed; // the renderer's failed: the UI's own picture, this map
+    qboolean  giveAtEnd; // a new map's walk: its floors to the renderer at the load's end (UI_CompHud_LoadEnd)
     // ... made on its thread (the floors, then the UI's own picture of them, or the floors for the renderer's)
     std::thread       worker;
     std::atomic<bool> done{false};
@@ -2720,10 +2716,11 @@ static void RM_Picture(void)
     if (rm.worker.joinable()) {
         return;
     }
-    rm.gpu    = re.RegisterRadar2D && re.Radar2DHeight && !rm.gpuFailed;
-    rm.paintZ = rm.focusZ;
-    rm.done   = false;
-    rm.worker = std::thread(RM_Draw);
+    rm.gpu       = re.RegisterRadar2D && re.Radar2DHeight && !rm.gpuFailed;
+    rm.paintZ    = rm.focusZ;
+    rm.giveAtEnd = qfalse; // (these floors given instead)
+    rm.done      = false;
+    rm.worker    = std::thread(RM_Draw);
 }
 
 // the floors given to the renderer (its memory from now on): its picture for
@@ -2971,9 +2968,28 @@ void UI_CompHud_MapLoaded(void)
     rm.stamp     = -1;
     rm.onGpu     = qfalse;
     rm.gpuFailed = qfalse;
-    // the renderer's picture made with the load, for the radar's size (its
-    // first frame then gives the height), at the lowest floor till then
-    if (re.RegisterRadar2D && re.Radar2DHeight && rm.width > 0.0f && !rm.nodes.empty()) {
+    rm.giveAtEnd = qtrue;
+}
+
+/*
+================
+UI_CompHud_LoadEnd
+
+The load's end (CL_InitCGame, after every picture the load registers): the
+renderer's picture of a new map's radar made now, for the radar's size (its
+first frame then gives the height), at the lowest floor till then. Last of
+the load's pictures, so it takes the place in the renderer's 2D atlas that
+the UI's own picture takes a frame later (renderervk: the same pixels)
+================
+*/
+void UI_CompHud_LoadEnd(void)
+{
+    if (!rm.giveAtEnd) {
+        return;
+    }
+    rm.giveAtEnd = qfalse;
+    if (re.RegisterRadar2D && re.Radar2DHeight && rm.width > 0.0f && !rm.nodes.empty() && !rm.worker.joinable() && !rm.floors.memory
+        && rm.stamp == -1) {
         rm.texels = RM_Texels(rm.width);
         rm.focusZ = rm.zMin;
         rm.walked = (int)rm.nodes.size();

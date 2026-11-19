@@ -83,7 +83,8 @@ private:
 
 // Added: the cursor's picture in place of the stock one (the Reloaded UI's,
 // cl_uimenus.cpp): RGBA texels w x h, the hot spot their top-left, and their
-// 2D shader. NULL: the stock picture
+// 2D shader (shader NULL: the texels alone, nothing registered). NULL: the
+// stock picture
 extern const byte *(*ui_cursorPicture)(int *w, int *h, uihandle_t *shader);
 
 extern Event W_MouseExited;

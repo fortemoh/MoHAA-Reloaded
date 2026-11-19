@@ -1014,6 +1014,8 @@ void CL_InitCGame( void ) {
 	UI_Extras_PreBake(qfalse);
 
 	CL_EndRegistration();
+	// Added: the radar's picture to the renderer, after the load's other pictures
+	UI_CompHud_LoadEnd();
 
 	t2 = Sys_Milliseconds();
 

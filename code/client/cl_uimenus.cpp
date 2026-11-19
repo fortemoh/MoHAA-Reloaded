@@ -1422,13 +1422,18 @@ static const byte *RL_Cursor(int *w, int *h, uihandle_t *shader)
         UI_BakeTexels(&layer, 1, rl_cur.w, rl_cur.h, 1.0f, rl_cur.texels.data());
         rl_cur.stamp = UI_BakeStamp() + 1;
     }
-    if (rl_cur.stamp != UI_BakeStamp()) {
+    // (registered only for a draw: shader NULL, the system's cursor, wants the
+    // texels alone, and a registration at a map's load would move the HUD's
+    // pictures in the renderer's 2D atlas)
+    if (shader && rl_cur.stamp != UI_BakeStamp()) {
         rl_cur.shader = uii.Rend_RegisterImage2D("*rl_cursor", rl_cur.texels.data(), rl_cur.w, rl_cur.h);
         rl_cur.stamp  = UI_BakeStamp();
     }
-    *w      = rl_cur.w;
-    *h      = rl_cur.h;
-    *shader = rl_cur.shader;
+    *w = rl_cur.w;
+    *h = rl_cur.h;
+    if (shader) {
+        *shader = rl_cur.shader;
+    }
     return rl_cur.texels.data();
 }
 
