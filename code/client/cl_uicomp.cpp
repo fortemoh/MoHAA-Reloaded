@@ -53,8 +53,8 @@ static cvar_t *cg_hudstyle;
 
 const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
     "hud_comp_topleft",     "hud_comp_topleft_compass", "hud_comp_score",      "hud_comp_killfeed", "hud_comp_chat",
-    "hud_comp_strip",       "hud_comp_weapons",         "hud_comp_damage",     "hud_comp_bars",     "hud_comp_killer",
-    "hud_comp_vote",        "hud_comp_csgo_health",     "hud_comp_csgo_ammo", "hud_comp_follow",
+    "hud_comp_strip",       "hud_comp_weapons",         "hud_comp_damage",     "hud_comp_bars",     "hud_comp_vote",
+    "hud_comp_csgo_health", "hud_comp_csgo_ammo",       "hud_comp_follow",
 };
 
 // cg_hudstyle's presets, the bottom's health and ammo: 1 CS:GO's corners
@@ -62,7 +62,7 @@ const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
 // them); each menu's preset (0 both's). The other's menus are hidden (cl_ui.cpp
 // UI_CompHuds), not drawn; all are baked (a change of preset bakes nothing)
 static const signed char comp_menuLayout[UI_COMPHUD_MENUS] = {
-    0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 1, 1, 0,
+    0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 1, 0,
 };
 
 bool ui_compHudInLayout[UI_COMPHUD_MENUS];
@@ -71,7 +71,7 @@ bool ui_compHudInLayout[UI_COMPHUD_MENUS];
 static const char *const comp_toggles[] = {
     "cg_hud_radar", "cg_hud_killfeed", "cg_hud_chat", "cg_hud_messages", "cg_hud_health", "cg_hud_ammo",
     "cg_hud_grenades", "cg_hud_grenadecharge", "cg_hud_score", "cg_hud_timer", "cg_hud_alive", "cg_hud_teamicon",
-    "cg_hud_badge", "cg_hud_killer", "cg_hud_targetinfo", "cg_hud_vote", "cg_hud_following", "cg_hud_attacker",
+    "cg_hud_badge", "cg_hud_targetinfo", "cg_hud_vote", "cg_hud_following", "cg_hud_attacker",
     "cg_hud_stopwatch", "cg_hud_damage",
 };
 
@@ -84,8 +84,7 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_count_axis", "ui_hud_count_on", "ui_hud_dmg_alpha", "ui_hud_dmg_angle", "ui_hud_follow",
     "ui_hud_follow_col", "ui_hud_follow_on", "ui_hud_health", "ui_hud_health_col", "ui_hud_health_frac",
     "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col", "ui_hud_hurt_on", "ui_hud_jail_allies", "ui_hud_jail_axis",
-    "ui_hud_jail_on", "ui_hud_killer", "ui_hud_killer_col",
-    "ui_hud_killer_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
+    "ui_hud_jail_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
     "ui_hud_north", "ui_hud_obj0", "ui_hud_obj0_on", "ui_hud_obj1", "ui_hud_obj1_on", "ui_hud_obj2", "ui_hud_obj2_on",
     "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
     "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_timer", "ui_hud_vote_on",
@@ -1210,15 +1209,12 @@ void UI_CompHud_Frame(void)
         }
     }
 
-    // who killed you, who you follow, who last hurt you (the player aimed at:
-    // the cgame's tag over their head, UI_DrawTeamTag)
+    // who you follow, who last hurt you (the player aimed at: the cgame's tag
+    // over their head, UI_DrawTeamTag; who killed you: the kill feed)
     if (full) {
-        const qboolean killer = health <= 0 && !spectating && attacker >= 0 && attacker < MAX_CLIENTS && attacker != ps->clientNum;
-        const int      info   = ps->stats[STAT_INFOCLIENT];
-        const int      fteam  = following ? Comp_Team(info) : 0;
+        const int info  = ps->stats[STAT_INFOCLIENT];
+        const int fteam = following ? Comp_Team(info) : 0;
 
-        Comp_Set("ui_hud_killer", killer ? Comp_Name(attacker) : "");
-        Comp_Set("ui_hud_killer_col", killer ? Comp_TeamColor(Comp_Team(attacker)) : "1 1 1 1");
         Comp_Set("ui_hud_follow", following ? Comp_Name(info) : "");
         Comp_Set("ui_hud_follow_col", following ? Comp_TeamColor(Comp_Team(info)) : "1 1 1 1");
         Comp_Set("ui_hud_follow_team", fteam == TEAM_AXIS ? "axis" : fteam == TEAM_ALLIES ? "allies" : "");
@@ -1318,9 +1314,9 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_badge_on", strip && Comp_Int("cg_hud_badge"));
         flag("ui_hud_ammo_on", strip && ammo && Comp_Int("cg_hud_ammo"));
         flag("ui_hud_weapons_on", strip && Comp_Int("cg_hud_ammo"));
-        flag("ui_hud_killer_on", Comp_Cvar("ui_hud_killer")->string[0] && Comp_Int("cg_hud_killer"));
         flag("ui_hud_follow_on", following && Comp_Int("cg_hud_following") && show);
-        flag("ui_hud_hurt_on", Comp_Cvar("ui_hud_hurt")->string[0] && Comp_Int("cg_hud_attacker") && show);
+        // (not while you lie dead: the kill feed has who killed you)
+        flag("ui_hud_hurt_on", Comp_Cvar("ui_hud_hurt")->string[0] && Comp_Int("cg_hud_attacker") && show && (health > 0 || spectating));
         flag("ui_hud_charge_on", comp.charging && Comp_Int("cg_hud_grenadecharge"));
         flag("ui_hud_vote_on", atoi(CL_ConfigString(CS_VOTE_TIME)) && Comp_Int("cg_hud_vote"));
         if (!Comp_Int("cg_hud_stopwatch")) {
