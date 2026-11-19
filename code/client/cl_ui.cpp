@@ -722,6 +722,26 @@ qboolean UI_ConsoleIsOpen(void)
 
 /*
 ====================
+UI_ConsoleHasKeys
+
+Added: the console or the chat is the active control, or holds it (the
+console's window gives it to its line)
+====================
+*/
+qboolean UI_ConsoleHasKeys(void)
+{
+    UIWidget *wid;
+
+    for (wid = uWinMan.ActiveControl(); wid; wid = wid->getParent()) {
+        if (wid == fakk_console || wid == dm_console) {
+            return qtrue;
+        }
+    }
+    return qfalse;
+}
+
+/*
+====================
 UI_CloseConsole
 ====================
 */

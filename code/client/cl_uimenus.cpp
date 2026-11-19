@@ -2010,8 +2010,9 @@ void UIReloadedMenu::Tick(void)
             m_focus = rl_hot[m_screen] = -1;
             return;
         }
-    } else if (uWinMan.ActiveControl() != this) {
-        // the keys come here while the menu is up
+    } else if (uWinMan.ActiveControl() != this && !UI_ConsoleHasKeys()) {
+        // the keys come here while the menu is up, but for the console or the
+        // chat over it: theirs until it closes or the menu is clicked
         uWinMan.ActivateControl(this);
     }
     // the mouse moved: what it is over is hot
