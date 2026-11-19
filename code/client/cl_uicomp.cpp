@@ -1250,9 +1250,12 @@ void UI_CompHud_Frame(void)
     }
 
     // the damage: three crescents round the crosshair, a hit renewing the one
-    // within 30 degrees or the oldest, 1.5 s each; the radar's and compass's wedge
+    // within 30 degrees or the oldest, 1.5 s each; the radar's and compass's
+    // wedge. cg_hud_damage 0 (Options' HUD tab): no crescents, in every
+    // frame (the wedge stays)
     {
-        const int dmg = ps->stats[STAT_DAMAGEDIR];
+        const int      dmg   = ps->stats[STAT_DAMAGEDIR];
+        const qboolean shown = Comp_Int("cg_hud_damage") != 0;
 
         if (dmg != comp.lastDmg || (dmg > 0 && ps->stats[STAT_HEALTH] < comp.lastHealth)) {
             int slot = 0;
@@ -1277,8 +1280,8 @@ void UI_CompHud_Frame(void)
         for (i = 0; i < 3; i++) {
             const int age = cls.realtime - comp.arcTime[i];
 
-            Comp_SetF(comp_arcAlpha[i], comp.arcTime[i] && age < 1500 ? 1.0f - age / 1500.0f : 0.0f);
-            if (comp.arcTime[i] && age < 1500) {
+            Comp_SetF(comp_arcAlpha[i], shown && comp.arcTime[i] && age < 1500 ? 1.0f - age / 1500.0f : 0.0f);
+            if (shown && comp.arcTime[i] && age < 1500) {
                 Comp_SetF(comp_arcAngle[i], AngleSubtract(viewYaw, comp.arcStat[i] / 10.0f + 180.0f));
             }
         }
@@ -1322,12 +1325,6 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_vote_on", atoi(CL_ConfigString(CS_VOTE_TIME)) && Comp_Int("cg_hud_vote"));
         if (!Comp_Int("cg_hud_stopwatch")) {
             Comp_Set("ui_hud_stopwatch", "0");
-        }
-        if (!Comp_Int("cg_hud_damage")) {
-            for (i = 0; i < 3; i++) {
-                Comp_Set(comp_arcAlpha[i], "0");
-            }
-            Comp_Set("ui_hud_dmg_alpha", "0");
         }
     }
 
