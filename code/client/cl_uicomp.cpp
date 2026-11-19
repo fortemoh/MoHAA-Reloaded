@@ -2342,6 +2342,7 @@ static struct {
     float     width;     // the radar's, pixels across (the last seen: the load's picture is made for it)
     qboolean  onGpu;     // the picture is the renderer's (RegisterRadar2D): a storey's change is a number
     qboolean  gpuFailed; // the renderer's failed: the UI's own picture, this map
+    qboolean  giveAtEnd; // a new map's walk: its floors to the renderer at the load's end (UI_CompHud_LoadEnd)
     // ... made on its thread (the floors, then the UI's own picture of them, or the floors for the renderer's)
     std::thread       worker;
     std::atomic<bool> done{false};
@@ -2722,10 +2723,11 @@ static void RM_Picture(void)
     if (rm.worker.joinable()) {
         return;
     }
-    rm.gpu    = re.RegisterRadar2D && re.Radar2DHeight && !rm.gpuFailed;
-    rm.paintZ = rm.focusZ;
-    rm.done   = false;
-    rm.worker = std::thread(RM_Draw);
+    rm.gpu       = re.RegisterRadar2D && re.Radar2DHeight && !rm.gpuFailed;
+    rm.paintZ    = rm.focusZ;
+    rm.giveAtEnd = qfalse; // (these floors given instead)
+    rm.done      = false;
+    rm.worker    = std::thread(RM_Draw);
 }
 
 // the floors given to the renderer (its memory from now on): its picture for
@@ -2973,9 +2975,28 @@ void UI_CompHud_MapLoaded(void)
     rm.stamp     = -1;
     rm.onGpu     = qfalse;
     rm.gpuFailed = qfalse;
-    // the renderer's picture made with the load, for the radar's size (its
-    // first frame then gives the height), at the lowest floor till then
-    if (re.RegisterRadar2D && re.Radar2DHeight && rm.width > 0.0f && !rm.nodes.empty()) {
+    rm.giveAtEnd = qtrue;
+}
+
+/*
+================
+UI_CompHud_LoadEnd
+
+The load's end (CL_InitCGame, after every picture the load registers): the
+renderer's picture of a new map's radar made now, for the radar's size (its
+first frame then gives the height), at the lowest floor till then. Last of
+the load's pictures, so it takes the place in the renderer's 2D atlas that
+the UI's own picture takes a frame later (renderervk: the same pixels)
+================
+*/
+void UI_CompHud_LoadEnd(void)
+{
+    if (!rm.giveAtEnd) {
+        return;
+    }
+    rm.giveAtEnd = qfalse;
+    if (re.RegisterRadar2D && re.Radar2DHeight && rm.width > 0.0f && !rm.nodes.empty() && !rm.worker.joinable() && !rm.floors.memory
+        && rm.stamp == -1) {
         rm.texels = RM_Texels(rm.width);
         rm.focusZ = rm.zMin;
         rm.walked = (int)rm.nodes.size();

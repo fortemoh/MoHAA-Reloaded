@@ -36,6 +36,7 @@ void     UI_CompHud_Clear(void);          // a new map or server
 void     UI_CompHud_Shutdown(void);       // the UI's end
 void     UI_CompHud_ConfigString(void);   // a configstring changed
 void     UI_CompHud_MapLoaded(void);      // the radar's walk and the pictures, at the load
+void     UI_CompHud_LoadEnd(void);        // the radar's picture to the renderer, at the load's end
 void     UI_CompHud_PreBake(qboolean ahead); // the pictures (after the renderer's restart); ahead: their texels begun
 // the cgame's teammates (cg.radars, the radar's), the player's place in them; NULL none
 void     CL_InitRadar(radarClient_t *radars, int clientNum);
