@@ -10,7 +10,7 @@ borderstyle NONE
 
 // the compass (no radar): what the stock compass points at (the nearest
 // teammate, or the objective) as a gold arrow on a ring, its distance and
-// what it is inside, north a white triangle outside; the damage wedge
+// what it is inside, the other teammates as dots on it; the damage wedge
 resource
 Label
 {
@@ -21,6 +21,17 @@ borderstyle NONE
 enabledcvar ui_hud_compass_on
 shape circle 0.047 0.055 0.071 0.45
 shape ring 2 $ui_hud_acc_radar 0.6
+}
+
+// the other teammates the game knows of, as the radar's edge dots
+resource
+HudMates
+{
+name "mates"
+rect 15 15 140 140
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_compass_on
 }
 
 resource
@@ -48,19 +59,6 @@ shape poly 0 0 0 0.55 0.5 0.007 0.614 0.214 0.5 0.146 0.386 0.214
 shape poly $ui_hud_acc 1 0.5 0.029 0.593 0.2 0.5 0.131 0.407 0.2
 rotatecvar ui_hud_mate_angle
 alphacvar ui_hud_mate_on
-}
-
-resource
-Label
-{
-name "north"
-rect 15 15 140 140
-bgcolor 0 0 0 0
-borderstyle NONE
-enabledcvar ui_hud_compass_on
-shape poly 0 0 0 0.55 0.5 0 0.554 0.096 0.5 0.064 0.446 0.096
-shape poly 1 1 1 1 0.5 0.007 0.543 0.086 0.5 0.054 0.457 0.086
-rotatecvar ui_hud_north
 }
 
 resource
