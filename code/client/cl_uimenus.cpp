@@ -1948,6 +1948,17 @@ void UIReloadedMenu::PlaceView(const rlView_t& v, const char *name, float x, flo
     }
 }
 
+// the active control is in a floating window (the console, the chat)
+static bool RL_FloatingHasKeys(void)
+{
+    for (UIWidget *wid = uWinMan.ActiveControl(); wid; wid = wid->getParent()) {
+        if (wid->isSubclassOf(UIFloatingWindow)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /*
 ================
 Tick
@@ -2006,9 +2017,11 @@ void UIReloadedMenu::Tick(void)
             m_focus = rl_hot[m_screen] = -1;
             return;
         }
-    } else if (uWinMan.ActiveControl() != this && !UI_ConsoleHasKeys()) {
-        // the keys come here while the menu is up, but for the console or the
-        // chat over it: theirs until it closes or the menu is clicked
+    } else if (uWinMan.ActiveControl() != this && !RL_FloatingHasKeys()) {
+        // the keys come here while the menu is up (a menu shown gives them
+        // only to its widget of ordernumber 1, which only the loading screen
+        // has), never from a window floating over it (the console, the chat:
+        // theirs until it closes or the menu is clicked)
         uWinMan.ActivateControl(this);
     }
     // the mouse moved: what it is over is hot

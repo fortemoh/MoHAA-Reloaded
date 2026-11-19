@@ -120,8 +120,6 @@ void UI_DeactiveFloatingWindows(void);
 void     UI_OpenConsole(void);
 qboolean UI_ConsoleIsVisible(void);
 qboolean UI_ConsoleIsOpen(void);
-// Added: the console or the chat has the keys (a menu under it leaves them)
-qboolean UI_ConsoleHasKeys(void);
 void     UI_CloseConsole(void);
 void     UI_ToggleConsole(void);
 void     UI_OpenDMConsole(int iMode);
