@@ -84,8 +84,8 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_count_axis", "ui_hud_count_on", "ui_hud_dmg_alpha", "ui_hud_dmg_angle", "ui_hud_follow",
     "ui_hud_follow_col", "ui_hud_follow_on", "ui_hud_health", "ui_hud_health_col", "ui_hud_health_frac",
     "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col", "ui_hud_hurt_on", "ui_hud_jail_allies", "ui_hud_jail_axis",
-    "ui_hud_jail_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
-    "ui_hud_north", "ui_hud_obj0", "ui_hud_obj0_on", "ui_hud_obj1", "ui_hud_obj1_on", "ui_hud_obj2", "ui_hud_obj2_on",
+    "ui_hud_jail_on", "ui_hud_mate", "ui_hud_mate_angle", "ui_hud_mate_on", "ui_hud_mate_what", "ui_hud_msgs_c", "ui_hud_msgs_r",
+    "ui_hud_north",
     "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
     "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_timer", "ui_hud_vote_on",
     "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_weapons_on",
@@ -999,8 +999,6 @@ static void Comp_RadarSize(void)
 
 static const char *const comp_arcAlpha[3] = {"ui_hud_arc0_alpha", "ui_hud_arc1_alpha", "ui_hud_arc2_alpha"};
 static const char *const comp_arcAngle[3] = {"ui_hud_arc0_angle", "ui_hud_arc1_angle", "ui_hud_arc2_angle"};
-static const char *const comp_objOn[3]    = {"ui_hud_obj0_on", "ui_hud_obj1_on", "ui_hud_obj2_on"};
-static const char *const comp_obj[3]      = {"ui_hud_obj0", "ui_hud_obj1", "ui_hud_obj2"};
 
 void UI_CompHud_Frame(void)
 {
@@ -1324,15 +1322,31 @@ void UI_CompHud_Frame(void)
         }
     }
 
-    // the compass: its bearings turn with the view, the objectives' balls on its rim
+    // the compass: north and what the stock compass points at, its distance.
+    // The server points it at the current objective (a map that sets one: its
+    // location is the objective's configstring) or, on Allied Assault's
+    // servers, at the nearest living teammate; STAT_OBJECTIVECENTER is its
+    // bearing from the view (+ 180, tenths of a degree), LEFT and RIGHT that
+    // bearing -+ 60 - atan(300 / distance) degrees (at least 7), so the gap
+    // gives the distance; the game's own 52 units a metre (the battle
+    // language's). Its bearing turned from the server's view to this frame's
     if (Comp_Int("ui_hud_compass_on")) {
-        const int stats[3] = {ps->stats[STAT_OBJECTIVECENTER], ps->stats[STAT_OBJECTIVELEFT], ps->stats[STAT_OBJECTIVERIGHT]};
-        const int rest[3]  = {1800, 1730, 1870};
+        const int center = ps->stats[STAT_OBJECTIVECENTER], left = ps->stats[STAT_OBJECTIVELEFT], right = ps->stats[STAT_OBJECTIVERIGHT];
+        const qboolean on = !(center == 1800 && left == 1730 && right == 1870);
 
         Comp_SetF("ui_hud_north", anglemod(viewYaw - ps->stats[STAT_COMPASSNORTH] / 182.0f));
-        for (i = 0; i < 3; i++) {
-            Comp_Set(comp_objOn[i], stats[i] != rest[i] ? "1" : "0");
-            Comp_SetF(comp_obj[i], (stats[i] - 1800) / 10.0f);
+        Comp_Set("ui_hud_mate_on", on ? "1" : "0");
+        if (on) {
+            const float half = anglemod((right - left) / 10.0f) * 0.5f;
+            const float units = half < 59.95f ? 300.0f / tanf(DEG2RAD(60.0f - half)) : 999.0f * 52.0f;
+            const int   obj = (Comp_ConfigStrings(), cs.objCurrent);
+            const qboolean objective = com_target_game->integer >= TG_MOHTA
+                                    || (obj >= 0 && obj < MAX_OBJECTIVES && !VectorCompare(cs.objLoc[obj], vec3_origin));
+
+            Comp_SetF("ui_hud_mate_angle", anglemod((center - 1800) / 10.0f + AngleSubtract(viewYaw, ps->viewangles[YAW])));
+            // (the gap's least, 7 degrees: 4.3 m or nearer)
+            Comp_Set("ui_hud_mate", units < 240.0f ? "< 5 m" : va("%d m", Q_min(999, (int)((units + 26.0f) / 52.0f))));
+            Comp_Set("ui_hud_mate_what", objective ? "OBJECTIVE" : "TEAMMATE");
         }
     }
 }

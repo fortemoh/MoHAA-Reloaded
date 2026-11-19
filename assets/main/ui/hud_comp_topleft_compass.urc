@@ -8,24 +8,26 @@ align left top
 bgcolor 0 0 0 0
 borderstyle NONE
 
-// the compass (no radar): a disc, N E S W turning with the view
+// the compass (no radar): what the stock compass points at (the nearest
+// teammate, or the objective) as a gold arrow on a ring, its distance and
+// what it is inside, north a white triangle outside; the damage wedge
 resource
 Label
 {
 name "compass"
-rect 25 25 160 160
+rect 29 29 112 112
 bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_compass_on
-shape circle 0.047 0.055 0.071 0.78
-shape ring 1 1 1 1 0.102
+shape circle 0.047 0.055 0.071 0.45
+shape ring 2 $ui_hud_acc_radar 0.6
 }
 
 resource
 Label
 {
 name "compasswedge"
-rect 25 25 160 160
+rect 29 29 112 112
 bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_compass_on
@@ -37,59 +39,58 @@ alphacvar ui_hud_dmg_alpha
 resource
 Label
 {
-name "bearings"
-rect 25 25 160 160
+name "matearrow"
+rect 15 15 140 140
 bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_compass_on
-shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 0 N
-shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 90 E
-shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 180 S
-shape text 1 1 1 1 oswald-semibold-13s 0.5 0.0625 270 W
+shape poly 0 0 0 0.55 0.5 0.007 0.614 0.214 0.5 0.146 0.386 0.214
+shape poly $ui_hud_acc 1 0.5 0.029 0.593 0.2 0.5 0.131 0.407 0.2
+rotatecvar ui_hud_mate_angle
+alphacvar ui_hud_mate_on
+}
+
+resource
+Label
+{
+name "north"
+rect 15 15 140 140
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_compass_on
+shape poly 0 0 0 0.55 0.5 0 0.554 0.096 0.5 0.064 0.446 0.096
+shape poly 1 1 1 1 0.5 0.007 0.543 0.086 0.5 0.054 0.457 0.086
 rotatecvar ui_hud_north
 }
 
-// the objectives' balls on the rim (the stock compass's stats)
 resource
 Label
 {
-name "objcenter"
-rect 19 19 172 172
+name "matedist"
+rect 29 60 112 38
+fgcolor 1 1 1 1
 bgcolor 0 0 0 0
 borderstyle NONE
+font oswald-semibold-30s
+textalign centerx
+linkcvar ui_hud_mate
 enabledcvar ui_hud_compass_on
-shape circle 1 1 1 0.102 0.0698 0.5 0.0349
-shape circle 0.988 0.729 0.012 0.502 0.0581 0.5 0.0349
-rotatecvar ui_hud_obj0
-alphacvar ui_hud_obj0_on
+alphacvar ui_hud_mate_on
 }
 
 resource
 Label
 {
-name "objleft"
-rect 20 20 170 170
+name "matewhat"
+rect 29 99 112 20
+fgcolor 0.8 0.8 0.8 1
 bgcolor 0 0 0 0
 borderstyle NONE
+font oswald-medium-13s
+textalign centerx
+linkcvar ui_hud_mate_what
 enabledcvar ui_hud_compass_on
-shape circle 1 1 1 0.102 0.0588 0.5 0.0294
-shape circle 0.29 0.62 1 0.502 0.0471 0.5 0.0294
-rotatecvar ui_hud_obj1
-alphacvar ui_hud_obj1_on
-}
-
-resource
-Label
-{
-name "objright"
-rect 20 20 170 170
-bgcolor 0 0 0 0
-borderstyle NONE
-enabledcvar ui_hud_compass_on
-shape circle 1 1 1 0.102 0.0588 0.5 0.0294
-shape circle 0.29 0.62 1 0.502 0.0471 0.5 0.0294
-rotatecvar ui_hud_obj2
-alphacvar ui_hud_obj2_on
+alphacvar ui_hud_mate_on
 }
 
 // the game messages under the radar, or under the compass
