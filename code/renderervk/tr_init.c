@@ -2261,6 +2261,8 @@ refexport_t *GetRefAPI ( int apiVersion, refimport_t *rimp ) {
 	re.Free2DList = RE_Free2DList;
 	re.DrawPolygon2D = DrawPolygon2D;
 	re.RegisterTexture2D = RE_RegisterTexture2D;
+	re.RegisterRadar2D = RE_RegisterRadar2D;
+	re.Radar2DHeight = RE_Radar2DHeight;
 
 	return VK_FrameLogExports( &re );
 }

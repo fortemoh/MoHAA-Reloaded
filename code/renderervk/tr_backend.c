@@ -1646,6 +1646,7 @@ void RB_ExecuteRenderCommands( const void *data ) {
 		case RC_2D_LIST:
 		case RC_2D_POLYGON:
 		case RC_SET_RENDER_TIME:
+		case RC_2D_RADAR_HEIGHT:
 			data = RB_2DCommand( data );
 			break;
 		case RC_END_OF_LIST:

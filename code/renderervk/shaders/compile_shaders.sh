@@ -2,14 +2,15 @@
 #
 # Compiles the GLSL shaders in this directory to SPIR-V and writes them as
 # C arrays to ../vk_shaders.c (the renderer's shaders),
-# ../vk_shaders_temporal.c (those of the temporal path, r_temporal) and
-# ../vk_shaders_hdr.c (HDR output, r_hdrOutput), so that normal builds don't
-# need glslc. Run it after changing a shader and commit the regenerated
-# files. Another glslc (its spirv-opt) can make other SPIR-V from the same
-# source: with an argument only that file is written, main, temporal or
-# hdr, and the others' arrays stay as they are.
+# ../vk_shaders_temporal.c (those of the temporal path, r_temporal),
+# ../vk_shaders_hdr.c (HDR output, r_hdrOutput) and ../vk_shaders_radar.c
+# (the Competitive HUD radar's picture), so that normal builds don't need
+# glslc. Run it after changing a shader and commit the regenerated files.
+# Another glslc (its spirv-opt) can make other SPIR-V from the same source:
+# with an argument only that file is written, main, temporal, hdr or radar,
+# and the others' arrays stay as they are.
 #
-# Usage: code/renderervk/shaders/compile_shaders.sh [main|temporal|hdr]   (GLSLC=/path/to/glslc to override;
+# Usage: code/renderervk/shaders/compile_shaders.sh [main|temporal|hdr|radar]   (GLSLC=/path/to/glslc to override;
 #        GLSLC=code/renderervk/shaders/glslang_as_glslc.sh compiles with glslang instead, see there)
 
 set -eu
@@ -54,6 +55,8 @@ dof_neighbor_comp:dof.comp:-DNEIGHBOR
 dof_gather_comp:dof.comp:-DGATHER
 dof_apply_comp:dof.comp:-DAPPLY"
 HDR_SHADERS="output_frag:output.frag:"
+RADAR_SHADERS="radar_comp:radar.comp:
+radar_changing_comp:radar.comp:-DCHANGING"
 
 # write <output file> <what it holds> <shader list>
 write() {
@@ -117,4 +120,7 @@ if [ -z "$ONLY" ] || [ "$ONLY" = temporal ]; then
 fi
 if [ -z "$ONLY" ] || [ "$ONLY" = hdr ]; then
 	write ../vk_shaders_hdr.c "the shaders of HDR output (r_hdrOutput)" "$HDR_SHADERS"
+fi
+if [ -z "$ONLY" ] || [ "$ONLY" = radar ]; then
+	write ../vk_shaders_radar.c "the Competitive HUD radar's picture (vk_radar.c)" "$RADAR_SHADERS"
 fi

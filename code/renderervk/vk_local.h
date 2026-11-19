@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //  - vk.c: frames, command buffers, render state, drawing, clears, readback
 //  - vk_image.c: textures, samplers, uploads
 //  - vk_pipeline.c: pipeline cache, pipelines created before their first draw
+//  - vk_radar.c: the Competitive HUD radar's picture made on the GPU
 //  - vk_shaders.c: SPIR-V generated from shaders/ by shaders/compile_shaders.sh
 //
 // Vulkan is loaded through SDL (SDL_Vulkan_GetVkGetInstanceProcAddr), so the
@@ -699,6 +700,7 @@ void		VK_DeferDestroyRange( int block, VkDeviceSize offset, VkDeviceSize size );
 void		VK_BeginFrameIfNeeded( void );
 void		VK_EndRenderPass( void );
 void		VK_FlushAndWait( void );
+void		VK_ForgetBindings( void );
 VkCommandBuffer VK_GetUploadCommandBuffer( void );
 qboolean	VK_FormatHasFeatures( VkFormat format, VkFormatFeatureFlags features );
 void		VK_CreateImageShared( VkFormat format, VkSampleCountFlagBits samples, VkImageUsageFlags usage, VkImageAspectFlags aspect,
@@ -814,6 +816,13 @@ void		VK_FinishUploads( VkCommandBuffer cmd, qboolean upload );
 void		VK_FreeMemoryRange( int block, VkDeviceSize offset, VkDeviceSize size );
 void		VK_MemoryBlockInfo( int *numBlocks, VkDeviceSize *size, VkDeviceSize *used );
 void		*VK_StagingAlloc( VkDeviceSize size, VkDeviceSize alignment, VkBuffer *buffer, VkDeviceSize *offset );
+void		VK_UploadTextureGPU( image_t *image, int x, int y, int width, int height, VkBuffer buffer, VkDeviceSize offset,
+				void ( *make )( VkCommandBuffer cmd, const void *data ), const void *data );
+
+// vk_radar.c
+void		VK_RadarInit( void );
+void		VK_RadarShutdown( void );
+void		VK_RadarShutdownObjects( void );
 
 // vk_framelog.c
 extern qboolean	vk_frameLog;	// r_vkFrameLog: the frame log records
@@ -937,6 +946,12 @@ extern const size_t		vk_spirv_effects_clip_vert_size;
 // vk_shaders_hdr.c
 extern const uint32_t	vk_spirv_output_frag[];
 extern const size_t		vk_spirv_output_frag_size;
+
+// vk_shaders_radar.c
+extern const uint32_t	vk_spirv_radar_comp[];
+extern const size_t		vk_spirv_radar_comp_size;
+extern const uint32_t	vk_spirv_radar_changing_comp[];
+extern const size_t		vk_spirv_radar_changing_comp_size;
 
 // vk_shaders_temporal.c
 extern const uint32_t	vk_spirv_generic_temporal_vert[];

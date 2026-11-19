@@ -146,6 +146,18 @@ void		vk_resize_texture( image_t *image, int width, int height );
 void		vk_upload_compressed_texture( image_t *image, int mipLevel, int width, int height, const byte *data, int size );
 // release the storage of an image and reset image->texnum to 0
 void		vk_destroy_texture( image_t *image );
+// The Competitive HUD radar's picture made on the GPU (vk_radar.c, RE_RegisterRadar2D): image's texels, in its
+// place (in the 2D atlas page at image->atlasRoom with its edge texels copied around it, as R_AtlasFill's; else a
+// texture of its own, made at its size), for height z from each cell's floors, the UI's own picture's bytes. The
+// floors (radar->memory) are copied to the GPU and given back here, in every case. Uploaded as vk_upload_texture's
+// (the draws recorded before see the old texels). qfalse: not on this device (the image unchanged). After
+// R_FrontEndSync
+qboolean	vk_radar_image( const image_t *image, const radar2D_t *radar, float z );
+// its texels for height z, for the draws after this (an image that isn't the radar's: nothing); the render
+// thread's, or the front end's without it
+void		vk_radar_height( const image_t *image, float z );
+// the image no longer the radar's picture (its texels from the CPU again, or freed); after R_FrontEndSync
+void		vk_radar_forget( const image_t *image );
 // minification filter of mipmapped textures; magnification is nearest for the
 // TEXFILTER_NEAREST* modes and linear otherwise
 void		vk_set_texture_filter( texFilter_t filter );

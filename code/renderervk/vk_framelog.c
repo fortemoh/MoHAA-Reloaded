@@ -365,6 +365,9 @@ static void FL_Free2DList( int handle ) {
 static void FL_DrawPolygon2D( const float (*points)[4], int count, qhandle_t shader ) {
 	FL_2D( fl.real.DrawPolygon2D( points, count, shader ) )
 }
+static void FL_Radar2DHeight( qhandle_t shader, float z ) {
+	FL_2D( fl.real.Radar2DHeight( shader, z ) )
+}
 
 // the registration exports: time added to cur.load
 #define FL_LOAD( type, call ) FL_TIME_RETURN( type, load, call )
@@ -407,6 +410,9 @@ static qhandle_t FL_RegisterImage2D( const char *name, byte *rgba, int width, in
 }
 static qhandle_t FL_RegisterTexture2D( const char *name, byte *rgba, int width, int height ) {
 	FL_LOAD( qhandle_t, fl.real.RegisterTexture2D( name, rgba, width, height ) )
+}
+static qhandle_t FL_RegisterRadar2D( const char *name, const radar2D_t *radar, float z ) {
+	FL_LOAD( qhandle_t, fl.real.RegisterRadar2D( name, radar, z ) )
 }
 
 /*
@@ -750,6 +756,8 @@ refexport_t *VK_FrameLogExports( refexport_t *real ) {
 	e->LoadFont = FL_LoadFont;
 	e->RegisterImage2D = FL_RegisterImage2D;
 	e->RegisterTexture2D = FL_RegisterTexture2D;
+	e->RegisterRadar2D = FL_RegisterRadar2D;
+	e->Radar2DHeight = FL_Radar2DHeight;
 
 	ri.Cmd_AddCommand( "vkframelog", FL_Command_f );
 	ri.Printf( PRINT_ALL, "r_vkFrameLog: recording the last %d frames, see vkframelog\n", fl.size );

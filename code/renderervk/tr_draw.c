@@ -1589,6 +1589,42 @@ void DrawPolygon2D(const float (*points)[4], int count, qhandle_t hShader) {
 	RB_DrawPolygon2D( points, count, hShader );
 }
 
+/*
+================
+RE_Radar2DHeight
+
+The radar's picture (RE_RegisterRadar2D) for height z, for the draws after
+this: its texels made on the GPU in order with the draws (vk_radar_height),
+the render thread's in its list, never in a 2D list being made (made once,
+not each time the list is drawn)
+================
+*/
+static void RB_Radar2DHeight( qhandle_t hShader, float z ) {
+	const shader_t *shader = R_GetShaderByHandle( hShader );
+
+	if ( !shader->numUnfoggedPasses || !shader->unfoggedStages[0] ) {
+		return;
+	}
+	R_IssuePending2DCommands();
+	R_End2DBatch();
+	vk_radar_height( shader->unfoggedStages[0]->bundle[0].image[0], z );
+}
+
+void RE_Radar2DHeight( qhandle_t hShader, float z ) {
+	if ( !R_OnRenderThread() && glConfig.smpActive ) {
+		radarHeight2DCommand_t *cmd = R_GetCommandBuffer( sizeof( *cmd ) );
+
+		if ( !cmd ) {
+			return;
+		}
+		cmd->commandId = RC_2D_RADAR_HEIGHT;
+		cmd->hShader = hShader;
+		cmd->z = z;
+		return;
+	}
+	RB_Radar2DHeight( hShader, z );
+}
+
 void DrawLineLoop(const vec2_t* points, int count, int stipple_factor, int stipple_mask) {
 	if ( R_2DQueued() ) {
 		lineLoop2DCommand_t *cmd;
@@ -1739,6 +1775,11 @@ const void *RB_2DCommand( const void *data ) {
 		const renderTimeCommand_t *c = data;
 		RB_SetRenderTime( c->t, c->refdefTime );
 		return R_2D_NEXT( renderTimeCommand_t );
+	}
+	case RC_2D_RADAR_HEIGHT: {
+		const radarHeight2DCommand_t *c = data;
+		RB_Radar2DHeight( c->hShader, c->z );
+		return R_2D_NEXT( radarHeight2DCommand_t );
 	}
 	default:
 		ri.Error( ERR_FATAL, "RB_2DCommand: bad command %d", *(const int *)data );

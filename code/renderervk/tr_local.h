@@ -1961,6 +1961,7 @@ void Draw_TilePic(float x, float y, float w, float h, qhandle_t hShader);
 void Draw_TilePicOffset(float x, float y, float w, float h, qhandle_t hShader, int offsetX, int offsetY);
 void Draw_TrianglePic(const vec2_t vPoints[3], const vec2_t vTexCoords[3], qhandle_t hShader);
 void DrawPolygon2D(const float (*points)[4], int count, qhandle_t hShader);
+void RE_Radar2DHeight(qhandle_t shader, float z);
 void DrawBox(float x, float y, float w, float h);
 void AddBox(float x, float y, float w, float h);
 void DrawBoxes(const float (*boxes)[4], int count, const float *color);
@@ -2036,6 +2037,7 @@ image_t* R_CreateImageOld(
 qboolean R_ImageExists(const char* name);
 qhandle_t RE_RegisterImage2D(const char *name, byte *rgba, int width, int height);
 qhandle_t RE_RegisterTexture2D(const char *name, byte *rgba, int width, int height);
+qhandle_t RE_RegisterRadar2D(const char *name, const radar2D_t *radar, float z);
 void R_AtlasShutdown( void );
 qboolean R_ShaderTextExists(const char *name);
 int R_CountTextureMemory();
@@ -2900,6 +2902,12 @@ typedef struct {
 	qhandle_t	hShader;
 } polygon2DCommand_t;
 
+typedef struct {
+	int			commandId;
+	qhandle_t	hShader;		// the radar's picture (RE_RegisterRadar2D)
+	float		z;
+} radarHeight2DCommand_t;
+
 // r_smp: a terrain pool slot the front end's tessellation changed, for the
 // render thread's copy of the pool (tr_terrain.c, vk_sync_terrain_pool_smp)
 typedef struct terrainSlotChange_s {
@@ -2978,7 +2986,8 @@ typedef enum {
 	RC_2D_SHADER_TIME,
 	RC_2D_LIST,
 	RC_2D_POLYGON,
-	RC_SET_RENDER_TIME
+	RC_SET_RENDER_TIME,
+	RC_2D_RADAR_HEIGHT
 } renderCommand_t;
 
 

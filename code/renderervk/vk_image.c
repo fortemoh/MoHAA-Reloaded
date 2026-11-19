@@ -645,13 +645,13 @@ static void VK_DestroyTextureStorage( vkTexture_t *texture ) {
 
 /*
 ===============
-VK_RecordUpload
+VK_UploadCommandBuffer
 
-Records the copy of one region from a staging buffer into the texture
+The command buffer an upload to one level of the texture goes in, the
+texture in TRANSFER_DST_OPTIMAL there
 ===============
 */
-static void VK_RecordUpload( vkTexture_t *texture, int mipLevel, int x, int y, int width, int height, VkBuffer buffer, VkDeviceSize offset ) {
-	VkBufferImageCopy region;
+static VkCommandBuffer VK_UploadCommandBuffer( vkTexture_t *texture, int mipLevel ) {
 	VkCommandBuffer cmd;
 	uint32_t mipBit;
 
@@ -692,6 +692,12 @@ static void VK_RecordUpload( vkTexture_t *texture, int mipLevel, int x, int y, i
 		}
 		texture->uploadMips |= mipBit;
 	}
+	return cmd;
+}
+
+// the copy of a region from a buffer of width texels a row into one level
+static void VK_CopyToTexture( VkCommandBuffer cmd, vkTexture_t *texture, int mipLevel, int x, int y, int width, int height, VkBuffer buffer, VkDeviceSize offset ) {
+	VkBufferImageCopy region;
 
 	Com_Memset( &region, 0, sizeof( region ) );
 	region.bufferOffset = offset;
@@ -704,6 +710,17 @@ static void VK_RecordUpload( vkTexture_t *texture, int mipLevel, int x, int y, i
 	region.imageExtent.height = height;
 	region.imageExtent.depth = 1;
 	qvkCmdCopyBufferToImage( cmd, buffer, texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region );
+}
+
+/*
+===============
+VK_RecordUpload
+
+Records the copy of one region from a staging buffer into the texture
+===============
+*/
+static void VK_RecordUpload( vkTexture_t *texture, int mipLevel, int x, int y, int width, int height, VkBuffer buffer, VkDeviceSize offset ) {
+	VK_CopyToTexture( VK_UploadCommandBuffer( texture, mipLevel ), texture, mipLevel, x, y, width, height, buffer, offset );
 }
 
 /*
@@ -1108,6 +1125,35 @@ void vk_upload_texture( image_t *image, int mipLevel, int x, int y, int width, i
 
 /*
 ===============
+VK_UploadTextureGPU
+
+An upload of texels the GPU makes into buffer (at offset, rows of width
+texels), to a region of an RGBA texture's first level: make records what
+writes them into the command buffer the upload goes in, then they are
+copied as vk_upload_texture's would be (draws recorded before see the old
+contents). Compute recorded in the main command buffer: its draws after
+bind everything again. The render thread's, or after R_FrontEndSync
+===============
+*/
+void VK_UploadTextureGPU( image_t *image, int x, int y, int width, int height, VkBuffer buffer, VkDeviceSize offset,
+	void ( *make )( VkCommandBuffer cmd, const void *data ), const void *data ) {
+	vkTexture_t *texture = vk.device ? VK_GetTexture( image->texnum ) : NULL;
+	VkCommandBuffer cmd;
+
+	if ( !texture || texture->compressed || x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > texture->width
+		|| y + height > texture->height ) {
+		return;
+	}
+	cmd = VK_UploadCommandBuffer( texture, 0 );
+	make( cmd, data );
+	VK_CopyToTexture( cmd, texture, 0, x, y, width, height, buffer, offset );
+	if ( cmd == vk.frame->mainCmd ) {
+		VK_ForgetBindings();
+	}
+}
+
+/*
+===============
 vk_resize_texture
 
 A texture (one RGBA level) made again at another size, its old texels
@@ -1193,6 +1239,7 @@ void vk_destroy_texture( image_t *image ) {
 	R_FrontEndSync();
 	int slot;
 
+	vk_radar_forget( image );
 	slot = VK_SlotForHandle( image->texnum );
 	image->texnum = 0;
 

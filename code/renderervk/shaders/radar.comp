@@ -1,0 +1,168 @@
+#version 450
+
+// radar.comp -- the Competitive HUD radar's picture for a storey's height (vk_radar.c: RE_RegisterRadar2D and
+// RE_Radar2DHeight), made from each cell's floors as the UI's own picture is (RM_Paint in cl_uicomp.cpp), byte for
+// byte, into the room buffer: the picture as its place in the 2D atlas holds it (its edge texels copied once around
+// it, border 1; a texture of its own: border 0), which the renderer copies there.
+//
+// A cell (t x t texels; the picture's top row the map's north) shows its floor nearest the height, the first of
+// equals in the list's order: its inside its shade, its sides with an edge a line, with a stair a stripe, both
+// brighter the nearer the floor is to the height (radar.glsl); no floor: clear. The whole picture: a thread a room
+// texel. With CHANGING, a height's change from zOld to z: a thread a cell of those that can change (the list the UI
+// made), writing only its texels that do.
+
+#include "radar.glsl"
+
+#ifdef CHANGING
+layout( local_size_x = 64 ) in;
+#else
+layout( local_size_x = 8, local_size_y = 8 ) in;
+#endif
+
+// radar2D_t's memory as words: the cells' first floors (cw * ch + 1) at 0, the floors (radarFloor_t: z, fill, then
+// alpha | sides << 8) at floorsWord, the changing cells at changingWord
+layout( std430, set = 0, binding = 0 ) readonly buffer Floors {
+	uint	words[];
+} floors;
+
+// the room's texels, RGBA8 a word, its rows w + 2 * border texels
+layout( std430, set = 0, binding = 1 ) writeonly buffer Room {
+	uint	texels[];
+} room;
+
+layout( push_constant ) uniform Push {
+	uint	cw, ch, t;		// the cells across and down, a cell's texels across
+	uint	floorsWord, changingWord, numChanging;
+	uint	border;
+	float	z, zOld;		// the height to paint for; the one painted before (CHANGING)
+} p;
+
+// the floor of [first, last) nearest z (the first of equals)
+uint RM_Nearest( uint first, uint last, float z )
+{
+	uint best = first;
+
+	for ( uint n = first + 1u; n < last; n++ ) {
+		precise float dn = abs( uintBitsToFloat( floors.words[p.floorsWord + 3u * n] ) - z );
+		precise float db = abs( uintBitsToFloat( floors.words[p.floorsWord + 3u * best] ) - z );
+
+		if ( dn < db ) {
+			best = n;
+		}
+	}
+	return best;
+}
+
+// floor n's alpha at side k (0-3: left, right, north, south; 4: its inside) for height z
+uint RM_Alpha( uint n, uint k, float z )
+{
+	const float fz = uintBitsToFloat( floors.words[p.floorsWord + 3u * n] );
+	const float fill = uintBitsToFloat( floors.words[p.floorsWord + 3u * n + 1u] );
+	const uint packed = floors.words[p.floorsWord + 3u * n + 2u];
+	const uint sides = ( packed >> 8 ) & 0xFFu;
+
+	if ( k < 4u && ( sides & ( 1u << k ) ) != 0u ) {
+		return RM_Line( RM_Focus( fz, z ) );
+	}
+	if ( k < 4u && ( sides & ( 16u << k ) ) != 0u ) {
+		return RM_Stair( RM_Focus( fz, z ), fill );
+	}
+	return packed & 0xFFu;
+}
+
+// the side a cell's texel i, j (j down from its top row) shows: left, right, then the north neighbour's at its
+// bottom row and the south's at its top (as the UI's picture has always drawn them), else its inside
+uint RM_Side( uint i, uint j )
+{
+	return i == 0u ? 0u : i == p.t - 1u ? 1u : j == p.t - 1u ? 2u : j == 0u ? 3u : 4u;
+}
+
+uint RM_Texel( uint alpha )
+{
+	return 235u | ( 240u << 8 ) | ( 245u << 16 ) | ( alpha << 24 );
+}
+
+#ifdef CHANGING
+
+// picture texel x, y into the room, with its copies around the picture's edge
+void RM_Store( uint x, uint y, uint value )
+{
+	const uint w = p.cw * p.t, h = p.ch * p.t, rowWidth = w + 2u * p.border;
+	uint xs[3], ys[3], nx = 1u, ny = 1u;
+
+	xs[0] = x + p.border;
+	ys[0] = y + p.border;
+	if ( p.border != 0u ) {
+		if ( x == 0u ) {
+			xs[nx++] = 0u;
+		}
+		if ( x == w - 1u ) {
+			xs[nx++] = w + 1u;
+		}
+		if ( y == 0u ) {
+			ys[ny++] = 0u;
+		}
+		if ( y == h - 1u ) {
+			ys[ny++] = h + 1u;
+		}
+	}
+	for ( uint b = 0u; b < ny; b++ ) {
+		for ( uint a = 0u; a < nx; a++ ) {
+			room.texels[ys[b] * rowWidth + xs[a]] = value;
+		}
+	}
+}
+
+void main()
+{
+	if ( gl_GlobalInvocationID.x >= p.numChanging ) {
+		return;
+	}
+
+	const uint c = floors.words[p.changingWord + gl_GlobalInvocationID.x];
+	const uint first = floors.words[c], last = floors.words[c + 1u];
+	const uint n = RM_Nearest( first, last, p.z ), was = RM_Nearest( first, last, p.zOld );
+	const uint x0 = c % p.cw * p.t, y0 = ( p.ch - 1u - c / p.cw ) * p.t;
+	uint a[5], changed = 0u;
+
+	for ( uint k = 0u; k < 5u; k++ ) {
+		a[k] = RM_Alpha( n, k, p.z );
+		if ( a[k] != RM_Alpha( was, k, p.zOld ) ) {
+			changed |= 1u << k;
+		}
+	}
+	if ( changed == 0u ) {
+		return;
+	}
+	for ( uint j = 0u; j < p.t; j++ ) {
+		for ( uint i = 0u; i < p.t; i++ ) {
+			const uint side = RM_Side( i, j );
+
+			if ( ( changed & ( 1u << side ) ) != 0u ) {
+				RM_Store( x0 + i, y0 + j, RM_Texel( a[side] ) );
+			}
+		}
+	}
+}
+
+#else
+
+void main()
+{
+	const uint w = p.cw * p.t, h = p.ch * p.t, rowWidth = w + 2u * p.border;
+	const uint rx = gl_GlobalInvocationID.x, ry = gl_GlobalInvocationID.y;
+
+	if ( rx >= rowWidth || ry >= h + 2u * p.border ) {
+		return;
+	}
+
+	// (the room's edge: a copy of the picture's)
+	const uint x = uint( clamp( int( rx ) - int( p.border ), 0, int( w ) - 1 ) );
+	const uint y = uint( clamp( int( ry ) - int( p.border ), 0, int( h ) - 1 ) );
+	const uint c = ( p.ch - 1u - y / p.t ) * p.cw + x / p.t;
+	const uint first = floors.words[c], last = floors.words[c + 1u];
+
+	room.texels[ry * rowWidth + rx] = first == last ? 0u : RM_Texel( RM_Alpha( RM_Nearest( first, last, p.z ), RM_Side( x % p.t, y % p.t ), p.z ) );
+}
+
+#endif

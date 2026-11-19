@@ -960,6 +960,7 @@ below are done.
 | `vk_framelog.c` | the frame log (`r_vkFrameLog`, `vkframelog`): the per-frame exports timed, the backend's counters and GPU time of every frame, the dump (see Performance, Frame spikes) |
 | `vk_submit.c` | the submit thread (`r_vkSubmitThread 1`): submits and presents the frames, acquires the swapchain image of the next frame after each present, copies a frame drawn offscreen (see Implementation notes, Submit thread) |
 | `vk_output.c` | HDR output (`r_hdrOutput`): the window's HDR state (Vulkan surface formats, SDL), the swapchain's mode, paper white and peak, the 3D view's expansion parameters, the output pass (see Implementation notes, HDR output) |
+| `vk_radar.c` | the Competitive HUD radar's picture made on the GPU (`RE_RegisterRadar2D`, `RE_Radar2DHeight`): the floors' list copied to the GPU, the two kernels, the picture copied into its place in the 2D atlas as an upload (see Implementation notes, Radar picture) |
 | `vk_temporal.c` | the temporal path (`r_temporal 1`): the scene's images, render passes and pipeline layout, the depth pyramid, the composite into the frame (see Implementation notes, Temporal path) |
 | `tr_smp.c` | the render thread (`r_smp 1`): runs the back end's command lists handed over at `EndFrame`, the front end's waits for it (`R_FrontEndSync`), its start and stop with the renderer (see Implementation notes, Render thread) |
 | `tr_temporal.c` | the temporal path's views and history: the scene begins and ends, the camera's and the entities' last frame, the skinned entities' last bones (see Implementation notes, Temporal path) |
@@ -970,10 +971,11 @@ below are done.
 | `shaders/skinned.vert` | the vertex shader of skinned draws (skinning, `rgbGen lightingSpherical` and `tcGen environment`/`environmentmodel`), built with and without `gl_ClipDistance`; its outputs are `generic.vert`'s |
 | `shaders/effects.vert` | the vertex shader of the static geometry's draws with effects (deforms, `tcGen` and `tcMod`, `distFade`, static models' dynamic lights; see Implementation notes, Effects shader), built with and without `gl_ClipDistance`; its outputs are `generic.vert`'s |
 | `shaders/hiz_build.comp`, `shaders/taa_resolve.comp`, `shaders/temporal_composite.*`, `shaders/temporal_common.glsl` | the temporal path's passes after the scene (`hiz_build.comp` built three times: `PREPARE`, the default, `TAIL`; `taa_resolve.comp` the anti-aliasing) and what they and the passes to come that read its buffers share (included); `generic.*`, `skinned.vert` and `effects.vert` are also built with `TEMPORAL` defined for its scene |
+| `shaders/radar.comp`, `shaders/radar.glsl` | the radar's picture for a height: the whole picture (a thread a texel) and, built with `CHANGING`, a storey's change (a thread a cell that can change); `radar.glsl` holds the floor's alphas, the UI's own bytes (`RM_Paint`) with the division by 56 rounded as the CPU's |
 | `shaders/output.frag` | HDR output's pass: the frame into the swapchain image, SDR, HDR10 (PQ) or scRGB, and the calibration screens' patterns; its vertex shader is `temporal_composite.vert` |
-| `shaders/compile_shaders.sh` | regenerates `vk_shaders.c`, `vk_shaders_temporal.c` and `vk_shaders_hdr.c` with `glslc` (an argument, `main`, `temporal` or `hdr`, writes only that one) |
+| `shaders/compile_shaders.sh` | regenerates `vk_shaders.c`, `vk_shaders_temporal.c`, `vk_shaders_hdr.c` and `vk_shaders_radar.c` with `glslc` (an argument, `main`, `temporal`, `hdr` or `radar`, writes only that one) |
 | `shaders/glslang_as_glslc.sh` | glslang standing in for `glslc` (`GLSLC=shaders/glslang_as_glslc.sh shaders/compile_shaders.sh`): maps the options and writes the words as `-mfmt=c` does; the arrays since 2026-10-31 come from glslang 16.6.0 this way |
-| `vk_shaders.c`, `vk_shaders_temporal.c`, `vk_shaders_hdr.c` | generated SPIR-V as C arrays (committed, so builds don't need `glslc`) |
+| `vk_shaders.c`, `vk_shaders_temporal.c`, `vk_shaders_hdr.c`, `vk_shaders_radar.c` | generated SPIR-V as C arrays (committed, so builds don't need `glslc`; `vk_shaders_radar.c` from shaderc 2026.1's `glslc`) |
 | `tools/` | build-against-build screenshot comparison and performance scripts, view lists, the OpenGL check (see Testing) |
 | `WINDOWS_TESTING.md` | a tester's checklist for Windows: commands, cvars, what to send back |
 | `tr_immediate.c` | `glBegin`/`glEnd` emulation for debug and 2D drawing, emits indexed triangles or lines |
@@ -8547,6 +8549,54 @@ selects the sample count (see Implementation notes).
   included (37 of the 40 boxes a frame in matches). Its state changes are
   kept, so the draws after it see the same state; with `r_measureOverdraw`
   (its fragments counted in the stencil buffer) the box is drawn.
+- **Radar picture** (`vk_radar.c`, `shaders/radar.comp`, `radar.glsl`;
+  `RE_RegisterRadar2D` in `tr_image.c`, `RE_Radar2DHeight` in `tr_draw.c`;
+  2026-11-18, the Vulkan half of `metal-reloaded`'s 5572f254). The
+  Competitive HUD's radar (`cl_uicomp.cpp`) lists each cell's floors once a
+  map and walk (`radar2D_t`) and gives them to the renderer; the picture for
+  a storey's height is then made on the GPU, a storey's change a number.
+  The list is copied to a storage buffer through the staging buffer (the
+  UI's memory given back at once). The picture is placed as
+  `RegisterImage2D`'s would be (`R_Image2D`: a room in the 2D atlas page,
+  or a texture of its own when too big for it) and drawn from there by the
+  same 2D path, so its pixels are the UI's own picture's: radar.comp writes
+  the room buffer, the room as the page holds it (its edge texels copied
+  around it, as `R_AtlasFill`'s), and `VK_UploadTextureGPU` copies it there
+  as an upload is copied (the upload command buffer, or the main one after
+  the draws that read the old texels, ending the render pass; compute in
+  the main command buffer makes the next draws bind everything again). The
+  whole picture (a new list): a thread a room texel. A storey's change: a
+  thread a cell of those that can change (more than one floor, or a side),
+  writing only its texels that do, then the room copied whole.
+  `RE_Radar2DHeight` is queued for the render thread with `r_smp` (a
+  command of the frame's list, never of a 2D list being made), so the main
+  thread no longer waits for the render thread at a storey's change as
+  `RegisterImage2D` does. **Exact:** every operation of `RM_Paint` rounded
+  on its own as x86-64's SSE does (`precise`: no fused multiply-add, no
+  reordering), the division by 56 corrected (`RM_Div56`: the quotient's
+  last 3 bits cleared, the exact remainder's quotient added; RADV's
+  division is up to 2.5 ulp off and needs it), checked over every float
+  height distance in [60, 125] by every shade (2,315,256,064 cases: 0
+  differ on RADV and llvmpipe; RADV's plain division differs in 161
+  distances), and in the game against a C copy of `RM_Paint` after every
+  paint. The UI hands the floors over at the load's end
+  (`UI_CompHud_LoadEnd`), after the load's other pictures, so the picture
+  takes the room the UI's own one would take: in the middle of the load it
+  took another room, and the page's sampling at another place differs by a
+  grey level in a few pixels (as the cursor's 65467930 found). Measured
+  (test-only timers; a stock 1.11 match, MoH Arena's obj_team2 at timescale
+  4, 43 to 45 storey changes, 1920x1080, 2 texels a cell: a 1124x626
+  picture, 10,481 cells that can change): a storey's change took the main
+  thread 1.27 ms mean (1.13 median, 6.5 max, 55 ms over the match) with
+  `r_smp`, its wait for the render thread included, 0.71 ms without, the
+  UI's worker 1.9 ms more (the floors listed again, the picture painted),
+  the GPU 79 µs (the upload's copy); now the main thread 0.2 µs with
+  `r_smp` (a queued command), 43 µs without (18 of them the recording, the
+  rest the open 2D batch drawn there), no worker, the GPU 104 µs (the
+  dispatch and the room's copy). At 2560x1440 (3 texels a cell): 2.13 ms
+  of the main thread and 171 µs of the GPU before, 0.2 µs and 203 µs now.
+  The load's end: the floors listed on the main thread (1.3 ms) and given
+  (0.2 to 0.6 ms: the list's copy, the whole picture recorded).
 - **Crosshair** (cgame's `CG_UpdateCrosshair` and `CG_DrawCrosshair` in
   `cg_drawtools.cpp`, the renderer's `DrawBoxes` in `tr_draw.c`; 2026-10-24,
   Plan 39, as on the `metal` branch, its bccff6f9). `ui_crosshair 1` (the

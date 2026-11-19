@@ -3518,22 +3518,24 @@ void R_AtlasShutdown( void ) {
 
 /*
 ===============
-R_RegisterImage2D
+R_Image2D
 
-An image made in memory (RGBA, the texels may be changed) under a name, for
-the UI's baked text faces, shapes and pictures: in the 2D atlas, or a
-texture of its own when too big for it (or own). Made again under the same
-name, its texels and size are replaced. No map load frees it; its 2D shader
-is found by its name as a file's would be
+The image of a picture made in memory under a name, placed for a width x
+height picture: in the 2D atlas (image->atlas, at image->atlasRoom), or a
+texture of its own when too big for it (or own); its texels still to be
+written. NULL for a bad name or size. Made again under the same name, its
+size is replaced. No map load frees it; its 2D shader is found by its name
+as a file's would be. After the queued draws, which read the texels they
+were made with
 ===============
 */
-static qhandle_t R_RegisterImage2D(const char *name, byte *rgba, int width, int height, qboolean own)
+static image_t *R_Image2D(const char *name, int width, int height, qboolean own)
 {
 	char	fileName[MAX_QPATH];
 	image_t	*image;
 
 	if (!name || !name[0] || width <= 0 || height <= 0) {
-		return 0;
+		return NULL;
 	}
 	// the queued draws and the open 2D batch with the texels they were made with
 	R_IssuePendingRenderCommands();
@@ -3561,8 +3563,7 @@ static qhandle_t R_RegisterImage2D(const char *name, byte *rgba, int width, int 
 		image->width = image->uploadWidth = width;
 		image->height = image->uploadHeight = height;
 		R_AtlasPlace(image);
-		R_AtlasFill(image, rgba);
-		return RE_RegisterShaderNoMip(name);
+		return image;
 	}
 	image->atlas = NULL;
 	if ( image->atlasRects ) {
@@ -3578,7 +3579,31 @@ static qhandle_t R_RegisterImage2D(const char *name, byte *rgba, int width, int 
 		image->flags |= IMGFLAG_COLORTARGET;
 		vk_create_texture(image, width, height, 1, TEXFMT_RGBA8);
 	}
-	vk_upload_texture(image, 0, 0, 0, width, height, rgba);
+	return image;
+}
+
+/*
+===============
+R_RegisterImage2D
+
+An image made in memory (RGBA, the texels may be changed) under a name, for
+the UI's baked text faces, shapes and pictures (R_Image2D)
+===============
+*/
+static qhandle_t R_RegisterImage2D(const char *name, byte *rgba, int width, int height, qboolean own)
+{
+	image_t	*image = R_Image2D(name, width, height, own);
+
+	if (!image) {
+		return 0;
+	}
+	// (the radar's picture made by the UI again: these texels from now on)
+	vk_radar_forget(image);
+	if (image->atlas) {
+		R_AtlasFill(image, rgba);
+	} else {
+		vk_upload_texture(image, 0, 0, 0, width, height, rgba);
+	}
 	return RE_RegisterShaderNoMip(name);
 }
 
@@ -3599,6 +3624,46 @@ page would double
 qhandle_t RE_RegisterTexture2D(const char *name, byte *rgba, int width, int height)
 {
 	return R_RegisterImage2D(name, rgba, width, height, qtrue);
+}
+
+/*
+===============
+RE_RegisterRadar2D
+
+The Competitive HUD radar's picture (cl_uicomp.cpp), made on the GPU from
+each cell's floors for height z (vk_radar_image): an image under a name as
+RE_RegisterImage2D's, in the 2D atlas or a texture of its own the same way,
+so it is drawn as the UI's own picture would be; its 2D shader returned, 0
+if it failed. The floors' memory is the renderer's from now on, in every
+case (given back once on the GPU)
+===============
+*/
+qhandle_t RE_RegisterRadar2D(const char *name, const radar2D_t *radar, float z)
+{
+	image_t	*image;
+	int		width, height;
+
+	if (!radar || !radar->memory) {
+		return 0;
+	}
+	width = radar->cw * radar->texels;
+	height = radar->ch * radar->texels;
+	if (radar->cw <= 0 || radar->ch <= 0 || radar->texels <= 0 || width > glConfig.maxTextureSize || height > glConfig.maxTextureSize
+		|| !( image = R_Image2D(name, width, height, qfalse) )) {
+		radar->release(radar->memory);
+		return 0;
+	}
+	if (!vk_radar_image(image, radar, z)) {
+		return 0;
+	}
+	// (its texels on the GPU: no clear tiles for R_2DTiles to leave out, a
+	// quad of it drawn whole, the same pixels)
+	if (image->atlasRects) {
+		ri.Free(image->atlasRects);
+		image->atlasRects = NULL;
+		image->numAtlasRects = 0;
+	}
+	return RE_RegisterShaderNoMip(name);
 }
 
 /*

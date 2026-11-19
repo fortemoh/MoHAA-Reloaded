@@ -547,6 +547,14 @@ static void VK_BeginMainCommandBuffer( void ) {
 	vk_dirty = VK_DIRTY_ALL;
 }
 
+// what is bound in the main command buffer is no longer known (compute
+// recorded in it outside of this file: vk_image.c's VK_UploadTextureGPU):
+// the draws that follow bind everything again
+void VK_ForgetBindings( void ) {
+	Com_Memset( &vkb, 0, sizeof( vkb ) );
+	vk_dirty = VK_DIRTY_ALL;
+}
+
 static void VK_UpdateDepthTarget( void );
 
 void VK_BeginFrameIfNeeded( void ) {
@@ -2418,6 +2426,7 @@ void vk_initialize( void ) {
 		VK_TemporalBeginFrame( vk.frame, vk_skin.buffer.buffer );
 	}
 	VK_InitTextures();
+	VK_RadarInit();
 	VK_ReportCapabilities();
 
 	ri.Cmd_AddCommand( "vkinfo", VK_Info_f );
@@ -2445,9 +2454,11 @@ void vk_shutdown( void ) {
 		VK_DestroyPresentFences();
 
 		VK_ShutdownTextures();
+		VK_RadarShutdown();
 		for ( i = 0; i < VK_MAX_FRAMES; i++ ) {
 			VK_ProcessDestroyList( &vk.frames[i] );
 		}
+		VK_RadarShutdownObjects();
 		VK_ShutdownTextureObjects();
 		VK_DestroyBuffer( &vk_static.buffer );
 		Com_Memset( &vk_static, 0, sizeof( vk_static ) );
