@@ -47,6 +47,8 @@ int         UI_Menus_ScoreTeam(int client);
 qboolean    UI_Menus_Scoreboard(const char *name);
 // the menu up is the Reloaded weapon or Esc menu (or Options over it): no HUD under it (the scoreboard keeps it)
 qboolean    UI_Menus_Covering(void);
+// the console's menustate (cl_ui.cpp): the weapon menu's side and its next push, the Esc menu's page
+const char *UI_Menus_State(void);
 // a configstring changed
 void        UI_Menus_ConfigString(void);
 // the menus laid out to bake their faces and shapes (a map's load, a new screen size)
