@@ -433,7 +433,7 @@ Menu *MenuManager::FindMenuNamed(str name)
     return NULL;
 }
 
-bool MenuManager::PushMenu(str name)
+bool MenuManager::PushMenu(str name, bool replace)
 {
     Menu *m;
     float maxouttime = 0.0;
@@ -461,6 +461,10 @@ bool MenuManager::PushMenu(str name)
     if (head) {
         maxouttime = head->GetMaxMotionTime();
         head->ProcessEvent(Event("hidemenu"));
+        // Added: in its place
+        if (replace) {
+            m_menustack.Pop();
+        }
     }
 
     if (maxouttime == 0.0) {
