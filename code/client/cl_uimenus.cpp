@@ -1304,6 +1304,19 @@ static void RL_Page(int what)
     }
 }
 
+qboolean UI_Menus_Replacing(const char *name)
+{
+    const char *alias = UI_Menus_Alias(name);
+    Menu *const up    = menuManager.CurrentMenu();
+
+    // (the Esc menu opens them in one step: before, it closed, and its "wait 250" left the mouse to the game, a click
+    // there a shot as the menu came up, queued behind the wait)
+    return alias && (!strcmp(alias, "reloaded_weapon") || !strcmp(alias, "reloaded_main")) && up
+            && up == menuManager.FindMenu("reloaded_esc")
+             ? qtrue
+             : qfalse;
+}
+
 qboolean UI_Menus_Pushing(const char *name)
 {
     const char *alias = UI_Menus_Alias(name);
@@ -1998,6 +2011,17 @@ static bool RL_FloatingHasKeys(void)
         }
     }
     return false;
+}
+
+void UI_Menus_TakeKeys(void)
+{
+    Menu *const     m = menuManager.CurrentMenu();
+    UIWidget *const w = m && m->GetContainerWidget() ? m->GetContainerWidget()->FindWidget("front") : NULL;
+
+    // (Tick's rule, a frame sooner)
+    if (w && w->isSubclassOf(UIReloadedMenu) && w->CanActivate() && !RL_FloatingHasKeys()) {
+        uWinMan.ActivateControl(w);
+    }
 }
 
 /*
@@ -2792,7 +2816,9 @@ void UIReloadedMenu::Choose(int id)
     case SCR_ESC:
         switch (id) {
         case ID_WEAPON:
-            cmd = com_target_game->integer >= TG_MOHTA ? "popmenu 0;wait 50;pickweapon\n" : "popmenu 0;wait 250;pushmenu_weaponselect\n";
+            // the weapon menu in its place (UI_Menus_Replacing), Spearhead's and Breakthrough's when the server sends it
+            // (up till then)
+            cmd = com_target_game->integer >= TG_MOHTA ? "pickweapon\n" : "pushmenu_weaponselect\n";
             break;
         case ID_QUIT:
             cmd = "quit\n";
@@ -2817,16 +2843,17 @@ void UIReloadedMenu::Choose(int id)
             if (RL_Gametype() == GT_SINGLE_PLAYER) {
                 RL_MainShow(RL_SHOW_MISSIONS);
             }
-            cmd = "popmenu 0;wait 250;pushmenu main\n";
+            // (in its place: UI_Menus_Replacing)
+            cmd = "pushmenu main\n";
             break;
         case ID_SAVE:
             // (back in the mission: the shot taken of it, not of the menu)
             cmd = "popmenu 0;savegame\n";
             break;
         case ID_LOAD:
-            // Campaign's saved games
+            // Campaign's saved games (in its place: UI_Menus_Replacing)
             RL_MainShow(RL_SHOW_SAVES);
-            cmd = "popmenu 0;wait 250;pushmenu main\n";
+            cmd = "pushmenu main\n";
             break;
         }
         break;

@@ -1219,7 +1219,12 @@ void UI_PushMenu(const char *name)
     }
 
     if (!bDiff || !ui_pLoadingMenu || menu != ui_pLoadingMenu) {
-        menuManager.PushMenu(name);
+        // (Added: the Esc menu's weapon or main menu in its place, the keys to it at once)
+        const bool replace = UI_Menus_Replacing(name) != qfalse;
+
+        if (menuManager.PushMenu(name, replace) && replace) {
+            UI_Menus_TakeKeys();
+        }
     }
 
     UI_FocusMenuIfExists();

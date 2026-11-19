@@ -86,7 +86,9 @@ public:
     void  DeleteAllMenus(void);
     Menu *FindMenu(str name);
     int   Generation(void) const { return m_generation; } // changes when the list does
-    bool  PushMenu(str name);
+    // Added: replace, the menu on top taken off the stack, this one in its place (one menu opening another in one step,
+    // no frame without a menu between them)
+    bool  PushMenu(str name, bool replace = false);
     bool  ShowMenu(str name);
     void  PushMenu(Event *ev);
     void  PopMenu(qboolean restore_cvars);

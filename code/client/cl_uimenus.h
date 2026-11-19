@@ -34,6 +34,12 @@ const char *PM_FilenameToDisplayname(const char *fileName);
 // preview); qfalse: not pushed (the server's push after a side picked in the
 // weapon menu, F2's mpoptions, F3's and F4's pages shown instead)
 qboolean    UI_Menus_Pushing(const char *name);
+// the menu pushed by that name takes the place of the Esc menu up (the weapon menu, the main menu: TEAM & WEAPON, MAIN
+// MENU, LOAD), not over it; qfalse: pushed over the menu up as before
+qboolean    UI_Menus_Replacing(const char *name);
+// the keys to the menu up's front layer now (unless a floating window has them), not at its first Tick: the menu it
+// replaced, hidden next, would give them to the game's view for a frame (its catcher off: a click a shot)
+void        UI_Menus_TakeKeys(void);
 // the cgame shows (show) or hides a stock menu m was found for: the end of a
 // mission's level (reloaded_end) pushed or popped instead (its buttons take
 // the mouse and the keys); qfalse: not that one
