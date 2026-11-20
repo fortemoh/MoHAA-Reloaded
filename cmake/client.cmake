@@ -93,12 +93,14 @@ endif()
 # the Competitive HUD's menus, faces, pictures, outlines and shader script
 # (cg_hudstyle 1) compiled in: the files the filesystem reads when no file on
 # disk or in a pak has the name (cl_uicomp.cpp, FS_SetBuiltinFiles); any .svg
-# under ui/
+# under ui/; the hitmarker's sounds (cg_hitmarker_sound; S_LoadSound reads
+# them, so nothing is shipped loose next to the binary in the sealed bundle)
 file(GLOB BUILTIN_FILES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/assets/main/ui/*.urc
     ${CMAKE_SOURCE_DIR}/assets/main/ui/competitive/*.png
     ${CMAKE_SOURCE_DIR}/assets/main/fonts/*
-    ${CMAKE_SOURCE_DIR}/assets/main/scripts/*.shader)
+    ${CMAKE_SOURCE_DIR}/assets/main/scripts/*.shader
+    ${CMAKE_SOURCE_DIR}/assets/main/sound/prom/hitmarkers/*.wav)
 file(GLOB_RECURSE BUILTIN_SVG CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/assets/main/ui/*.svg)
 list(APPEND BUILTIN_FILES ${BUILTIN_SVG})
 add_custom_command(

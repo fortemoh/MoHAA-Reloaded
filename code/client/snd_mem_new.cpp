@@ -473,16 +473,26 @@ qboolean S_LoadSound(const char *fileName, sfx_t *sfx, int streamed, qboolean fo
 
     size = FS_FOpenFileRead(fileName, &file_handle, qfalse, qtrue);
     if (size <= 0) {
+        void *builtin;
+
         if (file_handle) {
             FS_FCloseFile(file_handle);
         }
-        return qfalse;
+        // Added: one compiled into the client when no file on disk or in a pak has the name (FS_ReadFile reads
+        // those; the hitmarker's sounds on macOS, cmake/client.cmake)
+        size = FS_ReadFile(fileName, &builtin);
+        if (size <= 0) {
+            return qfalse;
+        }
+        sfx->data = (byte *)Z_TagMalloc(size, TAG_SOUND);
+        Com_Memcpy(sfx->data, builtin, size);
+        FS_FreeFile(builtin);
+    } else {
+        sfx->data = (byte *)Z_TagMalloc(size, TAG_SOUND);
+
+        FS_Read(sfx->data, size, file_handle);
+        FS_FCloseFile(file_handle);
     }
-
-    sfx->data = (byte *)Z_TagMalloc(size, TAG_SOUND);
-
-    FS_Read(sfx->data, size, file_handle);
-    FS_FCloseFile(file_handle);
     sfx->info = GetWavinfo(fileName, sfx->data, size);
 
     if (sfx->info.channels != 1 && !streamed) {
