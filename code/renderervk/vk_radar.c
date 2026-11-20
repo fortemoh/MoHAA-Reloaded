@@ -35,9 +35,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // the picture is drawn exactly as the UI's own one, from the same place.
 // The whole picture: a thread a room texel (the load, a new list). A
 // storey's change: a thread a cell of those that can change (more than one
-// floor, or a stair), writing only its texels that do, the room copied
-// whole after. Byte for byte the texels of the UI's own picture (RM_Paint):
-// see radar.glsl.
+// floor, a stair, or no floor and a corner filled by a cell of more than
+// one: the edges are smoothed, radar.comp), writing only its texels that
+// do, the room copied whole after. Byte for byte the texels of the UI's own
+// picture (RM_Paint): see radar.glsl.
 
 #include "vk_local.h"
 
