@@ -114,7 +114,7 @@ static float    s_frameLead;
 
 void CG_RP_RegisterCvars(void)
 {
-    cg_remotePrediction = cgi.Cvar_Get("cg_remotePrediction", "0", CVAR_ARCHIVE);
+    cg_remotePrediction = cgi.Cvar_Get("cg_remotePrediction", "1", CVAR_ARCHIVE);
     // the most ping compensated for, ms (0: all of it); the rest of the lead, the
     // interpolation buffer and the wait for the server frame, is always in
     cg_remotePredictionMaxLead = cgi.Cvar_Get("cg_remotePredictionMaxLead", "0", CVAR_ARCHIVE);

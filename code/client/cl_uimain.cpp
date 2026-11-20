@@ -2325,7 +2325,7 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Always Run", "Walk while the walk key is held.", "cl_run", "1", 0),
     O_TOGGLE("Server Lag Icon", "Shown while the server stops answering.", "cg_drawsvlag", "1", 0),
     O_SEG("Lagometer", "The connection: ping, loss, updates.", "cg_lagometer", "0", rl_oLagometer, NULL, 0),
-    O_TOGGLE("Remote Prediction", "Players drawn where your shots will find them.", "cg_remotePrediction", "0", 0),
+    O_TOGGLE("Remote Prediction", "Players drawn where your shots will find them.", "cg_remotePrediction", "1", 0),
     O_SECTION(OT_GAMEPLAY, "MOVEMENT", OF_RIGHT),
     O_SEG("Movement Rate", "Moves a second, apart from the frame rate.", "cl_movefps", "100", rl_oMoveRates, rl_oMoveValues, 0),
     O_TOGGLE("Shots and Jumps Sooner", "Sent half a move sooner.", "cl_movesubgrid", "1", 0),
@@ -2342,7 +2342,7 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Players Alive", "A count of each side by the score, not a card each.", "cg_hud_alivecount", "0", 0),
     O_TOGGLE("Damage Indicator", "Red marks round the crosshair toward a hit.", "cg_hud_damage", "1", 0),
     O_TOGGLE("Hitmarker", "A white X round the crosshair when you hit.", "cg_hitmarker", "0", 0),
-    O_SEG("Hitmarker Sound", "What a hit sounds like.", "cg_hitmarker_sound", "1", rl_oHitSounds, rl_oHitSoundValues, 0),
+    O_SEG("Hitmarker Sound", "Played when you hit, with or without the X.", "cg_hitmarker_sound", "1", rl_oHitSounds, rl_oHitSoundValues, 0),
     O_SECTION(OT_HUD, "CROSSHAIR", OF_RIGHT),
     {OC_PREVIEW, 0, 0, "", "", NULL, NULL, NULL, NULL, 0, 0, 0},
     O_SLIDER("Length", "", "cg_crosshair_length", "8", 0, 20, 0.5f, 0),
@@ -4648,7 +4648,9 @@ void UIReloadedMenu::MainTick(bool opened)
         const char *favs;
 
         if (!ui_favoriteservers) {
-            ui_favoriteservers = Cvar_Get("ui_favoriteservers", "", CVAR_ARCHIVE);
+            // Allied Assault's starts with Forte FFA starred (the launcher's built-in server); its star takes it off
+            // as any (the list saved empty)
+            ui_favoriteservers = Cvar_Get("ui_favoriteservers", com_target_game->integer == TG_MOH ? "151.80.234.90:12203" : "", CVAR_ARCHIVE);
         }
         RL_ListModels();
         rl_mm.name = Cvar_VariableString("name");

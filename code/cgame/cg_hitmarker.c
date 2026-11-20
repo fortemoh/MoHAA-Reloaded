@@ -23,8 +23,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 // cg_hitmarker.c: the hitmarker (Added; Project: Omaha's). When the server says the local player hit someone (its
 // hit and kill notifications, the stock dings' CGM_NOTIFY_HIT and CGM_NOTIFY_KILL), a white X round the crosshair
-// fades out in a quarter second, and a sound of the player's choice plays in place of the ding (cg_hitmarker,
-// cg_hitmarker_sound). Nothing is sent: it works on any server that sends the notifications (some send only kills).
+// fades out in a quarter second (cg_hitmarker), and a sound of the player's choice plays in place of the ding
+// (cg_hitmarker_sound): each on its own, the stock ding only with both off (a silent file in all three games' data).
+// Nothing is sent: it works on any server that sends the notifications (some send only kills).
 //
 // Omaha's X: four diagonal strokes of squares 2 pixels wide, from 6 to 14 pixels out from the middle along them,
 // the squares overlapping (blended one over another). Here sizes are pixels at 1080 lines scaled with the screen's
@@ -39,7 +40,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define HITMARKER_INNER  6.0f  // a stroke's ends from the middle, pixels at 1080 lines
 #define HITMARKER_OUTER  14.0f
 #define HITMARKER_THICK  2.0f
-#define HITMARKER_VOLUME 2.0f  // the stock dings'
+#define HITMARKER_VOLUME 4.78f // 10 dB over the stock dings' 2.0 as played (held at the voice ceiling, 127/84), to be
+                               // heard over the player's own shot (the Mac's driver lets the client's own sounds past it)
 #define HITMARKER_BOXES  256   // four strokes of squares
 
 static cvar_t     *cg_hitmarker;
@@ -96,19 +98,21 @@ void CG_Hitmarker_RegisterSound(void)
 ====================
 CG_Hitmarker_Hit
 
-The server's hit or kill notification for the local player: the X and the sound. False when the hitmarker is off,
-for the stock ding
+The server's hit or kill notification for the local player: the X if it's on, the sound unless it's none. False
+when both are off, for the stock ding
 ====================
 */
 qboolean CG_Hitmarker_Hit(void)
 {
-    if (!cg_hitmarker->integer) {
+    if (cg_hitmarker_sound->modificationCount != hitSoundMod) {
+        CG_Hitmarker_RegisterSound();
+    }
+    if (!cg_hitmarker->integer && !hitSound) {
         return qfalse;
     }
 
-    hitTime = cg.time;
-    if (cg_hitmarker_sound->modificationCount != hitSoundMod) {
-        CG_Hitmarker_RegisterSound();
+    if (cg_hitmarker->integer) {
+        hitTime = cg.time;
     }
     if (hitSound) {
         // on the local channel of the player's own entity, as the stock ding (Omaha: CHAN_MENU could be placed

@@ -487,7 +487,9 @@ qboolean S_LoadSound(const char *fileName, sfx_t *sfx, int streamed, qboolean fo
         sfx->data = (byte *)Z_TagMalloc(size, TAG_SOUND);
         Com_Memcpy(sfx->data, builtin, size);
         FS_FreeFile(builtin);
+        sfx->iFlags |= SFX_FLAG_BUILTIN;
     } else {
+        sfx->iFlags &= ~SFX_FLAG_BUILTIN;
         sfx->data = (byte *)Z_TagMalloc(size, TAG_SOUND);
 
         FS_Read(sfx->data, size, file_handle);

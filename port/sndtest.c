@@ -1442,6 +1442,9 @@ static void test_math( void )
 	check( SNM_Volume( 1.5f ) == 1.5f && SNM_Volume( 0.25f ) == 0.25f && SNM_Volume( -1 ) == 1.0f
 		&& near( SNM_Volume( 2.0f ), 127.0 / 84.0, 1e-6 ), "A2: volume 1.5 and 0.25 kept, 2.0 -> %.4f (127/84), -1 -> 1",
 		SNM_Volume( 2.0f ) );
+	// MoHAA Reloaded's own sounds (compiled in) past the ceiling, up to 8: the hitmarker's 4.78 kept
+	check( SNM_VolumeOwn( 4.78f ) == 4.78f && SNM_VolumeOwn( 0.25f ) == 0.25f && SNM_VolumeOwn( -1 ) == 1.0f
+		&& SNM_VolumeOwn( 20.0f ) == 8.0f, "own: volume 4.78 and 0.25 kept, 20 -> %.2f (8), -1 -> 1", SNM_VolumeOwn( 20.0f ) );
 
 	// A4: s_volume^3 x fade on the master (OpenAL: listener s^2 x each voice's s)
 	check( near( SNM_Master( 0.9f, 1 ), 0.729, 1e-6 ) && near( SNM_Master( 0.4f, 1 ), 0.064, 1e-7 )

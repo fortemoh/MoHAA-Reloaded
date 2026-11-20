@@ -172,6 +172,9 @@ enum sfx_flags_t {
     SFX_FLAG_NULL          = 16,
     // Added in the Metal port
     SFX_FLAG_STREAM_FAILED = 32, // the stream couldn't be opened; not searched for again until the next registration
+    // Added (MoHAA Reloaded): read from the files compiled into the client (S_LoadSound: the hitmarker's sounds), none
+    // of the game's own, so its volume may pass the voice ceiling (snd_native_math.h, SNM_VolumeOwn)
+    SFX_FLAG_BUILTIN = 64,
 };
 
 enum loopsound_flags_t {
