@@ -23,8 +23,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 // cl_lagometer.cpp: the lagometer's data (Added). Project: Omaha's netgraph
 // (its cl_netgraph.cpp and cl_netgraph_logic.h, copied with notuern's
-// permission), without what isn't drawn here: remote prediction's lead and
-// error, the data rates, the frame times' percentiles.
+// permission), without what isn't drawn here: the data rates, the frame
+// times' percentiles, the target's connection.
 //
 // The graph is made of columns of 50 ms of server time, so it moves at an
 // even pace whatever the frame rate or the server's update rate. Updates
@@ -38,6 +38,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // or just the expected spacing (snaps below sv_fps). While nothing comes,
 // the columns since the newest update count as missing once it is
 // LG_OVERDUE_MS old, so an outage grows on the graph as it happens.
+//
+// Remote prediction (the cgame's) goes to the column of the update it was
+// measured on: the lead other players were drawn with, and how far off they
+// were drawn for that server frame (the enemies in view only, so the graph
+// never tells of one behind a wall).
 
 #include "client.h"
 #include "cl_lagometer.h"
@@ -46,6 +51,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define LG_OVERDUE_MS     250    // no update for this long: the columns since are missing
 #define LG_INTERRUPTED_MS 500    // and for this long: the connection is interrupted
 #define LG_STATS_US       100000 // the numbers are worked out this often; the scroll and the outage every frame
+#define LG_LEAD_FRESH_MS  1000   // no lead from the cgame for this long: remote prediction is off
 
 static struct {
     lgColumn_t col[LG_SLOTS];
@@ -55,6 +61,10 @@ static struct {
     int        lastPing;    // and ping
     int        lastFrame;   // the client frame last drawn with the lagometer up
     int64_t    lastFrameUs;
+    int        haveLead;    // remote prediction reported, the newest at leadTime
+    int        leadTime;
+    int        haveFail;    // and failed, the newest at failTime
+    int        failTime;
     int64_t    lastStatsUs;
     lgStats_t  st;
 } lg;
@@ -168,13 +178,55 @@ void CL_Lagometer_Snapshot(int serverTime, int message, int ping, int snapFlags,
     lg.lastPing    = ping;
 }
 
+/*
+ * The cgame's remote prediction for the update at serverTime: the lead (ms; <
+ * 0 off) and, over players enemies in view, how far off they were drawn for
+ * its frame: their average and the worst (units)
+ */
+void CL_Lagometer_Prediction(int serverTime, float leadMs, int players, float avg, float worst)
+{
+    lgColumn_t *c;
+
+    if (!lg.haveUpdate || leadMs < 0.0f) {
+        return;
+    }
+    c = LG_Column(LG_Slot(serverTime));
+    c->flags |= LG_F_LEAD;
+    c->lead     = (int16_t)LG_Clamp((int)(leadMs + 0.5f), 0, 32000);
+    lg.haveLead = 1;
+    lg.leadTime = serverTime;
+    if (players <= 0) {
+        return;
+    }
+    if (c->flags & LG_F_ERROR) {
+        // two updates in the column (40 Hz): one average over both
+        const int total = c->errPlayers + players;
+
+        c->errAvg   = (c->errAvg * c->errPlayers + avg * players) / total;
+        c->errWorst = Q_max(c->errWorst, worst);
+    } else {
+        c->errAvg   = avg;
+        c->errWorst = worst;
+    }
+    c->errPlayers = (uint8_t)LG_Clamp(c->errPlayers + players, 0, 255);
+    c->flags |= LG_F_ERROR;
+    if (worst >= LG_FAIL_UNITS) {
+        c->flags |= LG_F_FAIL;
+        if (!lg.haveFail || serverTime > lg.failTime) {
+            lg.haveFail = 1;
+            lg.failTime = serverTime;
+        }
+    }
+}
+
 // the numbers drawn, at the client's server time
 static void LG_Stats(void)
 {
     lgStats_t *st = &lg.st;
     int        pingSum = 0, pingN = 0, jitSum = 0, jitN = 0, prev = -1, peak = 0;
-    int        updates = 0, lost = 0, late = 0, held = 0, frames = 0;
+    int        updates = 0, lost = 0, late = 0, held = 0, frames = 0, errN = 0;
     int64_t    frameUs = 0;
+    float      errSum  = 0.0f;
     const int  serial  = st->serial + 1;
 
     memset(st, 0, sizeof(*st));
@@ -214,12 +266,29 @@ static void LG_Stats(void)
             }
             frames += c->frames;
             frameUs += c->frameUs;
+            if (c->flags & LG_F_ERROR) {
+                errSum += c->errAvg * c->errPlayers;
+                errN += c->errPlayers;
+            }
+        }
+        if (c->flags & LG_F_LEAD) {
+            st->leadPeak = Q_max(st->leadPeak, (int)c->lead);
+        }
+        if (c->flags & LG_F_FAIL) {
+            st->failures++;
         }
     }
 
     // (none in the last 1 s: the newest update's)
     st->ping = pingN ? (pingSum + pingN / 2) / pingN : lg.lastPing;
     st->jitter = jitN ? (jitSum + jitN / 2) / jitN : 0;
+    // remote prediction's: on while it reports; its lead is drawn on the ping's scale
+    st->predActive = lg.haveLead && cl.serverTime - lg.leadTime < LG_LEAD_FRESH_MS;
+    st->errAvg     = errN ? errSum / errN : -1.0f;
+    st->failAgeMs  = lg.haveFail && cl.serverTime - lg.failTime < LG_COLUMNS * LG_SLOT_MS ? Q_max(0, cl.serverTime - lg.failTime) : -1;
+    if (st->predActive) {
+        peak = Q_max(peak, st->leadPeak);
+    }
     // the peak with room, 150 to 500 ms in steps of 50
     st->scaleMs = LG_Clamp(((peak * 115 + 4999) / 5000) * 50, 150, 500);
     if (updates + lost > 0) {
@@ -286,6 +355,10 @@ int CL_Lagometer_Status(const lgStats_t *st, int *severity)
         *severity = LG_SEV_WARN;
     } else {
         *severity = LG_SEV_OK;
+    }
+    // a remote prediction failure says so for 1.5 s
+    if (st->predActive && st->failAgeMs >= 0 && st->failAgeMs <= 1500) {
+        return LG_STATUS_PREDERROR;
     }
     if (st->lossPct > 0.0f) {
         return LG_STATUS_LOSS;

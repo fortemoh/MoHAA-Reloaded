@@ -33,6 +33,13 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // command lands. Every snapshot is read as it arrives (the cgame itself reads
 // them only when its clock reaches them). Collision keeps the stock position
 // (netLerpOrigin): only the drawing moves.
+//
+// With the lagometer up, where each enemy was drawn for each server frame is
+// kept, and the update for that frame tells how far off it was: the lagometer
+// shows the lead and that error (cgi.Lagometer_Prediction). Only enemies in
+// view are measured, so it never tells of one behind a wall, and one whose own
+// connection put them off (their commands stalled at the server, or landed in
+// a burst) isn't charged to the prediction.
 
 #include "cg_local.h"
 #include "cg_remotepredict.h"
@@ -44,9 +51,20 @@ static cvar_t *cg_remotePrediction;
 static cvar_t *cg_remotePredictionMaxLead;
 
 #define RP_MAX_ENTS  MAX_CLIENTS // players are entities 0..MAX_CLIENTS-1
+#define RP_DRAWN     16          // server frames of where a player was drawn (800 ms at 20 Hz)
 #define RP_SMOOTH_MS 15.0f       // a new snapshot's correction fades: a third left after this long
 #define RP_STEPSIZE  18          // bg_pmove's STEPSIZE
 #define RP_SNAPS     32          // the snapshots the client keeps (PACKET_BACKUP)
+
+// where a player was drawn for a server frame: the frame whose cg.time + lead
+// came nearest it
+typedef struct {
+    int    serverTime;
+    float  dist;       // how far the frame's target was from it (ms)
+    vec3_t origin;     // where it was drawn, the fade included
+    int    fromTime;   // the update the prediction started from: its server time
+    int    fromTrTime; // and the player's last command time in it
+} rpDrawn_t;
 
 typedef struct {
     rpPlayer_t rp;
@@ -66,6 +84,10 @@ typedef struct {
     vec3_t shown;
     vec3_t shownPrev;
     vec3_t offset; // a new snapshot's correction, being faded out
+
+    rpDrawn_t drawn[RP_DRAWN];
+    int       drawnHead;
+    int       drawnCount;
 } rpEnt_t;
 
 static rpEnt_t    s_ents[RP_MAX_ENTS];
@@ -218,6 +240,95 @@ static int CG_RP_Weapon(const snapshot_t *snap, int number)
     return 0;
 }
 
+/*
+==================
+The lagometer's error
+==================
+*/
+
+// where a player was drawn for the server frame serverTime, NULL if not
+static const rpDrawn_t *CG_RP_DrawnAt(const rpEnt_t *e, int serverTime)
+{
+    for (int i = 0; i < e->drawnCount; i++) {
+        const rpDrawn_t *d = &e->drawn[(e->drawnHead - i + RP_DRAWN) % RP_DRAWN];
+
+        if (d->serverTime == serverTime) {
+            return d;
+        }
+    }
+    return NULL;
+}
+
+// an enemy: anyone else, but a teammate in a team game
+static qboolean CG_RP_Enemy(const entityState_t *es, const snapshot_t *snap)
+{
+    const int team = snap->ps.stats[STAT_TEAM];
+
+    if (cgs.gametype < GT_TEAM) {
+        return qtrue;
+    }
+    return !((team == TEAM_ALLIES && (es->eFlags & EF_ALLIES)) || (team == TEAM_AXIS && (es->eFlags & EF_AXIS)));
+}
+
+// a player drawn there is in view: in front, nothing of the world between
+static qboolean CG_RP_InView(const vec3_t origin)
+{
+    vec3_t  chest, d;
+    trace_t tr;
+
+    VectorCopy(origin, chest);
+    chest[2] += 40;
+    VectorSubtract(chest, cg.refdef.vieworg, d);
+    if (DotProduct(d, cg.refdef.viewaxis[0]) <= 0) {
+        return qfalse;
+    }
+    CG_Trace(&tr, cg.refdef.vieworg, vec3_origin, vec3_origin, chest, ENTITYNUM_NONE, CONTENTS_SOLID, qfalse, qfalse, "CG_RP_InView");
+    return tr.fraction == 1.0f ? qtrue : qfalse;
+}
+
+/*
+ * For the lagometer: how far across the ground from where this snapshot has
+ * them we drew each enemy in view for its server frame, their average and the
+ * worst. Not one whose own commands put them off: between the update the
+ * prediction started from and this one the server ran a frame's worth or more
+ * less of their commands than time went by (it held them still) or more (their
+ * late ones landed at once).
+ */
+static void CG_RP_Measure(const snapshot_t *snap)
+{
+    float sum = 0.0f, worst = 0.0f;
+    int   players = 0;
+
+    for (int i = 0; i < snap->numEntities; i++) {
+        const entityState_t *es = &snap->entities[i];
+        const rpDrawn_t     *d;
+        float                dx, dy, error;
+
+        if (es->eType != ET_PLAYER || es->number < 0 || es->number >= RP_MAX_ENTS || es->number == snap->ps.clientNum
+            || (es->eFlags & EF_DEAD) || !CG_RP_Enemy(es, snap)) {
+            continue;
+        }
+        d = CG_RP_DrawnAt(&s_ents[es->number], snap->serverTime);
+        if (!d || !CG_RP_InView(d->origin)) {
+            continue;
+        }
+        if (es->pos.trTime && d->fromTrTime) {
+            const int cmdSpan = es->pos.trTime - d->fromTrTime, srvSpan = snap->serverTime - d->fromTime;
+
+            if (abs(cmdSpan - srvSpan) >= s_server.frameMsec) {
+                continue;
+            }
+        }
+        dx    = d->origin[0] - es->netorigin[0];
+        dy    = d->origin[1] - es->netorigin[1];
+        error = sqrtf(dx * dx + dy * dy);
+        sum += error;
+        worst = Q_max(worst, error);
+        players++;
+    }
+    cgi.Lagometer_Prediction(snap->serverTime, s_frameLead, players, players ? sum / players : 0.0f, worst);
+}
+
 static void CG_RP_Ingest(const snapshot_t *snap)
 {
     // our own lead: which of our commands this snapshot had run
@@ -277,6 +388,10 @@ static void CG_RP_Ingest(const snapshot_t *snap)
         e->prevVel[1]     = o.velocity[1];
         e->modelindex     = es->modelindex;
         IntegerToBoundingBox(es->solid, e->mins, e->maxs);
+    }
+
+    if (s_frameActive && cg_lagometer->integer) {
+        CG_RP_Measure(snap);
     }
 }
 
@@ -405,6 +520,36 @@ static void CG_RP_Place(rpEnt_t *e, const rpRecord_t *r, const float d[2], float
     }
 }
 
+// where we drew a player this frame, kept under the server frame its target
+// time (cg.time + lead) is nearest, if nearer than before
+static void CG_RP_RecordDrawn(rpEnt_t *e, const vec3_t pos, const rpRecord_t *r, float lead)
+{
+    const int   fm     = s_server.frameMsec > 0 ? s_server.frameMsec : 50;
+    const float target = (float)cg.time + lead;
+    const int   phase  = ((s_latestTime % fm) + fm) % fm; // server frames needn't start at 0
+    const int   frame  = (int)floorf((target - (float)phase) / (float)fm + 0.5f) * fm + phase;
+    const float dist   = fabsf(target - (float)frame);
+    rpDrawn_t  *d      = &e->drawn[e->drawnHead];
+
+    if (e->drawnCount && d->serverTime == frame) {
+        if (dist >= d->dist) {
+            return;
+        }
+    } else if (e->drawnCount && frame < d->serverTime) {
+        // the lead fell: that frame is already kept
+        return;
+    } else {
+        e->drawnHead = (e->drawnHead + 1) % RP_DRAWN;
+        d            = &e->drawn[e->drawnHead];
+        e->drawnCount = Q_min(e->drawnCount + 1, RP_DRAWN);
+    }
+    d->serverTime = frame;
+    d->dist       = dist;
+    VectorCopy(pos, d->origin);
+    d->fromTime   = r->obs.serverTime;
+    d->fromTrTime = r->obs.trTime;
+}
+
 void CG_RP_UpdateEntity(centity_t *cent)
 {
     const entityState_t *es = &cent->currentState;
@@ -449,6 +594,9 @@ void CG_RP_UpdateEntity(centity_t *cent)
     e->shownValid = 1;
     e->shownFrom  = r->obs.serverTime;
     VectorCopy(pos, cent->lerpOrigin);
+    if (cg_lagometer->integer) {
+        CG_RP_RecordDrawn(e, pos, r, s_frameLead);
+    }
 }
 
 void CG_RP_BeginFrame(void)
