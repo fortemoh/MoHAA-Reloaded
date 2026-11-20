@@ -6,10 +6,11 @@
 // it, border 1; a texture of its own: border 0), which the renderer copies there.
 //
 // A cell (t x t texels; the picture's top row the map's north) shows its floor nearest the height, the first of
-// equals in the list's order: its inside its shade, its sides with an edge a line, with a stair a stripe (on its
-// left, right, top and bottom texels, an edge first at a corner), both brighter the nearer the floor is to the height
-// (radar.glsl); no floor: clear. The whole picture: a thread a room texel. With CHANGING, a height's change from zOld
-// to z: a thread a cell of those that can change (the list the UI made), writing only its texels that do.
+// equals in the list's order: its inside its shade, its sides with a stair a stripe (on its left, right, top and
+// bottom texels), brighter the nearer the floor is to the height (radar.glsl; no outlines: a wall is the shade's
+// edge); no floor: clear, its colour kept (235 240 245, so a shade's edge blends into clear, not into black). The
+// whole picture: a thread a room texel. With CHANGING, a height's change from zOld to z: a thread a cell of those that
+// can change (the list the UI made), writing only its texels that do.
 
 #include "radar.glsl"
 
@@ -20,7 +21,8 @@ layout( local_size_x = 8, local_size_y = 8 ) in;
 #endif
 
 // radar2D_t's memory as words: the cells' first floors (cw * ch + 1) at 0, the floors (radarFloor_t: z, fill, then
-// alpha | sides << 8) at floorsWord, the changing cells at changingWord
+// alpha | sides << 8; sides bits 4-7 a stair toward the left, right, north, south neighbour, 0-3 0) at floorsWord, the
+// changing cells at changingWord
 layout( std430, set = 0, binding = 0 ) readonly buffer Floors {
 	uint	words[];
 } floors;
@@ -53,9 +55,9 @@ uint RM_Nearest( uint first, uint last, float z )
 	return best;
 }
 
-// a floor's look for height z: its line's alpha, its stair's, its inside's, its sides
+// a floor's look for height z: its stair's alpha, its inside's, its sides
 struct RM_Look {
-	uint	line, stair, alpha, sides;
+	uint	stair, alpha, sides;
 };
 
 RM_Look RM_LookAt( uint n, float z )
@@ -66,7 +68,6 @@ RM_Look RM_LookAt( uint n, float z )
 	const float focus = RM_Focus( fz, z );
 	RM_Look l;
 
-	l.line = RM_Line( focus );
 	l.stair = RM_Stair( focus, fill );
 	l.alpha = packed & 0xFFu;
 	l.sides = ( packed >> 8 ) & 0xFFu;
@@ -74,13 +75,13 @@ RM_Look RM_LookAt( uint n, float z )
 }
 
 // the alpha of a cell's texel i, j (j down from its top row, the map's north up): on its left, right, top or bottom
-// row that side's edge (a line) or stair (a stripe), an edge first (a corner on two sides, a cell a texel across on
-// all four); else its inside
+// row that side's stair (a stripe), if it has one (a corner on two sides, a cell a texel across on all four); else its
+// inside
 uint RM_Alpha( RM_Look l, uint i, uint j )
 {
 	const uint at = uint( i == 0u ) | uint( i == p.t - 1u ) << 1 | uint( j == 0u ) << 2 | uint( j == p.t - 1u ) << 3;
 
-	return ( l.sides & at ) != 0u ? l.line : ( l.sides & at << 4 ) != 0u ? l.stair : l.alpha;
+	return ( l.sides & at << 4 ) != 0u ? l.stair : l.alpha;
 }
 
 uint RM_Texel( uint alpha )
@@ -131,8 +132,7 @@ void main()
 	const RM_Look was = RM_LookAt( RM_Nearest( first, last, p.zOld ), p.zOld );
 	const uint x0 = c % p.cw * p.t, y0 = ( p.ch - 1u - c / p.cw ) * p.t;
 
-	if ( l.alpha == was.alpha && l.sides == was.sides && ( ( l.sides & 15u ) == 0u || l.line == was.line )
-		&& ( ( l.sides & 240u ) == 0u || l.stair == was.stair ) ) {
+	if ( l.alpha == was.alpha && l.sides == was.sides && ( ( l.sides & 240u ) == 0u || l.stair == was.stair ) ) {
 		return;	// (its texels the same)
 	}
 	for ( uint j = 0u; j < p.t; j++ ) {
@@ -163,7 +163,7 @@ void main()
 	const uint c = ( p.ch - 1u - y / p.t ) * p.cw + x / p.t;
 	const uint first = floors.words[c], last = floors.words[c + 1u];
 
-	room.texels[ry * rowWidth + rx] = first == last ? 0u : RM_Texel( RM_Alpha( RM_LookAt( RM_Nearest( first, last, p.z ), p.z ), x % p.t, y % p.t ) );
+	room.texels[ry * rowWidth + rx] = first == last ? RM_Texel( 0u ) : RM_Texel( RM_Alpha( RM_LookAt( RM_Nearest( first, last, p.z ), p.z ), x % p.t, y % p.t ) );
 }
 
 #endif

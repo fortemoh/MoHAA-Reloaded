@@ -29,14 +29,6 @@ float RM_Focus( float fz, float z )
 	return clamp( RM_Div56( x ), 0.0, 1.0 );
 }
 
-// its edges' alpha, (0.3 + 0.6 * focus) * 255
-uint RM_Line( float focus )
-{
-	precise float v = ( 0.3 + 0.6 * focus ) * 255.0;
-
-	return uint( v );
-}
-
 // its stairs' stripe, between its shade (fill: alpha / 255) and 0.22 + 0.3 * focus
 uint RM_Stair( float focus, float fill )
 {

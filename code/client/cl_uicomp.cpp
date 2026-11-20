@@ -2329,8 +2329,9 @@ entities: crates, bridges) from the spawn points and the tops of the
 ladders at the map's load, and again from where a player stands that the
 walk didn't reach (every 250 ms, a few thousand cells a frame). Drawn top
 down into a picture: each cell's floor nearest the player's height filled,
-brighter the higher, its edges (no floor beside, or a ledge) as lines,
-stairs and ramps striped across the way up, the player's storey's bright.
+brighter the higher, its walls and ledges only the shade's edge (no
+outlines, as CS2's radar), stairs and ramps striped across the way up,
+the player's storey's stripes bright.
 The cells' floors are listed on a thread of their own (at the load, on
 this one) and given to the renderer, which makes the picture on the GPU:
 a change of storey is then a number (re.Radar2DHeight). A renderer without
@@ -2629,8 +2630,8 @@ static void RM_Release(void *memory)
 }
 
 // each cell's floors in the order RM_Nearest walks them (its first of equals
-// drawn), their shade and sides, and the cells a height can change: more
-// than one floor, or a side (on the worker thread, or at the load: the walk
+// drawn), their shade and stairs, and the cells a height can change: more
+// than one floor, or a stair (on the worker thread, or at the load: the walk
 // doesn't change meanwhile)
 static radar2D_t RM_Floors(void)
 {
@@ -2660,15 +2661,18 @@ static radar2D_t RM_Floors(void)
                 fl->alpha = fill;
                 fl->sides = 0;
                 fl->pad   = 0;
-                // the edges: no floor beside within a step (a wall, a drop, a
-                // ledge); a stair: one a little higher, striped every other cell
+                // a stair: a floor beside a little higher, within a step (40),
+                // striped every other cell; a wall, a drop or a ledge is only
+                // the shade's edge (no outlines, as CS2's radar: a 1-texel
+                // line turned with the view broke into crawling dots)
                 for (int k = 0; k < 4; k++) {
+                    if (((k < 2 ? cx : cy) & 1) != 0) {
+                        continue;
+                    }
                     const int   nb = RM_Nearest(cx + (k == 1) - (k == 0), cy + (k == 2) - (k == 3), z);
                     const float dz = nb < 0 ? 0.0f : rm.nodes[nb].z - z;
 
-                    if (nb < 0 || fabsf(dz) > 40.0f) {
-                        fl->sides |= 1 << k;
-                    } else if (dz >= RM_STAIR && ((k < 2 ? cx : cy) & 1) == 0) {
+                    if (dz >= RM_STAIR && dz <= 40.0f) {
                         fl->sides |= 16 << k;
                     }
                 }
@@ -2701,7 +2705,15 @@ static void RM_Paint(const radar2D_t *r, float z, std::vector<byte> *px)
 {
     const int t = r->texels, w = r->cw * t;
 
-    px->assign((size_t)w * r->ch * t * 4, 0);
+    // every texel 235 240 245, without a floor clear (its colour kept, so a
+    // shade's edge blends into clear, not into black)
+    px->resize((size_t)w * r->ch * t * 4);
+    for (size_t i = 0; i < px->size(); i += 4) {
+        (*px)[i]     = 235;
+        (*px)[i + 1] = 240;
+        (*px)[i + 2] = 245;
+        (*px)[i + 3] = 0;
+    }
     for (int cy = 0; cy < r->ch; cy++) {
         for (int cx = 0; cx < r->cw; cx++) {
             const int c = cy * r->cw + cx, first = r->cellFloors[c], last = r->cellFloors[c + 1];
@@ -2717,23 +2729,19 @@ static void RM_Paint(const radar2D_t *r, float z, std::vector<byte> *px)
             }
             const radarFloor_t *f         = &r->floors[n];
             const float         focus     = Com_Clamp(0.0f, 1.0f, (120.0f - fabsf(f->z - z)) / 56.0f);
-            const byte          line      = (byte)((0.3f + 0.6f * focus) * 255.0f);
             const byte          stairLine = (byte)((f->fill + (0.22f + 0.3f * focus - f->fill) * 0.8f) * 255.0f);
 
             // the picture's top row is the map's north (y up): a texel on
-            // the cell's left, right, top or bottom row is on that side's
-            // edge (a line) or stair (a stripe), an edge first (a corner on
-            // two sides, a cell a texel across on all four)
+            // the cell's left, right, top or bottom row is that side's stair
+            // stripe, if it has one (a corner on two sides, a cell a texel
+            // across on all four), else the floor's shade
             for (int j = 0; j < t; j++) {
                 byte *o = &(*px)[(((size_t)(r->ch - 1 - cy) * t + j) * w + cx * t) * 4];
 
                 for (int i = 0; i < t; i++, o += 4) {
                     const int at = (i == 0) | (i == t - 1) << 1 | (j == 0) << 2 | (j == t - 1) << 3;
 
-                    o[0] = 235;
-                    o[1] = 240;
-                    o[2] = 245;
-                    o[3] = (f->sides & at) ? line : (f->sides & at << 4) ? stairLine : f->alpha;
+                    o[3] = (f->sides & at << 4) ? stairLine : f->alpha;
                 }
             }
         }
