@@ -3,9 +3,9 @@
 // (RM_Paint in cl_uicomp.cpp), byte for byte, so a storey's change costs a number instead of a new picture.
 //
 // A texel's cell (texels x texels of the picture) shows its floor nearest the height, the first of equals in the list's
-// order: its inside its shade, its sides with an edge (a wall, a drop) a line, with a stair a stripe, both brighter the
-// nearer the floor is to the height; no floor: clear. A whole picture: a thread a texel. A height's change: a thread a
-// cell of those that can change (the list the UI made), writing only the texels that do.
+// order: its inside its shade, its sides with a stair a stripe, brighter the nearer the floor is to the height (no
+// outlines: a wall is the shade's edge); no floor: clear, its colour kept. A whole picture: a thread a texel. A height's
+// change: a thread a cell of those that can change (the list the UI made), writing only the texels that do.
 //
 // Safe math, and the CPU's own operations (clang contracts a + b * c into one fused multiply-add on arm64, as fma()
 // here; a correctly rounded division), so every byte is the CPU's.
@@ -20,7 +20,7 @@ struct MbRadarFloor
 	float	z;			// its height
 	float	fill;		// alpha / 255.0f
 	uchar	alpha;		// its inside's alpha
-	uchar	sides;		// bits 0-3: an edge toward the left, right, north, south neighbour; 4-7: a stair there
+	uchar	sides;		// bits 4-7: a stair toward the left, right, north, south neighbour (0-3: 0)
 	ushort	pad;
 };
 
@@ -44,10 +44,10 @@ static uint mb_radar_nearest( device const MbRadarFloor *floors, uint first, uin
 	return best;
 }
 
-// a floor's look for height z: its line's alpha, its stair's, its inside's, its sides
+// a floor's look for height z: its stair's alpha, its inside's, its sides
 struct MbRadarLook
 {
-	uint	line, stair, alpha, sides;
+	uint	stair, alpha, sides;
 };
 
 static MbRadarLook mb_radar_look( MbRadarFloor f, float z )
@@ -55,7 +55,6 @@ static MbRadarLook mb_radar_look( MbRadarFloor f, float z )
 	const float focus = clamp( ( 120.0f - fabs( f.z - z ) ) / 56.0f, 0.0f, 1.0f );
 	MbRadarLook l;
 
-	l.line = uint( fma( 0.6f, focus, 0.3f ) * 255.0f );
 	l.stair = uint( fma( fma( 0.3f, focus, 0.22f ) - f.fill, 0.8f, f.fill ) * 255.0f );
 	l.alpha = f.alpha;
 	l.sides = f.sides;
@@ -63,12 +62,12 @@ static MbRadarLook mb_radar_look( MbRadarFloor f, float z )
 }
 
 // the alpha of a cell's texel i, j (j down from its top row, the map's north up): on its left, right, top or bottom
-// row that side's edge (a line) or stair (a stripe), an edge first; else its inside
+// row that side's stair (a stripe), if it has one; else its inside
 static uint mb_radar_alpha( MbRadarLook l, uint i, uint j, uint t )
 {
 	const uint at = uint( i == 0 ) | uint( i == t - 1 ) << 1 | uint( j == 0 ) << 2 | uint( j == t - 1 ) << 3;
 
-	return ( l.sides & at ) ? l.line : ( l.sides & at << 4 ) ? l.stair : l.alpha;
+	return ( l.sides & at << 4 ) ? l.stair : l.alpha;
 }
 
 static float4 mb_radar_texel( uint alpha )
@@ -87,7 +86,7 @@ kernel void mb_radar_full_cs( device const uint *cellFloors [[buffer(0)]],
 	const uint first = cellFloors[c], last = cellFloors[c + 1];
 
 	if ( first == last ) {
-		picture.write( float4( 0.0f ), pos );
+		picture.write( mb_radar_texel( 0u ), pos );
 		return;
 	}
 	const MbRadarLook l = mb_radar_look( floors[mb_radar_nearest( floors, first, last, p.z )], p.z );
@@ -107,8 +106,7 @@ kernel void mb_radar_cs( device const uint *cellFloors [[buffer(0)]],
 	const MbRadarLook l = mb_radar_look( floors[mb_radar_nearest( floors, first, last, p.z )], p.z );
 	const MbRadarLook was = mb_radar_look( floors[mb_radar_nearest( floors, first, last, p.zOld )], p.zOld );
 
-	if ( l.alpha == was.alpha && l.sides == was.sides && ( !( l.sides & 15u ) || l.line == was.line )
-		&& ( !( l.sides & 240u ) || l.stair == was.stair ) ) {
+	if ( l.alpha == was.alpha && l.sides == was.sides && ( !( l.sides & 240u ) || l.stair == was.stair ) ) {
 		return;	// (its texels the same)
 	}
 	for ( uint j = 0; j < t; j++ ) {

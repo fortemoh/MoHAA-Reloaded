@@ -3,10 +3,10 @@
 // code/client/cl_uicomp.cpp), byte for byte. port/radartest.sh takes RM_Paint, the floor list's types (tr_public.h),
 // Com_Clamp (q_shared.c) and the kernels' parameters (tr_mtl.m) out of the game's source into radartest_src.inc and
 // builds this with the game's floating-point flags, so a change to one side alone shows here. Tests:
-//   alpha                 every float height distance in [60, 125] by every shade 0-255: a stair's alpha, and a line's
-//                         (pictures of a floor a cell and a texel a cell, painted whole: 2.3 billion cells)
+//   alpha                 every float height distance in [60, 125] by every shade 0-255: a stair's alpha (pictures of a
+//                         floor a cell and a texel a cell, painted whole: 2.3 billion cells)
 //   lists [n]             n made-up floor lists (seeded: 1 to 6 texels a cell, up to 5 floors a cell, equal distances,
-//                         every side bit): the whole picture at a height, then one height's change after another (the
+//                         every stair bit): the whole picture at a height, then one height's change after another (the
 //                         cells that can change), each picture against RM_Paint's
 //   real file [heights]   a floor list the game gave (port/radartest.sh game's dump: 8 ints, then its memory), at every
 //                         texel count it can have, along the heights (a file of numbers, else made up from its floors)
@@ -88,7 +88,7 @@ struct Arena
 	unsigned int *Changing() { return (unsigned int *)r.changing; }
 	NSUInteger FloorsAt() const { return (NSUInteger)( (const byte *)r.floors - (const byte *)memory ); }
 	NSUInteger ChangingAt() const { return (NSUInteger)( (const byte *)r.changing - (const byte *)memory ); }
-	// the cells a height can change, by RM_Floors' rule (more than one floor, or a side)
+	// the cells a height can change, by RM_Floors' rule (more than one floor, or a stair)
 	void ListChanging()
 	{
 		int m = 0;
@@ -206,19 +206,19 @@ static long long Compare( const radar2D_t *r, id<MTLBuffer> gpu, float z, const 
 =============
 alpha: every height distance d (each float in [60, 125], the focus's whole ramp, 64 to 120, and past it) by every
 shade: cells of one floor at height d, painted for height 0, a texel a cell (its left side shown): a stair (sides 16)
-of each shade, and a line (sides 1). Workers paint batches of 1024 x 1024 cells at once
+of each shade. Workers paint batches of 1024 x 1024 cells at once
 =============
 */
 static int TestAlpha( void )
 {
 	const uint32_t first = Bits( 60.0f ), count = Bits( 125.0f ) - first + 1;
-	const uint64_t total = (uint64_t)count * 257;	// per distance: a stair of shade 0-255, a line
+	const uint64_t total = (uint64_t)count * 256;	// per distance: a stair of shade 0-255
 	const int side = 1024, cells = side * side;
 	const long long batches = (long long)( ( total + cells - 1 ) / cells );
 	const int workers = std::max( 1, (int)[NSProcessInfo processInfo].activeProcessorCount - 2 );
 	std::atomic<long long> bad( 0 ), tested( 0 ), *badp = &bad, *testedp = &tested;	// (a block copies what it uses)
 
-	printf( "alpha: %u distances x (256 stair shades + a line) = %llu cells, %lld pictures of %dx%d, %d workers\n", count,
+	printf( "alpha: %u distances x 256 stair shades = %llu cells, %lld pictures of %dx%d, %d workers\n", count,
 		(unsigned long long)total, batches, side, side, workers );
 	dispatch_apply( (size_t)workers, dispatch_get_global_queue( QOS_CLASS_USER_INITIATED, 0 ), ^( size_t worker ) {
 		Arena a( side, side, 1, cells );
@@ -235,13 +235,13 @@ static int TestAlpha( void )
 
 				cf[c] = (unsigned int)f;
 				if ( k < total ) {
-					const uint32_t di = (uint32_t)( k / 257 ), s = (uint32_t)( k % 257 );
-					const byte shade = (byte)( s < 256 ? s : di % 256 );
+					const uint32_t di = (uint32_t)( k / 256 );
+					const byte shade = (byte)( k % 256 );
 
 					fl[f].z = Flt( first + di );
 					fl[f].fill = shade / 255.0f;
 					fl[f].alpha = shade;
-					fl[f].sides = s < 256 ? 16 : 1;
+					fl[f].sides = 16;
 					fl[f].pad = 0;
 					f++;
 				}
@@ -345,7 +345,7 @@ static int TestLists( int lists )
 				fl->z = rng.Next() % 2 ? storeys[rng.Next() % 7] + 8.0f * ( rng.Next() % 5 ) : rng.Range( -400.0f, 500.0f );
 				fl->fill = shade / 255.0f;
 				fl->alpha = shade;
-				fl->sides = rng.Next() % 2 ? (byte)rng.Next() : 0;
+				fl->sides = rng.Next() % 2 ? (byte)( rng.Next() & 0xf0 ) : 0;
 				fl->pad = 0;
 				zs.push_back( fl->z );
 			}

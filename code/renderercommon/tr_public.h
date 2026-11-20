@@ -39,17 +39,17 @@ typedef struct {
     float         z;     // its height
     float         fill;  // alpha / 255.0f
     unsigned char alpha; // its inside's alpha
-    unsigned char sides; // bits 0-3: an edge toward its cell's left, right, north and south neighbour; 4-7: a stair
-    unsigned short pad;  // (drawn on the cell's left, right, top and bottom texels, an edge first at a corner)
+    unsigned char sides; // bits 4-7: a stair toward its cell's left, right, north and south neighbour (0-3: 0)
+    unsigned short pad;  // (drawn on the cell's left, right, top and bottom texels)
 } radarFloor_t;
 
 // A picture of cw x ch cells, texels x texels each, the top row the map's
 // north. Cell c (cy * cw + cx) has the floors cellFloors[c] up to
 // cellFloors[c + 1] (the first of equals nearest a height drawn); the cells a
-// height can change (more than one floor, or a side) listed in changing. A
-// texel: no floor, clear; else 235 240 245 and its floor's alpha, at a side
-// with an edge (0.3 + 0.6 * focus) * 255, a stair (fill + (0.22 + 0.3 * focus
-// - fill) * 0.8) * 255, where focus = (120 - |z - height|) / 56 in 0..1. All
+// height can change (more than one floor, or a stair) listed in changing. A
+// texel: 235 240 245 and its floor's alpha, no floor 0, at a side with a
+// stair (fill + (0.22 + 0.3 * focus - fill) * 0.8) * 255, where focus =
+// (120 - |z - height|) / 56 in 0..1 (no outlines: a wall is the edge). All
 // three in memory (page-aligned, memoryBytes a multiple of 16384: the
 // renderer may read it in place), freed by release
 typedef struct {
