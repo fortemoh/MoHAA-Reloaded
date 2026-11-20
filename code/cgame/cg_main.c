@@ -253,6 +253,8 @@ void CG_RegisterCvars(void)
     cg_tauntsounds = cgi.Cvar_Get("cg_tauntsounds", "1", CVAR_ARCHIVE);
     // Added: remote prediction's (cg_remotePrediction, cg_remotePredictionMaxLead)
     CG_RP_RegisterCvars();
+    // Added: the hitmarker's (cg_hitmarker, cg_hitmarker_sound)
+    CG_Hitmarker_RegisterCvars();
 }
 /*
 ===============
@@ -1002,6 +1004,7 @@ void CG_GameStateReceived(void)
     CG_InitMarks();
 
     CG_RegisterSounds();
+    CG_Hitmarker_RegisterSound(); // Added
 
     CG_PrepRefresh();
 

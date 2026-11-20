@@ -26,7 +26,8 @@ Install
    https://github.com/fortemoh/MoHAA-Reloaded/blob/vulkan/docs/markdown/01-intro/01-installation.md#linux-and-macos-users
 
 3. Copy everything in this folder into the game folder, next to main/. This folder's main/ only holds
-   the headphone sound set (main/sound/prom/hrtf/): let it merge into the game's main/.
+   the headphone sound set (main/sound/prom/hrtf/) and the hitmarker's sounds
+   (main/sound/prom/hitmarkers/): let it merge into the game's main/.
 
 4. Start mohlauncher, MoHAA Launcher: it starts Allied Assault, Spearhead or Breakthrough, at the main
    menu (Single player) or onto a server (Connect), with your name, the server's passwords, the

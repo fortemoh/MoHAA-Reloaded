@@ -626,6 +626,16 @@ void CG_UpdateCrosshair(void)
     crosshairLayout.settings     = CG_CrosshairSettings();
 }
 
+// Added: the crosshair's middle in screen pixels (the hitmarker's, cg_hitmarker.c): the corner the screen's middle
+// pixel starts at, half a pixel up and left when the lines are an odd number of pixels thick (CG_UpdateCrosshair)
+void CG_CrosshairMiddle(float *x, float *y)
+{
+    const float odd = (float)(CG_CrosshairPixels(cg_crosshair_thickness->value) & 1);
+
+    *x = cgs.glconfig.vidWidth / 2 - odd * 0.5f;
+    *y = cgs.glconfig.vidHeight / 2 - odd * 0.5f;
+}
+
 void CG_DrawCrosshair()
 {
     if (!cg_hud->integer || !ui_crosshair->integer || !cg.snap) {
@@ -678,6 +688,7 @@ void CG_Draw2D(void)
     // attacker and the vote: the Competitive HUD's, the client's cl_uicomp.cpp)
     CG_DrawInstantMessageMenu();
     if (cg.ObjectivesDesiredAlpha <= 0.0f) {
+        CG_Hitmarker_Draw(); // Added: round the crosshair, under it (Project: Omaha's)
         CG_DrawCrosshair();
     }
 }

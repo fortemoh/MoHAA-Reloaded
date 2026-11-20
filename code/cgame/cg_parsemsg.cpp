@@ -1603,7 +1603,8 @@ void CG_ParseCGMessage_ver_15()
 
         case CGM_NOTIFY_HIT:
         case CGM_NOTIFY_KILL:
-            if (cg.snap) {
+            // Changed: the hitmarker's X and sound in place of the dings when it's on (Project: Omaha's)
+            if (cg.snap && !CG_Hitmarker_Hit()) {
                 const char *soundName;
                 int         iOldEnt;
 
@@ -1998,7 +1999,8 @@ void CG_ParseCGMessage_ver_6()
 
         case CGM6_NOTIFY_HIT:
         case CGM6_NOTIFY_KILL:
-            if (cg.snap) {
+            // Changed: the hitmarker's X and sound in place of the dings when it's on (Project: Omaha's)
+            if (cg.snap && !CG_Hitmarker_Hit()) {
                 int iOldEnt;
 
                 iOldEnt = current_entity_number;

@@ -663,7 +663,16 @@ extern "C" {
     void CG_HudDrawElements();
     void CG_InitializeObjectives();
     void CG_UpdateCrosshair(void);
+    void CG_CrosshairMiddle(float *x, float *y);
     void CG_Draw2D(void);
+
+    //
+    // cg_hitmarker.c (Added; Project: Omaha's)
+    //
+    void     CG_Hitmarker_RegisterCvars(void);
+    void     CG_Hitmarker_RegisterSound(void);
+    qboolean CG_Hitmarker_Hit(void);
+    void     CG_Hitmarker_Draw(void);
 
     //
     // cg_draw.c
