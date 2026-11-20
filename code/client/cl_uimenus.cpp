@@ -1466,12 +1466,13 @@ void UI_Menus_Init(void)
 THE LOAD SCREEN
 
 Shown while a map loads in place of the stock one (the menu named after
-the map, else loading_default). A mission's
-level (single player): its orders letter, the stock screen's pictures,
+the map, else loading_default); the level starts once loaded (no stock
+CONTINUE to wait for). A mission's level (single player on a map outside
+dm/, obj/ and lib/): its orders letter, the stock screen's pictures,
 unstretched, full height, black beside it; in the stock CONTINUE's place
-what loads and how far, then CONTINUE (reloaded_mission: the game waits
-for its continuebutton). Else the map's picture as a 4:3 card in the
-middle, over a dimmed, blurred copy
+what loads and how far. Else (a multiplayer map, whatever the game type:
+"map dm/mohdm5" at the console starts it single player) the map's picture
+as a 4:3 card in the middle, over a dimmed, blurred copy
 of it filling the screen; the map's name above it on the left, the mode on
 the right (the name made smaller, then cut, to leave it room), a brass
 bar and what loads under it. The picture is the stock screen's: the dm
@@ -1490,18 +1491,11 @@ into the card, on black
 static struct {
     char      map[MAX_QPATH];
     int       gametype;
+    bool      mission;       // a mission's level: its letter
     Menu     *stock;         // the stock load screen
     qhandle_t shot, blur;    // the photo and its blurred copy, 0 none
     int       stamp, refSeq; // UI_BakeStamp and the renderer's sequence then
-    bool      saveShot;      // a saved game's shot of the next frame (a level's autosave): no CONTINUE in it
 } rl_ld;
-
-void UI_Menus_SaveShot(void)
-{
-    Menu *const m = menuManager.FindMenuNamed("reloaded_mission");
-
-    rl_ld.saveShot = m && m->isVisible();
-}
 
 // the photo shrunk to rows texels high in the screen's shape (the part of it
 // a screen filled with it shows), blurred, dimmed and darker to the corners:
@@ -1635,22 +1629,27 @@ static void RL_LoadPictures(void)
     uii.Rend_FreeRawImage(pic);
 }
 
+// a multiplayer map: in maps/dm/, obj/ or lib/ (the host menu's folders)
+static bool RL_MultiplayerMap(const char *map)
+{
+    return !Q_stricmpn(map, "dm/", 3) || !Q_stricmpn(map, "obj/", 4) || !Q_stricmpn(map, "lib/", 4);
+}
+
 const char *UI_Menus_Loading(Menu *stock, const char *map)
 {
     // (a local server's own: its configstring isn't here yet when it loads a map)
     const char *info = com_sv_running->integer ? Cvar_InfoString(CVAR_SERVERINFO) : CL_ConfigString(CS_SERVERINFO);
-    const char *ours;
+    const char *ours = "reloaded_loading";
     char        name[MAX_QPATH];
 
-    rl_ld.gametype = atoi(Info_ValueForKey(info, "g_gametype"));
-    // (a mission's level waits for CONTINUE as its stock screen does; loading_default's doesn't)
-    ours = rl_ld.gametype == GT_SINGLE_PLAYER && stock && Q_stricmp(stock->m_name.c_str(), "loading_default") ? "reloaded_mission"
-                                                                                                             : "reloaded_loading";
+    // (it has no continuebutton: the level starts once loaded, UI_ServerLoaded)
     if (!menuManager.FindMenuNamed(ours)) {
         return NULL;
     }
+    rl_ld.gametype = atoi(Info_ValueForKey(info, "g_gametype"));
     RL_MapFile(name, map);
-    if (rl_ld.gametype == GT_SINGLE_PLAYER) {
+    rl_ld.mission = rl_ld.gametype == GT_SINGLE_PLAYER && !RL_MultiplayerMap(name);
+    if (rl_ld.mission) {
         Q_strncpyz(rl_ld.map, name, sizeof(rl_ld.map));
         rl_ld.stock = stock;
         rl_ld.shot = rl_ld.blur = 0;
@@ -1729,35 +1728,22 @@ static void RL_LoadBar(const rlView_t& v, float x, float y, float w, float frac)
 
 // a mission's level: its letter 4:3 (the stock screen's 640 x 480), black
 // beside it; in the stock CONTINUE's box (its middle 460 of 480 down) what
-// loads over the bar, then the main menu's brass button (the menu's clear
-// continuebutton placed over it takes the click and Enter)
-static void RL_DrawMission(UIReloadedMenu *m, const rlView_t& v, float frac, const char *what)
+// loads over the bar
+static void RL_DrawMission(const rlView_t& v, float frac, const char *what)
 {
     const float lw = v.dh * 4 / 3, lx = (v.dw - lw) / 2, bw = 260, bh = 48, bx = (v.dw - bw) / 2, by = v.dh * 460 / 480 - bh / 2;
-    UIWidget   *button = m->getParent() ? m->getParent()->FindWidget("continuebutton") : NULL;
 
     RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0));
     RL_StockPictures(rl_ld.stock, RL_P(v, lx), 0, RL_P(v, lx + lw), RL_P(v, v.dh));
-    if (rl_ld.saveShot) {
-        // (the painting alone in a saved game's shot)
-        rl_ld.saveShot = false;
-    } else if (button && button->isEnabled()) {
-        const bool hot = uid.mouseX >= RL_P(v, bx) && uid.mouseX < RL_P(v, bx + bw) && uid.mouseY >= RL_P(v, by) && uid.mouseY < RL_P(v, by + bh);
-
-        RL_Box(v, bx, by, bw, bh, hot ? RL_BRASS_HOT : RL_BRASS);
-        RL_Text(v, bx + bw / 2, by + bh / 2, "CONTINUE", RL_S1, RL_INK, true, RL_CENTER, 2.4f, RL_MID);
-    } else {
-        RL_Box(v, bx, by, bw, bh, RL_Rgb(10, 11, 12, 228));
-        RL_Text(v, bx + 16, by + (bh - 4) / 2, va("%s\x85", RL_LoadStage(what)), 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
-        if (frac >= 0.0f) {
-            RL_Text(v, bx + bw - 16, by + (bh - 4) / 2, va("%d%%", (int)(Q_min(frac, 1.0f) * 100)), 17, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
-        }
-        RL_LoadBar(v, bx, by + bh - 4, bw, frac);
+    RL_Box(v, bx, by, bw, bh, RL_Rgb(10, 11, 12, 228));
+    RL_Text(v, bx + 16, by + (bh - 4) / 2, va("%s\x85", RL_LoadStage(what)), 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+    if (frac >= 0.0f) {
+        RL_Text(v, bx + bw - 16, by + (bh - 4) / 2, va("%d%%", (int)(Q_min(frac, 1.0f) * 100)), 17, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
     }
-    m->PlaceView(v, "continuebutton", bx, by, bw, bh);
+    RL_LoadBar(v, bx, by + bh - 4, bw, frac);
 }
 
-static void RL_DrawLoading(UIReloadedMenu *m, const rlView_t& v)
+static void RL_DrawLoading(const rlView_t& v)
 {
     const char *what = "";
     const float frac = UI_LoadProgress(&what);
@@ -1767,8 +1753,8 @@ static void RL_DrawLoading(UIReloadedMenu *m, const rlView_t& v)
     const rlColor_t white = RL_Rgb(255, 255, 255), line = RL_Rgb(255, 255, 255, 40);
 
     // a mission: its letter as it loads
-    if (rl_ld.gametype == GT_SINGLE_PLAYER) {
-        RL_DrawMission(m, v, frac, what);
+    if (rl_ld.mission) {
+        RL_DrawMission(v, frac, what);
         return;
     }
     // the renderer restarted since: made again; the map's load reset its shaders: looked up again
@@ -2147,7 +2133,7 @@ void UIReloadedMenu::Draw(void)
 
     if (m_screen == SCR_LOADING) {
         m_hits.clear();
-        RL_DrawLoading(this, v);
+        RL_DrawLoading(v);
         uii.Rend_SetColor(white);
         return;
     }

@@ -16,7 +16,7 @@
 - **Fast.** On the benchmark demo the CPU's work per frame is 0.205 ms against GL1's 0.89–0.95 (4.5× less), the 99th percentile 0.48 ms against ~2.3.
 - **Same game online.** The network protocol, the server-side game code and the data formats are upstream's, except that backpedal and strafe move at the original game's speeds, and a server it hosts caps SMGs and rifles at the original's top speeds.
 - **Leaning in the campaign.** Allied Assault's single-player campaign lets you lean, as multiplayer does (the original game didn't).
-- **New menus and HUD.** A new main menu, Options with every setting and the keys, one weapon menu that also picks your side and soldier, an Esc menu over the game (blurred and dimmed), the scoreboard, a load screen with the map's photo, a brass cursor sized to the screen, and the HUD in CS:GO's or CS2's layout (`cg_hudstyle`, below). The stock menus, the stock HUD and the intro videos are gone.
+- **New menus and HUD.** A new main menu, Options with every setting and the keys, one weapon menu that also picks your side and soldier, an Esc menu over the game (blurred and dimmed), the scoreboard, a load screen with the map's photo (a mission's orders letter in a campaign; no CONTINUE to click, a level starts as soon as it's loaded), a brass cursor sized to the screen, and the HUD in CS:GO's or CS2's layout (`cg_hudstyle`, below). The stock menus, the stock HUD and the intro videos are gone.
 
 Needs an Apple Silicon Mac (M1 or later) with macOS 26 or later. Developed and measured on an M4 Mac mini with a 240 Hz display.
 

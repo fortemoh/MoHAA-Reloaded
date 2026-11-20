@@ -2232,8 +2232,13 @@ void UI_ServerLoaded(void)
 
     pCurrentMenu = menuManager.CurrentMenu();
 
-    if (pCurrentMenu != ui_pLoadingMenu || !pCurrentMenu->GetNamedWidget("continuebutton") || !com_sv_running->integer
-        || pMaxClients->integer > 1) {
+    // Changed: the Reloaded load screen has no continuebutton, so a level starts once loaded;
+    // ui_holdload 1 holds it until finishloadingscreen as the stock CONTINUE did (port/shot.sh's
+    // fixed views: the same game time in every run)
+    static cvar_t *ui_holdload = Cvar_Get("ui_holdload", "0", 0);
+
+    if (pCurrentMenu != ui_pLoadingMenu || (!pCurrentMenu->GetNamedWidget("continuebutton") && !ui_holdload->integer)
+        || !com_sv_running->integer || pMaxClients->integer > 1) {
         UI_FinishLoadingScreen_f();
         return;
     }

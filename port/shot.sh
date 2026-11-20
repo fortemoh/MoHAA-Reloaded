@@ -28,7 +28,8 @@
 # except in the fixed views: they run with fixedtime, which makes game time advance the same per frame in every run.
 # Their cfgs wait in real milliseconds, so the frame rate sets how much game time passes before each capture:
 # com_maxfps is pinned at 85 (upstream's default, every baseline's; the game's is 125 since session 66), as
-# r_uselod at 1.
+# r_uselod at 1. Game time starts at the cfg's finishloadingscreen: ui_holdload 1 holds the level until then, as the
+# stock CONTINUE did (since session 100 a level starts once loaded).
 set -uo pipefail
 source "$(dirname "$0")/env.sh"
 
@@ -119,7 +120,7 @@ rm -rf "$OMM_HOME"/main*/screenshots "$OMM_HOME/main/configs" "$OUT/$NAME-$R"-* 
 if [ "$R" = opengl1 ]; then FLAVOR="${OMM_GL_FLAVOR:-gl}"; else FLAVOR="${OMM_FLAVOR:-metal}"; fi
 perl -e 'alarm shift; exec @ARGV' 120 "$OMM_PORT/run.sh" "$FLAVOR" +set cl_renderer "$R" \
 	+set r_mode -1 +set r_customwidth 1280 +set r_customheight 720 +set r_fullscreen 0 \
-	+set s_volume 0 +set s_musicvolume 0 +set r_primitives 2 +set r_uselod 1 +set com_maxfps 85 "$@" +exec "$CFG" > "$OUT/$NAME-$R.log" 2>&1
+	+set s_volume 0 +set s_musicvolume 0 +set r_primitives 2 +set r_uselod 1 +set com_maxfps 85 +set ui_holdload 1 "$@" +exec "$CFG" > "$OUT/$NAME-$R.log" 2>&1
 n=0
 for f in "$OMM_HOME"/main*/screenshots/*.tga; do
 	[ -e "$f" ] || continue
