@@ -1,7 +1,9 @@
 // The Competitive HUD (cg_hudstyle 1): bottom left, the chat and who last
 // hurt you under it (who you follow: hud_comp_follow.urc); all higher with
-// the health in the corner (CS:GO's, cg_hudstyle 1: ui_hud_corners)
-menu "hud_comp_chat" 420 256 NONE 0
+// the health in the corner (CS:GO's, cg_hudstyle 1: ui_hud_corners), the
+// menu tall enough for the chat moved up. The chat as wide as the line typed
+// above it (cl_uiextras.cpp), CS2's 553
+menu "hud_comp_chat" 560 312 NONE 0
 virtualres 1 1920 1080
 drawcache 1
 align left bottom
@@ -23,7 +25,7 @@ resource
 HudFeed
 {
 name "chat"
-rect 25 0 360 160
+rect 25 56 520 160
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-16s
@@ -36,7 +38,7 @@ resource
 Label
 {
 name "hurt"
-rect 25 199 360 27
+rect 25 255 360 27
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-18s

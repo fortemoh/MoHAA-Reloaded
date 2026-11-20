@@ -1174,8 +1174,8 @@ THE CHAT'S TYPING LINE
 
 The DM console takes the keys as before (its modes, its history, its
 commands); its window isn't drawn (ui_hud_dmconsole 0: its alphacvar).
-A bar 520 x 32 of the HUD's units, 32 over the chat's menu (as it is
-placed), its edge on the left and its label in the mode's color: ALL: the
+A bar 520 x 32 of the HUD's units (the chat's width), 32 over the chat (as
+it is placed), its edge on the left and its label in the mode's color: ALL: the
 accent, TEAM: the Allies' blue, TO <name>: (a private line) violet. The
 line from the caret back as much as fits, the caret a 2 unit bar
 
@@ -1194,7 +1194,7 @@ static void EX_TypingLine(void)
     const char *line;
     int         mode, caret;
     Menu       *menu;
-    UIWidget   *chat;
+    UIWidget   *chat, *feed;
     float       left, top;
     rlColor_t   col;
     std::string label;
@@ -1206,11 +1206,12 @@ static void EX_TypingLine(void)
     const rlView_t v = EX_HudView();
     const float    s = v.s;
 
-    // over the chat's menu, as it is placed (its own file may move it)
+    // over the chat, as it is placed (its menu's file moves it: ui_hud_corners)
     menu = menuManager.FindMenu("hud_comp_chat");
     chat = menu ? menu->GetContainerWidget() : NULL;
+    feed = menu ? menu->GetNamedWidget("chat") : NULL;
     left = chat ? chat->getFrame().pos.x : 0.0f;
-    top  = chat ? chat->getFrame().pos.y : uid.vidHeight - 256.0f * s;
+    top  = chat && feed ? chat->getFrame().pos.y + feed->getFrame().pos.y : uid.vidHeight - 256.0f * s;
 
     if (mode == 100) {
         label = "ALL:";
