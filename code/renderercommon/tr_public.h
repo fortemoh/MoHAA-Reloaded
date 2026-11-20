@@ -232,7 +232,9 @@ typedef struct {
     void (*Draw2DList)(int handle);
     void (*Free2DList)(int handle);
 
-    // a convex polygon of count points (x, y, s, t each), a fan, in one draw
+    // a convex polygon of count points (x, y, s, t each), a fan, in one draw;
+    // its edge smoothed: a band a pixel wide across it, the color to clear
+    // (s and t carried by the polygon's own mapping, which is affine)
     void (*DrawPolygon2D)(const float (*points)[4], int count, qhandle_t shader);
 
     // RegisterImage2D's image as a texture of its own, never in the 2D atlas:

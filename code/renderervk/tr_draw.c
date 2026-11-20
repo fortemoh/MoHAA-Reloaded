@@ -73,7 +73,6 @@ static struct {
 	int				window[4];		// the window: x0 y0 x1 y1
 	float			zNear, zFar;	// the window's depth range, the GPU's while in 2D
 	qboolean		clipScissor;	// the GPU's scissor is the clip (lines, additive boxes), else the screen
-	qboolean		fan;			// the draw is a convex polygon, a fan from its first vertex
 } r2d;
 
 /*
@@ -337,7 +336,6 @@ static void R_2DStartDraw( shader_t *shader ) {
 	r2d.firstVertex = tess.numVertexes;
 	r2d.firstIndex = tess.numIndexes;
 	r2d.atlas = shader->atlas2D;
-	r2d.fan = qfalse;
 }
 
 /*
@@ -376,9 +374,10 @@ R_2DClip
 
 Clips the draw's triangles to r2d.clip, as the scissor would, and, in an
 atlas page, to its image (its texels beyond its edges taken as clear): a
-polygon a triangle (a convex polygon's draw: one), its vertexes' attributes
-interpolated as the rasterizer would across the screen (an orthographic
-window)
+triangle inside every plane kept as it is (its vertexes where they are),
+one beyond a plane left out, the others cut, a polygon a triangle, their
+vertexes' attributes interpolated as the rasterizer would across the screen
+(an orthographic window)
 ================
 */
 #define R2D_ATTRS 9	// x y z s t r g b a
@@ -407,20 +406,22 @@ static int R_2DClipEdge( const float (*in)[R2D_ATTRS], int n, float (*out)[R2D_A
 
 static void R_2DClip( qboolean image ) {
 	static float		verts[SHADER_MAX_VERTEXES][R2D_ATTRS];
+	static byte			beyond[SHADER_MAX_VERTEXES];	// the planes a vertex is beyond, a bit each
 	static glIndex_t	indexes[SHADER_MAX_INDEXES];
-	static float		poly[2][1024 + 8][R2D_ATTRS];
-	const int			numVertexes = tess.numVertexes - r2d.firstVertex;
+	static float		poly[2][3 + 8][R2D_ATTRS];	// a triangle, a corner more at most for each plane
+	const int			first = r2d.firstVertex;
+	const int			numVertexes = tess.numVertexes - first;
 	const int			numIndexes = tess.numIndexes - r2d.firstIndex;
-	// a convex polygon (DrawPolygon2D) is clipped whole, its vertexes in order
-	const qboolean		whole = r2d.fan && numVertexes <= 1024;
+	const int			numPlanes = image ? 8 : 4;
 	const float			planes[8][3] = {
 		{ 0, r2d.clip[0], 1 }, { 0, r2d.clip[2], -1 }, { 1, r2d.clip[1], 1 }, { 1, r2d.clip[3], -1 },
 		{ 3, 0, 1 }, { 3, 1, -1 }, { 4, 0, 1 }, { 4, 1, -1 }
 	};
+	qboolean			kept = qtrue;	// the draw's own vertexes still in tess (nothing drawn since)
 	int					i, j, k, n, p;
 
 	for ( i = 0; i < numVertexes; i++ ) {
-		const int v = r2d.firstVertex + i;
+		const int v = first + i;
 
 		VectorCopy( tess.xyz[v], verts[i] );
 		verts[i][3] = tess.texCoords[v][0][0];
@@ -428,24 +429,40 @@ static void R_2DClip( qboolean image ) {
 		for ( k = 0; k < 4; k++ ) {
 			verts[i][5 + k] = tess.vertexColors[v][k];
 		}
+		beyond[i] = 0;
+		for ( j = 0; j < numPlanes; j++ ) {
+			if ( planes[j][2] * ( verts[i][(int)planes[j][0]] - planes[j][1] ) < 0 ) {
+				beyond[i] |= 1 << j;
+			}
+		}
+		// (kept for the triangles inside every plane, in its atlas page's place)
+		if ( r2d.atlas ) {
+			tess.texCoords[v][0][0] = r2d.atlas->atlasRect[0] + verts[i][3] * r2d.atlas->atlasRect[2];
+			tess.texCoords[v][0][1] = r2d.atlas->atlasRect[1] + verts[i][4] * r2d.atlas->atlasRect[3];
+		}
 	}
 	for ( i = 0; i < numIndexes; i++ ) {
-		indexes[i] = tess.indexes[r2d.firstIndex + i] - r2d.firstVertex;
+		indexes[i] = tess.indexes[r2d.firstIndex + i] - first;
 	}
-	tess.numVertexes = r2d.firstVertex;
 	tess.numIndexes = r2d.firstIndex;
 
-	for ( i = 0; whole ? i == 0 : i + 2 < numIndexes; i += 3 ) {
-		if ( whole ) {
-			Com_Memcpy( poly[0], verts, numVertexes * sizeof( verts[0] ) );
-			n = numVertexes;
-		} else {
-			for ( j = 0; j < 3; j++ ) {
-				Com_Memcpy( poly[0][j], verts[indexes[i + j]], sizeof( verts[0] ) );
-			}
-			n = 3;
+	for ( i = 0; i + 2 < numIndexes; i += 3 ) {
+		const int a = indexes[i], b = indexes[i + 1], c = indexes[i + 2];
+
+		if ( beyond[a] & beyond[b] & beyond[c] ) {
+			continue;
 		}
-		for ( j = 0, p = 0; j < ( image ? 8 : 4 ) && n >= 3; j++ ) {
+		if ( !( beyond[a] | beyond[b] | beyond[c] ) && kept && tess.numIndexes + 3 < SHADER_MAX_INDEXES ) {
+			tess.indexes[tess.numIndexes++] = first + a;
+			tess.indexes[tess.numIndexes++] = first + b;
+			tess.indexes[tess.numIndexes++] = first + c;
+			continue;
+		}
+		for ( j = 0; j < 3; j++ ) {
+			Com_Memcpy( poly[0][j], verts[indexes[i + j]], sizeof( verts[0] ) );
+		}
+		n = 3;
+		for ( j = 0, p = 0; j < numPlanes && n >= 3; j++ ) {
 			const int attr = (int)planes[j][0];
 
 			// (a plane all of it is inside leaves it as it is)
@@ -462,11 +479,12 @@ static void R_2DClip( qboolean image ) {
 		if ( tess.numVertexes + n >= SHADER_MAX_VERTEXES || tess.numIndexes + 3 * ( n - 2 ) >= SHADER_MAX_INDEXES ) {
 			shader_t *shader = tess.shader;
 
-			// what is clipped so far is drawn
+			// what is clipped so far is drawn (the draw's own vertexes with it)
 			RB_EndSurface();
 			RB_BeginSurface( shader );
 			tess.colors2D = qtrue;
 			tess.vertexColorValid = qtrue;
+			kept = qfalse;
 		}
 		for ( j = 0; j < n; j++ ) {
 			const float *in = poly[p][j];
@@ -506,7 +524,7 @@ static void R_2DTiles( void ) {
 	color4ub_t		color;
 	int				i, k;
 
-	if ( !image->atlasRects || r2d.fan || tess.numVertexes - v != 4 || tess.numIndexes - r2d.firstIndex != 6
+	if ( !image->atlasRects || tess.numVertexes - v != 4 || tess.numIndexes - r2d.firstIndex != 6
 		|| ( tess.shader->unfoggedStages[0]->stateBits & ( GLS_SRCBLEND_BITS | GLS_DSTBLEND_BITS | GLS_DEPTHMASK_TRUE | GLS_POLYMODE_LINE ) )
 			!= ( GLS_SRCBLEND_SRC_ALPHA | GLS_DSTBLEND_ONE_MINUS_SRC_ALPHA )
 		|| x0 != floorf( x0 ) || y0 != floorf( y0 ) || p3[0] - x0 != image->width || p3[1] - y0 != image->height
@@ -879,29 +897,113 @@ void RB_Draw_TilePicOffset(float x, float y, float w, float h, qhandle_t hShader
 ================
 DrawPolygon2D
 
-A convex polygon of count points (x, y, s, t each) as a fan, one draw
+A convex polygon of count points (x, y, s, t each) as a fan, in one draw
+(the Competitive HUD's radar), in the 2D color. Its edge smoothed: a band a
+pixel wide across it, from the 2D color inside to clear outside (each corner
+moved half a pixel in, and a copy half a pixel out, along its edges' mean
+normal; s and t carried by the polygon's own mapping, affine as the
+radar's). The 2D color is in each vertex (tess.colors2D): the outer copies
+carry it with alpha 0
 ================
 */
 void RB_DrawPolygon2D(const float (*points)[4], int count, qhandle_t hShader) {
 	shader_t	*shader = hShader ? R_GetShaderByHandle(hShader) : tr.defaultShader;
-	int			i;
+	float		off[SHADER_MAX_VERTEXES / 4][2];	// each corner's way out in pixels, half a pixel from both its edges
+	float		kx, ky;			// a window unit in pixels
+	float		sx, sy, tx, ty;	// s and t a pixel right and down
+	float		det, h, ax, ay;
+	glIndex_t	*ix;
+	int			i, v;
 
-	if (count < 3 || count > SHADER_MAX_VERTEXES / 2) {
+	if (count < 3 || 2 * count > SHADER_MAX_VERTEXES / 2 || 3 * (count - 2) + 6 * count > SHADER_MAX_INDEXES / 2) {
 		return;
 	}
-	R_IssuePending2DCommands();
-	RB_Color4bv(backEnd.color2D);
-	R_Begin2D(shader, count, 3 * (count - 2));
-	r2d.fan = qtrue;
-	for (i = 0; i < count; i++) {
-		RB_Texcoord2f(points[i][2], points[i][3]);
-		RB_Vertex2f(points[i][0], points[i][1]);
-		if (i >= 2) {
-			tess.indexes[tess.numIndexes++] = r2d.firstVertex;
-			tess.indexes[tess.numIndexes++] = r2d.firstVertex + i - 1;
-			tess.indexes[tess.numIndexes++] = r2d.firstVertex + i;
-		}
+	R_IssuePending2DCommands();	// (the window may change with them)
+	kx = r2d.xform[0];
+	ky = r2d.xform[2];
+	if (!kx || !ky) {
+		return;
 	}
+
+	// the mapping from three corners a third apart, in pixels; its sign the winding
+	{
+		const float *a = points[0], *b = points[count / 3], *c = points[2 * count / 3];
+		const float x1 = (b[0] - a[0]) * kx, y1 = (b[1] - a[1]) * ky, x2 = (c[0] - a[0]) * kx, y2 = (c[1] - a[1]) * ky;
+
+		det = x1 * y2 - x2 * y1;
+		if (fabsf(det) < 1e-6f) {
+			return;
+		}
+		sx = ((b[2] - a[2]) * y2 - (c[2] - a[2]) * y1) / det;
+		sy = ((c[2] - a[2]) * x1 - (b[2] - a[2]) * x2) / det;
+		tx = ((b[3] - a[3]) * y2 - (c[3] - a[3]) * y1) / det;
+		ty = ((c[3] - a[3]) * x1 - (b[3] - a[3]) * x2) / det;
+	}
+	h = det > 0.0f ? 0.5f : -0.5f;
+
+	// each edge's outward normal (det > 0: its right) half a pixel long, from the last edge's; a corner's way
+	// out their mean, as far from each
+	{
+		const float *p = points[count - 1], *n = points[0];
+		const float ex = (n[0] - p[0]) * kx, ey = (n[1] - p[1]) * ky, l = ex * ex + ey * ey;
+		const float f = l > 0.0f ? h / sqrtf(l) : 0.0f;
+
+		ax = ey * f;
+		ay = -ex * f;
+	}
+	for (i = 0; i < count; i++) {
+		const float *p = points[i], *n = points[i + 1 < count ? i + 1 : 0];
+		const float ex = (n[0] - p[0]) * kx, ey = (n[1] - p[1]) * ky, l = ex * ex + ey * ey;
+		const float f = l > 0.0f ? h / sqrtf(l) : 0.0f;
+		const float bx = ey * f, by = -ex * f, mx = (ax + bx) * 0.5f, my = (ay + by) * 0.5f;
+		const float m = h * h / Q_max(mx * mx + my * my, h * h * 0.01f);
+
+		off[i][0] = mx * m;
+		off[i][1] = my * m;
+		ax = bx;
+		ay = by;
+	}
+
+	R_Begin2D(shader, 2 * count, 3 * (count - 2) + 6 * count);
+	v = r2d.firstVertex;
+
+	// the corners half a pixel in (v on), then out (v + count on: clear)
+	for (i = 0; i < count; i++) {
+		const float *p = points[i];
+		const float ox = off[i][0], oy = off[i][1], os = sx * ox + sy * oy, ot = tx * ox + ty * oy;
+		const int	in = v + i, out = v + count + i;
+
+		VectorSet(tess.xyz[in], p[0] - ox / kx, p[1] - oy / ky, 0);
+		VectorSet(tess.xyz[out], p[0] + ox / kx, p[1] + oy / ky, 0);
+		tess.texCoords[in][0][0] = p[2] - os;
+		tess.texCoords[in][0][1] = p[3] - ot;
+		tess.texCoords[out][0][0] = p[2] + os;
+		tess.texCoords[out][0][1] = p[3] + ot;
+		Com_Memcpy(tess.vertexColors[in], backEnd.color2D, 4);
+		Com_Memcpy(tess.vertexColors[out], backEnd.color2D, 3);
+		tess.vertexColors[out][3] = 0;
+	}
+	tess.numVertexes = v + 2 * count;
+
+	ix = tess.indexes + tess.numIndexes;
+	for (i = 2; i < count; i++) {
+		ix[0] = v;
+		ix[1] = v + i - 1;
+		ix[2] = v + i;
+		ix += 3;
+	}
+	for (i = 0; i < count; i++) {
+		const int j = i + 1 < count ? i + 1 : 0;
+
+		ix[0] = v + i;
+		ix[1] = v + j;
+		ix[2] = v + count + j;
+		ix[3] = v + i;
+		ix[4] = v + count + j;
+		ix[5] = v + count + i;
+		ix += 6;
+	}
+	tess.numIndexes = (int)(ix - tess.indexes);
 	R_End2D();
 }
 
