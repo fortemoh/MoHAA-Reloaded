@@ -587,7 +587,9 @@ void UI_CompHud_Print(const char *msg)
         Comp_AddLine(comp.msgs, &comp.numMsgs, msg + 1, 1.0f, 1.0f, 1.0f, qtrue);
         break;
     case MESSAGE_CHAT_WHITE:
-        Comp_AddLine(comp.chat, &comp.numChat, msg + 1, 1.0f, 1.0f, 1.0f, qfalse);
+        // without OpenMoHAA servers' "(all) " (what isn't marked is to all,
+        // as on stock servers); (team), (dead) and (private) kept
+        Comp_AddLine(comp.chat, &comp.numChat, msg + 1 + (strncmp(msg + 1, "(all) ", 6) ? 0 : 6), 1.0f, 1.0f, 1.0f, qfalse);
         break;
     case MESSAGE_CHAT_RED:
     case MESSAGE_CHAT_GREEN:
