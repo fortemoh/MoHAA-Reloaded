@@ -54,10 +54,24 @@ static const rlTeam_t rl_teams[2] = {
     {{44, 18, 16}, {70, 32, 28}, {134, 62, 50}, {234, 162, 142}, {248, 218, 208}, "AXIS", RL_OUTLINES "team/axis.svg"  },
 };
 
+// a font the HUD's small text can take (cg_hud_font, Options' HUD Font): the
+// setting's value, its name, its files (fonts/<file>.ttf) for Oswald Medium's
+// and SemiBold's parts. Oswald first
+typedef struct {
+    const char *value, *name, *medium, *semibold;
+} rlFont_t;
+
+extern const rlFont_t rl_fonts[];
+extern const int      rl_numFonts;
+// the font a value names (Oswald: none)
+const rlFont_t *RL_FindFont(const char *value);
+
 // the screen in design units
 typedef struct {
-    float s;      // pixels a unit
-    float dw, dh; // the screen's units across and down
+    float           s;      // pixels a unit
+    float           dw, dh; // the screen's units across and down
+    bool            hud;    // the HUD's: its small text in the HUD's font (RL_Face)
+    const rlFont_t *font;   // its text in this font (NULL: Oswald, or the HUD's)
 } rlView_t;
 
 enum { RL_LEFT, RL_CENTER, RL_RIGHT };
@@ -88,7 +102,8 @@ void RL_RoundFrame(const rlView_t& v, float x, float y, float w, float h, float 
 void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b);
 bool RL_Outline(const rlView_t& v, const char *name, float cx, float cy, float bw, float bh, rlColor_t c, bool mirror = false);
 void RL_TeamIcon(const rlView_t& v, int t, float cx, float cy, float d);
-// shadow: with the HUD's drop shadow (its labels')
+// shadow: with the HUD's drop shadow (its labels'); the view's font, else the
+// HUD's for its small text (v.hud, up to UI_HUD_SMALL), else Oswald
 rlFace_t RL_Face(const rlView_t& v, float size, bool bold, bool shadow = false);
 float RL_Advance(const rlFace_t& face, unsigned char ch);
 float RL_WidthPx(const rlFace_t& face, const char *text, float trackPx);

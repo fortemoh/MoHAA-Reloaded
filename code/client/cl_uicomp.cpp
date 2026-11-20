@@ -644,6 +644,22 @@ static int Comp_Int(const char *name)
     return Comp_Cvar(name)->integer;
 }
 
+// cg_hud_font read when it changed: the small text's files given to the
+// baker; true when they changed (its faces to be baked again)
+static bool Comp_HudFont(void)
+{
+    static int      read = -1;
+    cvar_t         *cv   = Comp_Cvar("cg_hud_font");
+    const rlFont_t *font;
+
+    if (cv->modificationCount == read) {
+        return false;
+    }
+    read = cv->modificationCount;
+    font = RL_FindFont(cv->string);
+    return UI_SetHudFont(font->medium, font->semibold);
+}
+
 static void Comp_Set(const char *name, const char *value)
 {
     cvar_t *v = Comp_Cvar(name);
@@ -1069,6 +1085,10 @@ void UI_CompHud_Frame(void)
     if (!cl.snap.valid) {
         return;
     }
+    // cg_hud_font: the small text's faces baked again in it
+    if (Comp_HudFont()) {
+        UI_CompHud_PreBake(qfalse);
+    }
     // cg_hud_scale: the menus at the new size, their faces and shapes baked again
     {
         static int  read = -1;
@@ -1421,9 +1441,11 @@ static rlView_t Comp_HudView(void)
 {
     rlView_t v;
 
-    v.s  = UI_DesignScale(1920.0f, 1080.0f);
-    v.dw = uid.vidWidth / v.s;
-    v.dh = uid.vidHeight / v.s;
+    v.s    = UI_DesignScale(1920.0f, 1080.0f);
+    v.dw   = uid.vidWidth / v.s;
+    v.dh   = uid.vidHeight / v.s;
+    v.hud  = true;
+    v.font = NULL;
     return v;
 }
 
@@ -1586,6 +1608,8 @@ void UI_CompHud_Init(void)
     // the HUD's size: its 1080 lines fitted in the screen's (a screen narrower than 4:3: its 1440 across), times this
     // (0.25 to 2)
     Cvar_Get("cg_hud_scale", "1", CVAR_ARCHIVE);
+    // the font of the HUD's small text (up to UI_HUD_SMALL): a value of rl_fonts (cl_uimenus.cpp), else Oswald's
+    Cvar_Get("cg_hud_font", "oswald", CVAR_ARCHIVE);
     // the radar's size alone, times its own (0.5 to 1.5; Comp_RadarSize)
     Cvar_CheckRange(Cvar_Get("cg_hud_radar_size", "1", CVAR_ARCHIVE), 0.5f, 1.5f, qfalse);
     // the accent: "f6f67a", "#f6f67a" or "R G B" (0 to 1)
@@ -3078,6 +3102,8 @@ void UI_CompHud_PreBake(qboolean ahead)
         return;
     }
     UI_BakeAhead(ahead);
+    // (the small text in its font)
+    Comp_HudFont();
     // (the radar at its size: its layers baked at it)
     Comp_RadarSize();
     for (i = 0; i < UI_COMPHUD_MENUS; i++) {

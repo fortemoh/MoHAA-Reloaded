@@ -28,10 +28,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <functional>
 #include <future>
 
-// a face: "<file>-<px>[s][i][p]", fonts/<file>.ttf at px pixels of a 1080-line
-// screen (UI_DesignScale; p: px pixels of the screen), s a drop shadow, i
-// slanted; NULL when not a face
+// a face: "<file>-<px>[s][i][p][h]", fonts/<file>.ttf at px pixels of a
+// 1080-line screen (UI_DesignScale; p: px pixels of the screen), s a drop
+// shadow, i slanted, h the HUD's small text; NULL when not a face. A size is
+// Oswald's: another face is made so its capitals are as tall as Oswald's
 fontheader_t *UI_BakeFont(const char *name);
+// the HUD's small text: its design-size faces up to this size, and h faces
+#define UI_HUD_SMALL 20.0f
+// the HUD's small text made from these files in place of Oswald Medium's and
+// SemiBold's (cg_hud_font); true when they changed, its faces then baked again
+bool UI_SetHudFont(const char *medium, const char *semibold);
 // a baked face's page scale: drawn across at it, a texel is a pixel (0: not baked)
 float UI_BakedFontScale(const fontheader_t *font);
 
@@ -47,7 +53,8 @@ void UI_BakeTexels(const char *const *layers, int numLayers, int w, int h, float
 // again; the menus are to be aligned again)
 float UI_DesignScale(float w, float h);
 bool  UI_SetDesignScale(float scale);
-// changes when a face is to be baked again: the renderer's restart, the scale
+// changes when a face is to be baked again: the renderer's restart, the
+// scale, the HUD's font
 int UI_FontStamp(void);
 
 // a map load: the shaders of the baked images are looked up again
