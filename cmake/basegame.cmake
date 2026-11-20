@@ -16,6 +16,9 @@ file(GLOB_RECURSE CGAME_SOURCES
     ${SOURCE_DIR}/cgame/*.c ${SOURCE_DIR}/cgame/*.cpp
 )
 
+# Unit tests under cgame/tests must not ship in the cgame module.
+list(FILTER CGAME_SOURCES EXCLUDE REGEX "/cgame/tests/")
+
 set(CGAME_BINARY_SOURCES)
 
 file(GLOB_RECURSE GAME_SOURCES

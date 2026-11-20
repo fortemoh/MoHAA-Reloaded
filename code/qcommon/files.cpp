@@ -3728,9 +3728,10 @@ static void FS_Startup(const char* gameName)
 	fs_gogpath = Cvar_Get ("fs_gogpath", Sys_GogPath(), CVAR_INIT|CVAR_PROTECTED );
 	fs_microsoftstorepath = Cvar_Get ("fs_microsoftstorepath", Sys_MicrosoftStorePath(), CVAR_INIT|CVAR_PROTECTED );
 
-#ifdef __APPLE__
+	// Changed (Project: Omaha's): the binary's folder searched on every platform, not only macOS, after fs_basepath
+	// (skipped when it is the same folder): the client ships loose files in <bin>/main (the hitmarker's sounds) that
+	// weren't found when fs_basepath points at the game data installed elsewhere (the launcher's "game elsewhere")
 	fs_apppath = Cvar_Get ("fs_apppath", Sys_DefaultAppPath(), CVAR_INIT|CVAR_PROTECTED );
-#endif
 
 	FS_InitPathVars( );
 

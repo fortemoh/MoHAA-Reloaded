@@ -108,6 +108,9 @@ extern "C" {
 
         // exact interpolated position of entity on this frame
         vec3_t lerpOrigin;
+        // Added: the stock position, before remote prediction moved where another
+        // player is drawn (CG_RP_UpdateEntity); collision uses this one
+        vec3_t netLerpOrigin;
         vec3_t lerpAngles;
 
         sfxHandle_t tikiLoopSound;
@@ -636,7 +639,16 @@ extern "C" {
     void CG_HudDrawElements();
     void CG_InitializeObjectives();
     void CG_UpdateCrosshair(void);
+    void CG_CrosshairMiddle(float *x, float *y);
     void CG_Draw2D(void);
+
+    //
+    // cg_hitmarker.c (Added; Project: Omaha's)
+    //
+    void     CG_Hitmarker_RegisterCvars(void);
+    void     CG_Hitmarker_RegisterSound(void);
+    qboolean CG_Hitmarker_Hit(void);
+    void     CG_Hitmarker_Draw(void);
 
     //
     // cg_draw.c

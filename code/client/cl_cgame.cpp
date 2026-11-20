@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cl_uicomp.h"
 #include "cl_uimenus.h"
 #include "cl_uiextras.h"
+#include "cl_lagometer.h"
 #include "cl_ui.h"
 #include "../corepp/tiki.h"
 #include "../qcommon/localization.h"
@@ -861,6 +862,7 @@ void CL_InitCGameDLL( clientGameImport_t *cgi, clientGameExport_t **cge ) {
 	cgi->UI_DrawObjectives			= UI_Menus_DrawObjectives;
 	cgi->UI_DrawStatusIcon			= UI_DrawStatusIcon;
 	cgi->UI_DrawLagometer			= UI_DrawLagometer;
+	cgi->Lagometer_Prediction		= CL_Lagometer_Prediction;
 	cgi->UI_DrawTeamTag				= UI_DrawTeamTag;
 	// FIXME
 	//cgi->pUnknownVar				= NULL;

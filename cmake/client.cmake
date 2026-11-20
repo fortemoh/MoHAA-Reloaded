@@ -23,7 +23,6 @@ set(CLIENT_SOUND_SOURCES ${SOURCE_DIR}/macos/macos_snd.c)
 list(APPEND CLIENT_LIBRARIES "-framework AudioToolbox" "-framework CoreAudio")
 
 set(CLIENT_SOURCES
-    ${SOURCE_DIR}/client/cl_avi.cpp
     ${SOURCE_DIR}/client/cl_cgame.cpp
     ${SOURCE_DIR}/client/cl_consolecmds.cpp
     ${SOURCE_DIR}/client/cl_crosshair.c

@@ -1305,8 +1305,7 @@ shorter steps catch on small bumps more often), a rate that doesn't divide
 1000 at the next longer whole millisecond (120 is 9 ms). Only in play and in
 real time: from the first snapshot on (before it the time delta isn't set,
 and a usercmd stamped with it can be far ahead of the server's clock), not
-paused, at timescale 1, not in a timedemo, at fixedtime or recording AVI
-frames (Metal port).
+paused, at timescale 1, not in a timedemo or at fixedtime (Metal port).
 =================
 */
 static int CL_CmdInterval( void ) {
@@ -1314,8 +1313,7 @@ static int CL_CmdInterval( void ) {
 
 	rate = cl_movefps->integer;
 	if ( rate <= 0 || clc.state != CA_ACTIVE || ( com_sv_running->integer && paused->integer )
-		|| com_timescale->value != 1.0f || cl_timedemo->integer || com_fixedtime->integer
-		|| ( CL_VideoRecording() && cl_aviFrameRate->integer ) ) {
+		|| com_timescale->value != 1.0f || cl_timedemo->integer || com_fixedtime->integer ) {
 		return 0;
 	}
 

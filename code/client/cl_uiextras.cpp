@@ -590,12 +590,18 @@ CS2's strip), the connection's status icons over it.
   lost or overdue), with lines a second apart and at 50/100/200 ms; a legend
 - compact: the signal (4 bars), the ping, 3 s of ping and one word, the
   frame rate under it when it is under the moves' rate (cl_movefps)
+- with remote prediction on (the cgame's cg_remotePrediction), Omaha's
+  marks of it: a violet line through each column where it drew an enemy in
+  view 12 units or more off (a triangle over it on the graph), PREDICTION
+  ERROR the word for 1.5 s after one; on the graph its average error and its
+  lead, how far ahead other players are drawn, as a white line on the ping's
+  scale
 
 ====================================================================
 */
 
 // the boxes' colours (Omaha's; the panel the HUD's dark box), in the order drawn
-enum { LG_PANEL, LG_LINE, LG_LEFT, LG_AHEAD, LG_PING, LG_RATE, LG_LOST, LG_OFF, LG_ON, LG_KINDS };
+enum { LG_PANEL, LG_LINE, LG_LEFT, LG_AHEAD, LG_PING, LG_RATE, LG_LOST, LG_LEAD, LG_PRED, LG_OFF, LG_ON, LG_KINDS };
 
 static const rlColor_t lg_colors[LG_KINDS] = {
     EX_FILL,
@@ -605,6 +611,8 @@ static const rlColor_t lg_colors[LG_KINDS] = {
     {111 / 255.0f, 177 / 255.0f, 255 / 255.0f, 1}, // ping
     {240 / 255.0f, 192 / 255.0f, 32 / 255.0f, 1},  // held back for the rate; a warning
     {255 / 255.0f, 90 / 255.0f, 78 / 255.0f, 1},   // lost; bad
+    {1, 1, 1, 1},                                  // remote prediction's lead
+    {199 / 255.0f, 125 / 255.0f, 1, 1},            // and its failures
     {1, 1, 1, 0.18f},                              // a signal bar off
     EX_TEXT,                                       // on
 };
@@ -614,7 +622,7 @@ static const rlColor_t LG_LABEL = {1, 1, 1, 0.62f};
 #define LG_BIG   22.0f // the ping (bold)
 #define LG_SMALL 11.0f // the rest
 
-static float lg_boxes[LG_KINDS][LG_COLUMNS + 8][4];
+static float lg_boxes[LG_KINDS][LG_COLUMNS * 3 + 8][4]; // (a failure: a line and a triangle's 2 rows)
 static int   lg_count[LG_KINDS];
 
 // the text, laid out again only when what it says or where it goes changes (the
@@ -630,7 +638,7 @@ static struct {
         float     x, y; // Rend_DrawString's: the face's page units
     } line[16];
     int   n;
-    float swatch[5]; // the graph's legend: its swatches' left
+    float swatch[7][2]; // the graph's legend: its swatches' left and top
 } lgt;
 
 // a box in pixels (x1, y1 past its edge), drawn with its colour's
@@ -734,13 +742,17 @@ static float LG_ColumnX(int s, int count, int x0, int x1)
  * back for the rate, a tick for one held back, red lost or overdue); with
  * buf (the buffer's middle, then its heights up and down) the buffer too,
  * but for the client time's own column, still filling. A pixel's gap between
- * bars 3 pixels wide or more
+ * bars 3 pixels wide or more. With remote prediction on, a violet line through
+ * each failure's column, from tri (a triangle's top over the box) if > 0; and
+ * with lead its lead too, a white line on the same scale
  */
-static void LG_Bars(const rlView_t& v, const lgStats_t *st, int count, int scaleMs, int x0, int y0, int x1, int y1, const int *buf)
+static void LG_Bars(const rlView_t& v, const lgStats_t *st, int count, int scaleMs, int x0, int y0, int x1, int y1, const int *buf,
+                    int tri = 0, bool lead = false)
 {
     const float colW = (float)(x1 - x0) / count, barW = colW >= 3.0f ? colW - 1.0f : colW;
-    const int   tick = Q_max(1, RL_P(v, 3.0f)), filling = LG_Slot(cl.serverTime);
+    const int   tick = Q_max(1, RL_P(v, 3.0f)), filling = LG_Slot(cl.serverTime), line = Q_max(1, RL_P(v, 1.5f));
     float       x    = LG_ColumnX(st->edge - count, count, x0, x1);
+    int         leadY = -1; // the lead's height in the column before
 
     for (int s = st->edge - count; s <= st->edge; s++, x += colW) {
         const lgColumn_t *c = CL_Lagometer_Column(s);
@@ -767,19 +779,52 @@ static void LG_Bars(const rlView_t& v, const lgStats_t *st, int count, int scale
                 LG_Box(LG_LEFT, a, buf[0] + buf[3], b, buf[0] + buf[3] + Q_max(1, (int)(Q_min(1.0f, -c->buffer / 60.0f) * buf[2] + 0.5f)));
             }
         }
+        if (!st->predActive || !c) {
+            leadY = -1;
+            continue;
+        }
+        if (lead && (c->flags & LG_F_LEAD)) {
+            // a step line: the column's level, joined to the one before
+            const int ly = y1 - (int)(Q_min(1.0f, (float)c->lead / scaleMs) * (y1 - y0) + 0.5f);
+            const int lx = Q_max(x0, (int)(x + 0.5f)), rx = Q_min(x1, (int)(x + colW + 0.5f));
+
+            LG_Box(LG_LEAD, lx, ly - line, rx, ly);
+            if (leadY >= 0 && leadY != ly) {
+                LG_Box(LG_LEAD, lx, Q_min(leadY, ly) - line, lx + line, Q_max(leadY, ly));
+            }
+            leadY = ly;
+        } else {
+            leadY = -1;
+        }
+        if (c->flags & LG_F_FAIL) {
+            const int mid = (a + b) / 2, top = tri > 0 ? tri : y0;
+
+            LG_Box(LG_PRED, mid - line / 2, top, mid - line / 2 + line, y1);
+            if (tri > 0) {
+                // Omaha's triangle down at it, 8 units wide and 6 high, in 3 steps
+                const int w = RL_P(v, 4.0f), h = Q_max(1, RL_P(v, 2.0f));
+
+                LG_Box(LG_PRED, mid - w, tri, mid + w, tri + h);
+                LG_Box(LG_PRED, mid - w * 2 / 3, tri + h, mid + w * 2 / 3, tri + 2 * h);
+                LG_Box(LG_PRED, mid - w / 3, tri + 2 * h, mid + w / 3, tri + 3 * h);
+            }
+        }
     }
 }
 
 static void LG_Graph(const rlView_t& v, const lgStats_t *st, float bottom)
 {
+    // (remote prediction's a second row, while it's on)
     static const struct {
         int         kind;
         const char *label;
     } legend[] = {
         {LG_PING, "Ping"}, {LG_RATE, "Rate limited"}, {LG_LOST, "Lost"}, {LG_AHEAD, "Ran ahead of updates"}, {LG_LEFT, "Buffer"},
+        {LG_LEAD, "Prediction lead"}, {LG_PRED, "Prediction off (12 u+)"},
     };
     static const int marks[] = {50, 100, 200, 300, 400};
-    const float      w = 400.0f, h = 192.0f, pad = 14.0f;
+    const int        items = st->predActive ? 7 : 5;
+    const float      w = 400.0f, h = st->predActive ? 206.0f : 192.0f, pad = 14.0f;
     const float      x = floorf((v.dw - w) * 0.5f), y = floorf(bottom - h);
     const float      gy = y + 46.0f; // the buffer's top; the ping's 30 under it, 84 high
     const int        px0 = RL_P(v, x + pad), px1 = RL_P(v, x + w - pad);
@@ -798,6 +843,12 @@ static void LG_Graph(const rlView_t& v, const lgStats_t *st, float bottom)
         lx = LG_Text(v, x + pad, base, va("%d", st->ping), 1, lg_colors[st->interrupted ? LG_LOST : LG_PingKind(st->ping)]);
         LG_Text(v, x + pad + lx + 4.0f, base, va("ms \xB1%d", st->jitter), 0, LG_MUTED);
         right -= LG_Text(v, right, base, va("%d FPS", st->fps), 0, LG_MUTED, RL_RIGHT) + 10.0f;
+        if (st->predActive && !st->interrupted) {
+            // remote prediction's average error (none: no enemy in view the last 5 s)
+            right -= LG_Text(v, right, base, st->errAvg < 0.0f ? "PRED. ERROR -" : va("PRED. ERROR %d u", (int)(st->errAvg + 0.5f)), 0,
+                             st->failures ? lg_colors[LG_PRED] : LG_MUTED, RL_RIGHT)
+                   + 10.0f;
+        }
         right -= LG_Text(v, right, base, va("RATE LIMITED %d%%", (int)(st->ratePct + 0.5f)), 0, st->ratePct > 0.0f ? lg_colors[LG_RATE] : LG_MUTED,
                          RL_RIGHT)
                + 10.0f;
@@ -813,9 +864,15 @@ static void LG_Graph(const rlView_t& v, const lgStats_t *st, float bottom)
             }
         }
         lx = x + pad;
-        for (size_t i = 0; i < ARRAY_LEN(legend); i++) {
-            lgt.swatch[i] = lx;
-            lx += 24.0f + LG_Text(v, lx + 12.0f, gy + 134.0f, legend[i].label, 0, LG_MUTED);
+        for (int i = 0; i < items; i++) {
+            const float row = i < 5 ? 0.0f : 14.0f;
+
+            if (i == 5) {
+                lx = x + pad;
+            }
+            lgt.swatch[i][0] = lx;
+            lgt.swatch[i][1] = gy + 126.5f + row;
+            lx += 24.0f + LG_Text(v, lx + 12.0f, gy + 134.0f + row, legend[i].label, 0, LG_MUTED);
         }
     }
 
@@ -845,10 +902,12 @@ static void LG_Graph(const rlView_t& v, const lgStats_t *st, float bottom)
     {
         const int buf[4] = {mid, RL_P(v, 12.0f), RL_P(v, 8.0f), line};
 
-        LG_Bars(v, st, LG_COLUMNS, st->scaleMs, px0, py0, px1, py1, buf);
+        // remote prediction's triangles in the gap between the buffer and the ping
+        LG_Bars(v, st, LG_COLUMNS, st->scaleMs, px0, py0, px1, py1, buf, RL_P(v, gy + 23.0f), true);
     }
-    for (size_t i = 0; i < ARRAY_LEN(legend); i++) {
-        LG_Box(legend[i].kind, RL_P(v, lgt.swatch[i]), RL_P(v, gy + 126.5f), RL_P(v, lgt.swatch[i] + 7.0f), RL_P(v, gy + 133.5f));
+    for (int i = 0; i < items; i++) {
+        LG_Box(legend[i].kind, RL_P(v, lgt.swatch[i][0]), RL_P(v, lgt.swatch[i][1]), RL_P(v, lgt.swatch[i][0] + 7.0f),
+               RL_P(v, lgt.swatch[i][1] + 7.0f));
     }
     LG_Draw();
 }
@@ -869,7 +928,9 @@ static void LG_Compact(const rlView_t& v, const lgStats_t *st, float bottom)
     if (LG_Changed(v, st, 2, bottom)) {
         static const char *const words[] = {"STABLE", "HIGH PING", "JITTER", "RATE LIMITED", "LOSS", "NO UPDATE"};
         const char              *word    = words[status];
+        const rlColor_t          wordC   = lg_colors[LG_Severity(sev)];
         const int                moveFps = Cvar_VariableIntegerValue("cl_movefps");
+        const bool               slowFps = st->fps > 0 && st->fps < (moveFps > 0 ? Q_min(Q_max(moveFps, 85), 125) : 100);
         const float              pw = LG_Text(v, x + 40.0f, base, va("%d", st->ping), 1, lg_colors[LG_PingKind(st->ping)]);
 
         LG_Text(v, x + 43.0f + pw, base, "ms", 0, LG_MUTED);
@@ -880,12 +941,17 @@ static void LG_Compact(const rlView_t& v, const lgStats_t *st, float bottom)
         } else if (status == LG_STATUS_INTERRUPTED) {
             word = va("NO UPDATE %.1f s", st->sinceUpdateMs / 1000.0f);
         }
-        // the frame rate under the word when it is under the moves' rate
-        if (st->fps > 0 && st->fps < (moveFps > 0 ? Q_min(Q_max(moveFps, 85), 125) : 100)) {
-            LG_Text(v, x + w - side * 0.5f, base - 12.5f, word, 0, lg_colors[LG_Severity(sev)], RL_CENTER);
-            LG_Text(v, x + w - side * 0.5f, base, va("%d FPS", st->fps), 0, lg_colors[LG_RATE], RL_CENTER);
+        // under the word: the frame rate when it is under the moves' rate, else
+        // remote prediction's failure (its violet marks are in the bars either way)
+        if (slowFps || CL_Lagometer_PredFailed(st)) {
+            LG_Text(v, x + w - side * 0.5f, base - 12.5f, word, 0, wordC, RL_CENTER);
+            if (slowFps) {
+                LG_Text(v, x + w - side * 0.5f, base, va("%d FPS", st->fps), 0, lg_colors[LG_RATE], RL_CENTER);
+            } else {
+                LG_Text(v, x + w - side * 0.5f, base, "PREDICTION ERROR", 0, lg_colors[LG_PRED], RL_CENTER);
+            }
         } else {
-            LG_Text(v, x + w - side * 0.5f, base, word, 0, lg_colors[LG_Severity(sev)], RL_CENTER);
+            LG_Text(v, x + w - side * 0.5f, base, word, 0, wordC, RL_CENTER);
         }
     }
 

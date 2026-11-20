@@ -165,7 +165,8 @@ void CG_ClipMoveToEntities(
             cmodel = cgi.CM_TempBoxModel(bmins, bmaxs, CONTENTS_BBOX);
         }
 
-        VectorCopy(cent->lerpOrigin, origin);
+        // Changed: where the server has it, not where remote prediction draws it
+        VectorCopy(cent->netLerpOrigin, origin);
         if (ent->eFlags & EF_LINKANGLES) {
             VectorCopy(cent->lerpAngles, angles);
         } else {

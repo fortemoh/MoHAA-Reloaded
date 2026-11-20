@@ -27,6 +27,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cg_parsemsg.h"
 #include "cg_archive.h"
 #include "cg_radar.h"
+#include "cg_remotepredict.h"
 
 #ifdef _WIN32
 #    include <windows.h>
@@ -249,6 +250,10 @@ void CG_RegisterCvars(void)
     cg_cmNoCurves = cgi.Cvar_Get("cm_noCurves", "0", CVAR_CHEAT);
     // 0: other players' taunts (the instant messages' voices) aren't played; their radar icon and text stay
     cg_tauntsounds = cgi.Cvar_Get("cg_tauntsounds", "1", CVAR_ARCHIVE);
+    // Added: remote prediction's (cg_remotePrediction, cg_remotePredictionMaxLead)
+    CG_RP_RegisterCvars();
+    // Added: the hitmarker's (cg_hitmarker, cg_hitmarker_sound)
+    CG_Hitmarker_RegisterCvars();
 }
 /*
 ===============
@@ -683,6 +688,7 @@ void CG_GameStateReceived(void)
     CG_InitMarks();
 
     CG_RegisterSounds();
+    CG_Hitmarker_RegisterSound(); // Added
 
     CG_PrepRefresh();
 
@@ -761,6 +767,8 @@ void CG_Init(clientGameImport_t *imported, int serverMessageNum, int serverComma
     CG_InitializeCommandManager();
 
     CG_GameStateReceived();
+    // Added: remote prediction starts again
+    CG_RP_Init();
 
     CG_InitConsoleCommands();
 

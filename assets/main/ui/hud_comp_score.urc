@@ -1,7 +1,8 @@
-// The Competitive HUD (cg_hudstyle 1): top center, one dark box with the
-// timer over the scores, Allies | Axis (self | the leader in free-for-all),
-// a thin line between them; either side in round modes, the players' cards
-// or each team's count of the alive (cg_hud_alivecount); in Liberation, the jail
+// The Competitive HUD (both styles): top center, CS:GO's box, see-through
+// dark, the timer over the scores in two rows as high, Allies | Axis (self |
+// the leader in free-for-all), lines right across between the three; either
+// side in round modes, the players' cards or each team's count of the alive
+// (cg_hud_alivecount); in Liberation, the jail
 menu "hud_comp_score" 1920 80 NONE 0
 virtualres 1 1920 1080
 drawcache 1
@@ -17,16 +18,16 @@ rect 914 0 92 64
 bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_score_on
-shape fill 0.055 0.063 0.078 0.804
-shape in 6px 35px -6px 36px fill 1 1 1 0.19
-shape in 46px 40px 47px 59px fill 1 1 1 0.16
+shape fill 0 0 0 0.5
+shape in 0 32px 1 33px fill 1 1 1 0.2
+shape in 46px 33px 47px 1 fill 1 1 1 0.2
 }
 
 resource
 Label
 {
 name "timer"
-rect 914 0 92 35
+rect 914 0 92 32
 fgcolor 0.922 0.933 0.949 1
 bgcolor 0 0 0 0
 borderstyle NONE
@@ -40,10 +41,10 @@ resource
 Label
 {
 name "scoreleft"
-rect 914 36 46 28
+rect 914 33 46 31
 bgcolor 0 0 0 0
 borderstyle NONE
-font oswald-semibold-24
+font oswald-semibold-28
 textalign centerx
 linkcvar ui_hud_score_l
 colorcvar ui_hud_score_lc
@@ -54,10 +55,10 @@ resource
 Label
 {
 name "scoreright"
-rect 960 36 46 28
+rect 960 33 46 31
 bgcolor 0 0 0 0
 borderstyle NONE
-font oswald-semibold-24
+font oswald-semibold-28
 textalign centerx
 linkcvar ui_hud_score_r
 colorcvar ui_hud_score_rc

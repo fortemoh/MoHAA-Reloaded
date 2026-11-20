@@ -69,9 +69,6 @@ cvar_t	*cl_showSend;
 cvar_t	*cl_timedemo;
 cvar_t	*cl_timedemoLog;
 cvar_t	*cl_autoRecordDemo;
-cvar_t	*cl_aviFrameRate;
-cvar_t	*cl_aviMotionJpeg;
-cvar_t	*cl_forceavidemo;
 
 cvar_t	*cl_freelook;
 cvar_t	*cl_sensitivity;
@@ -995,13 +992,6 @@ void CL_Disconnect() {
 
 	// not connected to a pure server anymore
 	cl_connectedToPureServer = qfalse;
-
-	// Stop recording any video
-	if( CL_VideoRecording( ) ) {
-		// Finish rendering current frame
-		SCR_UpdateScreen( );
-		CL_CloseAVI( );
-	}
 }
 
 /*
@@ -2574,20 +2564,6 @@ void CL_Frame ( int msec ) {
 		UI_MenuEscape("main");
 	}
 
-	// if recording an avi, lock to a fixed fps
-	if ( CL_VideoRecording( ) && cl_aviFrameRate->integer && msec) {
-		// save the current screen
-		if ( clc.state == CA_ACTIVE || cl_forceavidemo->integer) {
-			CL_TakeVideoFrame( );
-
-			// fixed time for next frame'
-			msec = (int)ceil( (1000.0f / cl_aviFrameRate->value) * com_timescale->value );
-			if (msec == 0) {
-				msec = 1;
-			}
-		}
-	}
-
 	if( cl_autoRecordDemo->integer ) {
 		if( clc.state == CA_ACTIVE && !clc.demorecording && !clc.demoplaying ) {
 			// If not recording a demo, and we should be, start one
@@ -3039,6 +3015,12 @@ qboolean CL_IsRendererLoaded(void) {
 	return re.Shutdown != NULL;
 }
 
+// Added: the renderer's video frames go nowhere (no demo video export: OpenMoHAA's AVI writer was a stub)
+static void CL_NoVideoFrame( const byte *buffer, int size ) {
+	(void)buffer;
+	(void)size;
+}
+
 /*
 ============
 CL_WakeGPU
@@ -3172,7 +3154,7 @@ void CL_InitRef( void ) {
     ri.Cvar_SetDescription = Cvar_SetDescription;
     ri.Cvar_VariableIntegerValue = Cvar_VariableIntegerValue;
 
-    ri.CL_WriteAVIVideoFrame = CL_WriteAVIVideoFrame;
+    ri.CL_WriteAVIVideoFrame = CL_NoVideoFrame; // Changed: no demo video export
 
     ri.IN_Init = IN_Init;
     ri.IN_Shutdown = IN_Shutdown;
@@ -3300,74 +3282,6 @@ void CL_TikiInfoCommand_f( void ) {
 
 
 /*
-===============
-CL_Video_f
-
-video
-video [filename]
-===============
-*/
-void CL_Video_f( void )
-{
-  char  filename[ MAX_OSPATH ];
-  int   i, last;
-
-  if( !clc.demoplaying )
-  {
-    Com_Printf( "The video command can only be used when playing back demos\n" );
-    return;
-  }
-
-  if( Cmd_Argc( ) == 2 )
-  {
-    // explicit filename
-    Com_sprintf( filename, MAX_OSPATH, "videos/%s.avi", Cmd_Argv( 1 ) );
-  }
-  else
-  {
-    // scan for a free filename
-    for( i = 0; i <= 9999; i++ )
-    {
-      int a, b, c, d;
-
-      last = i;
-
-      a = last / 1000;
-      last -= a * 1000;
-      b = last / 100;
-      last -= b * 100;
-      c = last / 10;
-      last -= c * 10;
-      d = last;
-
-      Com_sprintf( filename, MAX_OSPATH, "videos/video%d%d%d%d.avi",
-          a, b, c, d );
-
-      if( !FS_FileExists_HomeData( filename ) )
-        break; // file doesn't exist
-    }
-
-    if( i > 9999 )
-    {
-      Com_Printf( S_COLOR_RED "ERROR: no free file names to create video\n" );
-      return;
-    }
-  }
-
-  CL_OpenAVIForWriting( filename );
-}
-
-/*
-===============
-CL_StopVideo_f
-===============
-*/
-void CL_StopVideo_f( void )
-{
-  CL_CloseAVI( );
-}
-
-/*
 ====================
 CL_Init
 ====================
@@ -3427,9 +3341,6 @@ void CL_Init( void ) {
 	cl_timedemoLog = Cvar_Get ("cl_timedemoLog", "", CVAR_ARCHIVE);
 	CL_LatencyInit();
 	cl_autoRecordDemo = Cvar_Get ("cl_autoRecordDemo", "0", CVAR_ARCHIVE);
-	cl_aviFrameRate = Cvar_Get ("cl_aviFrameRate", "25", CVAR_ARCHIVE);
-	cl_aviMotionJpeg = Cvar_Get ("cl_aviMotionJpeg", "1", CVAR_ARCHIVE);
-	cl_forceavidemo = Cvar_Get ("cl_forceavidemo", "0", 0);
 
 	rconAddress = Cvar_Get ("rconAddress", "", 0);
 
@@ -3554,8 +3465,6 @@ void CL_Init( void ) {
 	Cmd_AddCommand ("showip", CL_ShowIP_f );
 	Cmd_AddCommand ("fs_openedList", CL_OpenedPK3List_f );
 	Cmd_AddCommand ("fs_referencedList", CL_ReferencedPK3List_f );
-	Cmd_AddCommand ("video", CL_Video_f );
-	Cmd_AddCommand ("stopvideo", CL_StopVideo_f );
 	CL_InitConsoleCommands();
 	CL_InitRef();
 	CL_StartHunkUsers(qfalse);
@@ -3637,8 +3546,6 @@ void CL_Shutdown(const char* finalmsg, qboolean disconnect, qboolean quit) {
 	Cmd_RemoveCommand ("serverstatus");
 	Cmd_RemoveCommand ("showip");
 	Cmd_RemoveCommand ("model");
-	Cmd_RemoveCommand ("video");
-	Cmd_RemoveCommand ("stopvideo");
 
 	CL_ShutdownInput();
 

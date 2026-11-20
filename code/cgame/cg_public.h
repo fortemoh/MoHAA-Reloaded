@@ -485,6 +485,12 @@ functions exported to the main executable
         // Added: the lagometer drawn by the client (1 the graph, 2 compact)
         void (*UI_DrawLagometer)(int style);
 
+        // Added: remote prediction for the lagometer, once an update while both
+        // are on: how far ahead other players were drawn (ms), and how far from
+        // where the update has them they were drawn for its server frame, over
+        // the players enemies in view (units: their average and the worst)
+        void (*Lagometer_Prediction)(int serverTime, float leadMs, int players, float avgUnits, float worstUnits);
+
         // Added: the player aimed at's tag drawn by the client in the HUD's look:
         // their name, their health (1 to 100) and an arrow whose tip is at x, y
         // (screen pixels: over their head)

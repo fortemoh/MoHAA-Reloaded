@@ -2263,6 +2263,8 @@ static const char *const rl_oAccents[] = {
     "d11d1d", "d15f1d", "d1951d", "d1c51d", "95d11d", "1dd12c", "1dd19b", "1dbfd1", "1d8fd1", "1d53d1", "711dd1", "d11d9b", "8c8c8c",
     NULL,
 };
+static const char *const rl_oHitSounds[]      = {"CLASSIC", "BEEP", "NONE", NULL}; // the files of sound/prom/hitmarkers/
+static const char *const rl_oHitSoundValues[] = {"classic", "beep", "none", NULL};
 // (the launcher's)
 static const char *const rl_oColours[]     = {"FFFFFF", "00FF00", "FFFF00", "00FFFF", "FF0000", "FF00FF", "000000", NULL};
 static const char *const rl_oOutlines[]    = {"OFF", "FULL", "HALF", NULL};
@@ -2324,13 +2326,13 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Always Run", "Walk while the walk key is held.", "cl_run", "1", 0),
     O_TOGGLE("Server Lag Icon", "Shown while the server stops answering.", "cg_drawsvlag", "1", 0),
     O_SEG("Lagometer", "The connection: ping, loss, updates.", "cg_lagometer", "0", rl_oLagometer, NULL, 0),
+    O_TOGGLE("Remote Prediction", "Players drawn where your shots will find them.", "cg_remotePrediction", "0", 0),
     O_SECTION(OT_GAMEPLAY, "MOVEMENT", OF_RIGHT),
     O_SEG("Movement Rate", "Moves a second, apart from the frame rate.", "cl_movefps", "100", rl_oMoveRates, rl_oMoveValues, 0),
     O_TOGGLE("Shots and Jumps Sooner", "Sent half a move sooner.", "cl_movesubgrid", "1", 0),
     O_TOGGLE("Newest Key Wins", "Opposite keys: the one pressed last counts.", "cl_nullbinds", "0", 0),
     O_SECTION(OT_GAMEPLAY, "DEMOS", OF_RIGHT),
     O_TOGGLE("Record Every Match", "A demo of each match you play.", "cl_autoRecordDemo", "0", 0),
-    O_SLIDER("Video Export FPS", "A demo's video, frames a second.", "cl_aviFrameRate", "25", 10, 120, 1, 0),
     O_SECTION(OT_HUD, "HUD", 0),
     O_SEG("HUD Style", "The CS:GO or CS2 look.", "cg_hudstyle", "1", rl_oHudStyles, rl_oHudValues, 0),
     O_SLIDER("HUD Scale", "Bigger or smaller, the whole HUD.", "cg_hud_scale", "1", 0.25f, 2, 0.05f, 0),
@@ -2339,6 +2341,8 @@ static const rlOpt_t rl_opts[] = {
     O_SLIDER("Low Health", "Health turns red below this.", "cg_hud_lowhealth", "0.4", 0, 1, 0.05f, OF_PCT),
     O_TOGGLE("Players Alive", "A count of each side by the score, not a card each.", "cg_hud_alivecount", "0", 0),
     O_TOGGLE("Damage Indicator", "Red marks round the crosshair toward a hit.", "cg_hud_damage", "1", 0),
+    O_TOGGLE("Hitmarker", "A white X round the crosshair when you hit.", "cg_hitmarker", "0", 0),
+    O_SEG("Hitmarker Sound", "What a hit sounds like.", "cg_hitmarker_sound", "classic", rl_oHitSounds, rl_oHitSoundValues, 0),
     O_SECTION(OT_HUD, "CROSSHAIR", OF_RIGHT),
     {OC_PREVIEW, 0, 0, "", "", NULL, NULL, NULL, NULL, 0, 0, 0},
     O_SLIDER("Length", "", "cg_crosshair_length", "8", 0, 20, 0.5f, 0),
