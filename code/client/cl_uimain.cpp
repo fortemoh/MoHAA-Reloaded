@@ -136,8 +136,8 @@ enum {
     ID_PICK = ID_FAV + 1000, // + the model
     ID_MAP  = ID_PICK + 1000, // + Host's map shown
     ID_SAVE = ID_MAP + 1000,  // + the saved game shown
-    ID_OPT  = ID_SAVE + 1000, // + Options' setting * 16 + its control's part
-    ID_KEY  = ID_OPT + 2000,  // + the action * 2 + its box (KEYS)
+    ID_OPT  = ID_SAVE + 1000, // + Options' setting * RL_OPT_IDS + its control's part
+    ID_KEY  = ID_OPT + 8000,  // + the action * 2 + its box (KEYS)
     ID_VOPT = ID_KEY + 1000,  // + the vote shown
     ID_VCHOICE = ID_VOPT + 1000, // + its choice (a list's place, a player's client)
 };
@@ -2221,7 +2221,7 @@ typedef struct {
     const char        *cvar, *def;
     const char *const *choices; // segments, a cycle: their labels; swatches: their colours (RRGGBB); NULL-ended
     const char *const *values;  // segments, a cycle: their values (NULL: their places)
-    float              lo, hi, step; // a slider's
+    float              lo, hi, step; // a slider's; swatches: step the swatches a row (0: one row)
 } rlOpt_t;
 
 #define O_SECTION(tab, title, flags)                             {OC_SECTION, tab, flags, title, "", NULL, NULL, NULL, NULL, 0, 0, 0}
@@ -2229,7 +2229,7 @@ typedef struct {
 #define O_CYCLE(label, desc, cvar, def, choices, values, flags)  {OC_CYCLE, 0, flags, label, desc, cvar, def, choices, values, 0, 0, 0}
 #define O_SLIDER(label, desc, cvar, def, lo, hi, step, flags)    {OC_SLIDER, 0, flags, label, desc, cvar, def, NULL, NULL, lo, hi, step}
 #define O_TOGGLE(label, desc, cvar, def, flags)                  {OC_TOGGLE, 0, flags, label, desc, cvar, def, NULL, NULL, 0, 0, 0}
-#define O_SWATCH(label, desc, cvar, def, colours)                {OC_SWATCH, 0, 0, label, desc, cvar, def, colours, NULL, 0, 0, 0}
+#define O_SWATCH(label, desc, cvar, def, colours, across)        {OC_SWATCH, 0, 0, label, desc, cvar, def, colours, NULL, 0, 0, across}
 // a row of keys a stock action (ui/bind.scr's), from the action of command from up to the next O_KEYS's
 #define O_KEYS(from)                                             {OC_KEYS, 0, 0, from, "", NULL, NULL, NULL, NULL, 0, 0, 0}
 
@@ -2254,7 +2254,14 @@ static const char *const rl_oMoveValues[]  = {"0", "100", "125", NULL};
 static const char *const rl_oHudStyles[]   = {"CS:GO", "CS2", NULL};
 static const char *const rl_oHudValues[]   = {"1", "2", NULL};
 static const char *const rl_oLagometer[]   = {"OFF", "GRAPH", "COMPACT", NULL};
-static const char *const rl_oAccents[]     = {"f6f67a", "deb250", "78c8f0", "96dc8c", "f0f0f0", NULL};
+// the accent's: 12 hues (red to pink) and a grey across, pastel, vivid and deep down; with the five before
+// (f6f67a, deb250, 78c8f0, 96dc8c, f0f0f0) in their places
+static const char *const rl_oAccents[] = {
+    "f78181", "f7ac81", "f7d081", "f6f67a", "d0f781", "96dc8c", "81f7d4", "81ebf7", "78c8f0", "81a4f7", "b881f7", "f781d4", "f0f0f0",
+    "f74040", "f78340", "deb250", "f7eb40", "baf740", "40f750", "40f7c0", "40e5f7", "40b4f7", "4077f7", "9640f7", "f740c0", "bebebe",
+    "d11d1d", "d15f1d", "d1951d", "d1c51d", "95d11d", "1dd12c", "1dd19b", "1dbfd1", "1d8fd1", "1d53d1", "711dd1", "d11d9b", "8c8c8c",
+    NULL,
+};
 static const char *const rl_oHitSounds[]      = {"CLASSIC", "BEEP", "NONE", NULL}; // the files of sound/prom/hitmarkers/
 static const char *const rl_oHitSoundValues[] = {"classic", "beep", "none", NULL};
 // (the launcher's)
@@ -2329,7 +2336,7 @@ static const rlOpt_t rl_opts[] = {
     O_SEG("HUD Style", "The CS:GO or CS2 look.", "cg_hudstyle", "1", rl_oHudStyles, rl_oHudValues, 0),
     O_SLIDER("HUD Scale", "Bigger or smaller, the whole HUD.", "cg_hud_scale", "1", 0.25f, 2, 0.05f, 0),
     O_SLIDER("Radar Size", "Bigger or smaller, the radar alone.", "cg_hud_radar_size", "1", 0.5f, 1.5f, 0.05f, OF_PCT),
-    O_SWATCH("Accent Colour", "The HUD's highlight.", "cg_hud_accent", "f6f67a", rl_oAccents),
+    O_SWATCH("Accent Colour", "The HUD's highlight.", "cg_hud_accent", "f6f67a", rl_oAccents, 13),
     O_SLIDER("Low Health", "Health turns red below this.", "cg_hud_lowhealth", "0.4", 0, 1, 0.05f, OF_PCT),
     O_TOGGLE("Players Alive", "A count of each side by the score, not a card each.", "cg_hud_alivecount", "0", 0),
     O_TOGGLE("Damage Indicator", "Red marks round the crosshair toward a hit.", "cg_hud_damage", "1", 0),
@@ -2340,7 +2347,7 @@ static const rlOpt_t rl_opts[] = {
     O_SLIDER("Length", "", "cg_crosshair_length", "8", 0, 20, 0.5f, 0),
     O_SLIDER("Gap", "", "cg_crosshair_gap", "4", -5, 10, 0.5f, 0),
     O_SLIDER("Thickness", "", "cg_crosshair_thickness", "2", 0, 6, 0.5f, 0),
-    O_SWATCH("Colour", "", "cg_crosshair_color", "FFFFFF", rl_oColours),
+    O_SWATCH("Colour", "", "cg_crosshair_color", "FFFFFF", rl_oColours, 0),
     O_SEG("Outline", "", "cg_crosshair_outline", "0", rl_oOutlines, NULL, 0),
     O_TOGGLE("Centre Dot", "", "cg_crosshair_dot", "0", 0),
     O_TOGGLE("T-Style", "No top arm.", "cg_crosshair_t", "0", 0),
@@ -2348,7 +2355,8 @@ static const rlOpt_t rl_opts[] = {
 };
 
 #define RL_OPTS ((int)ARRAY_LEN(rl_opts))
-static_assert(ID_OPT + RL_OPTS * 16 <= ID_KEY, "the settings' ids reach the keys'");
+#define RL_OPT_IDS 64 // a setting's ids: its control's parts (the accent's swatches)
+static_assert(ID_OPT + RL_OPTS * RL_OPT_IDS <= ID_KEY, "the settings' ids reach the keys'");
 
 // what the renderer (and, the last, the sound) takes at a restart, APPLY's: the latched settings, and the
 // brightness but on Windows (elsewhere it brightens the textures)
@@ -2605,13 +2613,29 @@ RL_OptLayout
 
 The settings shown placed: the sections in their column (fewer columns:
 the later ones' in the last, OF_LEFT2's in the first of two), a
-section's title 40 high, 14 over it past the first, a row 66 (keys 44),
-the preview 0.32 of its column (220 at most) and 12 under it. The
+section's title 40 high, 14 over it past the first, a row 66 (keys 44;
+swatches 34 more a row past the first), the preview 0.32 of its column
+(220 at most) and 12 under it. The
 columns: CONTROLS' alone (the mouse and the keys) alike, three as the
 width has room for (two, one); else 0.55 and 0.45 of it, one below 1100.
 The content's height; the columns' lines (their x)
 ----------------
 */
+// swatches' rows (step a row's swatches), else 1
+static int RL_SwatchRows(int i)
+{
+    const rlOpt_t& o = rl_opts[i];
+    int            n = 0;
+
+    if (o.kind != OC_SWATCH || o.step <= 0) {
+        return 1;
+    }
+    while (o.choices[n]) {
+        n++;
+    }
+    return (n + (int)o.step - 1) / (int)o.step;
+}
+
 static float RL_OptLayout(float x, float w, std::vector<rlOptPlace_t>& out, std::vector<float>& lines)
 {
     std::vector<int> secs; // the sections shown
@@ -2655,7 +2679,7 @@ static float RL_OptLayout(float x, float w, std::vector<rlOptPlace_t>& out, std:
             out.push_back({s, -1, cx[c], cy[c], cw[c], 40});
             cy[c] += 40;
             for (int i = s + 1; i < RL_OPTS && rl_opts[i].kind != OC_SECTION; i++) {
-                const float h = rl_opts[i].kind == OC_PREVIEW ? floorf(Q_min(cw[c] * 0.32f, 220.0f)) + 12 : 66;
+                const float h = rl_opts[i].kind == OC_PREVIEW ? floorf(Q_min(cw[c] * 0.32f, 220.0f)) + 12 : 66 + 34 * (RL_SwatchRows(i) - 1);
 
                 for (int a = rl_keys.from[i]; rl_opts[i].kind == OC_KEYS && a < rl_keys.to[i]; a++) {
                     if (RL_KeyShown(i, a)) {
@@ -3010,7 +3034,8 @@ static void RL_OptDefaults(void)
 The controls (a row 66 high, its control's middle 32 down): Omaha's
 slider (a track 190 across, the part to the value brass, a knob, the value
 in a box 56 wide that takes a typed value), its switch (56 by 28), the
-swatches (28 across, 6 apart, the one set framed)
+swatches (28 across, 6 apart, in rows of the setting's step, the one set
+framed)
 ----------------
 */
 static void RL_Slider(UIReloadedMenu *m, const rlView_t& v, int i, float x, float y, int id)
@@ -3062,15 +3087,15 @@ static void RL_Toggle(const rlView_t& v, float x, float y, bool on, bool hot)
     RL_Round(v, x + (on ? 31 : 3), y + 3, 22, 22, 11, on ? RL_INK : RL_Rgb(220, 216, 206));
 }
 
-static void RL_Swatches(UIReloadedMenu *m, const rlView_t& v, int i, float right, float y, int id)
+static void RL_Swatches(UIReloadedMenu *m, const rlView_t& v, int i, float right, float top, int id)
 {
     const char *const *c = rl_opts[i].choices;
     const char        *set = RL_OptValue(i);
-    const int          n = RL_OptChoices(i);
+    const int          n = RL_OptChoices(i), across = rl_opts[i].step > 0 ? (int)rl_opts[i].step : n;
 
     set += *set == '#';
     for (int k = 0; k < n; k++) {
-        const float        x   = right - (n - k) * 34 + 6;
+        const float        x   = right - (across - k % across) * 34 + 6, y = top + k / across * 34;
         const unsigned int rgb = Com_HexColor(c[k], 0);
 
         // (a faint edge: black shows on the panel)
@@ -3183,7 +3208,7 @@ static void RL_KeyRow(UIReloadedMenu *m, const rlView_t& v, int a, float x, floa
 static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, float y, float w, float h)
 {
     const rlOpt_t& o   = rl_opts[i];
-    const int      id  = ID_OPT + i * 16;
+    const int      id  = ID_OPT + i * RL_OPT_IDS;
     const float    mid = y + 32, right = x + w;
 
     if (o.kind == OC_SECTION) {
@@ -3210,7 +3235,7 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
     }
     if (o.kind == OC_SEG || o.kind == OC_SWATCH) {
         cw = -4;
-        for (int k = 0; o.choices[k]; k++) {
+        for (int k = 0; o.choices[k] && (o.kind != OC_SWATCH || o.step <= 0 || k < o.step); k++) {
             cw += o.kind == OC_SWATCH ? 34 : RL_TextW(v, o.choices[k], 15, true, 1.6f) + 40;
         }
     }
@@ -3399,7 +3424,7 @@ static void RL_OptScroll(bool down)
 // a click on a setting's control (a slider's track is dragged: MainTick)
 static void RL_OptChoose(int id)
 {
-    const int      i = (id - ID_OPT) / 16, part = (id - ID_OPT) % 16;
+    const int      i = (id - ID_OPT) / RL_OPT_IDS, part = (id - ID_OPT) % RL_OPT_IDS;
     const rlOpt_t& o = rl_opts[i];
 
     switch (o.kind) {
@@ -4330,7 +4355,7 @@ void UIReloadedMenu::ChooseMain(int id)
         }
     }
     // (a value typed in a slider's box set as the typing ends)
-    if (rl_mm.edit == F_VALUE && id != ID_OPT + rl_opt.row * 16 + 1) {
+    if (rl_mm.edit == F_VALUE && id != ID_OPT + rl_opt.row * RL_OPT_IDS + 1) {
         RL_OptTyped();
     }
     if (id != ID_SEARCH && id != ID_NAME && id != ID_APPLY && id != ID_OSEARCH && (id < ID_FIELD || id >= ID_FIELD + HF_NUM) && id < ID_OPT) {
@@ -4796,7 +4821,7 @@ void UIReloadedMenu::MainTick(bool opened)
         // the slider pressed dragged to the mouse while its button is down
         const bool down = (uid.mouseFlags & 1) != 0;
 
-        if (down && !rl_opt.down && m_focus >= ID_OPT && m_focus < ID_KEY && rl_opts[(m_focus - ID_OPT) / 16].kind == OC_SLIDER && (m_focus - ID_OPT) % 16 == 0) {
+        if (down && !rl_opt.down && m_focus >= ID_OPT && m_focus < ID_KEY && rl_opts[(m_focus - ID_OPT) / RL_OPT_IDS].kind == OC_SLIDER && (m_focus - ID_OPT) % RL_OPT_IDS == 0) {
             rl_opt.drag = m_focus;
         }
         rl_opt.down = down;
@@ -4805,7 +4830,7 @@ void UIReloadedMenu::MainTick(bool opened)
         }
         for (const rlHit_t& h : m_hits) {
             if (h.id == rl_opt.drag) {
-                const int i = (h.id - ID_OPT) / 16;
+                const int i = (h.id - ID_OPT) / RL_OPT_IDS;
 
                 RL_OptSlide(i, rl_opts[i].lo + (rl_opts[i].hi - rl_opts[i].lo) * (uid.mouseX - (int)m_screenframe.pos.x - h.x) / (float)h.w);
             }
