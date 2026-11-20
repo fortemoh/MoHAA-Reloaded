@@ -3738,8 +3738,8 @@ static void MB_RadarForget( mbTexture_t *t )
 }
 
 // its texels for height z: all of them (full: a thread a texel), else those of the cells that can change that do (a
-// thread a cell). On obj_team2's floors and a match's heights, a warm GPU: 7-8 us a change, the whole picture 48 us
-// at 1920x1080 (2 texels a cell), 72 at 2560x1440 (3)
+// thread a cell; the list the UI made). On obj_team2's floors and a match's heights, a warm GPU, the edges smoothed
+// (session 96): 6.3 us a change and the whole picture 48 us at 1920x1080 (2 texels a cell), 6.6 and 102 at 2560x1440 (3)
 static void MB_RadarPaint( float z, qboolean full )
 {
 	mbTexture_t *t = &mb_textures[mb_radar.name];

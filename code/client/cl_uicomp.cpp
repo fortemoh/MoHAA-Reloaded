@@ -2356,8 +2356,9 @@ ladders at the map's load, and again from where a player stands that the
 walk didn't reach (every 250 ms, a few thousand cells a frame). Drawn top
 down into a picture: each cell's floor nearest the player's height filled,
 brighter the higher, its walls and ledges only the shade's edge (no
-outlines, as CS2's radar), stairs and ramps striped across the way up,
-the player's storey's stripes bright.
+outlines, as CS2's radar), that edge smoothed where it meets no floor (a
+slanted wall a clean line, not the grid's steps: RM_Paint), stairs and
+ramps striped across the way up, the player's storey's stripes bright.
 The cells' floors are listed on a thread of their own (at the load, on
 this one) and given to the renderer, which makes the picture on the GPU:
 a change of storey is then a number (re.Radar2DHeight). A renderer without
@@ -2655,16 +2656,60 @@ static void RM_Release(void *memory)
     ::operator delete(memory, std::align_val_t(RM_PAGE));
 }
 
+// a column's first floor, -1 none (outside the walk none)
+static int RM_Head(int cx, int cy)
+{
+    return cx < 0 || cy < 0 || cx >= rm.cw || cy >= rm.ch ? -1 : rm.head[cy * rm.cw + cx];
+}
+
+// the corners q (bit 0 east, bit 1 south) of cell cx, cy's floors RM_Paint
+// cuts: no floor on either side of it nor across it, a bit each
+static int RM_Cuts(int cx, int cy)
+{
+    int cuts = 0;
+
+    for (int q = 0; q < 4; q++) {
+        const int x = cx + ((q & 1) ? 1 : -1), y = cy + ((q & 2) ? -1 : 1);
+
+        if (RM_Head(x, cy) < 0 && RM_Head(cx, y) < 0 && RM_Head(x, y) < 0) {
+            cuts |= 1 << q;
+        }
+    }
+    return cuts;
+}
+
+// cell cx, cy without a floor has a corner filled (RM_Paint: floors on both
+// sides of it) by a cell of more than one floor: a height can change it
+static qboolean RM_FillChanges(int cx, int cy)
+{
+    for (int q = 0; q < 4; q++) {
+        const int h = RM_Head(cx + ((q & 1) ? 1 : -1), cy), v = RM_Head(cx, cy + ((q & 2) ? -1 : 1));
+
+        if (h >= 0 && v >= 0 && (rm.nodes[h].next >= 0 || rm.nodes[v].next >= 0)) {
+            return qtrue;
+        }
+    }
+    return qfalse;
+}
+
 // each cell's floors in the order RM_Nearest walks them (its first of equals
 // drawn), their shade and stairs, and the cells a height can change: more
-// than one floor, or a stair (on the worker thread, or at the load: the walk
-// doesn't change meanwhile)
+// than one floor, a stair, or no floor and a corner filled by a cell of more
+// than one (on the worker thread, or at the load: the walk doesn't change
+// meanwhile)
 static radar2D_t RM_Floors(void)
 {
-    const int    cells = rm.cw * rm.ch, n = (int)rm.nodes.size();
+    const int cells = rm.cw * rm.ch, n = (int)rm.nodes.size();
+    int       most  = 0; // the cells that can change, at most
+
+    for (int cy = 0; cy < rm.ch; cy++) {
+        for (int cx = 0; cx < rm.cw; cx++) {
+            most += rm.head[cy * rm.cw + cx] >= 0 || RM_FillChanges(cx, cy);
+        }
+    }
     const size_t floorsAt = ((size_t)(cells + 1) * sizeof(unsigned int) + 15) & ~(size_t)15;
     const size_t changingAt = floorsAt + (size_t)n * sizeof(radarFloor_t);
-    const size_t bytes = (changingAt + (size_t)Q_min(n, cells) * sizeof(unsigned int) + RM_PAGE - 1) & ~(size_t)(RM_PAGE - 1);
+    const size_t bytes = (changingAt + (size_t)most * sizeof(unsigned int) + RM_PAGE - 1) & ~(size_t)(RM_PAGE - 1);
     byte        *memory = (byte *)::operator new(bytes, std::align_val_t(RM_PAGE));
     unsigned int *cellFloors = (unsigned int *)memory, *changing = (unsigned int *)(memory + changingAt);
     radarFloor_t *floors = (radarFloor_t *)(memory + floorsAt);
@@ -2674,6 +2719,7 @@ static radar2D_t RM_Floors(void)
     for (int cy = 0; cy < rm.ch; cy++) {
         for (int cx = 0; cx < rm.cw; cx++) {
             const int c     = cy * rm.cw + cx;
+            const int cuts  = rm.head[c] >= 0 ? RM_Cuts(cx, cy) : 0;
             int       sides = 0;
 
             cellFloors[c] = f;
@@ -2685,7 +2731,7 @@ static radar2D_t RM_Floors(void)
                 fl->z     = z;
                 fl->fill  = fill / 255.0f;
                 fl->alpha = fill;
-                fl->sides = 0;
+                fl->sides = cuts;
                 fl->pad   = 0;
                 // a stair: a floor beside a little higher, within a step (40),
                 // striped every other cell; a wall, a drop or a ledge is only
@@ -2702,7 +2748,7 @@ static radar2D_t RM_Floors(void)
                         fl->sides |= 16 << k;
                     }
                 }
-                sides |= fl->sides;
+                sides |= fl->sides & 0xf0;
             }
             if (f - (int)cellFloors[c] > 1 || sides) {
                 changing[m++] = c;
@@ -2710,6 +2756,15 @@ static radar2D_t RM_Floors(void)
         }
     }
     cellFloors[cells] = f;
+    // then those without a floor (after the floors': a GPU's thread groups
+    // each one kind)
+    for (int cy = 0; cy < rm.ch; cy++) {
+        for (int cx = 0; cx < rm.cw; cx++) {
+            if (rm.head[cy * rm.cw + cx] < 0 && RM_FillChanges(cx, cy)) {
+                changing[m++] = cy * rm.cw + cx;
+            }
+        }
+    }
 
     r.cw          = rm.cw;
     r.ch          = rm.ch;
@@ -2726,48 +2781,92 @@ static radar2D_t RM_Floors(void)
 }
 
 // the picture's texels for height z, from the floors (the renderer's
-// mb_radar_cs makes the same bytes)
+// mb_radar_full_cs and mb_radar_cs make the same bytes). The floors' edge
+// against no floor is smoothed as marching squares draws it: at each cell
+// corner a line from one side's middle to the next side's, so a floor's
+// corner with no floor on either side or across it is cut, a corner without
+// a floor between floors on both sides filled (a diagonal passage of cells
+// a clean diagonal band), each a triangle of half a cell's sides; a wall on
+// the grid stays where it is. A texel's alpha is its floor's times how much
+// of the texel the shape covers, in exact eighths (the cut's edge at 45
+// degrees through texel corners and middles); a filled corner the mean of
+// the two floors beside it. A shape doesn't change with the height: only
+// the shades do
 static void RM_Paint(const radar2D_t *r, float z, std::vector<byte> *px)
 {
-    const int t = r->texels, w = r->cw * t;
+    static const int under[5] = {0, 1, 4, 7, 8}; // eighths of a texel under a corner's triangle, by its reach
+    const int        t = r->texels, cw = r->cw, ch = r->ch, w = cw * t;
+    std::vector<int> shown((size_t)cw * ch, -1); // each cell's floor nearest z, -1 none
 
-    // every texel 235 240 245, without a floor clear (its colour kept, so a
-    // shade's edge blends into clear, not into black)
-    px->resize((size_t)w * r->ch * t * 4);
-    for (size_t i = 0; i < px->size(); i += 4) {
-        (*px)[i]     = 235;
-        (*px)[i + 1] = 240;
-        (*px)[i + 2] = 245;
-        (*px)[i + 3] = 0;
+    for (int c = 0; c < cw * ch; c++) {
+        const int first = r->cellFloors[c], last = r->cellFloors[c + 1];
+        int       n     = first;
+
+        if (first == last) {
+            continue;
+        }
+        for (int i = first + 1; i < last; i++) {
+            if (fabsf(r->floors[i].z - z) < fabsf(r->floors[n].z - z)) {
+                n = i;
+            }
+        }
+        shown[c] = n;
     }
-    for (int cy = 0; cy < r->ch; cy++) {
-        for (int cx = 0; cx < r->cw; cx++) {
-            const int c = cy * r->cw + cx, first = r->cellFloors[c], last = r->cellFloors[c + 1];
-            int       n = first;
+    // a cell's floor's alpha, -1 none (outside the picture none)
+    auto alphaAt = [&](int x, int y) {
+        return x < 0 || y < 0 || x >= cw || y >= ch || shown[y * cw + x] < 0 ? -1 : (int)r->floors[shown[y * cw + x]].alpha;
+    };
 
-            if (first == last) {
-                continue;
-            }
-            for (int i = first + 1; i < last; i++) {
-                if (fabsf(r->floors[i].z - z) < fabsf(r->floors[n].z - z)) {
-                    n = i;
-                }
-            }
-            const radarFloor_t *f         = &r->floors[n];
-            const float         focus     = Com_Clamp(0.0f, 1.0f, (120.0f - fabsf(f->z - z)) / 56.0f);
-            const byte          stairLine = (byte)((f->fill + (0.22f + 0.3f * focus - f->fill) * 0.8f) * 255.0f);
+    // every texel 235 240 245 (a clear one keeps its colour, so a shade's
+    // edge blends into clear, not into black)
+    px->resize((size_t)w * ch * t * 4);
+    for (int cy = 0; cy < ch; cy++) {
+        for (int cx = 0; cx < cw; cx++) {
+            const int n = shown[cy * cw + cx];
+            int       corner[4]; // q (bit 0 east, bit 1 south): a floor's 1 cut, else the two floors' alphas filling it
+            int       stairLine = 0;
 
+            for (int q = 0; q < 4; q++) {
+                const int x = cx + ((q & 1) ? 1 : -1), y = cy + ((q & 2) ? -1 : 1);
+                const int h = alphaAt(x, cy), v = alphaAt(cx, y);
+
+                corner[q] = n >= 0 ? h < 0 && v < 0 && alphaAt(x, y) < 0 : h >= 0 && v >= 0 ? h + v : 0;
+            }
+            if (n >= 0) {
+                const radarFloor_t *f     = &r->floors[n];
+                const float         focus = Com_Clamp(0.0f, 1.0f, (120.0f - fabsf(f->z - z)) / 56.0f);
+
+                stairLine = (byte)((f->fill + (0.22f + 0.3f * focus - f->fill) * 0.8f) * 255.0f);
+            }
             // the picture's top row is the map's north (y up): a texel on
             // the cell's left, right, top or bottom row is that side's stair
             // stripe, if it has one (a corner on two sides, a cell a texel
-            // across on all four), else the floor's shade
+            // across on all four), else the floor's shade; then its share of
+            // the cut corners taken off, or of the filled ones given
             for (int j = 0; j < t; j++) {
-                byte *o = &(*px)[(((size_t)(r->ch - 1 - cy) * t + j) * w + cx * t) * 4];
+                byte *o = &(*px)[(((size_t)(ch - 1 - cy) * t + j) * w + cx * t) * 4];
 
                 for (int i = 0; i < t; i++, o += 4) {
-                    const int at = (i == 0) | (i == t - 1) << 1 | (j == 0) << 2 | (j == t - 1) << 3;
+                    const int at      = (i == 0) | (i == t - 1) << 1 | (j == 0) << 2 | (j == t - 1) << 3;
+                    int       covered = 0;
 
-                    o[3] = (f->sides & at << 4) ? stairLine : f->alpha;
+                    for (int q = 0; q < 4; q++) {
+                        const int reach = t - 2 * (((q & 1) ? t - 1 - i : i) + ((q & 2) ? t - 1 - j : j));
+
+                        if (reach > 0) {
+                            covered += under[Q_min(reach, 4)] * corner[q];
+                        }
+                    }
+                    o[0] = 235;
+                    o[1] = 240;
+                    o[2] = 245;
+                    if (n < 0) {
+                        o[3] = (byte)((covered + 8) >> 4);
+                    } else {
+                        const int alpha = (r->floors[n].sides & at << 4) ? stairLine : r->floors[n].alpha;
+
+                        o[3] = (byte)((alpha * (8 - covered) + 4) >> 3);
+                    }
                 }
             }
         }

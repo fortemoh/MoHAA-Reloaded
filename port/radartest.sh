@@ -1,16 +1,19 @@
 #!/bin/bash
 # The Competitive HUD radar's picture made on the GPU (code/renderer_metal/shaders/tr_mtl_radar.metal) against the
-# UI's own paint of it (RM_Paint, code/client/cl_uicomp.cpp), byte for byte (docs/METAL_PORT_PLAN.md §6, sessions 89
-# and 93). port/radartest.mm is built into build.noindex/radartest/ with RM_Paint, the floor list's types
+# UI's own paint of it (RM_Paint, code/client/cl_uicomp.cpp), byte for byte (docs/METAL_PORT_PLAN.md §6, sessions 89,
+# 93 and 96). port/radartest.mm is built into build.noindex/radartest/ with RM_Paint, the floor list's types
 # (tr_public.h), Com_Clamp (q_shared.c) and the kernels' parameters (tr_mtl.m) taken out of the source as they are,
 # compiled with the game's floating-point flags; the shader is compiled as the game's build compiles it. Offline, no
 # window, no game data:
-#   port/radartest.sh                   alpha, lists and real (the floor lists the game dumped, if any): all must pass
-#   port/radartest.sh alpha             every float height distance in [60, 125] by every shade (~10 s)
+#   port/radartest.sh                   alpha, shapes, lists and real (the floor lists the game dumped, if any): all must pass
+#   port/radartest.sh alpha             every float height distance in [60, 125] by every shade (~40 s)
+#   port/radartest.sh shapes            the smoothed edge (every 3 x 3 pattern of cells, 1 to 6 texels a cell) against
+#                                       the marching squares contour drawn independently, and the GPU's against it
 #   port/radartest.sh lists [n]         n made-up floor lists (60), whole pictures and heights' changes
 #   port/radartest.sh real [file [heights]]   the dumped floor lists (build.noindex/radartest/floors-*.bin, each with
 #                                       its .heights beside it), at every texel count they can have
-#   port/radartest.sh bench [file [heights]]  the GPU's time of the whole picture and of a height's change
+#   port/radartest.sh bench [file [heights [texels]]]  the GPU's time of the whole picture and of a height's change
+#                                       (TEXELS=n: every dump at n texels a cell)
 # RADARTEST_METAL=<file.metal> tests or benches another shader (a variant) in place of the game's.
 # In the game (a window: check that nobody is at the machine first, CLAUDE.md):
 #   port/radartest.sh build             the check flavor radarchk (build.noindex/radarchk-install): the work tree
@@ -81,12 +84,13 @@ case "$mode" in
 		build
 		status=0
 		"$OUT/radartest" "$OUT/radar.metallib" alpha || status=1
+		"$OUT/radartest" "$OUT/radar.metallib" shapes || status=1
 		"$OUT/radartest" "$OUT/radar.metallib" lists || status=1
 		real || status=1
 		[ $status = 0 ] && echo "radartest: passed" || echo "radartest: FAILED"
 		exit $status
 		;;
-	alpha|lists)
+	alpha|shapes|lists)
 		build
 		"$OUT/radartest" "$OUT/radar.metallib" "$mode" "$@"
 		;;
@@ -101,7 +105,7 @@ case "$mode" in
 		else
 			for f in "$OUT"/floors-*.bin; do
 				[ -e "$f" ] || { echo "bench: no dumped floor lists (port/radartest.sh game makes them)"; exit 1; }
-				"$OUT/radartest" "$OUT/radar.metallib" bench "$f" "${f%.bin}.heights"
+				"$OUT/radartest" "$OUT/radar.metallib" bench "$f" "${f%.bin}.heights" ${TEXELS:-}
 			done
 		fi
 		;;
@@ -142,7 +146,7 @@ case "$mode" in
 		[ "$checks" -gt 0 ] && [ "$bad" = 0 ]
 		;;
 	*)
-		echo "usage: port/radartest.sh [alpha | lists [n] | real [file [heights]] | bench [file [heights]] | build | game [demo] [args]]" >&2
+		echo "usage: port/radartest.sh [alpha | shapes | lists [n] | real [file [heights]] | bench [file [heights [texels]]] | build | game [demo] [args]]" >&2
 		exit 2
 		;;
 esac
