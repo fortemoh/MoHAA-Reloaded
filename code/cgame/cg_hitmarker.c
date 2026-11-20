@@ -51,8 +51,8 @@ static int         hitSoundMod = -1; // cg_hitmarker_sound's modificationCount w
 void CG_Hitmarker_RegisterCvars(void)
 {
     cg_hitmarker       = cgi.Cvar_Get("cg_hitmarker", "0", CVAR_ARCHIVE);
-    // a file of sound/prom/hitmarkers/ (classic, beep), or none
-    cg_hitmarker_sound = cgi.Cvar_Get("cg_hitmarker_sound", "classic", CVAR_ARCHIVE);
+    // a file of sound/prom/hitmarkers/ (1, 2, 3), or none
+    cg_hitmarker_sound = cgi.Cvar_Get("cg_hitmarker_sound", "1", CVAR_ARCHIVE);
 }
 
 /*
@@ -60,20 +60,21 @@ void CG_Hitmarker_RegisterCvars(void)
 CG_Hitmarker_RegisterSound
 
 At a map's load, and when cg_hitmarker_sound changes. A file name only (the archived setting can't reach outside
-the folder), ".wav" may be left out; a name that isn't there plays classic
+the folder), ".wav" may be left out; a name that isn't there plays 1
 ====================
 */
 void CG_Hitmarker_RegisterSound(void)
 {
-    char   name[MAX_QPATH];
-    size_t len;
+    char        name[MAX_QPATH];
+    const char *path;
+    size_t      len;
 
     hitSoundMod = cg_hitmarker_sound->modificationCount;
     hitSound    = 0;
 
     Q_strncpyz(name, cg_hitmarker_sound->string, sizeof(name));
     if (!name[0] || strchr(name, '/') || strchr(name, '\\') || strstr(name, "..")) {
-        Q_strncpyz(name, "classic", sizeof(name));
+        Q_strncpyz(name, "1", sizeof(name));
     }
     len = strlen(name);
     if (len > 4 && !Q_stricmp(name + len - 4, ".wav")) {
@@ -83,10 +84,12 @@ void CG_Hitmarker_RegisterSound(void)
         return;
     }
 
-    hitSound = cgi.S_RegisterSound(va("sound/prom/hitmarkers/%s.wav", name), qfalse);
-    if (!hitSound) {
-        hitSound = cgi.S_RegisterSound("sound/prom/hitmarkers/classic.wav", qfalse);
+    // Fixed: looked for first, as a sound not there registers as sound/default.wav (Omaha's fell back only if it failed)
+    path = va("sound/prom/hitmarkers/%s.wav", name);
+    if (cgi.FS_ReadFile(path, NULL, qtrue) == -1) {
+        path = "sound/prom/hitmarkers/1.wav";
     }
+    hitSound = cgi.S_RegisterSound(path, qfalse);
 }
 
 /*
