@@ -1969,6 +1969,7 @@ typedef struct shaderCommands_s
 	shaderStage_t	**xstages;
     qboolean no_global_fog;
     qboolean vertexColorValid;
+	int			clear2D;	// DrawPolygon2D's edge band: the vertexes from this one on drawn clear (0: none)
 
 	// GPU skinning: the deferred surfaces, in vertex order from vertex 0 (RB_SkelMesh)
 	int			numSkinJobs;

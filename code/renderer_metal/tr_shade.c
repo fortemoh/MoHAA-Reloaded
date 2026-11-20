@@ -363,6 +363,7 @@ void RB_BeginSurface( shader_t *shader ) {
 	tess.currentStageIteratorFunc = shader->optimalStageIteratorFunc;
 	tess.numSkinJobs = 0;
 	tess.numStaticJobs = 0;
+	tess.clear2D = 0;
 }
 
 /*
@@ -1058,6 +1059,10 @@ static void ComputeColors( shaderStage_t *pStage )
 		break;
 	case AGEN_GLOBAL_ALPHA:
 		RB_CalcAlphaFromConstant((unsigned char*)tess.svars.colors, backEnd.color2D[3]);
+		// DrawPolygon2D's edge band: its outer points clear
+		for (i = tess.clear2D; i && i < tess.numVertexes; i++) {
+			tess.svars.colors[i][3] = 0;
+		}
 		break;
 	case AGEN_SKYALPHA:
 		RB_CalcAlphaFromConstant((unsigned char*)tess.svars.colors, tr.refdef.sky_alpha * 255.0);

@@ -781,19 +781,29 @@ void DrawBoxes(const float (*boxes)[4], int count, const float *color) {
 	mbEnable(MB_TEXTURE_2D);
 }
 
+static float r2dHalfPixel = 0.5f;	// half a pixel in the 2D window's units (Set2DWindow)
+
 /*
 ================
 DrawPolygon2D
 
 A convex polygon of count points (x, y, s, t each) as a fan, in one draw
-(the Competitive HUD's radar), in the 2D color as a stretch pic
+(the Competitive HUD's radar), in the 2D color as a stretch pic. Its edge
+smoothed: a band a pixel wide across it, from the color inside to clear
+outside (each corner moved half a pixel in, and a copy half a pixel out,
+along its edges' mean normal; s and t carried by the polygon's own
+mapping, affine as the radar's)
 ================
 */
 void DrawPolygon2D(const float (*points)[4], int count, qhandle_t hShader) {
 	shader_t* shader;
+	float off[SHADER_MAX_VERTEXES / 4][2];	// each corner's way out, half a pixel from both its edges
+	float sx, sy, tx, ty;	// s and t a unit right and down
+	float det, h, ax, ay;
+	glIndex_t *ix;
 	int i;
 
-	if (count < 3 || count > SHADER_MAX_VERTEXES / 2 || 3 * (count - 2) > SHADER_MAX_INDEXES / 2) {
+	if (count < 3 || 2 * count > SHADER_MAX_VERTEXES / 2 || 3 * (count - 2) + 6 * count > SHADER_MAX_INDEXES / 2) {
 		return;
 	}
 	if (r2dl.recording) {
@@ -814,18 +824,84 @@ void DrawPolygon2D(const float (*points)[4], int count, qhandle_t hShader) {
 		shader = tr.defaultShader;
 	}
 
-	RB_Color4f(backEnd.color2D[0], backEnd.color2D[1], backEnd.color2D[2], backEnd.color2D[3]);
+	// the mapping from three corners a third apart; its sign the winding
+	{
+		const float *a = points[0], *b = points[count / 3], *c = points[2 * count / 3];
+		const float x1 = b[0] - a[0], y1 = b[1] - a[1], x2 = c[0] - a[0], y2 = c[1] - a[1];
+
+		det = x1 * y2 - x2 * y1;
+		if (fabsf(det) < 1e-6f) {
+			return;
+		}
+		sx = ((b[2] - a[2]) * y2 - (c[2] - a[2]) * y1) / det;
+		sy = ((c[2] - a[2]) * x1 - (b[2] - a[2]) * x2) / det;
+		tx = ((b[3] - a[3]) * y2 - (c[3] - a[3]) * y1) / det;
+		ty = ((c[3] - a[3]) * x1 - (b[3] - a[3]) * x2) / det;
+	}
+	h = det > 0.0f ? r2dHalfPixel : -r2dHalfPixel;
+
+	// each edge's outward normal (det > 0: its right) half a pixel long, from the last edge's; a corner's way
+	// out their mean, as far from each
+	{
+		const float *p = points[count - 1], *n = points[0];
+		const float ex = n[0] - p[0], ey = n[1] - p[1], l = ex * ex + ey * ey;
+		const float f = l > 0.0f ? h / sqrtf(l) : 0.0f;
+
+		ax = ey * f;
+		ay = -ex * f;
+	}
+	for (i = 0; i < count; i++) {
+		const float *p = points[i], *n = points[i + 1 < count ? i + 1 : 0];
+		const float ex = n[0] - p[0], ey = n[1] - p[1], l = ex * ex + ey * ey;
+		const float f = l > 0.0f ? h / sqrtf(l) : 0.0f;
+		const float bx = ey * f, by = -ex * f, mx = (ax + bx) * 0.5f, my = (ay + by) * 0.5f;
+		const float m = h * h / Q_max(mx * mx + my * my, h * h * 0.01f);
+
+		off[i][0] = mx * m;
+		off[i][1] = my * m;
+		ax = bx;
+		ay = by;
+	}
+
 	RB_Begin2DSurface(shader);
 
+	// the corners half a pixel in (0 to count - 1), then out (count on: clear)
 	for (i = 0; i < count; i++) {
-		RB_Texcoord2f(points[i][2], points[i][3]);
-		RB_Vertex2f(points[i][0], points[i][1]);
+		const float *p = points[i];
+		const float ox = off[i][0], oy = off[i][1], os = sx * ox + sy * oy, ot = tx * ox + ty * oy;
+		const int o = count + i;
+
+		VectorSet(tess.xyz[i], p[0] - ox, p[1] - oy, 0);
+		VectorSet(tess.xyz[o], p[0] + ox, p[1] + oy, 0);
+		tess.texCoords[i][0][0] = p[2] - os;
+		tess.texCoords[i][0][1] = p[3] - ot;
+		tess.texCoords[o][0][0] = p[2] + os;
+		tess.texCoords[o][0][1] = p[3] + ot;
+		Com_Memcpy(tess.vertexColors[i], backEnd.color2D, 4);
+		Com_Memcpy(tess.vertexColors[o], backEnd.color2D, 4);
 	}
+	tess.numVertexes = 2 * count;
+	tess.clear2D = count;
+
+	ix = tess.indexes;
 	for (i = 2; i < count; i++) {
-		tess.indexes[tess.numIndexes++] = 0;
-		tess.indexes[tess.numIndexes++] = i - 1;
-		tess.indexes[tess.numIndexes++] = i;
+		ix[0] = 0;
+		ix[1] = i - 1;
+		ix[2] = i;
+		ix += 3;
 	}
+	for (i = 0; i < count; i++) {
+		const int j = i + 1 < count ? i + 1 : 0;
+
+		ix[0] = i;
+		ix[1] = j;
+		ix[2] = count + j;
+		ix[3] = i;
+		ix[4] = count + j;
+		ix[5] = count + i;
+		ix += 6;
+	}
+	tess.numIndexes = (int)(ix - tess.indexes);
 
 	RB_EndSurface();
 }
@@ -920,6 +996,7 @@ void Set2DWindow(int x, int y, int w, int h, float left, float right, float bott
 	}
 
 	R_IssuePendingRenderCommands();
+	r2dHalfPixel = w > 0 ? 0.5f * fabsf(right - left) / w : 0.5f;
 	mbViewport(x, y, w, h);
 	mbScissor(x, y, w, h);
 	mbMatrixMode(MB_PROJECTION);
