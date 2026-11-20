@@ -69,7 +69,7 @@ resource
 HudCards
 {
 name "cardsallies"
-rect 484 5 426 60
+rect 484 0 426 72
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-15s
@@ -82,7 +82,7 @@ resource
 HudCards
 {
 name "cardsaxis"
-rect 1010 5 426 60
+rect 1010 0 426 72
 bgcolor 0 0 0 0
 borderstyle NONE
 font oswald-medium-15s

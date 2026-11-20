@@ -47,6 +47,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // the teammates the cgame tracks (CL_InitRadar), and the player's own place in them
 static radarClient_t *g_radarClients;
 static int            g_radarClientNum;
+#define COMP_CARD_H   64 // a team card's height: the score box's (hud_comp_score.urc)
+#define COMP_CARD_W   64 // its most width (square; narrower for a bigger team)
 #define COMP_LINES    8
 #define COMP_KILLS    6
 
@@ -1994,12 +1996,13 @@ static str Comp_Grey(const char *layer, float k)
 }
 
 // a team's cards (alive, alive with the bar under it, dead: greyed and
-// darker) size design pixels wide: the box, its frame, the team's icon
-// (icon: the widget whose shapes it is)
+// darker) size design pixels wide, COMP_CARD_H high (the bar 8 more): the
+// box, its frame, the team's icon (icon: the widget whose shapes it is)
 static void Comp_CardShaders(int team, UIWidget *icon, int size, float s, qhandle_t out[3])
 {
-    const float f  = size / (size + 8.0f), bar = (size + 4.0f) / (size + 8.0f);
-    const float px = 5.0f / size, py = 5.0f / (size + 8.0f);
+    const int   h  = COMP_CARD_H;
+    const float f  = h / (h + 8.0f), bar = (h + 4.0f) / (h + 8.0f);
+    const float px = 5.0f / size, py = 5.0f / (h + 8.0f);
 
     for (int k = 0; k < 3; k++) {
         auto             grey = [k](const char *layer) { return k == 2 ? Comp_Grey(layer, 0.42f) : str(layer); };
@@ -2018,7 +2021,7 @@ static void Comp_CardShaders(int team, UIWidget *icon, int size, float s, qhandl
         for (str& l : lines) {
             layers[numLayers++] = l.c_str();
         }
-        out[k] = UI_BakeShape("comp_card", layers, numLayers, (int)(size * s + 0.5f), (int)((size + 8) * s + 0.5f), s);
+        out[k] = UI_BakeShape("comp_card", layers, numLayers, (int)(size * s + 0.5f), (int)((h + 8) * s + 0.5f), s);
     }
 }
 
@@ -2029,8 +2032,9 @@ UIHudCards
 A card for each player of a team (team allies or axis: ui_hud_cards_<team>,
 in the clients' order), laid out from the widget's right edge leftward
 (allies) or its left edge rightward (axis): the team's icon (icons: the
-widgets whose shapes are the Allies' and the Axis' icons), a white bar under
-it while alive on the player's own team, greyed out once dead. They shrink
+widgets whose shapes are the Allies' and the Axis' icons), as high as the
+score box beside them (COMP_CARD_H, from the widget's top), a white bar under
+it while alive on the player's own team, greyed out once dead. They narrow
 so the bigger team fits in about 400 px and in the widget, the rest a count
 ================
 */
@@ -2074,7 +2078,7 @@ void UIHudCards::Draw(void)
 
     UI_DrawDep(allies);
     UI_DrawDep(axis);
-    int         size  = Q_max(20, Q_min(48, 400 / most - 4)), fit, i;
+    int         size  = Q_max(20, Q_min(COMP_CARD_W, 400 / most - 4)), fit, i;
 
     if (!n) {
         return;
@@ -2100,7 +2104,7 @@ void UIHudCards::Draw(void)
     for (i = 0; i < fit; i++) {
         const float x = m_team == TEAM_AXIS ? 2.0f + i * (size + 4) : w - 2.0f - size - i * (size + 4);
 
-        uii.Rend_DrawPicStretched(floorf(x * s + 0.5f), 0, (int)(size * s + 0.5f), (int)((size + 8) * s + 0.5f), 0, 0, 1, 1,
+        uii.Rend_DrawPicStretched(floorf(x * s + 0.5f), 0, (int)(size * s + 0.5f), (int)((COMP_CARD_H + 8) * s + 0.5f), 0, 0, 1, 1,
                                   m_cards[cards[i] == 'd' ? 2 : cards[i] == 'b' ? 1 : 0]);
     }
     if (fit < n) {
@@ -2109,7 +2113,7 @@ void UIHudCards::Draw(void)
         Comp_Text(
             m_font,
             m_team == TEAM_AXIS ? 2.0f + fit * (size + 4) : w - 2.0f - fit * (size + 4) - m_font->getWidth(more, -1),
-            size * 0.5f, more, UColor(0.988f, 0.988f, 0.988f, 1.0f), getVirtualScale()
+            COMP_CARD_H * 0.5f, more, UColor(0.988f, 0.988f, 0.988f, 1.0f), getVirtualScale()
         );
     }
 }
@@ -3101,8 +3105,8 @@ void UI_CompHud_PreBake(qboolean ahead)
         icons[0] = score ? score->FindWidget("iconallies") : NULL;
         icons[1] = score ? score->FindWidget("iconaxis") : NULL;
     }
-    Comp_CardShaders(TEAM_ALLIES, icons[0], 48, s, cards);
-    Comp_CardShaders(TEAM_AXIS, icons[1], 48, s, cards);
+    Comp_CardShaders(TEAM_ALLIES, icons[0], COMP_CARD_W, s, cards);
+    Comp_CardShaders(TEAM_AXIS, icons[1], COMP_CARD_W, s, cards);
     for (int axis = 0; axis < 2; axis++) {
         Comp_DotShader(axis, qfalse, k, s, &d);
         Comp_DotShader(axis, qtrue, k, s, &d);
