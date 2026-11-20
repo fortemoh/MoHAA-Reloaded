@@ -332,6 +332,10 @@ typedef struct {
 #define KF_RADIUS 3.0f
 #define KF_EDGE   2.0f
 
+// the chat's and the game messages' space between two lines (a wrapped
+// line's rows touch)
+#define FEED_GAP 2.0f
+
 static const compKillPic_t comp_killPics[] = {
     {"rifle",   "m1_garand",      "kar98",            90.0f,  16.2f, 90.5f,  16.3f},
     {"pistol",  "colt45",         "p38",              33.9f,  21.9f, 33.9f,  22.2f},
@@ -1699,7 +1703,8 @@ box reaching pad px either side of it, KF_ROW tall, KF_SPACE apart: dark,
 dark red for the player's death, black with a red edge for the player's
 kill), the chat (feed chat: from
 the bottom up) and the game messages (feed messages: from the top), 8 s
-fading in the last 2; lines wrapped between words, the newest that fit.
+fading in the last 2; lines wrapped between words, the newest that fit
+whole in the part of the box on screen (none cut at its edges).
 boldfont: the white game messages'
 ================
 */
@@ -1915,6 +1920,11 @@ void UIHudFeed::Draw(void)
     }
     // the newest lines that fit, wrapped (Added: all of them while a line is typed: the chat's history)
     const bool all = m_kind == 1 && UI_Extras_Typing();
+    // the part of the box on screen (a box moved past its menu's edge is cut
+    // there), the rows' height in it so far
+    const float top    = Q_max(0.0f, (m_clippedframe.pos.y - m_screenframe.pos.y) / s);
+    const float bottom = h - Q_max(0.0f, (m_screenframe.getMaxY() - m_clippedframe.getMaxY()) / s);
+    float       used   = 0.0f;
 
     for (i = count - 1; i >= 0 && (all || cls.realtime - lines[i].time < 8000); i--) {
         UIFont          *font = lines[i].bold && m_bold ? m_bold : m_font;
@@ -1941,13 +1951,16 @@ void UIHudFeed::Draw(void)
             for (p = q; *p == ' '; p++) {
             }
         }
-        if ((rows.size() + wrapped.size()) * lineH + 2.0f > h) {
+        const float need = used + wrapped.size() * lineH + (rows.empty() ? 0.0f : FEED_GAP);
+
+        if (need > bottom - top) {
             break;
         }
+        used = need;
         rows.insert(rows.begin(), wrapped.begin(), wrapped.end());
         rowLine.insert(rowLine.begin(), wrapped.size(), i);
     }
-    y = m_kind == 1 ? h - rows.size() * lineH : 0.0f;
+    y = m_kind == 1 ? bottom - used : top;
     for (size_t r = 0; r < rows.size(); r++) {
         const compLine_t *l = &lines[rowLine[r]];
         const UColor      c(l->color[0], l->color[1], l->color[2], all ? 1.0f : Comp_Fade(l->time, 8000, 2000));
@@ -1955,7 +1968,7 @@ void UIHudFeed::Draw(void)
         Comp_Text(l->bold && m_bold ? m_bold : m_font, 0.0f, y + lineH * 0.5f, rows[r], c, getVirtualScale());
         y += lineH;
         if (r + 1 < rows.size() && rowLine[r + 1] != rowLine[r]) {
-            y += 2.0f;
+            y += FEED_GAP;
         }
     }
 }
