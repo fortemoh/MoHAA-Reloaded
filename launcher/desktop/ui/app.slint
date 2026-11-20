@@ -1,10 +1,11 @@
-// MoHAA Launcher's window, in Slint's Fluent style (dark; compile-ui.rs picks it), as small as its contents: the games
-// along the top, the player and the servers, the crosshair and the display, and the buttons. main.rs fills it and
-// acts on its callbacks.
+// MoHAA Launcher's window, in Slint's Fluent style (dark; compile-ui.rs picks it), as the macOS launcher's
+// (launcher/macos): in one card where to play on the left (the game, the server, the servers played on) and the player's
+// settings on the right (the name, the passwords, the display); under it the buttons. main.rs fills it and acts on
+// its callbacks.
 //
 // One spacing system throughout (Theme): every field is a block of a label over its control (label-gap apart),
 // and blocks, cards and sections are `gap` apart, with `gap` of padding inside each card and around the window.
-import { Button, LineEdit, SpinBox, ComboBox, ListView, Palette, ProgressIndicator } from "std-widgets.slint";
+import { Button, LineEdit, ComboBox, ListView, Palette, ProgressIndicator } from "std-widgets.slint";
 
 export struct ServerItem {
     name: string,
@@ -12,14 +13,6 @@ export struct ServerItem {
     selected: bool,
     /// a server the launcher comes with: it can't be renamed or removed
     builtin: bool,
-}
-
-/// One box of the crosshair preview, in the preview's own coordinates
-export struct PreviewBox {
-    x: length,
-    y: length,
-    width: length,
-    height: length,
 }
 
 global Theme {
@@ -36,60 +29,50 @@ global Theme {
     out property <length> label-height: 16px;
     out property <length> field: 32px;       // a control's height
     out property <length> row: 34px;         // a server's row
-    // the crosshair preview spans two blocks' controls: from the first's top to the second's bottom
-    out property <length> preview: 2 * field + gap + label-height + label-gap;
+    // a field's block: its label over its control
+    out property <length> block: label-height + label-gap + field;
+    out property <length> width: 660px;      // the window's, as the macOS launcher's
 }
 
+/// A game: its icon with its abbreviation beside it (the name as the tooltip), as tall as a field (its label and
+/// control) beside it; the one picked is the lighter tab with the brighter edge and the bold letters
 component GameTab inherits Rectangle {
     in property <image> icon;
-    in property <string> title;
+    in property <string> short;
+    in property <styled-text> tip;
     in property <bool> selected;
     in property <bool> available: true;
     callback clicked;
 
-    height: 46px;
-    border-radius: 8px;
-    background: root.selected ? Theme.selected : touch.has-hover ? Theme.hover : Theme.card;
+    horizontal-stretch: 1;
+    min-width: 0px;
+    height: Theme.block;
+    border-radius: 6px;
+    background: root.selected ? Theme.selected : touch.has-hover ? Theme.hover : #00000030;
     border-width: 1px;
-    border-color: Theme.stroke;
+    border-color: root.selected ? #ffffff1a : #ffffff0a;
     opacity: root.available ? 1 : 0.4;
     animate background { duration: 120ms; }
 
     HorizontalLayout {
-        padding: 5px;
-        // the game's icon, straight on the tab: only the tab shows the selection
-        Rectangle {
-            width: 36px;
-            height: 36px;
+        alignment: center;
+        spacing: 8px;
+        // the game's icon at 32 pixels, straight on the tab
+        VerticalLayout {
+            alignment: center;
             Image {
                 source: root.icon;
-                width: 28px;
-                height: 28px;
+                width: 32px;
+                height: 32px;
             }
         }
-        // the name, centered in the rest, and the selection bar as wide as it
-        Rectangle {
-            horizontal-stretch: 1;
-            label := Text {
-                x: (parent.width - self.width) / 2;
-                width: self.preferred-width;
-                text: root.title;
-                vertical-alignment: center;
-                font-weight: root.selected ? 600 : 400;
-                color: Palette.foreground;
-            }
-            Rectangle {
-                x: (parent.width - self.width) / 2;
-                y: parent.height - self.height - 1px;
-                width: root.selected ? label.width : 0px;
-                height: 3px;
-                border-radius: 1.5px;
-                background: Palette.accent-background;
-                animate width { duration: 160ms; easing: ease-out; }
-            }
+        Text {
+            text: root.short;
+            font-size: 16px;
+            font-weight: root.selected ? 600 : 400;
+            vertical-alignment: center;
+            color: Palette.foreground;
         }
-        // balances the icon's box, so the name sits in the middle of the tab
-        Rectangle { width: 12px; }
     }
 
     touch := TouchArea {
@@ -97,6 +80,7 @@ component GameTab inherits Rectangle {
         mouse-cursor: root.available ? pointer : default;
         clicked => { root.clicked(); }
     }
+    Tooltip { text: root.tip; }
 }
 
 component Card inherits Rectangle {
@@ -237,30 +221,30 @@ component ServerRow inherits Rectangle {
         clicked => { root.clicked(); }
         double-clicked => { root.connect(); }
     }
+    Tooltip { text: @markdown("\{root.address}"); }
 
     HorizontalLayout {
         padding-left: Theme.gap;
         padding-right: 3px;
         spacing: 2px;
-        // two even columns, whatever the texts' lengths
-        Text {
-            text: root.name;
-            vertical-alignment: center;
-            overflow: elide;
+        // the name, and under it the address when the name isn't the address
+        VerticalLayout {
+            alignment: center;
             horizontal-stretch: 1;
             min-width: 0px;
             preferred-width: 0px;
-            color: Palette.foreground;
-            font-weight: root.builtin ? 600 : 400;
-        }
-        Text {
-            text: root.name == root.address ? "" : root.address;
-            vertical-alignment: center;
-            overflow: elide;
-            horizontal-stretch: 1;
-            min-width: 0px;
-            preferred-width: 0px;
-            color: Theme.secondary;
+            Text {
+                text: root.name;
+                overflow: elide;
+                color: Palette.foreground;
+                font-weight: root.builtin ? 600 : 400;
+            }
+            if root.name != root.address: Text {
+                text: root.address;
+                font-size: 11px;
+                overflow: elide;
+                color: Theme.secondary;
+            }
         }
         if !root.builtin: VerticalLayout {
             alignment: center;
@@ -310,45 +294,13 @@ component ServerRow inherits Rectangle {
     }
 }
 
-component CrosshairPreview inherits Rectangle {
-    in property <[PreviewBox]> boxes;
-    in property <[PreviewBox]> outline;
-    in property <color> box-color;
-    in property <color> outline-color;
-    in property <bool> dark-color;
-
-    width: Theme.preview;
-    height: Theme.preview;
-    border-radius: 6px;
-    clip: true;
-    // the game's sky or a wall behind it: black, grey for a dark crosshair or outline
-    background: root.dark-color ? #808080 : #000000;
-    border-width: 1px;
-    border-color: Theme.stroke;
-
-    // the outline first, as the game draws it
-    for strip in root.outline: Rectangle {
-        x: strip.x;
-        y: strip.y;
-        width: strip.width;
-        height: strip.height;
-        background: root.outline-color;
-    }
-    for box in root.boxes: Rectangle {
-        x: box.x;
-        y: box.y;
-        width: box.width;
-        height: box.height;
-        background: root.box-color;
-    }
-}
-
 export component LauncherWindow inherits Window {
     title: "MoHAA Launcher";
     icon: @image-url("../../assets/app-icon-128.png");
     background: Theme.base;
     // as big as the contents, no bigger
-    max-width: main-layout.preferred-width;
+    min-width: Theme.width;
+    max-width: Theme.width;
     max-height: main-layout.preferred-height;
 
     // the game
@@ -371,22 +323,6 @@ export component LauncherWindow inherits Window {
     in property <[ServerItem]> servers;
     in property <bool> bookmarked;   // the server in the fields is in the list
     in property <bool> can-bookmark;
-
-    // the crosshair
-    in-out property <int> length: 4;
-    in-out property <int> gap: 3;
-    in-out property <int> thickness: 1;
-    in property <[string]> color-names;
-    in-out property <int> color-index;
-    in-out property <int> alpha: 255;
-    in-out property <int> outline-index;
-    in property <bool> dot;
-    in property <bool> t-style;
-    in property <color> crosshair-color: white;
-    in property <color> outline-color: black;
-    in property <bool> crosshair-dark;
-    in property <[PreviewBox]> boxes;
-    in property <[PreviewBox]> outline-boxes;
 
     // the display
     in property <[string]> resolutions;
@@ -415,16 +351,6 @@ export component LauncherWindow inherits Window {
     callback server-connect(int);
     callback server-rename(int);
     callback server-remove(int);
-    callback length-edited(int);
-    callback gap-edited(int);
-    callback thickness-edited(int);
-    callback color-selected(int);
-    callback alpha-edited(int);
-    callback outline-selected(int);
-    callback dot-toggled();
-    callback t-style-toggled();
-    callback import-code();
-    callback reset-crosshair();
     callback resolution-selected(int);
     callback mode-selected(int);
     callback choose-folder();
@@ -443,36 +369,47 @@ export component LauncherWindow inherits Window {
         padding: Theme.gap;
         spacing: Theme.gap;
 
-        HorizontalLayout {
-            spacing: Theme.gap / 2;
-            GameTab {
-                icon: @image-url("../../assets/game-aa.svg");
-                title: "Allied Assault";
-                selected: root.game == 0;
-                clicked => { root.select-game(0); }
-            }
-            GameTab {
-                icon: @image-url("../../assets/game-sh.svg");
-                title: "Spearhead";
-                selected: root.game == 1;
-                available: root.sh-available;
-                clicked => { root.select-game(1); }
-            }
-            GameTab {
-                icon: @image-url("../../assets/game-bt.svg");
-                title: "Breakthrough";
-                selected: root.game == 2;
-                available: root.bt-available;
-                clicked => { root.select-game(2); }
-            }
-        }
-
-        // the player, the server and the servers played on
+        // two columns: where to play (the game, the server, the servers played on) and the player's settings (the name,
+        // the passwords, the display), each half the card's width
         Card {
             GridLayout {
                 spacing: Theme.gap;
                 Row {
+                    HorizontalLayout {
+                        horizontal-stretch: 1;
+                        min-width: 0px;
+                        preferred-width: 0px;
+                        spacing: Theme.gap / 2;
+                        GameTab {
+                            icon: @image-url("../../assets/game-aa.svg");
+                            short: "AA";
+                            tip: @markdown("Allied Assault");
+                            selected: root.game == 0;
+                            clicked => { root.select-game(0); }
+                        }
+                        GameTab {
+                            icon: @image-url("../../assets/game-sh.svg");
+                            short: "SH";
+                            tip: root.sh-available ? @markdown("Spearhead")
+                                : @markdown("Spearhead's data (mainta/) isn't in the game folder");
+                            selected: root.game == 1;
+                            available: root.sh-available;
+                            clicked => { root.select-game(1); }
+                        }
+                        GameTab {
+                            icon: @image-url("../../assets/game-bt.svg");
+                            short: "BT";
+                            tip: root.bt-available ? @markdown("Breakthrough")
+                                : @markdown("Breakthrough's data (maintt/) isn't in the game folder");
+                            selected: root.game == 2;
+                            available: root.bt-available;
+                            clicked => { root.select-game(2); }
+                        }
+                    }
                     VerticalLayout {
+                        horizontal-stretch: 1;
+                        min-width: 0px;
+                        preferred-width: 0px;
                         spacing: Theme.label-gap;
                         HorizontalLayout {
                             FieldLabel {
@@ -494,7 +431,12 @@ export component LauncherWindow inherits Window {
                             edited(text) => { root.name-edited(text); }
                         }
                     }
+                }
+                Row {
                     VerticalLayout {
+                        horizontal-stretch: 1;
+                        min-width: 0px;
+                        preferred-width: 0px;
                         spacing: Theme.label-gap;
                         HorizontalLayout {
                             FieldLabel {
@@ -518,218 +460,107 @@ export component LauncherWindow inherits Window {
                             accepted(text) => { root.connect(); }
                         }
                     }
+                    // the server's two passwords, half the column each
+                    HorizontalLayout {
+                        horizontal-stretch: 1;
+                        min-width: 0px;
+                        preferred-width: 0px;
+                        spacing: Theme.gap;
+                        Field {
+                            horizontal-stretch: 1;
+                            min-width: 0px;
+                            preferred-width: 0px;
+                            label: "Server password";
+                            LineEdit {
+                                min-width: 0px; // (half a column: narrower than its own least)
+                                text <=> root.password;
+                                input-type: InputType.password;
+                                placeholder-text: "If it has one";
+                                edited(text) => { root.password-edited(text); }
+                                accepted(text) => { root.connect(); }
+                            }
+                        }
+                        Field {
+                            horizontal-stretch: 1;
+                            min-width: 0px;
+                            preferred-width: 0px;
+                            label: "RCON password";
+                            LineEdit {
+                                min-width: 0px; // (half a column: narrower than its own least)
+                                text <=> root.rcon;
+                                input-type: InputType.password;
+                                placeholder-text: "For admins";
+                                edited(text) => { root.rcon-edited(text); }
+                                accepted(text) => { root.connect(); }
+                            }
+                        }
+                    }
                 }
                 Row {
-                    Field {
-                        label: "Server password";
-                        LineEdit {
-                            text <=> root.password;
-                            input-type: InputType.password;
-                            placeholder-text: "If the server has one";
-                            edited(text) => { root.password-edited(text); }
-                            accepted(text) => { root.connect(); }
+                    // the servers played on, four rows in view
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        min-width: 0px;
+                        preferred-width: 0px;
+                        height: 4 * Theme.row + 4px;
+                        border-radius: 6px;
+                        background: #00000030;
+                        border-width: 1px;
+                        border-color: #ffffff0a;
+                        ListView {
+                            for server[i] in root.servers: ServerRow {
+                                name: server.name;
+                                address: server.address;
+                                selected: server.selected;
+                                builtin: server.builtin;
+                                can-start: root.can-start;
+                                clicked => { root.server-clicked(i); }
+                                connect => { root.server-connect(i); }
+                                rename => { root.server-rename(i); }
+                                remove => { root.server-remove(i); }
+                            }
+                        }
+                        // the room the list doesn't fill yet
+                        if root.servers.length < 4: Text {
+                            x: Theme.gap;
+                            y: root.servers.length * Theme.row + 2px;
+                            width: parent.width - 2 * Theme.gap;
+                            height: (4 - root.servers.length) * Theme.row;
+                            text: root.servers.length == 0
+                                ? "The servers you join are kept here: double-click one to join it again."
+                                : "The servers you join are kept here.";
+                            wrap: word-wrap;
+                            font-size: 12px;
+                            color: Theme.tertiary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
                         }
                     }
-                    Field {
-                        label: "RCON password";
-                        LineEdit {
-                            text <=> root.rcon;
-                            input-type: InputType.password;
-                            placeholder-text: "For server admins";
-                            edited(text) => { root.rcon-edited(text); }
-                            accepted(text) => { root.connect(); }
-                        }
-                    }
-                }
-            }
-            Rectangle {
-                height: 3 * Theme.row + 4px;
-                border-radius: 6px;
-                background: #00000030;
-                border-width: 1px;
-                border-color: #ffffff0a;
-                ListView {
-                    for server[i] in root.servers: ServerRow {
-                        name: server.name;
-                        address: server.address;
-                        selected: server.selected;
-                        builtin: server.builtin;
-                        can-start: root.can-start;
-                        clicked => { root.server-clicked(i); }
-                        connect => { root.server-connect(i); }
-                        rename => { root.server-rename(i); }
-                        remove => { root.server-remove(i); }
-                    }
-                }
-                // the room the list doesn't fill yet
-                if root.servers.length < 3: Text {
-                    y: root.servers.length * Theme.row + 2px;
-                    height: parent.height - self.y;
-                    width: parent.width;
-                    text: root.servers.length == 0
-                        ? "The servers you join are kept here: double-click one to join it again."
-                        : "The servers you join are kept here.";
-                    font-size: 12px;
-                    color: Theme.tertiary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-            }
-        }
-
-        HorizontalLayout {
-            spacing: Theme.gap;
-
-            // the crosshair: its preview, as tall as the two rows of fields beside it
-            Card {
-                HorizontalLayout {
-                    spacing: Theme.gap;
+                    // the display
                     VerticalLayout {
-                        spacing: Theme.label-gap;
-                        HorizontalLayout {
-                            FieldLabel {
-                                text: "Crosshair";
-                                horizontal-stretch: 1;
-                            }
-                            LabelAction {
-                                text: "Reset";
-                                tip: @markdown("CS2's default crosshair without its outline, white: length 8, gap 4, thickness 2");
-                                clicked => { root.reset-crosshair(); }
-                            }
-                        }
-                        CrosshairPreview {
-                            boxes: root.boxes;
-                            outline: root.outline-boxes;
-                            box-color: root.crosshair-color;
-                            outline-color: root.outline-color;
-                            dark-color: root.crosshair-dark;
-                        }
-                    }
-                    GridLayout {
+                        horizontal-stretch: 1;
+                        min-width: 0px;
+                        preferred-width: 0px;
                         spacing: Theme.gap;
-                        Row {
-                            VerticalLayout {
-                                spacing: Theme.label-gap;
-                                HorizontalLayout {
-                                    FieldLabel {
-                                        text: "Length";
-                                        horizontal-stretch: 1;
-                                    }
-                                    LabelAction {
-                                        icon: root.t-style ? @image-url("icons/checkbox-checked.svg")
-                                            : @image-url("icons/checkbox.svg");
-                                        text: "T-style";
-                                        active: root.t-style;
-                                        tip: @markdown("No top arm (cg_crosshair_t)");
-                                        clicked => { root.t-style-toggled(); }
-                                    }
-                                }
-                                SpinBox {
-                                    height: Theme.field;
-                                    minimum: 0;
-                                    maximum: 128;
-                                    value <=> root.length;
-                                    edited(value) => { root.length-edited(value); }
-                                }
-                            }
-                            VerticalLayout {
-                                spacing: Theme.label-gap;
-                                HorizontalLayout {
-                                    FieldLabel {
-                                        text: "Gap";
-                                        horizontal-stretch: 1;
-                                    }
-                                    LabelAction {
-                                        icon: root.dot ? @image-url("icons/checkbox-checked.svg")
-                                            : @image-url("icons/checkbox.svg");
-                                        text: "Dot";
-                                        active: root.dot;
-                                        tip: @markdown("A dot in the center, as wide as the arms are thick (cg_crosshair_dot)");
-                                        clicked => { root.dot-toggled(); }
-                                    }
-                                }
-                                SpinBox {
-                                    height: Theme.field;
-                                    minimum: 0;
-                                    maximum: 64;
-                                    value <=> root.gap;
-                                    edited(value) => { root.gap-edited(value); }
-                                }
-                            }
-                            VerticalLayout {
-                                spacing: Theme.label-gap;
-                                HorizontalLayout {
-                                    FieldLabel {
-                                        text: "Thickness";
-                                        horizontal-stretch: 1;
-                                    }
-                                    LabelAction {
-                                        text: "Import CS2 code";
-                                        tip: @markdown("Sets the crosshair from a code copied in CS2, as the game's crosshair_import does");
-                                        clicked => { root.import-code(); }
-                                    }
-                                }
-                                SpinBox {
-                                    height: Theme.field;
-                                    minimum: 0;
-                                    maximum: 16;
-                                    value <=> root.thickness;
-                                    edited(value) => { root.thickness-edited(value); }
-                                }
+                        alignment: start;
+                        Field {
+                            label: "Resolution";
+                            ComboBox {
+                                height: Theme.field;
+                                model: root.resolutions;
+                                current-index <=> root.resolution-index;
+                                selected(value) => { root.resolution-selected(self.current-index); }
                             }
                         }
-                        Row {
-                            Field {
-                                label: "Color";
-                                ComboBox {
-                                    height: Theme.field;
-                                    model: root.color-names;
-                                    current-index <=> root.color-index;
-                                    selected(value) => { root.color-selected(self.current-index); }
-                                }
-                            }
-                            Field {
-                                label: "Alpha";
-                                SpinBox {
-                                    height: Theme.field;
-                                    minimum: 0;
-                                    maximum: 255;
-                                    value <=> root.alpha;
-                                    edited(value) => { root.alpha-edited(value); }
-                                }
-                            }
-                            Field {
-                                label: "Outline";
-                                ComboBox {
-                                    height: Theme.field;
-                                    model: ["Off", "Full", "Half"];
-                                    current-index <=> root.outline-index;
-                                    selected(value) => { root.outline-selected(self.current-index); }
-                                }
+                        Field {
+                            label: "Display mode";
+                            ComboBox {
+                                height: Theme.field;
+                                model: root.modes;
+                                current-index <=> root.mode-index;
+                                selected(value) => { root.mode-selected(self.current-index); }
                             }
                         }
-                    }
-                }
-            }
-
-            // the display
-            Card {
-                Field {
-                    label: "Resolution";
-                    ComboBox {
-                        height: Theme.field;
-                        model: root.resolutions;
-                        current-index <=> root.resolution-index;
-                        selected(value) => { root.resolution-selected(self.current-index); }
-                    }
-                }
-                Field {
-                    label: "Display mode";
-                    ComboBox {
-                        height: Theme.field;
-                        model: root.modes;
-                        current-index <=> root.mode-index;
-                        selected(value) => { root.mode-selected(self.current-index); }
                     }
                 }
             }

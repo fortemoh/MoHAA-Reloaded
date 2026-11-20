@@ -1,6 +1,7 @@
 //! MoHAA Launcher for Windows and Linux. It starts the game beside it (openmohaa.exe, openmohaa) for the game
-//! picked on the left, with the player's name, the server, the crosshair and the display set here. When the project's
-//! release has a newer build than that game, it offers to update the game's files (update.rs).
+//! picked at the top left, with the player's name, the server and the display set here (the crosshair is the game's:
+//! Options' HUD tab, or crosshair_import with a CS2 code). When the project's release has a newer build than that
+//! game, it offers to update the game's files (update.rs).
 
 #![windows_subsystem = "windows"]
 
@@ -19,22 +20,10 @@ use std::time::{Duration, Instant, SystemTime};
 
 slint::include_modules!();
 
-const CVAR_DEFAULTS: [(&str, &str); 18] = [
+const CVAR_DEFAULTS: [(&str, &str); 7] = [
     ("name", ""),
     // off unless the player turns it on (the game's own default is on): always passed, so the game agrees
     ("cl_discordPresence", "0"),
-    ("cg_crosshair_length", "8"),
-    ("cg_crosshair_gap", "4"),
-    ("cg_crosshair_thickness", "2"),
-    ("cg_crosshair_color", "FFFFFF"),
-    ("cg_crosshair_alpha", "255"),
-    ("cg_crosshair_outline", "0"),
-    ("cg_crosshair_outline_color", "000000"),
-    ("cg_crosshair_outline_alpha", "255"),
-    ("cg_crosshair_dot", "0"),
-    ("cg_crosshair_t", "0"),
-    // the last code imported, for the game's crosshair_export
-    ("cg_crosshair_code", ""),
     ("r_mode", "-2"),
     ("r_customwidth", "1600"),
     ("r_customheight", "1024"),
@@ -48,16 +37,6 @@ const SETTINGS_FILE: &str = "mohlauncher.json";
 /// Set for the launcher an update started in place of the old one: the commit it updated the game to
 const UPDATED_ENV: &str = "MOHLAUNCHER_UPDATED";
 
-const COLOR_PRESETS: [(&str, u32); 7] = [
-    ("White", 0xFFFFFF),
-    ("Green", 0x00FF00),
-    ("Yellow", 0xFFFF00),
-    ("Cyan", 0x00FFFF),
-    ("Red", 0xFF0000),
-    ("Magenta", 0xFF00FF),
-    ("Black", 0x000000),
-];
-
 /// What the dialog over the window is for
 #[derive(Clone, Copy, PartialEq)]
 enum Dialog {
@@ -66,9 +45,6 @@ enum Dialog {
     ChooseFolder,
     Rename(usize),
     Remove(usize),
-    CustomColor,
-    /// A CS2 crosshair code to paste
-    ImportCode,
     /// A newer build is out: update?
     Update,
     /// The update's progress, with Cancel until the files move
@@ -296,10 +272,6 @@ impl State {
     fn problem(&self) -> bool {
         self.folder.is_none() || self.exe.is_none() || self.unwritable
     }
-
-    fn crosshair_rgb(&self) -> u32 {
-        parse_color(self.edits.get("cg_crosshair_color")).unwrap_or(0xFFFFFF)
-    }
 }
 
 type Shared = Rc<RefCell<State>>;
@@ -349,79 +321,6 @@ fn show_servers(ui: &LauncherWindow, st: &State) {
     ui.set_servers(ModelRc::new(VecModel::from(items)));
 }
 
-/// A whole number as the game reads it (atoi): truncated
-fn whole(value: &str) -> i32 {
-    value.trim().parse::<f64>().map_or(0, |v| v as i32)
-}
-
-fn show_crosshair(ui: &LauncherWindow, st: &State) {
-    let e = &st.edits;
-    let number = |name| e.get(name).trim().parse::<f64>().unwrap_or(0.0);
-    let flag = |name| whole(e.get(name)) != 0;
-    ui.set_length(int(e.get("cg_crosshair_length")).clamp(0, 128));
-    ui.set_gap(int(e.get("cg_crosshair_gap")).clamp(0, 64));
-    ui.set_thickness(int(e.get("cg_crosshair_thickness")).clamp(0, 16));
-    let outline = whole(e.get("cg_crosshair_outline")).clamp(0, 2);
-    let (dot, t) = (flag("cg_crosshair_dot"), flag("cg_crosshair_t"));
-    ui.set_outline_index(outline);
-    ui.set_dot(dot);
-    ui.set_t_style(t);
-
-    let rgb = st.crosshair_rgb();
-    let preset = COLOR_PRESETS.iter().position(|(_, c)| *c == rgb);
-    let mut names: Vec<String> = COLOR_PRESETS.iter().map(|(n, _)| n.to_string()).collect();
-    names.push(match preset {
-        Some(_) => "Custom\u{2026}".into(),
-        None => format!("#{}", color_hex(rgb)),
-    });
-    ui.set_color_names(strings(names));
-    ui.set_color_index(preset.unwrap_or(COLOR_PRESETS.len()) as i32);
-    let alpha = whole(e.get("cg_crosshair_alpha")).clamp(0, 255);
-    ui.set_alpha(alpha);
-    let outline_rgb = parse_color(e.get("cg_crosshair_outline_color")).unwrap_or(0);
-    let outline_alpha = whole(e.get("cg_crosshair_outline_alpha")).clamp(0, 255);
-    let color = |rgb: u32, a: i32| slint::Color::from_argb_u8(a as u8, (rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8);
-    ui.set_crosshair_color(color(rgb, alpha));
-    ui.set_outline_color(color(outline_rgb, outline_alpha));
-    let dark = |rgb: u32| ((rgb >> 16) * 3 + ((rgb >> 8) & 0xFF) * 6 + (rgb & 0xFF)) / 10 < 64;
-    ui.set_crosshair_dark(dark(rgb) || (outline != 0 && dark(outline_rgb)));
-
-    // three preview pixels to a HUD pixel as long as it fits, else scaled down to fit
-    let layout = crosshair_boxes(&Crosshair {
-        length: number("cg_crosshair_length"),
-        gap: number("cg_crosshair_gap"),
-        thickness: number("cg_crosshair_thickness"),
-        outline,
-        dot,
-        t,
-    });
-    let size = 96.0_f32; // ui/app.slint's Theme.preview
-    let room = size - 8.0;
-    let mut zoom = 3.0_f32;
-    if layout.extent as f32 * zoom > room {
-        zoom = room / layout.extent as f32;
-        if zoom >= 1.0 {
-            zoom = zoom.floor();
-        }
-    }
-    // the top left corner of the square that holds the crosshair, the same both ways
-    let corner = ((size - layout.extent as f32 * zoom) / 2.0).floor();
-    let boxes = |list: &[CrossBox]| {
-        let boxes: Vec<PreviewBox> = list
-            .iter()
-            .map(|b| PreviewBox {
-                x: (corner + (b.x - layout.start) as f32 * zoom).round(),
-                y: (corner + (b.y - layout.start) as f32 * zoom).round(),
-                width: (b.w as f32 * zoom).round().max(1.0),
-                height: (b.h as f32 * zoom).round().max(1.0),
-            })
-            .collect();
-        ModelRc::new(VecModel::from(boxes))
-    };
-    ui.set_boxes(boxes(&layout.boxes));
-    ui.set_outline_boxes(boxes(&layout.outline));
-}
-
 fn show_display(ui: &LauncherWindow, st: &mut State) {
     let (entries, index) = resolution_entries(&st.sizes, st.desktop, &st.edits);
     ui.set_resolutions(strings(entries.iter().map(ResolutionEntry::label)));
@@ -435,7 +334,6 @@ fn show_cvars(ui: &LauncherWindow, st: &mut State) {
         ui.set_name(st.edits.get("name").into());
     }
     ui.set_discord_presence(int(st.edits.get("cl_discordPresence")) != 0);
-    show_crosshair(ui, st);
     show_display(ui, st);
 }
 
@@ -622,28 +520,6 @@ fn dialog_accepted(ui: &LauncherWindow, st: &mut State) {
             show_servers(ui, st);
             show_status(ui, st);
         }
-        Dialog::CustomColor => match parse_color(&value) {
-            Some(rgb) => {
-                st.edits.set("cg_crosshair_color", &color_hex(rgb));
-                show_crosshair(ui, st);
-            }
-            None => {
-                let text = "Six hexadecimal digits, as #RRGGBB: #00FF7F is spring green.";
-                show_input(ui, st, Dialog::CustomColor, "Crosshair color", text, &value, "Use");
-            }
-        },
-        Dialog::ImportCode => match crosshair_import(&value) {
-            Ok(values) => {
-                for (name, value) in values {
-                    st.edits.set(name, &value);
-                }
-                show_crosshair(ui, st);
-            }
-            Err(why) => {
-                let text = format!("{}{}. Nothing changed.", why[..1].to_uppercase(), &why[1..]);
-                show_input(ui, st, Dialog::ImportCode, "Import CS2 code", &text, &value, "Import");
-            }
-        },
         Dialog::ChooseFolder | Dialog::Message | Dialog::Update | Dialog::Updating | Dialog::None => {}
     }
 }
@@ -905,53 +781,6 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
-    let crosshair_edit = |cvar: &'static str, min: i32, max: i32| {
-        let weak = ui.as_weak();
-        let state = state.clone();
-        move |value: i32| {
-            let Some(ui) = weak.upgrade() else { return };
-            let mut st = state.borrow_mut();
-            st.edits.set(cvar, &value.clamp(min, max).to_string());
-            show_crosshair(&ui, &st);
-        }
-    };
-    ui.on_length_edited(crosshair_edit("cg_crosshair_length", 0, 128));
-    ui.on_gap_edited(crosshair_edit("cg_crosshair_gap", 0, 64));
-    ui.on_thickness_edited(crosshair_edit("cg_crosshair_thickness", 0, 16));
-    ui.on_alpha_edited(crosshair_edit("cg_crosshair_alpha", 0, 255));
-    ui.on_outline_selected(crosshair_edit("cg_crosshair_outline", 0, 2));
-    let crosshair_toggle = |cvar: &'static str| {
-        let weak = ui.as_weak();
-        let state = state.clone();
-        move || {
-            let Some(ui) = weak.upgrade() else { return };
-            let mut st = state.borrow_mut();
-            let on = whole(st.edits.get(cvar)) != 0;
-            st.edits.set(cvar, if on { "0" } else { "1" });
-            show_crosshair(&ui, &st);
-        }
-    };
-    ui.on_dot_toggled(crosshair_toggle("cg_crosshair_dot"));
-    ui.on_t_style_toggled(crosshair_toggle("cg_crosshair_t"));
-    on!(on_color_selected, |ui, st, index| {
-        if let Some((_, rgb)) = COLOR_PRESETS.get(index as usize) {
-            st.edits.set("cg_crosshair_color", &color_hex(*rgb));
-            show_crosshair(&ui, &st);
-        } else {
-            let value = format!("#{}", color_hex(st.crosshair_rgb()));
-            show_input(&ui, &mut st, Dialog::CustomColor, "Crosshair color", "Any color as #RRGGBB.", &value, "Use");
-        }
-    });
-    on!(on_import_code, |ui, st| {
-        let text = "Paste a crosshair code copied in CS2: CS and 44 letters and digits.";
-        show_input(&ui, &mut st, Dialog::ImportCode, "Import CS2 code", text, "", "Import");
-    });
-    on!(on_reset_crosshair, |ui, st| {
-        for (name, value) in CVAR_DEFAULTS.iter().filter(|(n, _)| n.starts_with("cg_crosshair_")) {
-            st.edits.set(name, value);
-        }
-        show_crosshair(&ui, &st);
-    });
     on!(on_resolution_selected, |ui, st, index| {
         if let Some(entry) = st.resolution_entries.get(index as usize).copied() {
             st.edits.set("r_mode", &entry.mode.to_string());
@@ -977,10 +806,8 @@ fn main() -> Result<(), slint::PlatformError> {
             return;
         }
         close_dialog(&ui, &mut st);
-        match dialog {
-            Dialog::CustomColor => show_crosshair(&ui, &st), // the color menu shows the color it had
-            Dialog::Update => st.update = None,              // asked again at the next start
-            _ => {}
+        if dialog == Dialog::Update {
+            st.update = None; // asked again at the next start
         }
     });
     on!(on_dialog_accepted, shared |ui, state| {
