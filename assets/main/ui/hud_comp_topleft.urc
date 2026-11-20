@@ -8,8 +8,8 @@ align left top
 bgcolor 0 0 0 0
 borderstyle NONE
 
-// the radar: its disc, the map and what is on it, the damage wedge (no
-// accent ring: the disc's own edge)
+// the radar: its disc, the map and what is on it, the damage wedge (its
+// outer side the disc's edge; no accent ring: the disc's own edge)
 resource
 HudRadar
 {
@@ -30,7 +30,7 @@ rect 25 25 248 248
 bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_radar_on
-shape poly 0.753 0.188 0.129 1 0.5 0.38 0.64 0.02 0.36 0.02
+shape poly 0.753 0.188 0.129 1 0.5 0.38 0.64 0.02 0.6056 0.0113 0.5707 0.005 0.5354 0.0013 0.5 0 0.4646 0.0013 0.4293 0.005 0.3944 0.0113 0.36 0.02
 rotatecvar ui_hud_dmg_angle
 alphacvar ui_hud_dmg_alpha
 }
