@@ -8,9 +8,10 @@ align left top
 bgcolor 0 0 0 0
 borderstyle NONE
 
-// the compass (no radar): what the stock compass points at (the nearest
-// teammate, or the objective) as a gold arrow on a ring, its distance and
-// what it is inside, the other teammates as dots on it; the damage wedge
+// the compass (no radar): a tracker, a radar with no map (HudMates): you a
+// white dot in the middle, each teammate a gold dot in its direction, the
+// nearer the middle the nearer (the ring at 60 m and on), the nearest out of
+// sight too (the stock compass's); the damage wedge
 resource
 Label
 {
@@ -23,7 +24,17 @@ shape circle 0.047 0.055 0.071 0.45
 shape ring 2 $ui_hud_acc_radar 0.6
 }
 
-// the other teammates the game knows of, as the radar's edge dots
+resource
+Label
+{
+name "you"
+rect 82 82 6 6
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_compass_on
+shape circle 1 1 1 0.9
+}
+
 resource
 HudMates
 {
@@ -45,50 +56,6 @@ enabledcvar ui_hud_compass_on
 shape poly 0.753 0.188 0.129 1 0.5 0.38 0.64 0.02 0.36 0.02
 rotatecvar ui_hud_dmg_angle
 alphacvar ui_hud_dmg_alpha
-}
-
-resource
-Label
-{
-name "matearrow"
-rect 15 15 140 140
-bgcolor 0 0 0 0
-borderstyle NONE
-enabledcvar ui_hud_compass_on
-shape poly 0 0 0 0.55 0.5 0.007 0.614 0.214 0.5 0.146 0.386 0.214
-shape poly $ui_hud_acc 1 0.5 0.029 0.593 0.2 0.5 0.131 0.407 0.2
-rotatecvar ui_hud_mate_angle
-alphacvar ui_hud_mate_on
-}
-
-resource
-Label
-{
-name "matedist"
-rect 29 60 112 38
-fgcolor 1 1 1 1
-bgcolor 0 0 0 0
-borderstyle NONE
-font oswald-semibold-30s
-textalign centerx
-linkcvar ui_hud_mate
-enabledcvar ui_hud_compass_on
-alphacvar ui_hud_mate_on
-}
-
-resource
-Label
-{
-name "matewhat"
-rect 29 99 112 20
-fgcolor 0.8 0.8 0.8 1
-bgcolor 0 0 0 0
-borderstyle NONE
-font oswald-medium-13s
-textalign centerx
-linkcvar ui_hud_mate_what
-enabledcvar ui_hud_compass_on
-alphacvar ui_hud_mate_on
 }
 
 // the game messages under the radar, or under the compass
