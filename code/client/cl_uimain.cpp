@@ -2316,6 +2316,7 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Always Run", "Walk while the walk key is held.", "cl_run", "1", 0),
     O_TOGGLE("Server Lag Icon", "Shown while the server stops answering.", "cg_drawsvlag", "1", 0),
     O_SEG("Lagometer", "The connection: ping, loss, updates.", "cg_lagometer", "0", rl_oLagometer, NULL, 0),
+    O_TOGGLE("Remote Prediction", "Players drawn where your shots will find them.", "cg_remotePrediction", "0", 0),
     O_SECTION(OT_GAMEPLAY, "MOVEMENT", OF_RIGHT),
     O_SEG("Movement Rate", "Moves a second, apart from the frame rate.", "cl_movefps", "100", rl_oMoveRates, rl_oMoveValues, 0),
     O_TOGGLE("Shots and Jumps Sooner", "Sent half a move sooner.", "cl_movesubgrid", "1", 0),
