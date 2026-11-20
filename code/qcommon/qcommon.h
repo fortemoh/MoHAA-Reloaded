@@ -1436,9 +1436,7 @@ char	*Sys_SteamPath(void);
 char	*Sys_GogPath(void);
 char	*Sys_MicrosoftStorePath(void);
 
-#ifdef __APPLE__
-char    *Sys_DefaultAppPath(void);
-#endif
+char    *Sys_DefaultAppPath(void); // Changed: every platform (fs_apppath)
 
 char	*Sys_DefaultHomeConfigPath(void);
 char	*Sys_DefaultHomeDataPath(void);
