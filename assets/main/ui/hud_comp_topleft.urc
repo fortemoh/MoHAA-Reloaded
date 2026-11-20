@@ -17,7 +17,6 @@ name "radar"
 rect 25 25 248 248
 bgcolor 0 0 0 0
 borderstyle NONE
-font oswald-semibold-13.5s
 enabledcvar ui_hud_radar_on
 shape circle 0.047 0.055 0.071 0.78
 shape ring 1.127 1 1 1 0.102
