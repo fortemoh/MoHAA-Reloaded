@@ -21,6 +21,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include "cg_local.h"
+#include "cg_remotepredict.h"
 #include "cg_parsemsg.h"
 
 //============================================================================
@@ -943,6 +944,9 @@ void CG_DrawActiveFrame(int serverTime, int frameTime, stereoFrame_t stereoView,
     if (!cg.snap || (cg.snap->snapFlags & SNAPFLAG_NOT_ACTIVE)) {
         return;
     }
+
+    // Added: remote prediction reads every new snapshot as it arrives
+    CG_RP_BeginFrame();
 
     // this counter will be bumped for every valid scene we generate
     cg.clientFrame++;

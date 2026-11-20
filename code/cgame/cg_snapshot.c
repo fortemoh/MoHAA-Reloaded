@@ -42,6 +42,8 @@ static void CG_ResetEntity(centity_t *cent)
     int      i;
 
     VectorCopy(cent->currentState.origin, cent->lerpOrigin);
+    // Added: the collision position too, read before this frame's entities are placed
+    VectorCopy(cent->currentState.origin, cent->netLerpOrigin);
 
     VectorCopy(cent->currentState.angles, cent->lerpAngles);
 

@@ -108,6 +108,9 @@ extern "C" {
 
         // exact interpolated position of entity on this frame
         vec3_t lerpOrigin;
+        // Added: the stock position, before remote prediction moved where another
+        // player is drawn (CG_RP_UpdateEntity); collision uses this one
+        vec3_t netLerpOrigin;
         vec3_t lerpAngles;
 
         sfxHandle_t tikiLoopSound;
