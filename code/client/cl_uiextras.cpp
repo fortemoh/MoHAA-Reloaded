@@ -47,8 +47,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //
 // Sizes are design units (cl_uidraw.h): the prints and the banner the
 // menus' (1080 lines), the typing line and the quick messages the HUD's
-// (cg_hud_scale). Text is Oswald baked at the pixel size drawn, baked ahead
-// with the map's load.
+// (cg_hud_scale). Text is Oswald (the HUD's small text in the HUD's font,
+// cg_hud_font) baked at the pixel size drawn, baked ahead with the map's load.
 
 #include "client.h"
 #include "cl_lagometer.h"
@@ -522,9 +522,11 @@ static rlView_t EX_HudView(void)
 {
     rlView_t v;
 
-    v.s  = UI_DesignScale(1920.0f, 1080.0f);
-    v.dw = uid.vidWidth / v.s;
-    v.dh = uid.vidHeight / v.s;
+    v.s    = UI_DesignScale(1920.0f, 1080.0f);
+    v.dw   = uid.vidWidth / v.s;
+    v.dh   = uid.vidHeight / v.s;
+    v.hud  = true;
+    v.font = NULL;
     return v;
 }
 

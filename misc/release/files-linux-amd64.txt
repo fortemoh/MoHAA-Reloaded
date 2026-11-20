@@ -7,6 +7,17 @@ libSDL3.so.0
 licenses
 licenses/SDL3
 licenses/SDL3/LICENSE.txt
+licenses/fonts
+licenses/fonts/OFL-BarlowSemiCondensed.txt
+licenses/fonts/OFL-Exo2.txt
+licenses/fonts/OFL-IBMPlexSansCondensed.txt
+licenses/fonts/OFL-Oswald.txt
+licenses/fonts/OFL-Oxanium.txt
+licenses/fonts/OFL-Rajdhani.txt
+licenses/fonts/OFL-RobotoCondensed.txt
+licenses/fonts/OFL-SairaSemiCondensed.txt
+licenses/fonts/OFL-Teko.txt
+licenses/fonts/OFL-TitilliumWeb.txt
 licenses/jpeg
 licenses/jpeg/README
 licenses/libmad

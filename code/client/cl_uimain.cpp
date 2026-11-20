@@ -2214,6 +2214,7 @@ enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW
 #define OF_RES     256 // r_mode: the desktop's, or a size of the display's (r_customwidth, r_customheight)
 #define OF_THIRD   512 // a section in the third column (CONTROLS' alone have three; else the right one)
 #define OF_LEFT2   2048 // a section in the left column where there are two (else its own)
+#define OF_FONT    4096 // cg_hud_font: a cycle of the HUD's fonts (rl_fonts), each name in its own font
 
 typedef struct {
     int                kind, tab, flags; // the tab: a section's
@@ -2334,6 +2335,7 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Record Every Match", "A demo of each match you play.", "cl_autoRecordDemo", "0", 0),
     O_SECTION(OT_HUD, "HUD", 0),
     O_SEG("HUD Style", "The CS:GO or CS2 look.", "cg_hudstyle", "1", rl_oHudStyles, rl_oHudValues, 0),
+    O_CYCLE("HUD Font", "Chat, messages, kill feed and names.", "cg_hud_font", "oswald", NULL, NULL, OF_FONT),
     O_SLIDER("HUD Scale", "Bigger or smaller, the whole HUD.", "cg_hud_scale", "1", 0.25f, 2, 0.05f, 0),
     O_SLIDER("Radar Size", "Bigger or smaller, the radar alone.", "cg_hud_radar_size", "1", 0.5f, 1.5f, 0.05f, OF_PCT),
     O_SWATCH("Accent Colour", "The HUD's highlight.", "cg_hud_accent", "f6f67a", rl_oAccents, 13),
@@ -2745,6 +2747,9 @@ static int RL_OptChoice(int i)
         // (a numbered mode: none of them)
         return atoi(value) == -2 ? 0 : atoi(value) == -1 && it != rl_opt.sizes.end() ? (int)(it - rl_opt.sizes.begin()) : -1;
     }
+    if (o.flags & OF_FONT) {
+        return (int)(RL_FindFont(value) - rl_fonts);
+    }
     if (o.flags & OF_ANISO && !atoi(value)) {
         return 0;
     }
@@ -2766,6 +2771,9 @@ static int RL_OptChoices(int i)
     if (rl_opts[i].flags & OF_RES) {
         return (int)rl_opt.sizes.size();
     }
+    if (rl_opts[i].flags & OF_FONT) {
+        return rl_numFonts;
+    }
     while (rl_opts[i].choices[n]) {
         n++;
     }
@@ -2777,6 +2785,9 @@ static const char *RL_OptLabel(int i, int k)
 {
     if (rl_opts[i].flags & OF_RES) {
         return k >= 0 ? rl_opt.sizes[k].c_str() : va("MODE %d", atoi(RL_OptValue(i)));
+    }
+    if (rl_opts[i].flags & OF_FONT) {
+        return k >= 0 ? rl_fonts[k].name : "";
     }
     return k >= 0 ? rl_opts[i].choices[k] : "";
 }
@@ -2821,6 +2832,8 @@ static void RL_OptPick(int i, int k)
             RL_OptCvarSet("r_customwidth", va("%d", w));
             RL_OptCvarSet("r_customheight", va("%d", h));
         }
+    } else if (o.flags & OF_FONT) {
+        RL_OptSet(i, rl_fonts[k].value);
     } else {
         RL_OptSet(i, o.values ? o.values[k] : va("%d", k));
     }
@@ -3252,7 +3265,13 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
         RL_Segments(m, v, right, mid - 16, 32, o.choices, RL_OptChoices(i), RL_OptChoice(i), id, true);
         break;
     case OC_CYCLE:
-        RL_Cycle(m, v, right - 260, mid - 16, RL_OptLabel(i, RL_OptChoice(i)), id);
+        {
+            // (a font: its name in it)
+            rlView_t fv = v;
+
+            fv.font = o.flags & OF_FONT ? &rl_fonts[Q_max(0, RL_OptChoice(i))] : NULL;
+            RL_Cycle(m, fv, right - 260, mid - 16, RL_OptLabel(i, RL_OptChoice(i)), id);
+        }
         break;
     case OC_SLIDER:
         RL_Slider(m, v, i, right - 260, mid - 14, id);

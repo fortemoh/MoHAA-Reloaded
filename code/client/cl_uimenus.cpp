@@ -406,9 +406,11 @@ rlView_t RL_View(void)
 {
     rlView_t v;
 
-    v.dh = uid.vidHeight >= 900 ? 1080.0f : 900.0f;
-    v.s  = uid.vidHeight / v.dh;
-    v.dw = uid.vidWidth / v.s;
+    v.dh   = uid.vidHeight >= 900 ? 1080.0f : 900.0f;
+    v.s    = uid.vidHeight / v.dh;
+    v.dw   = uid.vidWidth / v.s;
+    v.hud  = false;
+    v.font = NULL;
     return v;
 }
 
@@ -529,10 +531,39 @@ void RL_TeamIcon(const rlView_t& v, int t, float cx, float cy, float d)
 /*
 ----------------
 Text: Oswald Medium (m) and SemiBold (b), baked at the pixel size drawn
-("oswald-medium-<px>p"); a size is design pixels (the em), 9 pixels at
-least on the screen
+("oswald-medium-<px>p"); a size is design pixels (Oswald's em), 9 pixels at
+least on the screen. The HUD's small text in the HUD's font (cg_hud_font),
+another font's capitals as tall as Oswald's (uibake.cpp)
 ----------------
 */
+
+// the HUD's fonts: Oswald, then those of the Competitive HUD's font choice
+// (all SIL Open Font Licence, fonts/OFL-<name>.txt), each its Medium and
+// SemiBold (Rajdhani and Titillium Web a step heavier, SemiBold and Bold:
+// both run light, and Titillium has no Medium)
+const rlFont_t rl_fonts[] = {
+    {"oswald",    "Oswald",    "oswald-medium",               "oswald-semibold"              },
+    {"plex",      "Plex",      "ibmplexsanscondensed-medium", "ibmplexsanscondensed-semibold"},
+    {"barlow",    "Barlow",    "barlowsemicondensed-medium",  "barlowsemicondensed-semibold" },
+    {"rajdhani",  "Rajdhani",  "rajdhani-semibold",           "rajdhani-bold"                },
+    {"saira",     "Saira",     "sairasemicondensed-medium",   "sairasemicondensed-semibold"  },
+    {"teko",      "Teko",      "teko-medium",                 "teko-semibold"                },
+    {"titillium", "Titillium", "titilliumweb-semibold",       "titilliumweb-bold"            },
+    {"exo",       "Exo",       "exo2-medium",                 "exo2-semibold"                },
+    {"oxanium",   "Oxanium",   "oxanium-medium",              "oxanium-semibold"             },
+    {"roboto",    "Roboto",    "robotocondensed-medium",      "robotocondensed-semibold"     },
+};
+const int rl_numFonts = (int)ARRAY_LEN(rl_fonts);
+
+const rlFont_t *RL_FindFont(const char *value)
+{
+    for (const rlFont_t& f : rl_fonts) {
+        if (!Q_stricmp(f.value, value)) {
+            return &f;
+        }
+    }
+    return &rl_fonts[0];
+}
 
 // the type scale (design pixels): three header sizes, two for what's under them
 #define RL_H1 60.0f // the scores
@@ -548,7 +579,9 @@ rlFace_t RL_Face(const rlView_t& v, float size, bool bold, bool shadow)
     char name[64];
 
     face.px = Q_max(9, (int)floorf(size * v.s + 0.5f));
-    Com_sprintf(name, sizeof(name), "oswald-%s-%dp%s", bold ? "semibold" : "medium", face.px, shadow ? "s" : "");
+    // (h: the HUD's small text, in the HUD's font: uibake.cpp)
+    Com_sprintf(name, sizeof(name), "%s-%dp%s%s", v.font ? (bold ? v.font->semibold : v.font->medium) : bold ? "oswald-semibold" : "oswald-medium",
+                face.px, shadow ? "s" : "", !v.font && v.hud && size <= UI_HUD_SMALL ? "h" : "");
     face.f    = UI_BakeFont(name);
     face.page = face.f ? UI_BakedFontScale(face.f) : 0.0f;
     return face;

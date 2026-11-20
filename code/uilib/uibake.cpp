@@ -66,6 +66,7 @@ typedef struct {
     std::string    file;
     void          *data; // NULL: no such face
     stbtt_fontinfo info;
+    float          capEm; // its capitals' height, a share of the em (0: no H)
 } uiFace_t;
 
 typedef struct {
@@ -107,7 +108,8 @@ static std::mutex                                 bake_lock; // bake_faces, bake
 static const float SLANT = 0.21256f; // tan 12 degrees: CSS's text-skew -12deg
 
 static float bake_designScale = 1.0f; // the design's scale times this (cg_hud_scale)
-static int   bake_scaleGen;            // ... its changes
+static int   bake_faceGen;             // its changes and the HUD font's (what the faces are made at)
+static char  bake_hudFont[2][MAX_QPATH]; // the HUD's small text's files for Oswald Medium's and SemiBold's ("": Oswald's)
 
 float UI_DesignScale(float w, float h)
 {
@@ -121,7 +123,19 @@ bool UI_SetDesignScale(float scale)
         return false;
     }
     bake_designScale = scale;
-    bake_scaleGen++;
+    bake_faceGen++;
+    bake_gen++;
+    return true;
+}
+
+bool UI_SetHudFont(const char *medium, const char *semibold)
+{
+    if (!Q_stricmp(bake_hudFont[0], medium) && !Q_stricmp(bake_hudFont[1], semibold)) {
+        return false;
+    }
+    Q_strncpyz(bake_hudFont[0], medium, sizeof(bake_hudFont[0]));
+    Q_strncpyz(bake_hudFont[1], semibold, sizeof(bake_hudFont[1]));
+    bake_faceGen++;
     bake_gen++;
     return true;
 }
@@ -134,7 +148,7 @@ int UI_FontStamp(void)
     // CL_BeginRegistration's glconfig), which baked them at the old one
     const unsigned size = (unsigned)uid.vidWidth * 8191u + (unsigned)uid.vidHeight;
 
-    return (int)((size * 131u + (unsigned)bake_scaleGen) * 4099u + (unsigned)uii.GetRefSequence());
+    return (int)((size * 131u + (unsigned)bake_faceGen) * 4099u + (unsigned)uii.GetRefSequence());
 }
 
 void UI_BakeForget(void)
@@ -238,7 +252,10 @@ static uiFace_t *Bake_Face(const char *file)
     f->file = file;
     if (uii.File_OpenFile(va("fonts/%s.ttf", file), &buf) > 0) {
         if (stbtt_InitFont(&f->info, (unsigned char *)buf, 0)) {
-            f->data = buf;
+            int x0, y0, x1, y1;
+
+            f->data  = buf;
+            f->capEm = stbtt_GetCodepointBox(&f->info, 'H', &x0, &y0, &x1, &y1) ? y1 * stbtt_ScaleForMappingEmToPixels(&f->info, 1.0f) : 0.0f;
         } else {
             uii.File_FreeFile(buf);
         }
@@ -247,7 +264,7 @@ static uiFace_t *Bake_Face(const char *file)
     return f->data ? f : NULL;
 }
 
-// "<file>-<px>[s][i][p]"
+// "<file>-<px>[s][i][p][h]"
 static qboolean Bake_ParseFont(const char *name, uiFontSpec_t *spec)
 {
     const char *dash = strrchr(name, '-');
@@ -266,8 +283,29 @@ static qboolean Bake_ParseFont(const char *name, uiFontSpec_t *spec)
     // (p: px screen pixels, whatever the design's scale: the menus' type, sized to the screen themselves)
     spec->absolute = strchr(end, 'p') ? qtrue : qfalse;
     Q_strncpyz(file, name, dash - name + 1);
+    // the HUD's small text (its design-size faces, the HUD's menus'; h: one
+    // drawn in the HUD at the screen's size) in the HUD's font
+    if (strchr(end, 'h') || (!spec->absolute && spec->px <= UI_HUD_SMALL)) {
+        for (int k = 0; k < 2; k++) {
+            if (bake_hudFont[k][0] && !Q_stricmp(file, k ? "oswald-semibold" : "oswald-medium")) {
+                Q_strncpyz(file, bake_hudFont[k], sizeof(file));
+                break;
+            }
+        }
+    }
     spec->face = Bake_Face(file);
-    return spec->face ? qtrue : qfalse;
+    if (!spec->face) {
+        return qfalse;
+    }
+    // a size is Oswald's: another face's capitals as tall as Oswald's at it
+    if (Q_stricmpn(file, "oswald-", 7)) {
+        const uiFace_t *oswald = Bake_Face("oswald-medium");
+
+        if (oswald && oswald->capEm > 0.0f && spec->face->capEm > 0.0f) {
+            spec->px *= oswald->capEm / spec->face->capEm;
+        }
+    }
+    return qtrue;
 }
 
 static void Bake_Metrics(const uiFace_t *face, float pixels, uiMetrics_t *m)
