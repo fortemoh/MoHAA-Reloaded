@@ -1170,7 +1170,11 @@ void CL_FirstSnapshot( void ) {
 	cl.serverStartTime = cl.snap.serverTime;
 	cl.serverTimeDelta = cl.snap.serverTime - cls.realtime;
 
-	clc.timeDemoBaseTime = cl.snap.serverTime;
+	// Fixed: less the frames a timedemo already played, so that after a map
+	// change its time (base + frames * 50) starts at this snapshot; else it
+	// jumped ahead by every frame played and the next map was read in one
+	// frame, the cgame never run (its configstrings cycled out)
+	clc.timeDemoBaseTime = cl.snap.serverTime - clc.timeDemoFrames * 50;
 
 	// if this is the first frame of active play,
 	// execute the contents of activeAction now
