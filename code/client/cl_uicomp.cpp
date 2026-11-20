@@ -26,7 +26,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // number or width has a widget: the kill feed, the chat and the game
 // messages (HudFeed), the players' cards (HudCards), the player followed
 // (HudFollow), the weapons carried (HudWeapons), the radar's map (HudRadar)
-// and, with no radar, the teammates on the compass's ring (HudMates).
+// and, with no radar, the compass's tracker (HudMates).
 
 #include "client.h"
 #include "cl_ui.h"
@@ -85,7 +85,7 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_count_axis", "ui_hud_count_on", "ui_hud_dmg_alpha", "ui_hud_dmg_angle", "ui_hud_follow",
     "ui_hud_follow_col", "ui_hud_follow_on", "ui_hud_health", "ui_hud_health_col", "ui_hud_health_frac",
     "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col", "ui_hud_hurt_on", "ui_hud_jail_allies", "ui_hud_jail_axis",
-    "ui_hud_jail_on", "ui_hud_mate", "ui_hud_mate_angle", "ui_hud_mate_on", "ui_hud_mate_what", "ui_hud_msgs_c", "ui_hud_msgs_r",
+    "ui_hud_jail_on", "ui_hud_msgs_c", "ui_hud_msgs_r",
     "ui_hud_radar_on", "ui_hud_score_l", "ui_hud_score_lc", "ui_hud_score_on", "ui_hud_score_r",
     "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_timer", "ui_hud_vote_on",
     "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_weapons_on",
@@ -999,7 +999,40 @@ static void Comp_RadarSize(void)
 
 static const char *const comp_arcAlpha[3] = {"ui_hud_arc0_alpha", "ui_hud_arc1_alpha", "ui_hud_arc2_alpha"};
 static const char *const comp_arcAngle[3] = {"ui_hud_arc0_angle", "ui_hud_arc1_angle", "ui_hud_arc2_angle"};
-static float             comp_mateUnits; // the compass's target's distance (ui_hud_mate)
+// the teammates the radar and the tracker show (g_radarClients, the
+// cgame's: never enemies): not oneself nor the player watched (through
+// their eyes the entry is the view's own place, from behind the camera's
+// ahead: STAT_INFOCLIENT, which playing is the player aimed at), not the
+// dead, not a place no longer sent. The cgame's entries are of the snapshot
+// (0-1 snapshots old) or, on Spearhead's and Breakthrough's protocol, also
+// of the server's radar (a teammate out of sight a snapshot in turn); it
+// keeps a last seen place 5 s
+typedef struct {
+    int followed, fresh;
+} compMates_t;
+
+static compMates_t Comp_Mates(void)
+{
+    const playerState_t *ps = &cl.snap.ps;
+
+    return {(ps->pm_flags & PMF_SPECTATING) ? ps->stats[STAT_INFOCLIENT] : -1, com_target_game->integer < TG_MOHTA ? 250 : 2000};
+}
+
+static bool Comp_MateShown(const compMates_t& m, int i)
+{
+    const radarClient_t *c = &g_radarClients[i];
+
+    return i != g_radarClientNum && i != cl.snap.ps.clientNum && i != m.followed && !comp.dead[i] && c->time
+        && cl.snap.serverTime - c->time < m.fresh;
+}
+
+// what the stock compass points at (the compass with no radar, HudMates):
+// shown, an objective (not a teammate), its place from this frame's view
+// (units right and ahead)
+static struct {
+    qboolean on, objective;
+    float    right, ahead;
+} comp_mate;
 
 void UI_CompHud_Frame(void)
 {
@@ -1330,25 +1363,22 @@ void UI_CompHud_Frame(void)
     // bearing from the view (+ 180, tenths of a degree), LEFT and RIGHT that
     // bearing -+ 60 - atan(300 / distance) degrees (at least 7), so the gap
     // gives the distance; the game's own 52 units a metre (the battle
-    // language's). Its bearing turned from the server's view to this frame's
+    // language's; the gap's least, 7 degrees, is 4.3 m or nearer). Its
+    // bearing turned from the server's view to this frame's
     if (Comp_Int("ui_hud_compass_on")) {
         const int center = ps->stats[STAT_OBJECTIVECENTER], left = ps->stats[STAT_OBJECTIVELEFT], right = ps->stats[STAT_OBJECTIVERIGHT];
-        const qboolean on = !(center == 1800 && left == 1730 && right == 1870);
 
-        Comp_Set("ui_hud_mate_on", on ? "1" : "0");
-        if (on) {
-            const float half = anglemod((right - left) / 10.0f) * 0.5f;
+        comp_mate.on = !(center == 1800 && left == 1730 && right == 1870);
+        if (comp_mate.on) {
+            const float half  = anglemod((right - left) / 10.0f) * 0.5f;
             const float units = half < 59.95f ? 300.0f / tanf(DEG2RAD(60.0f - half)) : 999.0f * 52.0f;
+            const float a     = DEG2RAD((center - 1800) / 10.0f + AngleSubtract(viewYaw, ps->viewangles[YAW]));
+            const int   obj   = (Comp_ConfigStrings(), cs.objCurrent);
 
-            comp_mateUnits = units;
-            const int   obj = (Comp_ConfigStrings(), cs.objCurrent);
-            const qboolean objective = com_target_game->integer >= TG_MOHTA
-                                    || (obj >= 0 && obj < MAX_OBJECTIVES && !VectorCompare(cs.objLoc[obj], vec3_origin));
-
-            Comp_SetF("ui_hud_mate_angle", anglemod((center - 1800) / 10.0f + AngleSubtract(viewYaw, ps->viewangles[YAW])));
-            // (the gap's least, 7 degrees: 4.3 m or nearer)
-            Comp_Set("ui_hud_mate", units < 240.0f ? "< 5 m" : va("%d m", Q_min(999, (int)((units + 26.0f) / 52.0f))));
-            Comp_Set("ui_hud_mate_what", objective ? "OBJECTIVE" : "TEAMMATE");
+            comp_mate.right     = sinf(a) * units;
+            comp_mate.ahead     = cosf(a) * units;
+            comp_mate.objective = com_target_game->integer >= TG_MOHTA
+                               || (obj >= 0 && obj < MAX_OBJECTIVES && !VectorCompare(cs.objLoc[obj], vec3_origin));
         }
     }
 }
@@ -2852,7 +2882,7 @@ static qhandle_t Comp_DotShader(int axis, qboolean clamped, float k, float s, in
 
 // the player, CS2's way: a dot in the HUD's accent with a white tip up (where
 // they look), dark edged, the dot in the box's middle
-static qhandle_t Comp_ArrowShader(float k, float s, int *d)
+static qhandle_t Comp_PlayerShader(float k, float s, int *d)
 {
     static compMark_t kept;
     static int        accent = -1;
@@ -2867,7 +2897,7 @@ static qhandle_t Comp_ArrowShader(float k, float s, int *d)
     Com_sprintf(dot, sizeof(dot), "circle %g %g %g 1 0.38", comp_accent[ACC_MAIN][0], comp_accent[ACC_MAIN][1], comp_accent[ACC_MAIN][2]);
     accent = comp_accentStamp;
     *d     = (int)(16.0f * 1.4f * k * s + 0.5f);
-    return Comp_MarkKeep(&kept, k, s, *d, UI_BakeShape("comp_arrow", layers, 4, *d, *d, s));
+    return Comp_MarkKeep(&kept, k, s, *d, UI_BakeShape("comp_player", layers, 4, *d, *d, s));
 }
 
 static void Comp_PreBakeWidget(UIWidget *w);
@@ -2943,7 +2973,7 @@ void UI_CompHud_PreBake(qboolean ahead)
         Comp_DotShader(axis, qfalse, k, s, &d);
         Comp_DotShader(axis, qtrue, k, s, &d);
     }
-    Comp_ArrowShader(k, s, &d);
+    Comp_PlayerShader(k, s, &d);
     Comp_ObjectiveShader(qtrue, k, s, &d);
     Comp_ObjectiveShader(qfalse, k, s, &d);
     // the team tag's faces and arrow (UI_DrawTeamTag)
@@ -3200,14 +3230,15 @@ void UIHudRadar::Draw(void)
 
     // the teammates: a dot with a dark edge and a point where they look
     if (g_radarClients && g_radarClientNum >= 0) {
-        const int axis = cl.snap.ps.stats[STAT_TEAM] == TEAM_AXIS;
+        const int         axis  = cl.snap.ps.stats[STAT_TEAM] == TEAM_AXIS;
+        const compMates_t mates = Comp_Mates();
 
         for (int i = 0; i < MAX_CLIENTS; i++) {
             const radarClient_t *c = &g_radarClients[i];
             float                x, y, dist;
             qboolean             clamped;
 
-            if (i == g_radarClientNum || !c->time || cl.snap.serverTime - c->time >= 5000) {
+            if (!Comp_MateShown(mates, i)) {
                 continue;
             }
             place(c->origin[0], c->origin[1], &x, &y);
@@ -3232,7 +3263,7 @@ void UIHudRadar::Draw(void)
     // the player: a dot in the middle, its tip up
     {
         int             d;
-        const qhandle_t sh = Comp_ArrowShader(k, s, &d);
+        const qhandle_t sh = Comp_PlayerShader(k, s, &d);
 
         uii.Rend_DrawPicStretched(floorf(r - d * 0.5f), floorf(r - d * 0.5f), d, d, 0, 0, 1, 1, sh);
     }
@@ -3256,11 +3287,13 @@ void UIHudRadar::Draw(void)
 ================
 UIHudMates
 
-With no radar, on the compass's ring (its line 15 units inside this box):
-the teammates the radar would show (the cgame's: the snapshot's and the
-server's radar's, never enemies) as the radar's edge dots, each in its
-direction; the one the gold arrow points at (the same direction and
-distance) left to the arrow
+With no radar, the compass's tracker: a radar with no map (the ring's line
+15 units inside this box, you a white dot in its middle). Each teammate
+the radar shows (Comp_MateShown) a gold dot in its direction, the nearer
+the middle the nearer it is (the line at 60 m and on, 25 m at 0.7 of it,
+10 m at 0.43, 5 m at 0.27); what the stock compass points at too where
+none of them is (the nearest teammate out of sight; an objective as the
+radar's white diamond)
 ================
 */
 class UIHudMates : public UIWidget
@@ -3274,39 +3307,68 @@ CLASS_DECLARATION(UIWidget, UIHudMates, NULL) {
     {NULL, NULL}
 };
 
+// a teammate's dot: the accent, dark edged, 12 units across
+static qhandle_t Comp_MateShader(float s, int *d)
+{
+    static compMark_t kept;
+    static int        accent = -1;
+
+    if (accent == comp_accentStamp && Comp_MarkKept(&kept, 1.0f, s, d)) {
+        return kept.h;
+    }
+    char        dot[64];
+    const char *layers[2] = {"circle 0.047 0.055 0.071 0.9 1", dot};
+
+    Com_sprintf(dot, sizeof(dot), "circle %g %g %g 1 0.8", comp_accent[ACC_MAIN][0], comp_accent[ACC_MAIN][1], comp_accent[ACC_MAIN][2]);
+    accent = comp_accentStamp;
+    *d     = (int)(12.0f * s + 0.5f);
+    return Comp_MarkKeep(&kept, 1.0f, s, *d, UI_BakeShape("comp_mate", layers, 2, *d, *d, s));
+}
+
 void UIHudMates::Draw(void)
 {
-    const float s = m_vVirtualScale[0], r = m_frame.size.width * 0.5f, ring = r - 15.0f * s;
-    vec3_t      angles, eye;
-    int         d;
+    const float  s = m_vVirtualScale[0], r = m_frame.size.width * 0.5f, reach = r - 19.0f * s;
+    const vec4_t white = {1, 1, 1, 1};
+    vec3_t       angles, eye;
+    qboolean     shown = qfalse; // the compass's teammate among them
+    int          d;
 
-    if (!cl.snap.valid || !g_radarClients || g_radarClientNum < 0) {
+    if (!cl.snap.valid) {
         return;
     }
     cge->CG_EyeAngles(&angles);
     cge->CG_EyePosition(&eye);
-    {
-        // (the radar's dots at its size 1)
-        const qhandle_t sh    = Comp_DotShader(cl.snap.ps.stats[STAT_TEAM] == TEAM_AXIS, qtrue, 248.0f / 220.0f, s, &d);
-        const qboolean  mate  = Comp_Int("ui_hud_mate_on");
-        const float     arrow = Comp_Cvar("ui_hud_mate_angle")->value;
-        const vec4_t    white = {1, 1, 1, 1};
+    // sh at a place right and ahead of the view (units)
+    auto mark = [&](float right, float ahead, qhandle_t sh) {
+        const float units = sqrtf(right * right + ahead * ahead) + 0.001f;
+        const float f     = reach * Q_min(1.0f, logf(1.0f + units / (52.0f * 5.0f)) / logf(13.0f)) / units;
 
-        uii.Rend_SetColor(white);
+        uii.Rend_DrawPicStretched(floorf(r + right * f - d * 0.5f), floorf(r - ahead * f - d * 0.5f), d, d, 0, 0, 1, 1, sh);
+    };
+    const qhandle_t dot = Comp_MateShader(s, &d);
+
+    uii.Rend_SetColor(white);
+    if (g_radarClients && g_radarClientNum >= 0) {
+        const float sn = sinf(DEG2RAD(angles[YAW])), cn = cosf(DEG2RAD(angles[YAW]));
+        // (the compass says 4.3 m for any nearer: its teammate within 5 m or 30% of its place)
+        const float       near2 = Square(Q_max(260.0f, 0.3f * sqrtf(Square(comp_mate.right) + Square(comp_mate.ahead))));
+        const compMates_t mates = Comp_Mates();
+
         for (int i = 0; i < MAX_CLIENTS; i++) {
-            const radarClient_t *c = &g_radarClients[i];
-
-            if (i == g_radarClientNum || !c->time || cl.snap.serverTime - c->time >= 5000) {
+            if (!Comp_MateShown(mates, i)) {
                 continue;
             }
-            const float dx = c->origin[0] - eye[0], dy = c->origin[1] - eye[1];
-            const float a  = AngleSubtract(angles[YAW], RAD2DEG(atan2f(dy, dx))); // clockwise from up
+            const float dx = g_radarClients[i].origin[0] - eye[0], dy = g_radarClients[i].origin[1] - eye[1];
+            const float right = dx * sn - dy * cn, ahead = dx * cn + dy * sn;
 
-            if (mate && fabsf(AngleSubtract(a, arrow)) < 12.0f && fabsf(sqrtf(dx * dx + dy * dy) - comp_mateUnits) < 104.0f) {
-                continue; // (the arrow's)
-            }
-            uii.Rend_DrawPicStretched(floorf(r + sinf(DEG2RAD(a)) * ring - d * 0.5f), floorf(r - cosf(DEG2RAD(a)) * ring - d * 0.5f), d, d, 0, 0, 1, 1, sh);
+            shown |= comp_mate.on && !comp_mate.objective && Square(right - comp_mate.right) + Square(ahead - comp_mate.ahead) < near2;
+            mark(right, ahead, dot);
         }
+    }
+    if (comp_mate.on && !shown) {
+        const qhandle_t sh = comp_mate.objective ? Comp_ObjectiveShader(qtrue, 0.85f, s, &d) : dot;
+
+        mark(comp_mate.right, comp_mate.ahead, sh);
     }
 }
 
