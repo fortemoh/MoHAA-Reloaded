@@ -8,7 +8,8 @@ align left top
 bgcolor 0 0 0 0
 borderstyle NONE
 
-// the radar: its disc, the map and what is on it, the damage wedge, its ring
+// the radar: its disc, the map and what is on it, the damage wedge (no
+// accent ring: the disc's own edge)
 resource
 HudRadar
 {
@@ -33,17 +34,6 @@ enabledcvar ui_hud_radar_on
 shape poly 0.753 0.188 0.129 1 0.5 0.38 0.64 0.02 0.36 0.02
 rotatecvar ui_hud_dmg_angle
 alphacvar ui_hud_dmg_alpha
-}
-
-resource
-Label
-{
-name "radarring"
-rect 25 25 248 248
-bgcolor 0 0 0 0
-borderstyle NONE
-enabledcvar ui_hud_radar_on
-shape ring 2 $ui_hud_acc_radar 0.902
 }
 
 end.

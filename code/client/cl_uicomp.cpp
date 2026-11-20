@@ -107,7 +107,7 @@ static const struct {
     {"ui_hud_acc",        {0.965f, 0.965f, 0.478f}}, // health, ammo, the bullet, the grenades' counts
     {"ui_hud_acc_line",   {0.933f, 0.941f, 0.659f}}, // the badge's lines, the ammo's separator
     {"ui_hud_acc_ring",   {0.91f, 0.922f, 0.643f} }, // the badge's ring
-    {"ui_hud_acc_radar",  {0.863f, 0.894f, 0.643f}}, // the radar's ring
+    {"ui_hud_acc_radar",  {0.863f, 0.894f, 0.643f}}, // the tracker's ring (the radar has none)
     {NULL,                {0.98f, 0.98f, 0.565f}  }, // the weapons carried
 };
 
@@ -946,7 +946,7 @@ static str Comp_Wrap(UIFont *font, const char *p, float width, int lines)
 Comp_RadarSize
 
 cg_hud_radar_size (0.5 to 1.5): the radar's layers (hud_comp_topleft: its
-disc and map, the damage's wedge, the ring) their URC's size times it from
+disc and map, the damage's wedge) their URC's size times it from
 the same top left, the game messages under it (hud_comp_topleft_compass)
 moved down by what it grew. The same ground shown at any size (HudRadar: its
 range is to its edge, its marks sized with it). Set again when the menus
@@ -955,10 +955,10 @@ are loaded again
 */
 static void Comp_RadarSize(void)
 {
-    static const char *const layers[3] = {"radar", "radarwedge", "radarring"};
+    static const char *const layers[2] = {"radar", "radarwedge"};
     static int               generation = -1, read = -1;
-    static UIWidget         *widgets[4]; // the layers, the messages
-    static UIRect2D          urc[4];
+    static UIWidget         *widgets[3]; // the layers, the messages
+    static UIRect2D          urc[3];
     cvar_t                  *cv = Comp_Cvar("cg_hud_radar_size");
     float                    k;
 
@@ -970,8 +970,8 @@ static void Comp_RadarSize(void)
 
         generation = menuManager.Generation();
         read       = -1;
-        for (int i = 0; i < 4; i++) {
-            widgets[i] = i < 3 ? (rc ? rc->FindWidget(layers[i]) : NULL) : (mc ? mc->FindWidget("messages") : NULL);
+        for (int i = 0; i < 3; i++) {
+            widgets[i] = i < 2 ? (rc ? rc->FindWidget(layers[i]) : NULL) : (mc ? mc->FindWidget("messages") : NULL);
             if (widgets[i]) {
                 urc[i] = widgets[i]->DesignRect();
             }
@@ -982,18 +982,18 @@ static void Comp_RadarSize(void)
     }
     read = cv->modificationCount;
     k    = Com_Clamp(0.5f, 1.5f, cv->value);
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 2; i++) {
         const UIRect2D& r = urc[i];
 
         if (widgets[i]) {
             widgets[i]->SetDesignRect(UIRect2D(r.pos.x, r.pos.y, r.size.width * k, r.size.height * k));
         }
     }
-    if (widgets[3]) {
-        const UIRect2D& r    = urc[3];
+    if (widgets[2]) {
+        const UIRect2D& r    = urc[2];
         const float     down = urc[0].size.height * (k - 1.0f);
 
-        widgets[3]->SetDesignRect(UIRect2D(r.pos.x, r.pos.y + down, r.size.width, r.size.height));
+        widgets[2]->SetDesignRect(UIRect2D(r.pos.x, r.pos.y + down, r.size.width, r.size.height));
     }
 }
 
