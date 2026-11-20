@@ -106,7 +106,7 @@ static const struct {
     const char *cvar;
     float       color[3]; // with the default accent (the first)
 } comp_shades[] = {
-    {"ui_hud_acc",        {0.965f, 0.965f, 0.478f}}, // health, ammo, the bullet, the grenades' counts
+    {"ui_hud_acc",        {0.965f, 0.965f, 0.478f}}, // health, ammo, the bullet, the grenades' counts, the weapon's name
     {"ui_hud_acc_line",   {0.933f, 0.941f, 0.659f}}, // the badge's lines, the ammo's separator
     {"ui_hud_acc_ring",   {0.91f, 0.922f, 0.643f} }, // the badge's ring
     {"ui_hud_acc_radar",  {0.863f, 0.894f, 0.643f}}, // the tracker's ring (the radar has none)
@@ -2245,7 +2245,7 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
 {
     const float  s      = m_vVirtualScale[0];
     const float  lineH  = m_font->getHeight((const float *)NULL);
-    const UColor white(0.988f, 0.988f, 0.988f, 1.0f);
+    const UColor accent(comp_accent[ACC_MAIN][0], comp_accent[ACC_MAIN][1], comp_accent[ACC_MAIN][2], 1.0f);
     float        pw[2], phi[2], ph = 0.0f, w = 0.0f, top, x;
     int          i;
 
@@ -2276,8 +2276,8 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
     if (hand >= 0) {
         const char *name = Comp_HandWeapon();
 
-        // a long name smaller, to fit 200 px
-        Comp_Text(m_font, right - Comp_TextW(m_font, name, 200.0f), top + ph + 2.0f + lineH * 0.5f, name, white, getVirtualScale(), 200.0f);
+        // in the accent (as the ammo under it), a long name smaller, to fit 200 px
+        Comp_Text(m_font, right - Comp_TextW(m_font, name, 200.0f), top + ph + 2.0f + lineH * 0.5f, name, accent, getVirtualScale(), 200.0f);
     }
     *bottom = top - 8.0f;
 }
