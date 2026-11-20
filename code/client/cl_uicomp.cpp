@@ -3194,8 +3194,8 @@ UIHudRadar
 
 The radar: the map turned with the view (up is where the player looks),
 the objectives, the teammates the cgame tracks (the snapshot's and the
-server's radar's: never enemies), the player's dot, N E S W inside the
-edge. Its disc and ring are its URC shapes
+server's radar's: never enemies), the player's dot (no N E S W: the
+user's choice, session 98). Its disc and ring are its URC shapes
 ================
 */
 class UIHudRadar : public UIWidget
@@ -3400,20 +3400,6 @@ void UIHudRadar::Draw(void)
         const qhandle_t sh = Comp_PlayerShader(k, s, &d);
 
         uii.Rend_DrawPicStretched(floorf(r - d * 0.5f), floorf(r - d * 0.5f), d, d, 0, 0, 1, 1, sh);
-    }
-
-    // N E S W inside the edge, turning with the view
-    {
-        static const char *const letters[4] = {"N", "E", "S", "W"};
-        const float               north     = cl.snap.ps.stats[STAT_COMPASSNORTH] / 182.0f;
-
-        for (int i = 0; i < 4; i++) {
-            const float a  = DEG2RAD(north - 90.0f * i - angles[YAW]);
-            const float lx = (r - sinf(a) * (r - 10.0f * k * s)) / s, ly = (r - cosf(a) * (r - 10.0f * k * s)) / s;
-            const float lw = m_font->getWidth(letters[i], -1);
-
-            Comp_Text(m_font, lx - lw * 0.5f, ly, letters[i], i ? UColor(0.75f, 0.75f, 0.75f, 1.0f) : UColor(1, 1, 1, 1), getVirtualScale());
-        }
     }
 }
 
