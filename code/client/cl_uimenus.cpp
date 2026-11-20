@@ -3344,7 +3344,11 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
     for (int k = 0; k < nl; k++) {
         const std::vector<rlRow_t>& rows = lists[k];
         float                       ry   = y;
+        int                         me   = n[k]; // the player's own row (n[k]: not in this table)
 
+        for (int i = 0; i < n[k]; i++) {
+            me = rows[i].p->client == in.self ? i : me;
+        }
         if (!ffa) {
             RL_SbBadge(v, x + RL_SB_PAD + (RL_SB_SIDE - 16) / 2, y + sect[k] / 2, k, in.teamScore[k], rows);
         }
@@ -3353,7 +3357,10 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
             ry += objH[k];
         }
         for (int i = 0; i < shown[k]; i++) {
-            RL_SbRow(v, rx, ry + i * rh, rw, rh, rows[i], i, ffa ? i + 1 : 0, rounds, totals, in.self);
+            // (the player's own row always in view: folded away, it takes the last place shown, its rank its own)
+            const int j = i == shown[k] - 1 && me > i && me < n[k] ? me : i;
+
+            RL_SbRow(v, rx, ry + i * rh, rw, rh, rows[j], i, ffa ? j + 1 : 0, rounds, totals, in.self);
         }
         if (shown[k] < n[k]) {
             RL_SbMore(v, rx, ry + shown[k] * rh, rw, rh, shown[k], ffa ? -1 : k, n[k] - shown[k]);
