@@ -291,7 +291,11 @@ void CG_MirrorViewModel(refEntity_t *pREnt)
     VectorMA(pREnt->lightingOrigin, -2.0f * DotProduct(vDelta, vLeft), vLeft, pREnt->lightingOrigin);
 
     for (i = 0; i < 3; i++) {
-        VectorMA(pREnt->axis[i], -2.0f * DotProduct(pREnt->axis[i], vLeft), vLeft, pREnt->axis[i]);
+        // VectorMA evaluates its scale once per component, after writing the
+        // earlier ones into this same axis: take the distance first
+        const float fDist = DotProduct(pREnt->axis[i], vLeft);
+
+        VectorMA(pREnt->axis[i], -2.0f * fDist, vLeft, pREnt->axis[i]);
     }
 }
 
