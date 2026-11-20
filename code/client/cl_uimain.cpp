@@ -2255,6 +2255,8 @@ static const char *const rl_oHudStyles[]   = {"CS:GO", "CS2", NULL};
 static const char *const rl_oHudValues[]   = {"1", "2", NULL};
 static const char *const rl_oLagometer[]   = {"OFF", "GRAPH", "COMPACT", NULL};
 static const char *const rl_oAccents[]     = {"f6f67a", "deb250", "78c8f0", "96dc8c", "f0f0f0", NULL};
+static const char *const rl_oHitSounds[]      = {"CLASSIC", "BEEP", "NONE", NULL}; // the files of sound/prom/hitmarkers/
+static const char *const rl_oHitSoundValues[] = {"classic", "beep", "none", NULL};
 // (the launcher's)
 static const char *const rl_oColours[]     = {"FFFFFF", "00FF00", "FFFF00", "00FFFF", "FF0000", "FF00FF", "000000", NULL};
 static const char *const rl_oOutlines[]    = {"OFF", "FULL", "HALF", NULL};
@@ -2332,6 +2334,8 @@ static const rlOpt_t rl_opts[] = {
     O_SLIDER("Low Health", "Health turns red below this.", "cg_hud_lowhealth", "0.4", 0, 1, 0.05f, OF_PCT),
     O_TOGGLE("Players Alive", "A count of each side by the score, not a card each.", "cg_hud_alivecount", "0", 0),
     O_TOGGLE("Damage Indicator", "Red marks round the crosshair toward a hit.", "cg_hud_damage", "1", 0),
+    O_TOGGLE("Hitmarker", "A white X round the crosshair when you hit.", "cg_hitmarker", "0", 0),
+    O_SEG("Hitmarker Sound", "What a hit sounds like.", "cg_hitmarker_sound", "classic", rl_oHitSounds, rl_oHitSoundValues, 0),
     O_SECTION(OT_HUD, "CROSSHAIR", OF_RIGHT),
     {OC_PREVIEW, 0, 0, "", "", NULL, NULL, NULL, NULL, 0, 0, 0},
     O_SLIDER("Length", "", "cg_crosshair_length", "8", 0, 20, 0.5f, 0),
