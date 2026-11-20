@@ -79,7 +79,7 @@ typedef struct {
 } lgStats_t;
 
 // the word the compact style says, and how bad it is
-enum { LG_STATUS_STABLE, LG_STATUS_HIGH_PING, LG_STATUS_JITTER, LG_STATUS_RATE, LG_STATUS_LOSS, LG_STATUS_PREDERROR, LG_STATUS_INTERRUPTED };
+enum { LG_STATUS_STABLE, LG_STATUS_HIGH_PING, LG_STATUS_JITTER, LG_STATUS_RATE, LG_STATUS_LOSS, LG_STATUS_INTERRUPTED };
 enum { LG_SEV_OK, LG_SEV_WARN, LG_SEV_BAD };
 
 void CL_Lagometer_Reset(void);
@@ -94,6 +94,8 @@ const lgColumn_t *CL_Lagometer_Column(int slot);
 // nothing came for a column after the newest update, and it is overdue
 qboolean CL_Lagometer_Missing(const lgStats_t *st, int slot);
 int      CL_Lagometer_Status(const lgStats_t *st, int *severity);
+// remote prediction failed in the last 1.5 s (the compact style says so under the word)
+qboolean CL_Lagometer_PredFailed(const lgStats_t *st);
 // the signal bars lit, 0 to 4
 int CL_Lagometer_Bars(const lgStats_t *st, int severity);
 

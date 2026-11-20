@@ -356,10 +356,6 @@ int CL_Lagometer_Status(const lgStats_t *st, int *severity)
     } else {
         *severity = LG_SEV_OK;
     }
-    // a remote prediction failure says so for 1.5 s
-    if (st->predActive && st->failAgeMs >= 0 && st->failAgeMs <= 1500) {
-        return LG_STATUS_PREDERROR;
-    }
     if (st->lossPct > 0.0f) {
         return LG_STATUS_LOSS;
     }
@@ -373,6 +369,11 @@ int CL_Lagometer_Status(const lgStats_t *st, int *severity)
         return LG_STATUS_HIGH_PING;
     }
     return LG_STATUS_STABLE;
+}
+
+qboolean CL_Lagometer_PredFailed(const lgStats_t *st)
+{
+    return st->predActive && st->failAgeMs >= 0 && st->failAgeMs <= 1500 ? qtrue : qfalse;
 }
 
 int CL_Lagometer_Bars(const lgStats_t *st, int severity)

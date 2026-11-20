@@ -926,10 +926,11 @@ static void LG_Compact(const rlView_t& v, const lgStats_t *st, float bottom)
     LG_Box(LG_PANEL, RL_P(v, x), RL_P(v, y), RL_P(v, x + w), RL_P(v, y + h));
 
     if (LG_Changed(v, st, 2, bottom)) {
-        static const char *const words[] = {"STABLE", "HIGH PING", "JITTER", "RATE LIMITED", "LOSS", "PREDICTION ERROR", "NO UPDATE"};
+        static const char *const words[] = {"STABLE", "HIGH PING", "JITTER", "RATE LIMITED", "LOSS", "NO UPDATE"};
         const char              *word    = words[status];
-        const rlColor_t          wordC   = status == LG_STATUS_PREDERROR ? lg_colors[LG_PRED] : lg_colors[LG_Severity(sev)];
+        const rlColor_t          wordC   = lg_colors[LG_Severity(sev)];
         const int                moveFps = Cvar_VariableIntegerValue("cl_movefps");
+        const bool               slowFps = st->fps > 0 && st->fps < (moveFps > 0 ? Q_min(Q_max(moveFps, 85), 125) : 100);
         const float              pw = LG_Text(v, x + 40.0f, base, va("%d", st->ping), 1, lg_colors[LG_PingKind(st->ping)]);
 
         LG_Text(v, x + 43.0f + pw, base, "ms", 0, LG_MUTED);
@@ -940,10 +941,15 @@ static void LG_Compact(const rlView_t& v, const lgStats_t *st, float bottom)
         } else if (status == LG_STATUS_INTERRUPTED) {
             word = va("NO UPDATE %.1f s", st->sinceUpdateMs / 1000.0f);
         }
-        // the frame rate under the word when it is under the moves' rate
-        if (st->fps > 0 && st->fps < (moveFps > 0 ? Q_min(Q_max(moveFps, 85), 125) : 100)) {
+        // under the word: the frame rate when it is under the moves' rate, else
+        // remote prediction's failure (its violet marks are in the bars either way)
+        if (slowFps || CL_Lagometer_PredFailed(st)) {
             LG_Text(v, x + w - side * 0.5f, base - 12.5f, word, 0, wordC, RL_CENTER);
-            LG_Text(v, x + w - side * 0.5f, base, va("%d FPS", st->fps), 0, lg_colors[LG_RATE], RL_CENTER);
+            if (slowFps) {
+                LG_Text(v, x + w - side * 0.5f, base, va("%d FPS", st->fps), 0, lg_colors[LG_RATE], RL_CENTER);
+            } else {
+                LG_Text(v, x + w - side * 0.5f, base, "PREDICTION ERROR", 0, lg_colors[LG_PRED], RL_CENTER);
+            }
         } else {
             LG_Text(v, x + w - side * 0.5f, base, word, 0, wordC, RL_CENTER);
         }
