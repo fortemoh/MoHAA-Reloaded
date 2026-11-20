@@ -1650,6 +1650,16 @@ static void Comp_Fit(const char *pic, float boxW, float boxH, float s, float *w,
     *h  = floorf(fit * sh * s + 0.5f) / s;
 }
 
+// the dot of a weapon list's row with nothing left in it (CS2's empty
+// grenade slots): d x d pixels, white (tinted when drawn)
+static qhandle_t Comp_EmptyShader(float s, int *d)
+{
+    const char *layers[1] = {"circle 1 1 1 1 1"};
+
+    *d = (int)(6.0f * s + 0.5f);
+    return UI_BakeShape("comp_empty", layers, 1, *d, *d, s);
+}
+
 // a text's width, smaller to fit a width
 static float Comp_TextW(UIFont *font, const char *text, float fit)
 {
@@ -2187,9 +2197,10 @@ UIHudWeapons
 
 The weapons carried at the widget's bottom right, CS:GO's order from the
 top: the primary, the sidearm, the grenades (frags then smokes, each with
-how many), each with room for its name under it so that a switch moves
-nothing (CS:GO's); the one in hand bright and named. countfont: the
-grenades' counts'
+how many; with none left their row kept, a dot where they were: CS2's),
+each with room for its name under it so that a switch or the last grenade
+thrown moves nothing (CS:GO's, CS2's); the one in hand bright and named.
+countfont: the grenades' counts'
 ================
 */
 class UIHudWeapons : public UIWidget
@@ -2305,6 +2316,21 @@ void UIHudWeapons::Draw(void)
             }
         }
         Item(right, &bottom, pics, counts, n, hand, 200.0f, 38.0f);
+    } else if (Comp_Int("cg_hud_grenades") && (owned & ~WEAPON_CLASS_GRENADE)) {
+        // none left: the row as the frag's, a dot at its middle
+        const float    *acc   = comp_accent[ACC_WEAPON];
+        const float     lineH = m_font->getHeight((const float *)NULL);
+        const vec4_t    color = {acc[0], acc[1], acc[2], 0.55f};
+        float           pw, ph;
+        int             d;
+        const qhandle_t dot = Comp_EmptyShader(s, &d);
+
+        Comp_Fit(Comp_Weapon(comp_issued[comp.nation][1])->pic, 200.0f, 38.0f, s, &pw, &ph);
+        bottom -= ph + 2.0f + lineH;
+        uii.Rend_SetColor(color);
+        uii.Rend_DrawPicStretched(floorf((right - pw * 0.5f) * s - d * 0.5f), floorf((bottom + ph * 0.5f) * s - d * 0.5f), d, d, 0, 0, 1,
+                                  1, dot);
+        bottom -= 8.0f;
     }
     if (comp.sidearm[0] && Comp_Weapon(comp.sidearm)) {
         const char *pic = Comp_Weapon(comp.sidearm)->pic;
@@ -2961,6 +2987,7 @@ void UI_CompHud_PreBake(qboolean ahead)
                  kind == WK_SIDEARM ? 30.0f : kind == WK_PRIMARY ? 34.0f : 38.0f, s, &w, &h);
         Comp_PictureShader(comp_weapons[i].pic, (int)(w * s + 0.5f), (int)(h * s + 0.5f), s, qfalse);
     }
+    Comp_EmptyShader(s, &d);
     if (menuManager.FindMenu("hud_comp_score")) {
         UIWidget *score = menuManager.FindMenu("hud_comp_score")->GetContainerWidget();
 
