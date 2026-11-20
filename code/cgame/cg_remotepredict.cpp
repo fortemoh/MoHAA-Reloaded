@@ -49,10 +49,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 static cvar_t *cg_remotePrediction;
 static cvar_t *cg_remotePredictionMaxLead;
+static cvar_t *cg_remotePredictionPush;
+static cvar_t *cg_remotePredictionSmooth;
 
 #define RP_MAX_ENTS  MAX_CLIENTS // players are entities 0..MAX_CLIENTS-1
 #define RP_DRAWN     16          // server frames of where a player was drawn (800 ms at 20 Hz)
-#define RP_SMOOTH_MS 15.0f       // a new snapshot's correction fades: a third left after this long
 #define RP_STEPSIZE  18          // bg_pmove's STEPSIZE
 #define RP_SNAPS     32          // the snapshots the client keeps (PACKET_BACKUP)
 
@@ -117,6 +118,11 @@ void CG_RP_RegisterCvars(void)
     // the most ping compensated for, ms (0: all of it); the rest of the lead, the
     // interpolation buffer and the wait for the server frame, is always in
     cg_remotePredictionMaxLead = cgi.Cvar_Get("cg_remotePredictionMaxLead", "0", CVAR_ARCHIVE);
+    // run a player whose commands reach the server late further ahead, by half
+    // their backlog (0: the lead only)
+    cg_remotePredictionPush = cgi.Cvar_Get("cg_remotePredictionPush", "1", CVAR_ARCHIVE);
+    // a new snapshot's correction fades out: a third of it left after that many ms (0: none)
+    cg_remotePredictionSmooth = cgi.Cvar_Get("cg_remotePredictionSmooth", "15", CVAR_ARCHIVE);
 }
 
 void CG_RP_Init(void)
@@ -420,12 +426,16 @@ static float CG_RP_Lead(void)
     return lead;
 }
 
-// the most the push for a player's late commands may add to the lead (ms): the
-// ping compensation cg_remotePredictionMaxLead leaves unused; -1 no limit
+// the most the push for a player's late commands may add to the lead (ms): 0
+// with cg_remotePredictionPush off, else the ping compensation
+// cg_remotePredictionMaxLead leaves unused; -1 no limit
 static int CG_RP_MaxPush(void)
 {
     const int max = cg_remotePredictionMaxLead->integer;
 
+    if (!cg_remotePredictionPush->integer) {
+        return 0;
+    }
     if (max <= 0) {
         return -1;
     }
@@ -585,7 +595,7 @@ void CG_RP_UpdateEntity(centity_t *cent)
     } else if (!e->shownValid) {
         VectorClear(e->offset);
     }
-    f = expf(-cg.frametime / RP_SMOOTH_MS);
+    f = cg_remotePredictionSmooth->value > 0 ? expf(-cg.frametime / cg_remotePredictionSmooth->value) : 0.0f;
     VectorScale(e->offset, f, e->offset);
     VectorAdd(pos, e->offset, pos);
 

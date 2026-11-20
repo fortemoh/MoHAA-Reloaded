@@ -621,8 +621,8 @@ int RP_Predict(const rpPlayer_t *p, const rpServer_t *srv, double targetTime, in
     lead = targetTime - r->obs.serverTime;
     // the backlog push: their last command is older than usual, so some of what
     // is late probably lands by the target time. It adds at most maxPushMsec:
-    // the ping compensation cg_remotePredictionMaxLead leaves unused, < 0 no
-    // limit. The lead itself is never cut.
+    // the ping compensation cg_remotePredictionMaxLead leaves unused, 0 with
+    // cg_remotePredictionPush off, < 0 no limit. The lead itself is never cut.
     push = 0.5 * (cur - RP_OffsetMedian(p, srv->frameMsec));
     if (maxPushMsec >= 0 && push > maxPushMsec) {
         push = maxPushMsec;
