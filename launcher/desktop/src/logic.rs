@@ -499,22 +499,46 @@ impl Settings {
         }
     }
 
-    /// Keeps the server in the game's list (added at the end), with the passwords used
-    pub fn remember_server(&mut self, game: usize, address: &str, password: &str, rcon: &str) {
-        let servers = &mut self.slots[game].servers;
-        if let Some(s) = servers.iter_mut().find(|s| same_address(&s.address, address)) {
+    /// Bookmarks the server in the game's list (added at the end), with the passwords used: a server already there
+    /// (or a built-in one) has its passwords kept; a new one only while the list has room (LIST_ROWS), else false
+    pub fn remember_server(&mut self, game: usize, address: &str, password: &str, rcon: &str) -> bool {
+        if let Some(s) = self.slots[game].servers.iter_mut().find(|s| same_address(&s.address, address)) {
             s.address = address.to_string();
             s.password = password.to_string();
             s.rcon = rcon.to_string();
-        } else {
-            servers.push(Server {
-                label: address.to_string(),
-                address: address.to_string(),
-                password: password.to_string(),
-                rcon: rcon.to_string(),
-            });
+            return true;
         }
+        if !self.can_bookmark(game, address) {
+            return false;
+        }
+        self.slots[game].servers.push(Server {
+            label: address.to_string(),
+            address: address.to_string(),
+            password: password.to_string(),
+            rcon: rcon.to_string(),
+        });
+        true
     }
+
+    /// The rows the game's servers take in the list: its built-in ones and the others saved
+    pub fn rows(&self, game: usize) -> usize {
+        BUILTIN_SERVERS.iter().filter(|b| b.0 == game).count()
+            + self.slots[game].servers.iter().filter(|s| !is_builtin(game, &s.address)).count()
+    }
+
+    /// Bookmark can keep the server: it's in the list (its passwords then), built in, or the list has room
+    pub fn can_bookmark(&self, game: usize, address: &str) -> bool {
+        self.slots[game].servers.iter().any(|s| same_address(&s.address, address))
+            || is_builtin(game, address)
+            || self.rows(game) < LIST_ROWS
+    }
+}
+
+/// The rows the server list has, the built-in servers' among them: no more are kept, so it never scrolls
+pub const LIST_ROWS: usize = 4;
+
+fn is_builtin(game: usize, address: &str) -> bool {
+    BUILTIN_SERVERS.iter().any(|b| b.0 == game && same_address(b.2, address))
 }
 
 /// The servers the launcher comes with, first in their game's list (game, name, address): they can't be renamed or
@@ -531,8 +555,9 @@ pub struct Listed {
     pub builtin: bool,
 }
 
-/// The game's list: its built-in servers, then the ones the player joined (a built-in one's entry, which keeps the
-/// passwords used, isn't listed twice)
+/// The game's list: its built-in servers, then the ones the player bookmarked (a built-in one's entry, which keeps
+/// the passwords used, isn't listed twice); the first LIST_ROWS (a list saved with more before they were capped shows
+/// its first ones, and removing one brings the next into view)
 pub fn listed_servers(settings: &Settings, game: usize) -> Vec<Listed> {
     let saved = &settings.slots[game].servers;
     let mut list = Vec::new();
@@ -543,10 +568,11 @@ pub fn listed_servers(settings: &Settings, game: usize) -> Vec<Listed> {
         list.push(Listed { server, saved: k, builtin: true });
     }
     for (k, s) in saved.iter().enumerate() {
-        if !BUILTIN_SERVERS.iter().any(|b| b.0 == game && same_address(b.2, &s.address)) {
+        if !is_builtin(game, &s.address) {
             list.push(Listed { server: s.clone(), saved: Some(k), builtin: false });
         }
     }
+    list.truncate(LIST_ROWS);
     list
 }
 
@@ -812,6 +838,34 @@ mod tests {
         assert_eq!((list[0].saved, list[0].server.password.as_str()), (Some(1), "pw"));
         // the other games don't have it
         assert!(listed_servers(&s, 1).is_empty());
+
+        // four rows at most, Forte FFA's among them: a new server isn't kept when they're full, one already there
+        // and the built-in one still keep their passwords
+        assert!(s.remember_server(0, "host", "pw", ""));
+        assert_eq!(s.rows(0), 3);
+        assert!(s.remember_server(0, "third:12203", "", ""));
+        assert_eq!(s.rows(0), LIST_ROWS);
+        assert!(!s.can_bookmark(0, "fourth"));
+        assert!(!s.remember_server(0, "fourth", "", ""));
+        assert_eq!(s.slots[0].servers.len(), 4); // a:1, Forte's passwords, host, third
+        assert!(s.can_bookmark(0, "host"));
+        assert!(s.remember_server(0, "host", "pw3", ""));
+        assert!(s.remember_server(0, "151.80.234.90", "y", ""));
+        let passwords: Vec<String> = listed_servers(&s, 0).into_iter().map(|l| l.server.password).collect();
+        assert_eq!(passwords, ["y", "", "pw3", ""]);
+        // Spearhead has no built-in server: four of the player's
+        for k in 1..=5 {
+            assert_eq!(s.remember_server(1, &format!("sh{k}"), "", ""), k <= 4);
+        }
+        assert_eq!(listed_servers(&s, 1).len(), 4);
+        // a list saved with more shows its first four; removing one brings the next into view
+        s.slots[2].servers =
+            (1..=6).map(|k| Server { label: format!("bt{k}"), address: format!("bt{k}"), ..Default::default() }).collect();
+        let labels = |s: &Settings| -> Vec<String> { listed_servers(s, 2).into_iter().map(|l| l.server.label).collect() };
+        assert_eq!(labels(&s), ["bt1", "bt2", "bt3", "bt4"]);
+        assert!(!s.can_bookmark(2, "bt7"));
+        s.slots[2].servers.remove(0);
+        assert_eq!(labels(&s), ["bt2", "bt3", "bt4", "bt5"]);
     }
 
     #[test]

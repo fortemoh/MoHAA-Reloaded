@@ -1,11 +1,11 @@
 // MoHAA Launcher's window, in Slint's Fluent style (dark; compile-ui.rs picks it), as the macOS launcher's
-// (launcher/macos): in one card where to play on the left (the game, the server, the servers played on) and the player's
+// (launcher/macos): in one card where to play on the left (the game, the server, the servers kept) and the player's
 // settings on the right (the name, the passwords, the display); under it the buttons. main.rs fills it and acts on
 // its callbacks.
 //
 // One spacing system throughout (Theme): every field is a block of a label over its control (label-gap apart),
 // and blocks, cards and sections are `gap` apart, with `gap` of padding inside each card and around the window.
-import { Button, LineEdit, ComboBox, ListView, Palette, ProgressIndicator } from "std-widgets.slint";
+import { Button, LineEdit, ComboBox, Palette, ProgressIndicator } from "std-widgets.slint";
 
 export struct ServerItem {
     name: string,
@@ -322,7 +322,9 @@ export component LauncherWindow inherits Window {
     in-out property <string> rcon;
     in property <[ServerItem]> servers;
     in property <bool> bookmarked;   // the server in the fields is in the list
-    in property <bool> can-bookmark;
+    in property <bool> can-bookmark; // it's in the list, or the list has room
+    in property <bool> list-full;    // the list has list-rows servers: a new one can't be kept
+    in property <int> list-rows: 4;  // the servers the list holds at most, all in view
 
     // the display
     in property <[string]> resolutions;
@@ -369,7 +371,7 @@ export component LauncherWindow inherits Window {
         padding: Theme.gap;
         spacing: Theme.gap;
 
-        // two columns: where to play (the game, the server, the servers played on) and the player's settings (the name,
+        // two columns: where to play (the game, the server, the servers kept) and the player's settings (the name,
         // the passwords, the display), each half the card's width
         Card {
             GridLayout {
@@ -449,7 +451,8 @@ export component LauncherWindow inherits Window {
                                 text: root.bookmarked ? "Bookmarked" : "Bookmark";
                                 enabled: root.can-bookmark;
                                 tip: root.bookmarked ? @markdown("In the list: click to keep its passwords too")
-                                    : @markdown("Add it to the list without joining");
+                                    : root.list-full ? @markdown("The list is full (\{root.list-rows} servers): remove one first")
+                                    : @markdown("Keep it in the list (only bookmarked servers are kept)");
                                 clicked => { root.bookmark(); }
                             }
                         }
@@ -497,17 +500,19 @@ export component LauncherWindow inherits Window {
                     }
                 }
                 Row {
-                    // the servers played on, four rows in view
+                    // the built-in servers and the bookmarked ones, list-rows at most: all in view, nothing to scroll
                     Rectangle {
                         horizontal-stretch: 1;
                         min-width: 0px;
                         preferred-width: 0px;
-                        height: 4 * Theme.row + 4px;
+                        height: root.list-rows * Theme.row + 4px;
                         border-radius: 6px;
                         background: #00000030;
                         border-width: 1px;
                         border-color: #ffffff0a;
-                        ListView {
+                        VerticalLayout {
+                            padding: 2px;
+                            alignment: start;
                             for server[i] in root.servers: ServerRow {
                                 name: server.name;
                                 address: server.address;
@@ -521,14 +526,14 @@ export component LauncherWindow inherits Window {
                             }
                         }
                         // the room the list doesn't fill yet
-                        if root.servers.length < 4: Text {
+                        if root.servers.length < root.list-rows: Text {
                             x: Theme.gap;
                             y: root.servers.length * Theme.row + 2px;
                             width: parent.width - 2 * Theme.gap;
-                            height: (4 - root.servers.length) * Theme.row;
+                            height: (root.list-rows - root.servers.length) * Theme.row;
                             text: root.servers.length == 0
-                                ? "The servers you join are kept here: double-click one to join it again."
-                                : "The servers you join are kept here.";
+                                ? "Bookmark a server to keep it here: double-click one to join it."
+                                : "Bookmark a server to keep it here.";
                             wrap: word-wrap;
                             font-size: 12px;
                             color: Theme.tertiary;

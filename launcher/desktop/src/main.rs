@@ -307,7 +307,9 @@ fn show_fields(ui: &LauncherWindow, st: &State) {
 fn show_servers(ui: &LauncherWindow, st: &State) {
     let address = st.slot().address.trim();
     let listed = listed_servers(&st.settings, st.game);
-    ui.set_can_bookmark(!address.is_empty());
+    ui.set_list_rows(LIST_ROWS as i32);
+    ui.set_list_full(st.settings.rows(st.game) >= LIST_ROWS);
+    ui.set_can_bookmark(!address.is_empty() && st.settings.can_bookmark(st.game, address));
     ui.set_bookmarked(!address.is_empty() && listed.iter().any(|l| same_address(&l.server.address, address)));
     let items: Vec<ServerItem> = listed
         .iter()
@@ -461,12 +463,11 @@ fn start(ui: &LauncherWindow, state: &Shared, connect: bool) {
             launch.cvars.push((name, value));
         }
     }
+    // (joining a server doesn't keep it: only Bookmark does)
     if connect {
         launch.address = address.clone();
         launch.password = slot.password.clone();
         launch.rcon = slot.rcon.clone();
-        let game = st.game;
-        st.settings.remember_server(game, &address, &slot.password, &slot.rcon);
     }
     st.save();
 
@@ -752,15 +753,15 @@ fn main() -> Result<(), slint::PlatformError> {
         }
         start(&ui, &state, true);
     });
-    // the server in the fields, kept in the list without joining it (or its passwords updated)
+    // the server in the fields kept in the list (or its passwords updated): only Bookmark keeps one, and a new one only
+    // while the list has room (LIST_ROWS)
     on!(on_bookmark, |ui, st| {
         let slot = st.slot().clone();
         let address = slot.address.trim();
-        if address.is_empty() {
+        let game = st.game;
+        if address.is_empty() || !st.settings.remember_server(game, address, &slot.password, &slot.rcon) {
             return;
         }
-        let game = st.game;
-        st.settings.remember_server(game, address, &slot.password, &slot.rcon);
         st.save();
         show_servers(&ui, &st);
         show_status(&ui, &st);
