@@ -77,9 +77,9 @@ static const rlColor_t RL_SEL   = {222 / 255.0f, 178 / 255.0f, 80 / 255.0f, 44 /
 enum { PAGE_PLAY, PAGE_CAMPAIGN, PAGE_HOST, PAGE_OPTIONS, PAGE_VOTE }; // (the vote's only over the Esc menu)
 enum { CT_MISSIONS, CT_SAVES }; // Campaign's tabs
 enum { HF_TIME, HF_FRAG, HF_PLAYERS, HF_BOTS, HF_NAME, HF_NUM }; // Host's fields
-// the field typed in: the browser's search, the name, Options' search, a crosshair code, a slider's value, a vote's
-// number or text, Host's (F_HOST + its)
-enum { F_NONE, F_SEARCH, F_NAME, F_OSEARCH, F_CODE, F_VALUE, F_VOTE, F_HOST };
+// the field typed in: the browser's search, the name, a crosshair code, a slider's value, a vote's number or text,
+// Host's (F_HOST + its)
+enum { F_NONE, F_SEARCH, F_NAME, F_CODE, F_VALUE, F_VOTE, F_HOST };
 enum { OT_CONTROLS, OT_VIDEO, OT_AUDIO, OT_GAMEPLAY, OT_HUD, OT_NUM }; // Options' tabs (the mouse and the keys: CONTROLS)
 
 // the browser's gametype tabs (Omaha's; round-based, Tug of War and Liberation under OTHER) and sortable columns
@@ -112,8 +112,7 @@ enum {
     ID_ONLINE,
     ID_START,
     ID_OTAB, // + Options' tab
-    ID_OSEARCH = ID_OTAB + OT_NUM,
-    ID_DEFAULTS,
+    ID_DEFAULTS = ID_OTAB + OT_NUM,
     ID_OAPPLY,
     ID_CTAB,                // + Campaign's tab
     ID_CARD = ID_CTAB + 2,  // + the card: Continue, Training, Missions 1-6
@@ -1855,7 +1854,7 @@ static void RL_Browser(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
 
         RL_Box(v, x + 1, ay, w - 2, RL_FOOT - 1, RL_HEAD);
         RL_Button(m, v, x + RL_PAD, by, 150, bh, "REFRESH", false, ID_REFRESH, busy);
-        RL_Field(v, fx, by, fw, bh, rl_mm.search, "Search server name\x85", rl_mm.edit == F_SEARCH, m->Hot(ID_SEARCH));
+        RL_Field(v, fx, by, fw, bh, rl_mm.search, "Search", rl_mm.edit == F_SEARCH, m->Hot(ID_SEARCH));
         m->Hit(v, fx, by, fw, bh, ID_SEARCH);
         RL_Button(m, v, x + w - RL_PAD - jw, by, jw, bh, "JOIN", true, ID_JOIN);
     }
@@ -2187,11 +2186,10 @@ static void RL_Campaign(UIReloadedMenu *m, const rlView_t& v, float x, float y, 
 
 OPTIONS
 
-Omaha's settings: tabs, a search (the settings of every tab whose label,
-description or section has it), sections titled in brass, a row a
-setting: its label and a line describing it on the left, its control on
-the right (a choice of segments, a slider with its value, a switch, colour
-swatches, a text field). Two columns (the right one the crosshair's), one
+Omaha's settings: tabs, sections titled in brass, a row a setting: its
+label and a line describing it on the left, its control on the right (a
+choice of segments, a slider with its value, a switch, colour swatches, a
+text field). Two columns (the right one the crosshair's), one
 under 1100 units across, scrolled when it doesn't fit. A setting is set as
 it changes; those the renderer or the sound take at a restart wait for
 APPLY; DEFAULTS resets the settings shown
@@ -2375,7 +2373,7 @@ static const char *const rl_optRestart[] = {
 static struct {
     bool        ready; // the cvars read
     int         tab;
-    std::string search, code, value; // typed: the search, a crosshair code, a slider's value
+    std::string code, value;         // typed: a crosshair code, a slider's value
     int         row;                 // the slider whose value is typed
     float       scroll, most;        // units down (a setting's top), the most (the first whose top shows the end)
     int         drag;                // the slider dragged (its id), -1 none
@@ -2386,7 +2384,7 @@ static struct {
     std::string applied[RL_RESTARTS]; // the restart's settings as the renderer and the sound took them
     int         refSeq;               // the renderer's start then
     std::vector<std::string> sizes;   // the resolutions offered: "DESKTOP", then the display's ("1920 x 1080")
-} rl_opt = {false, OT_CONTROLS, "", "", "", 0, 0, 0, -1, false, "", {}, {}, {}, -1, {}};
+} rl_opt = {false, OT_CONTROLS, "", "", 0, 0, 0, -1, false, "", {}, {}, {}, -1, {}};
 
 // a place in the layout: the setting (a row of keys: its O_KEYS and its action), its box (the content's top y 0)
 typedef struct {
@@ -2593,52 +2591,15 @@ static void RL_OptRead(void)
     }
 }
 
-static bool RL_OptHas(const char *text)
-{
-    return !rl_opt.search.empty() && Q_stristr(text, rl_opt.search.c_str());
-}
-
-// an O_KEYS's action shown: its tab's, or what the search finds (its section's title, its name)
-static bool RL_KeyShown(int i, int a)
-{
-    const int s = rl_opt.sec[i];
-
-    return rl_opt.search.empty() ? rl_opts[s].tab == rl_opt.tab : RL_OptHas(rl_opts[s].label) || RL_OptHas(rl_keys.acts[a].name.c_str());
-}
-
-// a setting shown: its tab's, or what the search finds (its section's preview with what it finds there; an O_KEYS with an action shown);
-// never one of the renderer's own it doesn't make
+// a setting shown: its tab's (an O_KEYS with actions); never one of the renderer's own it doesn't make
 static bool RL_OptShown(int i)
 {
     const rlOpt_t& o = rl_opts[i];
-    const int      s = rl_opt.sec[i];
 
-    if (o.cvar && !rl_opt.cv[i]) {
+    if ((o.cvar && !rl_opt.cv[i]) || (o.kind == OC_KEYS && rl_keys.from[i] >= rl_keys.to[i])) {
         return false;
     }
-    if (o.kind == OC_KEYS) {
-        for (int a = rl_keys.from[i]; a < rl_keys.to[i]; a++) {
-            if (RL_KeyShown(i, a)) {
-                return true;
-            }
-        }
-        return false;
-    }
-    if (rl_opt.search.empty()) {
-        return rl_opts[s].tab == rl_opt.tab;
-    }
-    if (RL_OptHas(rl_opts[s].label)) {
-        return true;
-    }
-    if (o.kind == OC_PREVIEW) {
-        for (int k = s + 1; k < RL_OPTS && rl_opts[k].kind != OC_SECTION; k++) {
-            if (k != i && RL_OptShown(k)) {
-                return true;
-            }
-        }
-        return false;
-    }
-    return o.kind != OC_SECTION && (RL_OptHas(o.label) || RL_OptHas(RL_OptDesc(o)));
+    return rl_opts[rl_opt.sec[i]].tab == rl_opt.tab;
 }
 
 /*
@@ -2673,7 +2634,6 @@ static int RL_SwatchRows(int i)
 static float RL_OptLayout(float x, float w, std::vector<rlOptPlace_t>& out, std::vector<float>& lines)
 {
     std::vector<int> secs; // the sections shown
-    bool             alone = true; // CONTROLS' alone (the mouse and the keys)
     float            cx[3], cw[3], cy[3] = {0, 0, 0};
 
     for (int s = 0; s < RL_OPTS; s++) {
@@ -2684,10 +2644,10 @@ static float RL_OptLayout(float x, float w, std::vector<rlOptPlace_t>& out, std:
         }
         if (any) {
             secs.push_back(s);
-            alone = alone && rl_opts[s].tab == OT_CONTROLS;
         }
     }
-    alone = alone && !secs.empty();
+    // CONTROLS' alone (the mouse and the keys)
+    const bool  alone = rl_opt.tab == OT_CONTROLS && !secs.empty();
     const int   n  = alone ? (w >= 1300 ? 3 : w >= 860 ? 2 : 1) : w < 1100 ? 1 : 2;
     const float lw = floorf(w * 0.55f + 0.5f);
 
@@ -2716,10 +2676,8 @@ static float RL_OptLayout(float x, float w, std::vector<rlOptPlace_t>& out, std:
                 const float h = rl_opts[i].kind == OC_PREVIEW ? floorf(Q_min(cw[c] * 0.32f, 220.0f)) + 12 : 66 + 34 * (RL_SwatchRows(i) - 1);
 
                 for (int a = rl_keys.from[i]; rl_opts[i].kind == OC_KEYS && a < rl_keys.to[i]; a++) {
-                    if (RL_KeyShown(i, a)) {
-                        out.push_back({i, a, cx[c], cy[c], cw[c], 44});
-                        cy[c] += 44;
-                    }
+                    out.push_back({i, a, cx[c], cy[c], cw[c], 44});
+                    cy[c] += 44;
                 }
                 if (rl_opts[i].kind != OC_KEYS && RL_OptShown(i)) {
                     out.push_back({i, -1, cx[c], cy[c], cw[c], h});
@@ -3029,11 +2987,9 @@ static void RL_KeysDefaults(void)
     };
 
     for (int i = 0; i < RL_OPTS; i++) {
-        for (int a = rl_keys.from[i]; rl_opts[i].kind == OC_KEYS && a < rl_keys.to[i]; a++) {
-            if (RL_KeyShown(i, a)) {
-                shown.push_back(a);
-                rl_keys.acts[a].key[0] = rl_keys.acts[a].key[1] = -1;
-            }
+        for (int a = rl_keys.from[i]; rl_opts[i].kind == OC_KEYS && RL_OptShown(i) && a < rl_keys.to[i]; a++) {
+            shown.push_back(a);
+            rl_keys.acts[a].key[0] = rl_keys.acts[a].key[1] = -1;
         }
     }
     if (shown.empty()) {
@@ -3253,11 +3209,8 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
     const char *const desc = RL_OptDesc(o);
 
     if (o.kind == OC_SECTION) {
-        const char *tab = rl_optTabs[o.tab];
-
-        // (found by the search: the tab's name too; keys: their boxes' names over them)
-        RL_Text(v, x, y + 18, rl_opt.search.empty() || !Q_stricmp(tab, o.label) ? o.label : va("%s  \xb7  %s", tab, o.label), 15, RL_BRASS,
-                true, RL_LEFT, 2.6f, RL_MID);
+        // (keys: their boxes' names over them)
+        RL_Text(v, x, y + 18, o.label, 15, RL_BRASS, true, RL_LEFT, 2.6f, RL_MID);
         for (int k = 0; rl_opts[i + 1].kind == OC_KEYS && k < 2; k++) {
             RL_Text(v, RL_KeyX(x, w, k) + 55, y + 18, k ? "ALTERNATE" : "PRIMARY", 12, RL_MUTED, true, RL_CENTER, 1.4f, RL_MID);
         }
@@ -3397,20 +3350,7 @@ static void RL_Options(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         return;
     }
     RL_Head(v, x, y, w, 48);
-    {
-        // the search field beside the tabs: on a page too narrow for both (4:3) the tabs' padding gives way first
-        // (22 down to 8), then the field's width
-        float sw = Q_min(300.0f, w * 0.3f), text = 0, pad;
-
-        for (int i = 0; i < OT_NUM; i++) {
-            text += RL_TextW(v, rl_optTabs[i], 17, true, 2);
-        }
-        pad = Q_max(8.0f, Q_min(22.0f, (w - 2 * RL_PAD - sw - text) / (2 * OT_NUM)));
-        sw  = Q_min(sw, w - 2 * RL_PAD - text - 2 * OT_NUM * pad);
-        RL_Tabs(m, v, x + 4, y, rl_optTabs, OT_NUM, rl_opt.search.empty() ? rl_opt.tab : -1, ID_OTAB, 17, pad);
-        RL_Field(v, x + w - RL_PAD - sw, y + 7, sw, 34, rl_opt.search, "Search settings\x85", rl_mm.edit == F_OSEARCH, m->Hot(ID_OSEARCH));
-        m->Hit(v, x + w - RL_PAD - sw, y + 7, sw, 34, ID_OSEARCH);
-    }
+    RL_Tabs(m, v, x + 4, y, rl_optTabs, OT_NUM, rl_opt.tab, ID_OTAB, 17, 22);
     for (const float lx : lines) {
         RL_Box(v, lx, y + 49, 1, foot - (y + 49), RL_LINE);
     }
@@ -3850,8 +3790,7 @@ void RL_MainShow(int what)
         rl_mm.page  = what == RL_SHOW_PLAY ? PAGE_PLAY : PAGE_CAMPAIGN;
         rl_camp.tab = what == RL_SHOW_SAVES ? CT_SAVES : CT_MISSIONS;
     } else {
-        rl_opt.tab = OT_CONTROLS;
-        rl_opt.search.clear();
+        rl_opt.tab    = OT_CONTROLS;
         rl_opt.scroll = 0;
         // (in a game the Options over the Esc menu's: the main menu's page kept, unless it is up)
         if (clc.state <= CA_PRIMED || menuManager.CurrentMenu() == menuManager.FindMenu("main")) {
@@ -4177,8 +4116,6 @@ static std::string *RL_Edited(void)
         return &rl_mm.search;
     case F_NAME:
         return &rl_mm.name;
-    case F_OSEARCH:
-        return &rl_opt.search;
     case F_CODE:
         return &rl_opt.code;
     case F_VALUE:
@@ -4271,7 +4208,7 @@ void UIReloadedMenu::ChooseMain(int id)
     if (rl_mm.edit == F_VALUE && id != ID_OPT + rl_opt.row * RL_OPT_IDS + 1) {
         RL_OptTyped();
     }
-    if (id != ID_SEARCH && id != ID_NAME && id != ID_APPLY && id != ID_OSEARCH && (id < ID_FIELD || id >= ID_FIELD + HF_NUM) && id < ID_OPT) {
+    if (id != ID_SEARCH && id != ID_NAME && id != ID_APPLY && (id < ID_FIELD || id >= ID_FIELD + HF_NUM) && id < ID_OPT) {
         rl_mm.edit = F_NONE;
     }
     rl_opt.note.clear();
@@ -4379,9 +4316,7 @@ void UIReloadedMenu::ChooseMain(int id)
         return;
     }
     if (id >= ID_OTAB && id < ID_OTAB + OT_NUM) {
-        // (the search cleared: the tab's settings)
-        rl_opt.tab = id - ID_OTAB;
-        rl_opt.search.clear();
+        rl_opt.tab    = id - ID_OTAB;
         rl_opt.scroll = 0;
         return;
     }
@@ -4392,9 +4327,6 @@ void UIReloadedMenu::ChooseMain(int id)
         break;
     case ID_START:
         RL_HostStart();
-        break;
-    case ID_OSEARCH:
-        rl_mm.edit = F_OSEARCH;
         break;
     case ID_DEFAULTS:
         RL_OptDefaults();
@@ -4545,9 +4477,6 @@ qboolean UIReloadedMenu::MainKey(int key)
                 if (rl_mm.edit == F_SEARCH) {
                     rl_vis.dirty = true;
                 }
-                if (rl_mm.edit == F_OSEARCH) {
-                    rl_opt.scroll = 0;
-                }
             }
             RL_Changed();
             return qtrue;
@@ -4648,9 +4577,6 @@ void UIReloadedMenu::MainChar(int ch)
     if (rl_mm.edit == F_SEARCH) {
         rl_mm.top    = 0;
         rl_vis.dirty = true;
-    }
-    if (rl_mm.edit == F_OSEARCH) {
-        rl_opt.scroll = 0;
     }
     RL_Changed();
 }
