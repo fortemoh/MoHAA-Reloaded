@@ -57,6 +57,7 @@ cvar_t	*r_hdrOutputTest;
 cvar_t	*r_hdrOutputTestPage;
 cvar_t	*r_hdrOutputActive;
 cvar_t	*r_contrast;
+cvar_t	*r_vibrance;
 
 // r_hdrOutput 1 takes scRGB before HDR10 on Windows: NVIDIA's Vulkan driver
 // presents HDR through a DXGI swapchain of its own, and Microsoft documents
@@ -118,6 +119,12 @@ void VK_OutputRegisterCvars( void ) {
 	r_contrast = ri.Cvar_Get( "r_contrast", "1", CVAR_ARCHIVE );
 	ri.Cvar_SetDescription( r_contrast, "contrast of the whole picture around mid gray, 1 none, 0.5 to 2; an extra full-screen pass while it isn't 1" );
 	ri.Cvar_CheckRange( r_contrast, 0.5f, 2.0f, qfalse );
+	// the colour saturation of the whole picture, live, beside r_contrast in
+	// the output pass (Omaha has none: its r_saturation is the 3D view's, with
+	// the temporal path, as here)
+	r_vibrance = ri.Cvar_Get( "r_vibrance", "1", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_vibrance, "colour saturation of the whole picture (the 3D view, the HUD and the menus), as a graphics driver's Digital Vibrance or Saturation: 1 none, 0 grey, up to 2; an extra full-screen pass while it isn't 1" );
+	ri.Cvar_CheckRange( r_vibrance, 0.0f, 2.0f, qfalse );
 }
 
 // HDR output: r_hdrOutput 1, 3 or 4 (2 is the HDR look in SDR, which needs
@@ -142,7 +149,7 @@ qboolean VK_OutputPassAvailable( void ) {
 // 1 black, 2 peak)
 static int VK_OutputPage( void ) {
 	// an SDR swapchain's pass shows the calibration with the HDR look only
-	// (else it is r_contrast's)
+	// (else it is the grade's: r_contrast, r_vibrance)
 	if ( !r_hdrOutputTest || !r_hdrOutputTest->integer || ( !vko.enabled && !vko.hdrLook ) ) {
 		return 0;
 	}
@@ -150,40 +157,44 @@ static int VK_OutputPage( void ) {
 }
 
 // the frame is drawn offscreen for the output pass, not into the swapchain
-// image: the HDR look's calibration screens and the frames with a contrast;
-// the others need no pass
+// image: the HDR look's calibration screens and the graded frames; the
+// others need no pass
 qboolean VK_OutputNeedsOffscreen( void ) {
-	return vko.sdrPass && ( VK_OutputPage() != 0 || vko.contrastFrame );
+	return vko.sdrPass && ( VK_OutputPage() != 0 || vko.gradeFrame );
 }
 
-// r_contrast, 1 when there is none or no pass to apply it
-static float VK_OutputContrast( void ) {
-	if ( !r_contrast || !VK_OutputPassAvailable() ) {
+// a grade's value (r_contrast, r_vibrance), 1 when there is no pass to apply it
+static float VK_OutputGradeValue( const cvar_t *cv, float lo, float hi ) {
+	if ( !cv || !VK_OutputPassAvailable() ) {
 		return 1.0f;
 	}
-	return Com_Clamp( 0.5f, 2.0f, r_contrast->value );
+	return Com_Clamp( lo, hi, cv->value );
 }
 
 /*
 ===============
 VK_OutputBeginFrame
 
-Omaha's (843a74c0, 789b59f4): the contrast of the frame that begins, and
-whether an SDR frame goes through the output pass for it, decided before its
-target is chosen (VK_BeginFrameIfNeeded); the frame keeps it to its present
+Omaha's (843a74c0, 789b59f4): the grade of the frame that begins
+(r_contrast; r_vibrance, ours), and whether an SDR frame goes through the
+output pass for it, decided before its target is chosen
+(VK_BeginFrameIfNeeded); the frame keeps it to its present
 ===============
 */
 void VK_OutputBeginFrame( void ) {
-	vko.contrast = VK_OutputContrast();
-	vko.contrastFrame = vko.sdrPass && vko.contrast != 1.0f;
+	vko.contrast = VK_OutputGradeValue( r_contrast, 0.5f, 2.0f );
+	vko.vibrance = VK_OutputGradeValue( r_vibrance, 0.0f, 2.0f );
+	vko.gradeFrame = vko.sdrPass && ( vko.contrast != 1.0f || vko.vibrance != 1.0f );
 }
 
 // the frame goes to the swapchain through the output pass, else the blit:
-// HDR output's frames, the HDR look's calibration screens and the frames
-// with a contrast, when the swapchain could take the pass's framebuffers
+// HDR output's frames, the HDR look's calibration screens and the graded
+// frames, when the swapchain could take the pass's framebuffers
 qboolean VK_OutputDrawsFrame( const vkFrame_t *frame ) {
+	const vkOutputPush_t *push = &frame->outputPush;
+
 	return vko.enabled
-		|| ( vko.sdrPass && ( frame->outputPush.test || frame->outputPush.contrast != 1.0f ) && vko.framebuffers[0] );
+		|| ( vko.sdrPass && ( push->test || push->contrast != 1.0f || push->vibrance != 1.0f ) && vko.framebuffers[0] );
 }
 
 /*
@@ -556,8 +567,8 @@ static float VK_OutputPeak( void ) {
 }
 
 // the push's fields of the swapchain and the display, filled again when the
-// swapchain is made again at present (VK_Present: the frame's contrast
-// stays, the next frame may be drawn already; Omaha's 789b59f4)
+// swapchain is made again at present (VK_Present: the frame's grade stays,
+// the next frame may be drawn already; Omaha's 789b59f4)
 void VK_OutputFillTarget( vkOutputPush_t *push ) {
 	push->mode = vko.mode;
 	push->test = VK_OutputPage();
@@ -574,9 +585,10 @@ void VK_OutputFillTarget( vkOutputPush_t *push ) {
 void VK_OutputFillPush( vkOutputPush_t *push ) {
 	Com_Memset( push, 0, sizeof( *push ) );
 	VK_OutputFillTarget( push );
-	// the frame's contrast, for a frame drawn for the pass (an SDR
-	// swapchain's frames drawn straight into it can't take it)
-	push->contrast = vko.enabled || vko.contrastFrame ? vko.contrast : 1.0f;
+	// the frame's grade, for a frame drawn for the pass (an SDR swapchain's
+	// frames drawn straight into it can't take it)
+	push->contrast = vko.enabled || vko.gradeFrame ? vko.contrast : 1.0f;
+	push->vibrance = vko.enabled || vko.gradeFrame ? vko.vibrance : 1.0f;
 }
 
 /*

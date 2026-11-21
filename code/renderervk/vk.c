@@ -565,8 +565,8 @@ void VK_BeginFrameIfNeeded( void ) {
 		return;
 	}
 
-	// this frame's contrast and whether it goes through the output pass for
-	// it, before its target is chosen (Omaha's: r_contrast)
+	// this frame's grade (r_contrast, r_vibrance) and whether it goes through
+	// the output pass for it, before its target is chosen
 	VK_OutputBeginFrame();
 
 	frame = &vk.frames[vk.frameIndex];
@@ -1278,8 +1278,8 @@ VkPipelineStageFlags VK_PresentCopyStage( void ) {
 	if ( vko.enabled ) {
 		return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	}
-	// SDR: the blit, or the output pass (the HDR look's calibration,
-	// r_contrast)
+	// SDR: the blit, or the output pass (the HDR look's calibration, the
+	// grade)
 	return vko.sdrPass ? VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT;
 }
 
@@ -1334,7 +1334,7 @@ static int VK_SubmitPresentCopy( vkFrame_t *frame, const VkCommandBuffer *cmds, 
 
 	cmd = frame->presentCmd;
 	if ( VK_OutputPassAvailable() ) {
-		// the swapchain may have been made again above (the frame's contrast
+		// the swapchain may have been made again above (the frame's grade
 		// stays: the next frame may be drawn already)
 		VK_OutputFillTarget( &frame->outputPush );
 	}
@@ -2136,7 +2136,7 @@ void VK_CreateSwapchainTargets( void ) {
 		return;
 	}
 	// SDR: the output pass for the HDR look's calibration screens and the
-	// frames with a contrast, the other frames drawn into the swapchain images
+	// graded frames, the other frames drawn into the swapchain images
 	// as without it
 	if ( vko.sdrPass ) {
 		VK_OutputCreateTargets();

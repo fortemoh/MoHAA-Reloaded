@@ -11813,6 +11813,15 @@ variable-length array, checked with clang's `-Wvla`).
       `vk_shaders_hdr.c` was made with this machine's glslc (shaderc
       2026.1): `compile_shaders.sh` with it gives the other three files
       other bytes than the glslang that made them, so they were left alone.
+    - `r_vibrance` (ours, the owner's request: CS2-style colour without
+      Enhanced Rendering; archived, default 1, 0 to 2, live): the colour
+      saturation of the whole picture in the output pass beside
+      `r_contrast` (after it): about BT.709 luma in linear light, the
+      composite's `r_saturation` math, over the HUD and the menus too, as a
+      graphics driver's Digital Vibrance or Saturation. Omaha has none (its
+      `r_saturation` is the 3D view's, with the temporal path). The frame's
+      grade (`vko.contrast`, `vko.vibrance`, `vko.gradeFrame`): a frame goes
+      through the pass while either isn't 1.
     - Enhanced Rendering's rules (Omaha's 70c35fc5, the client's
       `cl_effects.cpp` and `cl_effects_logic.h`, unit tested by
       `test_effects_logic`): `r_taa`, `r_ao`, `r_motionBlur` or `r_dof`

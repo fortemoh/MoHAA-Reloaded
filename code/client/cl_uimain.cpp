@@ -2314,6 +2314,7 @@ static const rlOpt_t rl_opts[] = {
     O_SECTION(OT_VIDEO, "PICTURE", OF_RIGHT),
     O_SLIDER("Brightness", "", "r_gamma", "1", 0.5f, 3, 0.05f, 0),
     O_SLIDER("Contrast", "", "r_contrast", "1", 0.5f, 2, 0.05f, 0),
+    O_SLIDER("Colour", "Stronger or paler colours, the whole screen.", "r_vibrance", "1", 0, 2, 0.05f, 0),
     O_SEG("Texture Quality", "", "r_picmip", "0", rl_oTextures, rl_oTextureMips, 0),
     O_SEG("Filtering", "", "r_textureMode", "GL_LINEAR_MIPMAP_LINEAR", rl_oFilters, rl_oFilterModes, 0),
     O_LEVEL("Anisotropic", "", "r_ext_texture_filter_anisotropic", "0", "r_ext_max_anisotropy", rl_oAniso, rl_oAnisoValues, 0),

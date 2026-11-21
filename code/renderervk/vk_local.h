@@ -313,6 +313,7 @@ typedef struct {
 	float	black;			// r_hdrBlack; 0 with an SDR swapchain but for the HDR look's calibration
 	float	sdrBox;			// the HDR look's peak calibration screen: the box, linear (VK_OutputSdrBox)
 	float	contrast;		// r_contrast, 1 none (Omaha's)
+	float	vibrance;		// r_vibrance, 1 none
 } vkOutputPush_t;
 
 typedef struct {
@@ -734,14 +735,14 @@ when the surface offers it and the window is in HDR (SDL)
 typedef struct {
 	qboolean		enabled;		// r_hdrOutput latched on, and the instance has VK_EXT_swapchain_colorspace
 	// an SDR swapchain's output pass (Omaha's: always, it was the HDR look's
-	// only), for the HDR look's calibration screens and r_contrast; the other
-	// frames go to the swapchain as without HDR output
+	// only), for the HDR look's calibration screens and the grade (r_contrast,
+	// r_vibrance); the other frames go to the swapchain as without HDR output
 	qboolean		sdrPass;
 	qboolean		hdrLook;		// r_hdrOutput 2 (the HDR look in SDR), latched
-	// the contrast of the frame being drawn (VK_OutputBeginFrame), and whether
-	// an SDR frame goes through the pass for it
-	float			contrast;
-	qboolean		contrastFrame;
+	// the grade of the frame being drawn (VK_OutputBeginFrame), and whether an
+	// SDR frame goes through the pass for it
+	float			contrast, vibrance;
+	qboolean		gradeFrame;
 	qboolean		metadata;		// VK_EXT_hdr_metadata is enabled
 	vkHdrMode_t		mode;			// the swapchain's
 	qboolean		windowHdr;		// SDL's HDR state of the window when the swapchain was chosen

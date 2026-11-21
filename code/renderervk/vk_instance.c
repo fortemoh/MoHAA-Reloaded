@@ -274,7 +274,8 @@ static void VK_CreateInstance( void ) {
 		}
 	}
 	// an SDR swapchain always has the output pass (Omaha's 843a74c0: it was
-	// r_hdrOutput 2's only), so r_contrast applies at once (vk_output.c)
+	// r_hdrOutput 2's only), so r_contrast and r_vibrance apply at once
+	// (vk_output.c)
 	vko.sdrPass = !vko.enabled;
 
 	// validation layer
