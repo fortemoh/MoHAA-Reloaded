@@ -81,6 +81,7 @@ Change settings in the console (`seta name value`) or at launch (`+set name valu
 | `r_uselod` | `0` (upstream `1`) | `0`: soldiers and weapons at full detail at any distance. Not saved in configs: set it at launch or in `autoexec.cfg`. |
 | `ui_console` | `1` (upstream `0`) | The console key works; the game still starts at the main menu. |
 | `cl_playintro` | `0` (upstream `1`) | `1` plays the intro videos at startup. |
+| `cl_ctrlbindings` | `0` | A setting of its own now: `1` turns on the Ctrl and Del key bindings (`ctrlbind`), `cl_altbindings 1` only the Alt and Ins ones (`altbind`). Upstream's `cl_altbindings 1` turned on both: if you use Ctrl bindings, set `cl_ctrlbindings 1` too. `ctrlbindlist` lists the Ctrl bindings (it listed the Alt ones). |
 
 Configs saved by earlier builds keep the values they hold: a saved `com_maxfps 85`, `cl_maxpackets 30` or `ui_console 0` stays until you change it. `cl_cmdfps` of earlier builds is `cl_movefps` now, as on `metal`: set it again if you had changed it.
 
