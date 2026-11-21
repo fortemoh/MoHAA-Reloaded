@@ -65,7 +65,7 @@ void CL_MouseTurn_Sync(void)
 {
     cvar_t *const    vars[MT_VARS] = {mt_sens, mt_fov, mt_dpi, mt_turn, mt_yaw, mt_csMode, mt_csSens};
     mouseTurnState_t now;
-    mouseTurnOut_t   out;
+    mouseTurnOut_t   out = {}; // (its fields read only where the rule wrote them; a build without LTO warned)
     int              writes;
 
     if (!mt_sens) {
