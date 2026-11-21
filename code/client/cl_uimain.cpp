@@ -3072,16 +3072,19 @@ swatches (28 across, 6 apart, in rows of the setting's step, the one set
 framed)
 ----------------
 */
-static void RL_Slider(UIReloadedMenu *m, const rlView_t& v, int i, float x, float y, int id)
+static void RL_Slider(UIReloadedMenu *m, const rlView_t& v, int i, float x, float y, int id, bool off = false)
 {
     const rlOpt_t& o    = rl_opts[i];
     const float    frac = Q_max(0.0f, Q_min(1.0f, (RL_OptNumber(i) - o.lo) / (o.hi - o.lo))), tw = 190, bx = x + 204;
-    const bool     hot = m->Hot(id) || rl_opt.drag == id, typing = rl_mm.edit == F_VALUE && rl_opt.row == i;
+    const bool     hot = !off && (m->Hot(id) || rl_opt.drag == id), typing = !off && rl_mm.edit == F_VALUE && rl_opt.row == i;
 
-    RL_Box(v, x, y + 12, tw, 4, RL_Rgb(255, 255, 255, 40));
-    RL_Box(v, x, y + 12, tw * frac, 4, RL_BRASS);
-    RL_Round(v, x + tw * frac - 8, y + 6, 16, 16, 8, hot ? RL_BRASS : RL_TEXT);
-    m->Hit(v, x, y, tw, 28, id);
+    // (off: faint, no hits: neither dragged nor typed in)
+    RL_Box(v, x, y + 12, tw, 4, RL_Rgb(255, 255, 255, off ? 20 : 40));
+    RL_Box(v, x, y + 12, tw * frac, 4, off ? RL_Rgb(255, 255, 255, 50) : RL_BRASS);
+    RL_Round(v, x + tw * frac - 8, y + 6, 16, 16, 8, off ? RL_Rgb(255, 255, 255, 70) : hot ? RL_BRASS : RL_TEXT);
+    if (!off) {
+        m->Hit(v, x, y, tw, 28, id);
+    }
     // the value
     RL_Panel(v, bx, y, 56, 28, RL_Rgb(0, 0, 0, typing ? 160 : 120));
     if (typing) {
@@ -3091,9 +3094,11 @@ static void RL_Slider(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
             RL_Box(v, bx + 6 + tw2 + 1, y + 4, 2, 20, RL_BRASS);
         }
     } else {
-        RL_Text(v, bx + 28, y + 14, RL_OptShow(i), 16, m->Hot(id + 1) ? RL_BRASS : RL_TEXT, false, RL_CENTER, 0, RL_MID);
+        RL_Text(v, bx + 28, y + 14, RL_OptShow(i), 16, off ? RL_FAINT : m->Hot(id + 1) ? RL_BRASS : RL_TEXT, false, RL_CENTER, 0, RL_MID);
     }
-    m->Hit(v, bx, y, 56, 28, id + 1);
+    if (!off) {
+        m->Hit(v, bx, y, 56, 28, id + 1);
+    }
 }
 
 // Omaha's cycle: the choice between two arrows (the left one back, the rest on), 260 by 32
@@ -3299,7 +3304,7 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
         }
         break;
     case OC_SLIDER:
-        RL_Slider(m, v, i, right - 260, mid - 14, id);
+        RL_Slider(m, v, i, right - 260, mid - 14, id, off);
         break;
     case OC_TOGGLE:
         RL_Toggle(v, right - 56, mid - 14, RL_OptOn(i), m->Hot(id));
