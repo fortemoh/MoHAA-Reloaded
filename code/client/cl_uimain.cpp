@@ -2261,8 +2261,8 @@ static const char *const rl_oAccents[] = {
     "d11d1d", "d15f1d", "d1951d", "d1c51d", "95d11d", "1dd12c", "1dd19b", "1dbfd1", "1d8fd1", "1d53d1", "711dd1", "d11d9b", "8c8c8c",
     NULL,
 };
-static const char *const rl_oHitSounds[]      = {"1", "2", "3", "NONE", NULL}; // the files of sound/prom/hitmarkers/
-static const char *const rl_oHitSoundValues[] = {"1", "2", "3", "none", NULL};
+static const char *const rl_oHitSounds[]      = {"THUMP", "CLASSIC", "BEEP", "NONE", NULL}; // the files of sound/prom/hitmarkers/
+static const char *const rl_oHitSoundValues[] = {"thump", "classic", "beep", "none", NULL};
 // (the launcher's)
 static const char *const rl_oColours[]     = {"FFFFFF", "00FF00", "FFFF00", "00FFFF", "FF0000", "FF00FF", "000000", NULL};
 static const char *const rl_oOutlines[]    = {"OFF", "FULL", "HALF", NULL};
@@ -2342,7 +2342,7 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Players Alive", "A count of each side by the score, not a card each.", "cg_hud_alivecount", "0", 0),
     O_TOGGLE("Damage Indicator", "Red marks round the crosshair toward a hit.", "cg_hud_damage", "1", 0),
     O_TOGGLE("Hitmarker", "A white X round the crosshair when you hit.", "cg_hitmarker", "0", 0),
-    O_SEG("Hitmarker Sound", "Played when you hit, with or without the X.", "cg_hitmarker_sound", "1", rl_oHitSounds, rl_oHitSoundValues, 0),
+    O_SEG("Hitmarker Sound", "Played when you hit, with or without the X.", "cg_hitmarker_sound", "thump", rl_oHitSounds, rl_oHitSoundValues, 0),
     O_SECTION(OT_HUD, "CROSSHAIR", OF_RIGHT),
     {OC_PREVIEW, 0, 0, "", "", NULL, NULL, NULL, NULL, 0, 0, 0},
     O_SLIDER("Length", "", "cg_crosshair_length", "8", 0, 20, 0.5f, 0),
@@ -2538,9 +2538,13 @@ static void RL_OptRead(void)
             rl_opt.cv[i] = RL_OptCvar(rl_opts[i].cvar, rl_opts[i].def, CVAR_ARCHIVE);
         }
     }
-    // Omaha's two hitmarker sounds, saved by the build that shipped them, are gone: the first (it plays), lit
-    if (!Q_stricmp(Cvar_VariableString("cg_hitmarker_sound"), "classic") || !Q_stricmp(Cvar_VariableString("cg_hitmarker_sound"), "beep")) {
-        Cvar_Set("cg_hitmarker_sound", "1");
+    // the hitmarker sounds 1, 2 and 3, saved by the build that shipped them, are gone: thump (it plays), lit
+    {
+        const char *hs = Cvar_VariableString("cg_hitmarker_sound");
+
+        if (!strcmp(hs, "1") || !strcmp(hs, "2") || !strcmp(hs, "3")) {
+            Cvar_Set("cg_hitmarker_sound", "thump");
+        }
     }
     rl_opt.refSeq = uii.GetRefSequence();
     for (int k = 0; k < RL_RESTARTS; k++) {
