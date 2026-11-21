@@ -11797,3 +11797,19 @@ variable-length array, checked with clang's `-Wvla`).
       sets `r_hdrOutputTest` back to 0 on the front end too, the refusal
       printed once (Omaha's fea286f5): the back end set the cvar from the
       render thread with `r_smp 1`.
+    - `r_contrast` (Omaha's 843a74c0, 789b59f4 and fea286f5; archived,
+      default 1, 0.5 to 2, live): contrast of the whole picture (the 3D
+      view, the HUD, the menus) around mid gray of the gamma-encoded frame,
+      as a monitor's contrast, in the output pass (`output.frag`). An SDR
+      swapchain now always has the output pass (it was the HDR look's only;
+      `vko.hdrLook` keeps that mode's own behavior) and its images are color
+      attachments wherever the surface allows (without TRANSFER_SRC too); a
+      frame goes through the pass, drawn offscreen, while `r_contrast` isn't
+      1, decided as the frame begins (`VK_OutputBeginFrame`) and kept to its
+      present (a swapchain made again at present fills only its own fields,
+      `VK_OutputFillTarget`). Not on the calibration screens; screenshots
+      are taken before it, without it. At 1 the frames are drawn and sent
+      as before. Not taken: Omaha's `r_colorblind` (the owner's choice).
+      `vk_shaders_hdr.c` was made with this machine's glslc (shaderc
+      2026.1): `compile_shaders.sh` with it gives the other three files
+      other bytes than the glslang that made them, so they were left alone.
