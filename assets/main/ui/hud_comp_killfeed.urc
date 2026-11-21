@@ -53,7 +53,7 @@ moveif beside -105 3
 moveif low -9 73
 bgcolor 0 0 0 0
 borderstyle NONE
-font oswald-semibold-15
+font oswald-semibold-15s
 enabledcvar cg_hud_killfeed&ui_hud_kf_cs
 feed kills
 }
