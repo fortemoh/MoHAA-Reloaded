@@ -1385,14 +1385,6 @@ static void RL_Star(const rlView_t& v, float cx, float cy, float d, rlColor_t c)
     RL_Shape(RL_P(v, cx) - pd / 2, RL_P(v, cy) - pd / 2, pd, pd, poly.c_str(), c, v.s);
 }
 
-// a small triangle, pointing down (or up), in w x h
-static void RL_Arrow(const rlView_t& v, float x, float y, float w, float h, bool up, rlColor_t c)
-{
-    const int x0 = RL_P(v, x), y0 = RL_P(v, y);
-
-    RL_Shape(x0, y0, RL_P(v, x + w) - x0, RL_P(v, y + h) - y0, up ? "poly 1 1 1 1 0.5 0 1 1 0 1" : "poly 1 1 1 1 0 0 1 0 0.5 1", c, v.s);
-}
-
 // a photo (shown 4:3, as the stock load screens show theirs; a saved game's
 // shot as the screen it was taken of) filling a box, cut to its shape
 static void RL_Photo(const rlView_t& v, qhandle_t shot, float x, float y, float w, float h, float aspect = 4.0f / 3.0f)
@@ -2335,6 +2327,7 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Server Lag Icon", "Shown while the server stops answering.", "cg_drawsvlag", "1", 0),
     O_SEG("Lagometer", "The connection: ping, loss, updates.", "cg_lagometer", "0", rl_oLagometer, NULL, 0),
     O_TOGGLE("Remote Prediction", "Players drawn where your shots will find them.", "cg_remotePrediction", "1", 0),
+    O_TOGGLE("Scoreboard Cursor", "Right-click while TAB is held: a cursor to sort the columns.", "cl_scoreboardcursor", "0", 0),
     O_SECTION(OT_GAMEPLAY, "MOVEMENT", OF_RIGHT),
     O_SEG("Movement Rate", "Moves a second, apart from the frame rate.", "cl_movefps", "100", rl_oMoveRates, rl_oMoveValues, 0),
     O_TOGGLE("Shots and Jumps Sooner", "Sent half a move sooner.", "cl_movesubgrid", "1", 0),

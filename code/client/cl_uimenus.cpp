@@ -113,6 +113,18 @@ static struct {
     int       requested;         // when a score was last asked for
 } rl_sb;
 
+// the columns the scoreboard sorts by (DrawScoreboard): the ping, then the right columns' (rl_cols, rl_colsTotals:
+// from round-based on the third is the match's kills, its Total)
+enum { SBC_PING, SBC_TIME, SBC_KILLS, SBC_DEATHS, SBC_KD, SBC_NUM };
+// the hits of its columns' names (+ SBC_*), FFA's "#"
+enum { ID_SBSORT = 200, ID_SBRANK = ID_SBSORT + SBC_NUM };
+
+// the column sorted by (-1: the server's order), the other way
+static struct {
+    int  col;
+    bool flip;
+} rl_sbSort = {-1, false};
+
 typedef struct {
     int  client;
     char name[MAX_NAME_LENGTH];
@@ -488,6 +500,13 @@ void RL_Round(const rlView_t& v, float x, float y, float w, float h, float r, rl
         return;
     }
     RL_Shape(x0, y0, x1 - x0, y1 - y0, va("roundbox %g 1 1 1 1", r), c, v.s);
+}
+
+void RL_Arrow(const rlView_t& v, float x, float y, float w, float h, bool up, rlColor_t c)
+{
+    const int x0 = RL_P(v, x), y0 = RL_P(v, y);
+
+    RL_Shape(x0, y0, RL_P(v, x + w) - x0, RL_P(v, y + h) - y0, up ? "poly 1 1 1 1 0.5 0 1 1 0 1" : "poly 1 1 1 1 0 0 1 0 0.5 1", c, v.s);
 }
 
 void RL_RoundFrame(const rlView_t& v, float x, float y, float w, float h, float r, float width, rlColor_t c)
@@ -2117,6 +2136,14 @@ void UIReloadedMenu::Tick(void)
     }
     if (m_screen == SCR_SCOREBOARD) {
         RL_WantScores();
+        // (its cursor on: what it is over hot)
+        if (!UI_ScoreboardCursor()) {
+            m_focus = -1;
+        } else if (uid.mouseX != m_mouse[0] || uid.mouseY != m_mouse[1]) {
+            m_mouse[0] = uid.mouseX;
+            m_mouse[1] = uid.mouseY;
+            m_focus    = HitAt(uid.mouseX - (int)m_screenframe.pos.x, uid.mouseY - (int)m_screenframe.pos.y);
+        }
         return;
     }
     if (!menuManager.CurrentMenu() || !getParent() || menuManager.CurrentMenu()->GetContainerWidget() != getParent()) {
@@ -2146,7 +2173,7 @@ void UIReloadedMenu::Tick(void)
 int UIReloadedMenu::DrawKey(void)
 {
     struct {
-        int cs, scores, seconds, focus, self, team, gametype, banner;
+        int cs, scores, seconds, focus, self, team, gametype, banner, sort;
         int wtab, wpick[2], wserial; // the weapon menu's preview
         int main;                    // the main menu's
         int over;                    // the Esc menu's: the page over it
@@ -2163,6 +2190,7 @@ int UIReloadedMenu::DrawKey(void)
     }
     if (m_screen == SCR_SCOREBOARD) {
         k.scores = rl_sb.stamp;
+        k.sort   = rl_sbSort.col * 2 + rl_sbSort.flip;
         // (the round's end banner over the header)
         k.banner = UI_Extras_BannerKey();
     }
@@ -2909,6 +2937,23 @@ void UIReloadedMenu::Choose(int id)
             break;
         }
         break;
+    case SCR_SCOREBOARD:
+        if (id == ID_SBRANK) {
+            rl_sbSort.col = -1;
+        } else if (id >= ID_SBSORT && id < ID_SBSORT + SBC_NUM) {
+            // a column its own way first, again the other way, a third time the server's order
+            const int col = id - ID_SBSORT;
+
+            if (rl_sbSort.col != col) {
+                rl_sbSort.col  = col;
+                rl_sbSort.flip = false;
+            } else if (!rl_sbSort.flip) {
+                rl_sbSort.flip = true;
+            } else {
+                rl_sbSort.col = -1;
+            }
+        }
+        break;
     case SCR_END:
         if (id == ID_MAINMENU) {
             // (over it: it is there again when the main menu closes)
@@ -2962,14 +3007,21 @@ from 28 to what 36 players take (RL_SB_MOST: 1920x1080 24 px, 1280x720
 folds the rest into "+ N more". Never rows under 12 px (the original
 game's) or letters under 9.6 px (what 1280x720 shows). Tug of War's
 objectives over the columns, an objective game's over each team's rows.
-FFA: one table ranked by kills, the side's emblem in each row
+FFA: one table ranked by kills, the side's emblem in each row. With its
+cursor (cl_scoreboardcursor on, a right click: UI_ScoreboardCursor; off,
+the server's order and nothing more) the columns' names sort each
+table: a name its own way first (the most first; the ping the least),
+again the other way, a third time the server's order (FFA's "#": the
+server's order at once); the column sorted by in the accent with its arrow.
+Kept while the game runs (as the server browser's order)
 ================
 */
 
 typedef struct {
     const rlPlayer_t *p;
     const rlScore_t  *sc;
-    int               side; // 0 allies, 1 axis
+    int               side;  // 0 allies, 1 axis
+    int               place; // its place in the server's order, from 1 (FFA's rank)
 } rlRow_t;
 
 #define RL_SB_MOST   36      // the players the board is sized for: past them the rows don't shrink, the last fold
@@ -3082,19 +3134,40 @@ static void RL_SignalBars(const rlView_t& v, float cx, float cy, rlColor_t c)
     }
 }
 
-// the columns' names over the rows at x, w wide (the ping's bars, FFA's "#")
-static void RL_SbLabels(const rlView_t& v, float x, float cy, float w, bool totals, bool ranked)
+// a column's name's color: sorted by, under the cursor, else muted
+static rlColor_t RL_SbLabelColor(UIReloadedMenu *m, int col)
+{
+    return rl_sbSort.col == col ? RL_BRASS : m->Hot(ID_SBSORT + col) ? RL_TEXT : RL_MUTED;
+}
+
+// the arrow after the name of the column sorted by (pointing down: from the least, as the server browser's)
+static void RL_SbArrow(const rlView_t& v, float x, float cy, int col)
+{
+    if (rl_sbSort.col == col) {
+        RL_Arrow(v, x, cy - 3, 9, 6, (col == SBC_PING) == rl_sbSort.flip, RL_BRASS);
+    }
+}
+
+// the columns' names over the rows at x, w wide (the ping's bars, FFA's "#"), each a hit (sorting by it), h high
+static void RL_SbLabels(UIReloadedMenu *m, const rlView_t& v, float x, float cy, float w, float h, bool totals, bool ranked)
 {
     int            n;
     const rlCol_t *cols = RL_Cols(totals, &n);
     float          r    = x + w;
 
-    RL_SignalBars(v, x + RL_SB_PINGX, cy, RL_MUTED);
+    RL_SignalBars(v, x + RL_SB_PINGX, cy, RL_SbLabelColor(m, SBC_PING));
+    RL_SbArrow(v, x + RL_SB_PINGX + 14, cy, SBC_PING);
+    m->Hit(v, x, cy - h / 2, RL_SB_PINGX * 2, h, ID_SBSORT + SBC_PING);
     if (ranked) {
-        RL_Text(v, x + RL_SB_RANKX, cy, "#", RL_SbSmall(v), RL_MUTED, false, RL_CENTER, 0, RL_MID);
+        RL_Text(v, x + RL_SB_RANKX, cy, "#", RL_SbSmall(v), m->Hot(ID_SBRANK) ? RL_TEXT : RL_MUTED, false, RL_CENTER, 0, RL_MID);
+        m->Hit(v, x + RL_SB_RANKX - 15, cy - h / 2, 30, h, ID_SBRANK);
     }
     for (int i = n - 1; i >= 0; i--) {
-        RL_Text(v, r - cols[i].w / 2, cy, cols[i].label, RL_SbSmall(v), RL_MUTED, false, RL_CENTER, 0, RL_MID);
+        const int   col = SBC_TIME + i;
+        const float lw  = RL_Text(v, r - cols[i].w / 2, cy, cols[i].label, RL_SbSmall(v), RL_SbLabelColor(m, col), false, RL_CENTER, 0, RL_MID);
+
+        RL_SbArrow(v, r - cols[i].w / 2 + lw / 2 + 5, cy, col);
+        m->Hit(v, r - cols[i].w, cy - h / 2, cols[i].w, h, ID_SBSORT + col);
         r -= cols[i].w;
     }
 }
@@ -3172,14 +3245,72 @@ static void RL_SbBadge(const rlView_t& v, float cx, float cy, int t, int score, 
     RL_Text(v, cx, cy + 64, va("Alive: %d/%d", alive, (int)rows.size()), RL_SbSmall(v), RL_FAINT, false, RL_CENTER, 0, RL_MID);
 }
 
-static void RL_SortRows(std::vector<rlRow_t>& rows)
+// a row's number in column col (rl_sbSort), false when it has none (no score yet, a bot's ping)
+static bool RL_SbValue(const rlRow_t& r, int col, float *value)
+{
+    const rlScore_t *sc = r.sc;
+
+    if (!sc) {
+        return false;
+    }
+    switch (col) {
+    case SBC_PING:
+        *value = (float)atoi(sc->ping);
+        return Q_stricmp(sc->ping, "bot") != 0;
+    case SBC_TIME: {
+        // ([h:]m:ss: the seconds)
+        int total = 0, field = 0;
+
+        for (const char *t = sc->time; *t; t++) {
+            if (*t >= '0' && *t <= '9') {
+                field = field * 10 + (*t - '0');
+            } else if (*t == ':') {
+                total = (total + field) * 60;
+                field = 0;
+            }
+        }
+        *value = (float)(total + field);
+        return true;
+    }
+    case SBC_KILLS:
+        *value = (float)sc->kills;
+        return true;
+    case SBC_DEATHS:
+        *value = (float)sc->deaths;
+        return true;
+    default:
+        *value = sc->deaths ? (float)sc->kills / sc->deaths : (float)sc->kills;
+        return true;
+    }
+}
+
+// the server's order (kills), then those it hasn't sent; their places; then, sorted by a column (col: -1 none), by
+// it (those with no number in it last; even, in the server's order)
+static void RL_SortRows(std::vector<rlRow_t>& rows, int col)
 {
     std::stable_sort(rows.begin(), rows.end(), [](const rlRow_t& a, const rlRow_t& b) {
-        // the server's order (kills), then those it hasn't sent
         if (!!a.sc != !!b.sc) {
             return a.sc != NULL;
         }
         return a.sc && a.sc->order < b.sc->order;
+    });
+    for (size_t i = 0; i < rows.size(); i++) {
+        rows[i].place = (int)i + 1;
+    }
+    if (col < 0) {
+        return;
+    }
+    // (the least first: the ping's own way, the others' the other way)
+    const bool least = (col == SBC_PING) != rl_sbSort.flip;
+
+    std::stable_sort(rows.begin(), rows.end(), [col, least](const rlRow_t& a, const rlRow_t& b) {
+        float x, y;
+        const bool hx = RL_SbValue(a, col, &x), hy = RL_SbValue(b, col, &y);
+
+        if (hx != hy) {
+            return hx;
+        }
+        return hx && (least ? x < y : x > y);
     });
 }
 
@@ -3326,11 +3457,19 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
 
     for (int t = 0; t < 2; t++) {
         for (const rlPlayer_t& p : t ? in.axis : in.allies) {
-            lists[ffa ? 0 : t].push_back({&p, RL_Score(p.client), t});
+            lists[ffa ? 0 : t].push_back({&p, RL_Score(p.client), t, 0});
         }
     }
-    RL_SortRows(lists[0]);
-    RL_SortRows(lists[1]);
+    {
+        // (no K/D from round-based on: the server's order; the cursor turned off, the order chosen gone)
+        if (!Cvar_VariableIntegerValue("cl_scoreboardcursor")) {
+            rl_sbSort.col = -1;
+        }
+        const int col = rl_sbSort.col == SBC_KD && totals ? -1 : rl_sbSort.col;
+
+        RL_SortRows(lists[0], col);
+        RL_SortRows(lists[1], col);
+    }
     // (an objective game's objectives over each team's rows: the other modes' maps may set the same lines)
     if (in.gametype == GT_OBJECTIVE) {
         RL_MapObjectives(objs);
@@ -3391,7 +3530,7 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
         RL_SbTow(v, x + RL_SB_PAD, y, w - 2 * RL_SB_PAD, tow, towN);
         y += towH;
     }
-    RL_SbLabels(v, rx, y + RL_SB_LABELS / 2, rw, totals, ffa);
+    RL_SbLabels(this, v, rx, y + RL_SB_LABELS / 2, rw, RL_SB_LABELS, totals, ffa);
     y += RL_SB_LABELS;
     for (int k = 0; k < nl; k++) {
         const std::vector<rlRow_t>& rows = lists[k];
@@ -3412,7 +3551,7 @@ void UIReloadedMenu::DrawScoreboard(const rlView_t& v, const rlInfo_t& in)
             // (the player's own row always in view: folded away, it takes the last place shown, its rank its own)
             const int j = i == shown[k] - 1 && me > i && me < n[k] ? me : i;
 
-            RL_SbRow(v, rx, ry + i * rh, rw, rh, rows[j], i, ffa ? j + 1 : 0, rounds, totals, in.self);
+            RL_SbRow(v, rx, ry + i * rh, rw, rh, rows[j], i, ffa ? rows[j].place : 0, rounds, totals, in.self);
         }
         if (shown[k] < n[k]) {
             RL_SbMore(v, rx, ry + shown[k] * rh, rw, rh, shown[k], ffa ? -1 : k, n[k] - shown[k]);
