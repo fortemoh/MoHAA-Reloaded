@@ -405,7 +405,12 @@ void CL_ParseSnapshot( msg_t *msg ) {
 	cl.newSnapshots = qtrue;
 	
 	// read radar info about invisible clients
-	CL_ReadNonPVSClient(cl.snap.ps.radarInfo);
+	// Added: on Spearhead's and Breakthrough's protocol only. Allied Assault's
+	// sends no radarInfo (MSG_GetPlayerStateFields), and its 0 read as client
+	// 0 a million units away put a teammate who is client 0 on the radar's rim
+	if (com_protocol->integer >= protocol_e::PROTOCOL_MOHTA_MIN) {
+		CL_ReadNonPVSClient(cl.snap.ps.radarInfo);
+	}
 }
 
 
