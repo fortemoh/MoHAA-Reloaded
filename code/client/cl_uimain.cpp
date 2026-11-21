@@ -73,6 +73,11 @@ static const rlColor_t RL_SEL   = {222 / 255.0f, 178 / 255.0f, 80 / 255.0f, 44 /
 #define RL_CTRL   42.0f
 #define RL_RAILX  54.0f
 #define RL_LABELX 72.0f
+// the rail's lockup (the game's icon and wordmark) this high; its items'
+// labels this size, the items this far apart (14 between)
+#define RL_LOGO     76.0f
+#define RL_RAILTEXT 22.0f
+#define RL_RAILSTEP 64.0f
 
 enum { PAGE_PLAY, PAGE_CAMPAIGN, PAGE_HOST, PAGE_OPTIONS, PAGE_VOTE }; // (the vote's only over the Esc menu)
 enum { CT_MISSIONS, CT_SAVES }; // Campaign's tabs
@@ -1641,7 +1646,7 @@ static void RL_Background(const rlView_t& v)
 /*
 ================
 The rail (the main menu's, the Esc menu's): 440 units, dark, fading out
-past 400; the star and the wordmark (92 high) at its head, level with the
+past 400; the star and the wordmark (RL_LOGO high) at its head, level with the
 screens' top and the buttons' left edge; the Esc menu's match under them
 (the title, two lines; a title too wide on two lines), on the labels' line;
 the items from 380 down (the main menu's MULTIPLAYER / CAMPAIGN / HOST /
@@ -1666,17 +1671,17 @@ void RL_Rail(UIReloadedMenu *m, const rlView_t& v, const rlRailItem_t *items, in
     RL_Box(v, 0, 0, 400, v.dh, RL_Rgb(10, 11, 12, 232));
     RL_HGradient(v, 400, 0, 240, v.dh, RL_Rgb(10, 11, 12, 232), RL_Rgb(10, 11, 12, 0));
     {
-        // the lockup, the game's: its icon 92 across (Allied Assault's star), a gap of a fifth, its wordmark as high
+        // the lockup, the game's: its icon RL_LOGO across (Allied Assault's star), a gap of a fifth, its wordmark as high
         static const char *const icons[3] = {RL_GLYPH("star"), RL_GLYPH("spearhead"), RL_GLYPH("breakthrough")};
         static const char *const marks[3] = {RL_GLYPH("wordmark"), RL_GLYPH("wordmark-spearhead"), RL_GLYPH("wordmark-breakthrough")};
         const int                g        = Q_max(0, Q_min(2, com_target_game->integer));
         float                    sw, sh;
 
-        RL_Outline(v, icons[g], RL_RAILX + 46, RL_EDGE + 46, 92, 92, RL_Rgb(255, 255, 255));
+        RL_Outline(v, icons[g], RL_RAILX + RL_LOGO / 2, RL_EDGE + RL_LOGO / 2, RL_LOGO, RL_LOGO, RL_Rgb(255, 255, 255));
         if (UI_OutlineSize(marks[g], &sw, &sh)) {
-            const float ww = 92 * sw / sh;
+            const float ww = RL_LOGO * sw / sh;
 
-            RL_Outline(v, marks[g], RL_RAILX + 92 * 1.2f + ww / 2, RL_EDGE + 46, ww, 92, RL_Rgb(255, 255, 255));
+            RL_Outline(v, marks[g], RL_RAILX + RL_LOGO * 1.2f + ww / 2, RL_EDGE + RL_LOGO / 2, ww, RL_LOGO, RL_Rgb(255, 255, 255));
         }
     }
     if (head) {
@@ -1702,8 +1707,8 @@ void RL_Rail(UIReloadedMenu *m, const rlView_t& v, const rlRailItem_t *items, in
         RL_Text(v, RL_LABELX, y + 44, head[1].c_str(), 15, RL_MUTED, false, RL_LEFT, 2.4f, RL_MID, room);
         RL_Text(v, RL_LABELX, y + 72, head[2].c_str(), 15, RL_MUTED, false, RL_LEFT, 2.4f, RL_MID, room);
     }
-    // (78 apart, 64 high; closer where the foot leaves them too little room: the Esc menu's six at 900 lines)
-    const float limit = qy - (nf - 1) * 52 - 32, step = 380 + (n - 1) * 78.0f + 64 <= limit ? 78.0f : (limit - 366) / n, ih = step - 14;
+    // (RL_RAILSTEP apart, 14 between; closer where the foot leaves them too little room: the Esc menu's six at 900 lines)
+    const float limit = qy - (nf - 1) * 52 - 32, step = 380 + n * RL_RAILSTEP - 14 <= limit ? RL_RAILSTEP : (limit - 366) / n, ih = step - 14;
 
     for (int i = 0; i < n; i++) {
         const float y = 380 + i * step;
@@ -1712,7 +1717,7 @@ void RL_Rail(UIReloadedMenu *m, const rlView_t& v, const rlRailItem_t *items, in
         if (lit || hot) {
             RL_Box(v, RL_RAILX, y, 300, ih, lit ? RL_BRASS : RL_Rgb(255, 255, 255, 18));
         }
-        RL_Text(v, RL_LABELX, y + ih / 2, items[i].label, 28, lit ? RL_INK : hot ? RL_TEXT : RL_SOFT, true, RL_LEFT, 3, RL_MID);
+        RL_Text(v, RL_LABELX, y + ih / 2, items[i].label, RL_RAILTEXT, lit ? RL_INK : hot ? RL_TEXT : RL_SOFT, true, RL_LEFT, 2.4f, RL_MID);
         m->Hit(v, RL_RAILX, y, 300, ih, items[i].id);
     }
     for (int i = 0; i < nf; i++) {
