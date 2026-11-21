@@ -407,6 +407,8 @@ void RE_BeginFrame( stereoFrame_t stereoFrame ) {
 	}
 	// the screenshots, video frames and overdraw sums the GPU has done
 	R_ProcessReadbacks();
+	// r_hdrOutputActive and a refused calibration (Omaha's)
+	vk_output_publish();
 
 	// the UI also draws between frames (when a menu is pushed): drawn before
 	// the frame begins, as each of those draws was

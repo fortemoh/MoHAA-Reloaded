@@ -55,6 +55,7 @@ cvar_t	*r_hdrEffectsBoost;
 cvar_t	*r_hdrBlack;
 cvar_t	*r_hdrOutputTest;
 cvar_t	*r_hdrOutputTestPage;
+cvar_t	*r_hdrOutputActive;
 
 // r_hdrOutput 1 takes scRGB before HDR10 on Windows: NVIDIA's Vulkan driver
 // presents HDR through a DXGI swapchain of its own, and Microsoft documents
@@ -105,6 +106,11 @@ void VK_OutputRegisterCvars( void ) {
 	// which calibration screen the client's menu shows (cl_ui.cpp): 1 black,
 	// 2 peak, 0 none
 	r_hdrOutputTestPage = ri.Cvar_Get( "r_hdrOutputTestPage", "0", CVAR_ROM );
+	// Omaha's (70c35fc5): for the client's Options, which can't see the
+	// window's state: 1 HDR output on an HDR swapchain, 2 the HDR look (with
+	// the temporal path), 0 neither (VK_OutputUpdate, vk_output_publish)
+	r_hdrOutputActive = ri.Cvar_Get( "r_hdrOutputActive", "0", CVAR_ROM );
+	ri.Cvar_SetDescription( r_hdrOutputActive, "read only: 1 HDR output on an HDR display, 2 the HDR look (r_hdrOutput 2 with r_temporal 1), 0 neither" );
 }
 
 // HDR output: r_hdrOutput 1, 3 or 4 (2 is the HDR look in SDR, which needs
@@ -351,18 +357,51 @@ void VK_OutputSwapchainCreated( void ) {
 	VK_OutputSetMetadata();
 }
 
+// r_hdrOutputActive's value, worked out by the back end (VK_OutputUpdate)
+static SDL_AtomicInt vko_active;
+// 1 when the back end refused calibration, until the front end puts
+// r_hdrOutputTest back to 0
+static SDL_AtomicInt vko_testRefused;
+
+/*
+===============
+vk_output_publish
+
+Omaha's (76939284, fea286f5): the front end, each frame (RE_BeginFrame):
+r_hdrOutputActive as the back end last worked it out, and r_hdrOutputTest
+back to 0 when the back end refused calibration. The back end runs on the
+render thread with r_smp, and cvars are the engine's memory
+===============
+*/
+void vk_output_publish( void ) {
+	const int active = SDL_GetAtomicInt( &vko_active );
+
+	if ( r_hdrOutputActive && r_hdrOutputActive->integer != active ) {
+		ri.Cvar_Set( "r_hdrOutputActive", va( "%i", active ) );
+	}
+	if ( SDL_GetAtomicInt( &vko_testRefused ) ) {
+		ri.Cvar_Set( "r_hdrOutputTest", "0" );
+		SDL_SetAtomicInt( &vko_testRefused, 0 );
+	}
+}
+
 /*
 ===============
 VK_OutputUpdate
 
 At the start of every frame's target choice (VK_SelectTarget): this frame's
 levels; a change of the window's HDR state makes the swapchain again (out of
-date), a change of the levels gives the compositor new metadata
+date), a change of the levels gives the compositor new metadata.
+r_hdrOutputActive tells the client's Options whether calibration can show
+(the same conditions as the refusal below)
 ===============
 */
 void VK_OutputUpdate( void ) {
+	const int active = vko.enabled && vko.mode != VK_HDR_SDR ? 1 : ( vko.sdrPass && vk_temporal_enabled() ? 2 : 0 );
 	float white, peak;
 
+	// set on the front end (vk_output_publish)
+	SDL_SetAtomicInt( &vko_active, active );
 	if ( r_hdrOutput->integer == 2 && !vk_temporal_enabled() && !vko.noSceneNote ) {
 		vko.noSceneNote = qtrue;
 		ri.Printf( PRINT_ALL, "HDR look (r_hdrOutput 2): off, it needs r_temporal 1\n" );
@@ -382,9 +421,11 @@ void VK_OutputUpdate( void ) {
 		} else if ( vko.mode == VK_HDR_SDR ) {
 			why = vko.reason ? vko.reason : "the window is SDR";
 		}
-		if ( why ) {
+		// the cvar is set on the front end (vk_output_publish), and the refusal
+		// printed once until then
+		if ( why && !SDL_GetAtomicInt( &vko_testRefused ) ) {
 			ri.Printf( PRINT_ALL, "HDR calibration: off, %s\n", why );
-			ri.Cvar_Set( "r_hdrOutputTest", "0" );
+			SDL_SetAtomicInt( &vko_testRefused, 1 );
 		}
 	}
 	if ( !vko.enabled ) {

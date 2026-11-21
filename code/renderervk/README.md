@@ -11788,3 +11788,12 @@ variable-length array, checked with clang's `-Wvla`).
       in the future restarts (`tr_flares.c`: a visible flare stayed hidden,
       a hidden one shown, until the time caught up); swipes and ghost
       textures take no negative step.
+    - `r_hdrOutputActive` (Omaha's 70c35fc5, read only): 1 while HDR output
+      runs on an HDR swapchain, 2 while the HDR look runs (`r_hdrOutput 2`
+      with the temporal path), 0 otherwise, for the client's Options (its
+      CALIBRATE button); worked out by the back end, set on the front end
+      (`vk_output_publish` from `RE_BeginFrame`; Omaha's 76939284).
+      Calibration refused (`r_hdrOutputTest 1` without HDR or the HDR look)
+      sets `r_hdrOutputTest` back to 0 on the front end too, the refusal
+      printed once (Omaha's fea286f5): the back end set the cvar from the
+      render thread with `r_smp 1`.

@@ -643,6 +643,9 @@ int			vk_readback_dropped( void );
 // with HDR output its 3D scene is drawn without the expansion, so the
 // readback is the SDR frame (vk_output.c)
 void		vk_sdr_frame( void );
+// r_hdrOutputActive, and r_hdrOutputTest refused, set on the front end
+// (RE_BeginFrame; vk_output.c)
+void		vk_output_publish( void );
 
 // Depth and stencil reads (vk_read_pixels with READ_DEPTH_FLOAT or
 // READ_STENCIL8, vk_queue_depth_reads) need a depth buffer that some
