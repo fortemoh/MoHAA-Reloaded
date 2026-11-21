@@ -2602,6 +2602,17 @@ static qboolean RM_Floor(int c, float x, float y, float top, float bottom, float
             if (x < s.mins[0] - 8 || x > s.maxs[0] + 8 || y < s.mins[1] - 8 || y > s.maxs[1] + 8 || s.mins[2] > top || s.maxs[2] < bottom) {
                 continue;
             }
+            if (tr.fraction < 1.0f) {
+                // first only down to just under the floor found so far:
+                // nothing of it there, its whole trace can't come nearer
+                // (Kasserine's script_objects lie all over the map)
+                const vec3_t nearer = {x, y, tr.endpos[2] - 2.0f};
+
+                CM_TransformedBoxTrace(&t, start, nearer, mins, maxs, s.model, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, s.origin, vec3_origin, qfalse);
+                if (!t.startsolid && !t.allsolid && t.fraction >= 1.0f) {
+                    continue;
+                }
+            }
             CM_TransformedBoxTrace(&t, start, end, mins, maxs, s.model, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, s.origin, vec3_origin, qfalse);
             if (t.startsolid || t.fraction < tr.fraction) {
                 tr = t;
