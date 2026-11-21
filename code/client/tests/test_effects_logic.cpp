@@ -21,7 +21,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 // Unit tests for Enhanced Rendering's rules (cl_effects_logic.h): Project:
-// Omaha's (70c35fc5), with r_dof
+// Omaha's (70c35fc5), with r_dof, without its rule for HDR
 
 #include "../cl_effects_logic.h"
 
@@ -37,7 +37,7 @@ static void expect_int(int value, int expected, const char *message)
     }
 }
 
-static effectsState_t state(int taa, int ao, int blur, int temporal, int hdr, int dof = 0)
+static effectsState_t state(int taa, int ao, int blur, int temporal, int dof = 0)
 {
     effectsState_t s;
 
@@ -46,7 +46,6 @@ static effectsState_t state(int taa, int ao, int blur, int temporal, int hdr, in
     s.motionBlur = blur;
     s.dof        = dof;
     s.temporal   = temporal;
-    s.hdrOutput  = hdr;
     return s;
 }
 
@@ -68,32 +67,32 @@ static void test_effects_turn_it_on(void)
     effectsReason_t why;
     effectsState_t  s;
 
-    expect_int(Effects_Decide(&(s = state(0, 0, 0, 0, 0)), &last, &why), 0, "nothing on: nothing to do");
+    expect_int(Effects_Decide(&(s = state(0, 0, 0, 0)), &last, &why), 0, "nothing on: nothing to do");
 
-    expect_int(Effects_Decide(&(s = state(1, 0, 0, 0, 0)), &last, &why), EFFECTS_WRITE_TEMPORAL_ON, "TAA turns it on");
+    expect_int(Effects_Decide(&(s = state(1, 0, 0, 0)), &last, &why), EFFECTS_WRITE_TEMPORAL_ON, "TAA turns it on");
     expect_int(why, EFFECTS_REASON_TAA, "for r_taa");
-    expect_int(Effects_Decide(&(s = state(1, 0, 0, 1, 0)), &last, &why), 0, "then it stays");
+    expect_int(Effects_Decide(&(s = state(1, 0, 0, 1)), &last, &why), 0, "then it stays");
 
     last = effectsLast_t{};
-    Effects_Decide(&(s = state(0, 0, 0, 0, 0)), &last, NULL);
-    expect_int(Effects_Decide(&(s = state(0, 1, 0, 0, 0)), &last, &why), EFFECTS_WRITE_TEMPORAL_ON, "AO turns it on");
+    Effects_Decide(&(s = state(0, 0, 0, 0)), &last, NULL);
+    expect_int(Effects_Decide(&(s = state(0, 1, 0, 0)), &last, &why), EFFECTS_WRITE_TEMPORAL_ON, "AO turns it on");
     expect_int(why, EFFECTS_REASON_AO, "for r_ao");
 
     last = effectsLast_t{};
-    Effects_Decide(&(s = state(0, 0, 0, 0, 0)), &last, NULL);
-    expect_int(Effects_Decide(&(s = state(0, 0, 1, 0, 0)), &last, &why), EFFECTS_WRITE_TEMPORAL_ON, "motion blur turns it on");
+    Effects_Decide(&(s = state(0, 0, 0, 0)), &last, NULL);
+    expect_int(Effects_Decide(&(s = state(0, 0, 1, 0)), &last, &why), EFFECTS_WRITE_TEMPORAL_ON, "motion blur turns it on");
     expect_int(why, EFFECTS_REASON_MOTION_BLUR, "for r_motionBlur");
 
     // a config with an effect on and the path off: the first call (before
     // the renderer starts) turns it on
     last = effectsLast_t{};
-    expect_int(Effects_Decide(&(s = state(0, 1, 0, 0, 0)), &last, &why), EFFECTS_WRITE_TEMPORAL_ON, "the first call turns it on for an effect");
+    expect_int(Effects_Decide(&(s = state(0, 1, 0, 0)), &last, &why), EFFECTS_WRITE_TEMPORAL_ON, "the first call turns it on for an effect");
 }
 
 static void test_off_takes_the_effects(void)
 {
     effectsLast_t  last = {};
-    effectsState_t s    = state(1, 1, 1, 1, 0);
+    effectsState_t s    = state(1, 1, 1, 1);
     int            writes;
 
     Effects_Decide(&s, &last, NULL);
@@ -106,12 +105,12 @@ static void test_off_takes_the_effects(void)
 
     // the first call has no last state: an effect on wins over the path off
     last = effectsLast_t{};
-    expect_int(Effects_Decide(&(s = state(1, 0, 0, 0, 0)), &last, NULL), EFFECTS_WRITE_TEMPORAL_ON, "no transition on the first call");
+    expect_int(Effects_Decide(&(s = state(1, 0, 0, 0)), &last, NULL), EFFECTS_WRITE_TEMPORAL_ON, "no transition on the first call");
 
     // off with no effect on: nothing to turn off
     last = effectsLast_t{};
-    Effects_Decide(&(s = state(0, 0, 0, 1, 0)), &last, NULL);
-    expect_int(Effects_Decide(&(s = state(0, 0, 0, 0, 0)), &last, NULL), 0, "off alone writes nothing");
+    Effects_Decide(&(s = state(0, 0, 0, 1)), &last, NULL);
+    expect_int(Effects_Decide(&(s = state(0, 0, 0, 0)), &last, NULL), 0, "off alone writes nothing");
 }
 
 // r_dof, which the Options page here offers (not in Omaha's rules)
@@ -122,12 +121,12 @@ static void test_dof(void)
     effectsState_t  s;
     int             writes;
 
-    Effects_Decide(&(s = state(0, 0, 0, 0, 0)), &last, NULL);
-    expect_int(Effects_Decide(&(s = state(0, 0, 0, 0, 0, 1)), &last, &why), EFFECTS_WRITE_TEMPORAL_ON, "depth of field turns it on");
+    Effects_Decide(&(s = state(0, 0, 0, 0)), &last, NULL);
+    expect_int(Effects_Decide(&(s = state(0, 0, 0, 0, 1)), &last, &why), EFFECTS_WRITE_TEMPORAL_ON, "depth of field turns it on");
     expect_int(why, EFFECTS_REASON_DOF, "for r_dof");
 
     // on with the path, then the path off: it goes too
-    s      = state(0, 0, 0, 1, 0, 1);
+    s      = state(0, 0, 0, 1, 1);
     Effects_Decide(&s, &last, NULL);
     s.temporal = 0;
     writes     = Effects_Decide(&s, &last, NULL);
@@ -138,34 +137,9 @@ static void test_dof(void)
 
     // TAA before depth of field in the reason
     last = effectsLast_t{};
-    Effects_Decide(&(s = state(0, 0, 0, 0, 0)), &last, NULL);
-    Effects_Decide(&(s = state(1, 0, 0, 0, 0, 1)), &last, &why);
+    Effects_Decide(&(s = state(0, 0, 0, 0)), &last, NULL);
+    Effects_Decide(&(s = state(1, 0, 0, 0, 1)), &last, &why);
     expect_int(why, EFFECTS_REASON_TAA, "the first effect named");
-}
-
-static void test_hdr_once(void)
-{
-    effectsLast_t   last = {};
-    effectsReason_t why;
-    effectsState_t  s;
-
-    Effects_Decide(&(s = state(0, 0, 0, 0, 0)), &last, NULL);
-    expect_int(Effects_Decide(&(s = state(0, 0, 0, 0, 1)), &last, &why), EFFECTS_WRITE_TEMPORAL_ON, "HDR turned on turns it on");
-    expect_int(why, EFFECTS_REASON_HDR, "for r_hdrOutput");
-
-    // the player turns it off again and keeps HDR (the 3D view at paper white)
-    Effects_Decide(&(s = state(0, 0, 0, 1, 1)), &last, NULL);
-    expect_int(Effects_Decide(&(s = state(0, 0, 0, 0, 1)), &last, NULL), 0, "HDR on all along: off stays off");
-    expect_int(Effects_Decide(&(s = state(0, 0, 0, 0, 1)), &last, NULL), 0, "on the next call too");
-
-    // the HDR look, from HDR: no transition from 0
-    expect_int(Effects_Decide(&(s = state(0, 0, 0, 0, 2)), &last, NULL), 0, "HDR to the HDR look is no transition");
-    Effects_Decide(&(s = state(0, 0, 0, 0, 0)), &last, NULL);
-    expect_int(Effects_Decide(&(s = state(0, 0, 0, 0, 2)), &last, &why), EFFECTS_WRITE_TEMPORAL_ON, "the HDR look turned on turns it on");
-
-    // a config with HDR on and the path off: the first call takes it as found
-    last = effectsLast_t{};
-    expect_int(Effects_Decide(&(s = state(0, 0, 0, 0, 1)), &last, NULL), 0, "HDR at the first call is no transition");
 }
 
 int main(void)
@@ -173,7 +147,6 @@ int main(void)
     test_effects_turn_it_on();
     test_off_takes_the_effects();
     test_dof();
-    test_hdr_once();
 
     if (g_failures) {
         fprintf(stderr, "%d failure(s)\n", g_failures);

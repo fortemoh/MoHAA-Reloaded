@@ -22,7 +22,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 // cl_effects.cpp -- Enhanced Rendering (r_temporal) and its effects, from
 // Options, the console and the config alike (the rules are in
-// cl_effects_logic.h). Project: Omaha's (70c35fc5), with r_dof.
+// cl_effects_logic.h). Project: Omaha's (70c35fc5), with r_dof and without
+// its rule for HDR.
 //
 // r_temporal is read by the renderer only when it starts
 // (VK_TemporalCheckDevice), so it is written at once, latch or not, and
@@ -56,7 +57,7 @@ static int CL_Effects_Value(cvar_t **var, const char *name, qboolean latched)
 
 void CL_Effects_Sync(effectsSync_t when)
 {
-    static cvar_t  *taa, *ao, *blur, *dof, *temporal, *hdr;
+    static cvar_t  *taa, *ao, *blur, *dof, *temporal;
     effectsState_t  now;
     effectsReason_t reason;
     int             writes;
@@ -66,7 +67,6 @@ void CL_Effects_Sync(effectsSync_t when)
     now.motionBlur = CL_Effects_Value(&blur, "r_motionBlur", qfalse);
     now.dof        = CL_Effects_Value(&dof, "r_dof", qfalse);
     now.temporal   = CL_Effects_Value(&temporal, "r_temporal", qtrue);
-    now.hdrOutput  = CL_Effects_Value(&hdr, "r_hdrOutput", qtrue);
 
     writes = Effects_Decide(&now, &effects_last, &reason);
 

@@ -2214,6 +2214,7 @@ enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW
 #define OF_LEFT2   2048 // a section in the left column where there are two (else its own)
 #define OF_FONT    4096 // cg_hud_font: a cycle of the HUD's fonts (rl_fonts), each name in its own font
 #define OF_HDRCAL  8192 // a button on while HDR or the HDR look runs (r_hdrOutputActive) and nothing waits for APPLY
+#define OF_UNDER   16384 // off (greyed, no clicks) while Enhanced Rendering (r_temporal, as APPLY will take it) is off
 
 typedef struct {
     int                kind, tab, flags; // the tab: a section's
@@ -2232,7 +2233,7 @@ typedef struct {
 #define O_TOGGLE(label, desc, cvar, def, flags)                  {OC_TOGGLE, 0, flags, label, desc, cvar, def, NULL, NULL, 0, 0, 0}
 #define O_SWATCH(label, desc, cvar, def, colours, across)        {OC_SWATCH, 0, 0, label, desc, cvar, def, colours, NULL, 0, 0, across}
 // a switch and its level: OFF (the switch 0), or the switch 1 and the level's cvar (other) at the choice's value
-#define O_LEVEL(label, desc, cvar, def, other, choices, values)  {OC_SEG, 0, OF_LEVEL, label, desc, cvar, def, choices, values, 0, 0, 0, other}
+#define O_LEVEL(label, desc, cvar, def, other, choices, values, flags) {OC_SEG, 0, OF_LEVEL | (flags), label, desc, cvar, def, choices, values, 0, 0, 0, other}
 // a button (its label, then the command it runs) at the row's right
 #define O_BUTTON(label, desc, button, command, flags)            {OC_BUTTON, 0, flags, label, desc, NULL, button, NULL, NULL, 0, 0, 0, command}
 // a row of keys a stock action (ui/bind.scr's), from the action of command from up to the next O_KEYS's
@@ -2315,22 +2316,22 @@ static const rlOpt_t rl_opts[] = {
     O_SLIDER("Contrast", "", "r_contrast", "1", 0.5f, 2, 0.05f, 0),
     O_SEG("Texture Quality", "", "r_picmip", "0", rl_oTextures, rl_oTextureMips, 0),
     O_SEG("Filtering", "", "r_textureMode", "GL_LINEAR_MIPMAP_LINEAR", rl_oFilters, rl_oFilterModes, 0),
-    O_LEVEL("Anisotropic", "", "r_ext_texture_filter_anisotropic", "0", "r_ext_max_anisotropy", rl_oAniso, rl_oAnisoValues),
+    O_LEVEL("Anisotropic", "", "r_ext_texture_filter_anisotropic", "0", "r_ext_max_anisotropy", rl_oAniso, rl_oAnisoValues, 0),
     O_SEG("Multisampling", "Smoother edges. Not with Enhanced Rendering.", "r_ext_multisample", "0", rl_oMsaa, rl_oMsaaValues, 0),
     O_SECTION(OT_VIDEO, "EFFECTS", OF_RIGHT),
     O_SEG("Effect Detail", "Smoke, sparks, debris.", "cg_effectdetail", "1.0", rl_oDetail, rl_oDetailValues, 0),
     O_TOGGLE("Volumetric Smoke", "Smoke grenades' clouds.", "vss_draw", "1", 0),
     O_TOGGLE("Weather", "Rain and snow.", "cg_rain", "1", 0),
     O_TOGGLE("Bullet Holes", "The marks shots leave.", "cg_marks_add", "1", 0),
-    // Project: Omaha's ENHANCEMENTS (its 70c35fc5), one row an effect; the effects turn Enhanced Rendering on, off
-    // turns them off (cl_effects.cpp)
+    // Project: Omaha's ENHANCEMENTS (its 70c35fc5), one row an effect, behind Enhanced Rendering, its master switch
+    // (as notuern asked): the effects' rows are off while it is, and it off turns them off (cl_effects.cpp)
     O_SECTION(OT_VIDEO, "ENHANCED RENDERING", OF_RIGHT),
-    O_TOGGLE("Enhanced Rendering", "Needed by the rows below. Not with Multisampling.", "r_temporal", "0", 0),
-    O_TOGGLE("Anti-Aliasing (TAA)", "Smooth edges from recent frames.", "r_taa", "0", 0),
-    O_LEVEL("Ambient Occlusion", "Soft shadows where things meet.", "r_ao", "0", "r_aoQuality", rl_oAo, rl_oAoValues),
-    O_LEVEL("Motion Blur", "Smears the picture in fast turns.", "r_motionBlur", "0", "r_motionBlurQuality", rl_oBlur, rl_oBlurValues),
-    O_LEVEL("Depth of Field", "Blurs what the crosshair isn't on.", "r_dof", "0", "r_dofQuality", rl_oBlur, rl_oBlurValues),
-    O_SEG("HDR", "HDR: an HDR display. HDR Look: any display.", "r_hdrOutput", "0", rl_oHdr, NULL, 0),
+    O_TOGGLE("Enhanced Rendering", "Turns on the rows below. Not with Multisampling.", "r_temporal", "0", 0),
+    O_TOGGLE("Anti-Aliasing (TAA)", "Smooth edges from recent frames.", "r_taa", "0", OF_UNDER),
+    O_LEVEL("Ambient Occlusion", "Soft shadows where things meet.", "r_ao", "0", "r_aoQuality", rl_oAo, rl_oAoValues, OF_UNDER),
+    O_LEVEL("Motion Blur", "Smears the picture in fast turns.", "r_motionBlur", "0", "r_motionBlurQuality", rl_oBlur, rl_oBlurValues, OF_UNDER),
+    O_LEVEL("Depth of Field", "Blurs what the crosshair isn't on.", "r_dof", "0", "r_dofQuality", rl_oBlur, rl_oBlurValues, OF_UNDER),
+    O_SEG("HDR", "HDR: an HDR display. HDR Look: with Enhanced Rendering.", "r_hdrOutput", "0", rl_oHdr, NULL, 0),
     O_BUTTON("Calibrate HDR", "With HDR on: the black level, the brightest white.", "CALIBRATE", "set r_hdrOutputTest 1", OF_HDRCAL),
     O_SECTION(OT_AUDIO, "VOLUME", 0),
     O_SLIDER("Master", "Every sound.", "s_volume", "0.9", 0, 1, 0.01f, OF_PCT),
@@ -3089,8 +3090,13 @@ static void RL_Cycle(UIReloadedMenu *m, const rlView_t& v, float x, float y, con
     m->Hit(v, x + 32, y, 228, 32, id + 1);
 }
 
-static void RL_Toggle(const rlView_t& v, float x, float y, bool on, bool hot)
+static void RL_Toggle(const rlView_t& v, float x, float y, bool on, bool hot, bool off = false)
 {
+    if (off) {
+        RL_Round(v, x, y, 56, 28, 14, RL_Rgb(255, 255, 255, 14));
+        RL_Round(v, x + 3, y + 3, 22, 22, 11, RL_Rgb(255, 255, 255, 40));
+        return;
+    }
     RL_Round(v, x, y, 56, 28, 14, on ? (hot ? RL_BRASS_HOT : RL_BRASS) : RL_Rgb(255, 255, 255, hot ? 64 : 40));
     RL_Round(v, x + (on ? 31 : 3), y + 3, 22, 22, 11, on ? RL_INK : RL_Rgb(220, 216, 206));
 }
@@ -3221,12 +3227,19 @@ static bool RL_OptButtonOn(int i)
     return !(rl_opts[i].flags & OF_HDRCAL) || (RL_OptOther("r_hdrOutputActive")->integer && !(RL_OptPending() & 1));
 }
 
+// a setting's row off: OF_UNDER's while Enhanced Rendering is off (its value waiting for APPLY too)
+static bool RL_OptOff(int i)
+{
+    return (rl_opts[i].flags & OF_UNDER) && !atoi(RL_Latched(RL_OptOther("r_temporal")));
+}
+
 // a setting's row: its label (and its description), its control at the right edge, a line under it
 static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, float y, float w, float h)
 {
     const rlOpt_t& o   = rl_opts[i];
     const int      id  = ID_OPT + i * RL_OPT_IDS;
     const float    mid = y + 32, right = x + w;
+    const bool     off = RL_OptOff(i);
 
     if (o.kind == OC_SECTION) {
         // (keys: their boxes' names over them)
@@ -3253,13 +3266,13 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
             cw += o.kind == OC_SWATCH ? 34 : RL_TextW(v, o.choices[k], 15, true, 1.6f) + 40;
         }
     }
-    RL_Text(v, x, o.desc[0] ? y + 21 : mid, o.label, 19, RL_TEXT, false, RL_LEFT, 0, RL_MID, w - cw - 24);
+    RL_Text(v, x, o.desc[0] ? y + 21 : mid, o.label, 19, off ? RL_MUTED : RL_TEXT, false, RL_LEFT, 0, RL_MID, w - cw - 24);
     if (o.desc[0]) {
-        RL_Text(v, x, y + 45, o.desc, 14, RL_MUTED, false, RL_LEFT, 0, RL_MID, w - cw - 24);
+        RL_Text(v, x, y + 45, o.desc, 14, off ? RL_FAINT : RL_MUTED, false, RL_LEFT, 0, RL_MID, w - cw - 24);
     }
     switch (o.kind) {
     case OC_SEG:
-        RL_Segments(m, v, right, mid - 16, 32, o.choices, RL_OptChoices(i), RL_OptChoice(i), id, true);
+        RL_Segments(m, v, right, mid - 16, 32, o.choices, RL_OptChoices(i), RL_OptChoice(i), id, true, off);
         break;
     case OC_CYCLE:
         {
@@ -3274,8 +3287,10 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
         RL_Slider(m, v, i, right - 260, mid - 14, id);
         break;
     case OC_TOGGLE:
-        RL_Toggle(v, right - 56, mid - 14, RL_OptOn(i), m->Hot(id));
-        m->Hit(v, right - 56, mid - 14, 56, 28, id);
+        RL_Toggle(v, right - 56, mid - 14, RL_OptOn(i), !off && m->Hot(id), off);
+        if (!off) {
+            m->Hit(v, right - 56, mid - 14, 56, 28, id);
+        }
         break;
     case OC_SWATCH:
         RL_Swatches(m, v, i, right, mid - 14, id);
@@ -3437,6 +3452,9 @@ static void RL_OptChoose(int id)
     const int      i = (id - ID_OPT) / RL_OPT_IDS, part = (id - ID_OPT) % RL_OPT_IDS;
     const rlOpt_t& o = rl_opts[i];
 
+    if (RL_OptOff(i)) {
+        return;
+    }
     switch (o.kind) {
     case OC_SEG:
         RL_OptPick(i, part);

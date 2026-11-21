@@ -11816,14 +11816,18 @@ variable-length array, checked with clang's `-Wvla`).
     - Enhanced Rendering's rules (Omaha's 70c35fc5, the client's
       `cl_effects.cpp` and `cl_effects_logic.h`, unit tested by
       `test_effects_logic`): `r_taa`, `r_ao`, `r_motionBlur` or `r_dof`
-      (not in Omaha's rules: its menu has no depth of field) on, or
-      `r_hdrOutput` turned on from 0, turns `r_temporal` on (latched: it
-      starts with the next `vid_restart`); `r_temporal` turned off turns
-      the four off, so it doesn't come back. Whether they change in Options,
-      the console or a config; the rules also run before every renderer
+      (not in Omaha's rules: its menu has no depth of field) on turns
+      `r_temporal` on (latched: it starts with the next `vid_restart`);
+      `r_temporal` turned off turns the four off, so it doesn't come back.
+      Whether they change in the console or a config (in Options their rows
+      are off until it is on); the rules also run before every renderer
       start, so the renderer never starts with an effect on and the path
-      off. `r_saturation` and `r_hdrExpand` play no part: their defaults
-      would turn the path on for everyone.
+      off. Omaha's third rule (`r_hdrOutput` turned on from 0 turned
+      `r_temporal` on) is left out: Enhanced Rendering is the one master
+      switch (notuern's advice), which HDR doesn't turn on (HDR output
+      works without it, the 3D view at paper white; the HDR look needs it).
+      `r_saturation` and `r_hdrExpand` play no part: their defaults would
+      turn the path on for everyone.
     - Better than Omaha's: the path only while something reads it
       (`VK_TemporalSceneWanted`, notuern's advice to the owner: "just turning
       on r_temporal ... has a per pixel frame cost that is fairly big").
@@ -11852,9 +11856,13 @@ variable-length array, checked with clang's `-Wvla`).
       HDR LOOK (`r_hdrOutput`) and Calibrate HDR (`r_hdrOutputTest 1`, on
       while `r_hdrOutputActive` isn't 0 and nothing waits for APPLY); under
       PICTURE's Brightness, Contrast (`r_contrast`). APPLY restarts the
-      video for `r_temporal` and `r_hdrOutput`. The owner's choices: one row
-      an effect with its levels (not Omaha's switch and quality rows), the
-      section on VIDEO, depth of field added, no colorblind mode. Omaha's
+      video for `r_temporal` and `r_hdrOutput`. Enhanced Rendering is the
+      master switch (notuern's advice, passed on by the owner): the four
+      effects' rows are off, greyed and unclickable, while it is off (as
+      APPLY will take it: `OF_UNDER`), where Omaha hides them. The owner's
+      choices: one row an effect with its levels (not Omaha's switch and
+      quality rows), the section on VIDEO, depth of field added, no
+      colorblind mode. Omaha's
       Modern UI calibration menu is not taken: this client's own screens
       (`DrawHdr`) stay.
     - Measured on this branch's machine (Radeon 780M, RADV, 1920x1080,

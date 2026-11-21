@@ -24,37 +24,35 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // the renderer's temporal path) to the effects that need it, kept free of
 // engine state so they can be unit-tested (tests/test_effects_logic.cpp).
 // cl_effects.cpp applies them. Project: Omaha's (70c35fc5), with r_dof,
-// which the Options page here offers too.
+// which the Options page here offers too, and without its third rule
+// (r_hdrOutput turned on turned r_temporal on): Enhanced Rendering is the
+// master switch (notuern's advice), which HDR doesn't turn on.
 //
-// r_taa, r_ao, r_motionBlur and r_dof do nothing without the temporal path,
-// and HDR output's expansion and the HDR look (r_hdrOutput 2) need it too:
-//  1. r_temporal turned off turns r_taa, r_ao, r_motionBlur and r_dof off
-//     (so rule 2 doesn't turn it back on);
-//  2. any of them on turns r_temporal on;
-//  3. r_hdrOutput turned on (from 0) turns r_temporal on, once: HDR output
-//     works without the path (the 3D view at paper white), so the player
-//     may turn it off again and keep HDR.
-// r_saturation and r_hdrExpand play no part: their defaults would turn the
-// path on for everyone.
+// r_taa, r_ao, r_motionBlur and r_dof do nothing without the temporal path:
+//  1. r_temporal turned off turns them off (so rule 2 doesn't turn it back
+//     on);
+//  2. any of them on turns r_temporal on (from the console or a config:
+//     Options' rows are off while it is).
+// HDR output works without the path (the 3D view at paper white, no
+// expansion); the HDR look needs it. r_saturation and r_hdrExpand play no
+// part: their defaults would turn the path on for everyone.
 
 #pragma once
 
-// what the cvars hold now: r_temporal and r_hdrOutput as they will be after
-// the next vid_restart (a latched value if there is one)
+// what the cvars hold now: r_temporal as it will be after the next
+// vid_restart (a latched value if there is one)
 typedef struct {
     int taa;
     int ao;
     int motionBlur;
     int dof;
     int temporal;
-    int hdrOutput;
 } effectsState_t;
 
 // what the last call left
 typedef struct {
     int valid;  // 0: no call yet, the first only takes its baseline
     int temporal;
-    int hdrOutput;
 } effectsLast_t;
 
 // writes to make (Effects_Decide's result)
@@ -67,8 +65,7 @@ typedef enum {
     EFFECTS_REASON_TAA,
     EFFECTS_REASON_AO,
     EFFECTS_REASON_MOTION_BLUR,
-    EFFECTS_REASON_DOF,
-    EFFECTS_REASON_HDR
+    EFFECTS_REASON_DOF
 } effectsReason_t;
 
 static inline const char *Effects_ReasonCvar(effectsReason_t reason)
@@ -82,8 +79,6 @@ static inline const char *Effects_ReasonCvar(effectsReason_t reason)
         return "r_motionBlur";
     case EFFECTS_REASON_DOF:
         return "r_dof";
-    case EFFECTS_REASON_HDR:
-        return "r_hdrOutput";
     default:
         return "";
     }
@@ -117,9 +112,6 @@ static inline int Effects_Decide(const effectsState_t *now, effectsLast_t *last,
             why = EFFECTS_REASON_MOTION_BLUR;
         } else if (dof) {
             why = EFFECTS_REASON_DOF;
-        } else if (last->valid && !last->hdrOutput && now->hdrOutput) {
-            // 3. HDR turned on
-            why = EFFECTS_REASON_HDR;
         }
         if (why != EFFECTS_REASON_NONE) {
             writes |= EFFECTS_WRITE_TEMPORAL_ON;
@@ -127,9 +119,8 @@ static inline int Effects_Decide(const effectsState_t *now, effectsLast_t *last,
         }
     }
 
-    last->valid     = 1;
-    last->temporal  = temporal;
-    last->hdrOutput = now->hdrOutput != 0;
+    last->valid    = 1;
+    last->temporal = temporal;
     if (reason) {
         *reason = why;
     }
