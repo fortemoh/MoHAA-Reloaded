@@ -2372,6 +2372,8 @@ static const rlOpt_t rl_opts[] = {
     O_CYCLE("HUD Font", "Chat, messages, kill feed and names.", "cg_hud_font", "oswald", NULL, NULL, OF_FONT),
     O_SLIDER("HUD Scale", "Bigger or smaller, the whole HUD.", "cg_hud_scale", "1", 0.25f, 2, 0.05f, 0),
     O_SLIDER("Radar Size", "Bigger or smaller, the radar alone.", "cg_hud_radar_size", "1", 0.5f, 1.5f, 0.05f, OF_PCT),
+    O_SLIDER("Radar Map Zoom", "Lower shows more of the map.", "cg_hud_radar_zoom", "0.5", 0.25f, 1, 0.05f, 0),
+    O_TOGGLE("Radar Centers The Player", "Off: near the map's edge, more map.", "cg_hud_radar_centered", "1", 0),
     O_SWATCH("Accent Colour", "The HUD's highlight.", "cg_hud_accent", "f6f67a", rl_oAccents, 13),
     O_SLIDER("Low Health", "Health turns red below this.", "cg_hud_lowhealth", "0.4", 0, 1, 0.05f, OF_PCT),
     O_TOGGLE("Players Alive", "A count of each side by the score, not a card each.", "cg_hud_alivecount", "0", 0),

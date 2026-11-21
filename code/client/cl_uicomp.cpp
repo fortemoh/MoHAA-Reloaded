@@ -1702,6 +1702,11 @@ void UI_CompHud_Init(void)
     Cvar_Get("cg_hud_font", "oswald", CVAR_ARCHIVE);
     // the radar's size alone, times its own (0.5 to 1.5; Comp_RadarSize)
     Cvar_CheckRange(Cvar_Get("cg_hud_radar_size", "1", CVAR_ARCHIVE), 0.5f, 1.5f, qfalse);
+    // how much of the map the radar shows: its reach RM_RANGE over this (RM_Range; CS2's Radar Map Zoom, 0.25 to 1)
+    Cvar_CheckRange(Cvar_Get("cg_hud_radar_zoom", "0.5", CVAR_ARCHIVE), 0.25f, 1.0f, qfalse);
+    // the radar's middle the player (CS2's Radar Centers The Player), else moved in from the map's edges
+    // (RM_View)
+    Cvar_Get("cg_hud_radar_centered", "1", CVAR_ARCHIVE);
     // the accent: "f6f67a", "#f6f67a" or "R G B" (0 to 1)
     Cvar_Get("cg_hud_accent", "f6f67a", CVAR_ARCHIVE);
     // the top's teams, beside the score: 0 a card per player, 1 how many are alive (CS2's)
@@ -2532,7 +2537,7 @@ same list and uploaded, again at each change of storey
 */
 
 #define RM_CELL     16.0f
-#define RM_RANGE    1000.0f // units from the radar's middle to its edge
+#define RM_RANGE    1000.0f // units from the radar's middle to its edge at cg_hud_radar_zoom 1 (RM_Range)
 #define RM_STAIR    7.0f    // a floor this much higher beside: a stair (to a ledge's 40)
 #define RM_PER_STEP 2000    // cells walked a frame after the load
 #define RM_PAGE     16384   // the floors' memory in whole pages: the renderer reads it in place
@@ -2557,6 +2562,7 @@ static struct {
     char                   map[MAX_QPATH];
     float                  x0, y0, zMin, zMax;
     int                    cw, ch;
+    int                    cxMin, cyMin, cxMax, cyMax; // the floors' cells' bounds (cxMax < cxMin: none)
     std::vector<int>       head; // a column's first floor, -1 none
     std::vector<rmNode_t>  nodes;
     std::vector<rmSolid_t> solids;          // the brush entities stood on
@@ -2645,6 +2651,10 @@ static int RM_Node(int c, float z, qboolean *added)
     rm.nodes.push_back({z, rm.head[c]});
     rm.head[c] = (int)rm.nodes.size() - 1;
     *added     = qtrue;
+    rm.cxMin   = Q_min(rm.cxMin, c % rm.cw);
+    rm.cxMax   = Q_max(rm.cxMax, c % rm.cw);
+    rm.cyMin   = Q_min(rm.cyMin, c / rm.cw);
+    rm.cyMax   = Q_max(rm.cyMax, c / rm.cw);
     return rm.head[c];
 }
 
@@ -2720,6 +2730,8 @@ static void RM_Walk(void)
     rm.queued = 0;
     rm.zMin   = 99999.0f;
     rm.zMax   = -99999.0f;
+    rm.cxMin = rm.cyMin = INT_MAX;
+    rm.cxMax = rm.cyMax = -1;
     // the brush entities one stands on (not the triggers, ladders, doors or
     // windows) first, then the spawn points and the tops of the ladders
     for (int pass = 0; pass < 2; pass++) {
@@ -3108,11 +3120,18 @@ static void RM_PictureDone(void)
     rm.onGpu  = qfalse;
 }
 
+// units from the radar's middle to its edge: RM_RANGE over cg_hud_radar_zoom
+// (CS2's Radar Map Zoom: the lower, the more of the map)
+static float RM_Range(void)
+{
+    return RM_RANGE / Com_Clamp(0.25f, 1.0f, Comp_Cvar("cg_hud_radar_zoom")->value);
+}
+
 // a cell's texels across in the picture for a radar width pixels across (a
 // very large map's fewer, its picture at most 4096 across)
 static int RM_Texels(float width)
 {
-    const float upp = RM_RANGE / (width * 0.5f); // world units a pixel
+    const float upp = RM_Range() / (width * 0.5f); // world units a pixel
 
     return Q_min(Q_max(1, Q_min(6, (int)(RM_CELL / upp + 0.5f))), 4096 / Q_max(rm.cw, rm.ch));
 }
@@ -3416,11 +3435,82 @@ static qboolean RM_StoreyZ(const vec3_t eye, float *z)
     return qfalse;
 }
 
+/*
+================
+RM_SnapClients
+
+The clients in the snapshot the cgame draws (the newest at or before the
+frame's time: cg.snap), a bit each. Their radar entries are that snapshot's
+places (CG_UpdateRadarClient, each frame); another's is the last seen or,
+on Spearhead's and Breakthrough's protocol, the server's radar's: its way
+only, put at com_radar_range (SV_PackNonPVSClient), which the stock radar's
+edge is, so drawn on the rim at any zoom
+================
+*/
+static uint64_t RM_SnapClients(void)
+{
+    static_assert(MAX_CLIENTS <= 64, "a client a bit");
+    uint64_t sent = 0;
+
+    for (int m = cl.snap.messageNum, n = 0; n < PACKET_BACKUP; m--, n++) {
+        const clSnapshot_t *sn = &cl.snapshots[m & PACKET_MASK];
+
+        if (!sn->valid || sn->messageNum != m || sn->serverTime > cl.serverTime) {
+            continue;
+        }
+        if (cl.parseEntitiesNum - sn->parseEntitiesNum > MAX_PARSE_ENTITIES - sn->numEntities) {
+            break; // (its entities written over)
+        }
+        for (int i = 0; i < sn->numEntities; i++) {
+            const int number = cl.parseEntities[(sn->parseEntitiesNum + i) & (MAX_PARSE_ENTITIES - 1)].number;
+
+            if (number >= 0 && number < MAX_CLIENTS) {
+                sent |= 1ull << number;
+            }
+        }
+        break;
+    }
+    return sent;
+}
+
+/*
+================
+RM_View
+
+The radar's middle in the world: the eye, or (cg_hud_radar_centered 0, CS2's
+Radar Centers The Player off) moved in from the floors' edges, so that the
+circle (range across) shows map, not what lies past it: on each axis the
+middle kept range inside the floors' bounds, at their middle where they are
+narrower than the circle; the player kept within 0.85 of the range
+================
+*/
+static void RM_View(const vec3_t eye, float range, vec3_t view)
+{
+    VectorCopy(eye, view);
+    if (Comp_Int("cg_hud_radar_centered") || rm.cxMax < rm.cxMin) {
+        return;
+    }
+    for (int a = 0; a < 2; a++) {
+        const float lo = a ? rm.y0 + rm.cyMin * RM_CELL : rm.x0 + rm.cxMin * RM_CELL;
+        const float hi = a ? rm.y0 + (rm.cyMax + 1) * RM_CELL : rm.x0 + (rm.cxMax + 1) * RM_CELL;
+
+        view[a] = hi - lo > 2.0f * range ? Com_Clamp(lo + range, hi - range, eye[a]) : (lo + hi) * 0.5f;
+    }
+    {
+        const float dx = eye[0] - view[0], dy = eye[1] - view[1], d = sqrtf(dx * dx + dy * dy);
+
+        if (d > 0.85f * range) {
+            view[0] = eye[0] - dx * 0.85f * range / d;
+            view[1] = eye[1] - dy * 0.85f * range / d;
+        }
+    }
+}
+
 void UIHudRadar::Draw(void)
 {
     const float s = m_vVirtualScale[0], r = m_frame.size.width * 0.5f, k = m_frame.size.width / s / 220.0f;
-    const float upp = RM_RANGE / r; // world units a pixel
-    vec3_t      angles, eye;
+    const float range = RM_Range(), upp = range / r; // world units a pixel
+    vec3_t      angles, eye, view;
     float       sn, cn;
     const char *map = (Comp_ConfigStrings(), cs.map);
 
@@ -3429,11 +3519,12 @@ void UIHudRadar::Draw(void)
     }
     cge->CG_EyeAngles(&angles);
     cge->CG_EyePosition(&eye);
+    RM_View(eye, range, view);
     sn = sinf(DEG2RAD(angles[YAW]));
     cn = cosf(DEG2RAD(angles[YAW]));
     // world offset to screen: up the view's forward, right its right
     auto place = [&](float wx, float wy, float *x, float *y) {
-        const float dx = wx - eye[0], dy = wy - eye[1];
+        const float dx = wx - view[0], dy = wy - view[1];
 
         *x = (dx * sn - dy * cn) / upp;
         *y = -(dx * cn + dy * sn) / upp;
@@ -3492,7 +3583,7 @@ void UIHudRadar::Draw(void)
             for (int i = 0; i < 48; i++) {
                 const float px = circle[i][0] * r, py = circle[i][1] * r;
                 // the screen offset back to the world
-                const float wx = eye[0] + (px * sn - py * cn) * upp, wy = eye[1] + (-px * cn - py * sn) * upp;
+                const float wx = view[0] + (px * sn - py * cn) * upp, wy = view[1] + (-px * cn - py * sn) * upp;
 
                 pts[i][0] = r + px;
                 pts[i][1] = r + py;
@@ -3527,10 +3618,17 @@ void UIHudRadar::Draw(void)
         }
     }
 
-    // the teammates: a dot with a dark edge and a point where they look
+    // the teammates: a dot with a dark edge and a point where they look; on
+    // the rim, its way, beyond the radar's reach or (zoomed out on Spearhead's
+    // and Breakthrough's protocol) known only by its way: RM_SnapClients, read
+    // once a frame at most, for the first one inside (at zoom 1 such a place,
+    // com_radar_range away, is beyond the reach)
     if (g_radarClients && g_radarClientNum >= 0) {
         const int         axis  = cl.snap.ps.stats[STAT_TEAM] == TEAM_AXIS;
         const compMates_t mates = Comp_Mates();
+        const qboolean    ways  = com_target_game->integer >= TG_MOHTA && range > RM_RANGE;
+        uint64_t          sent  = 0;
+        qboolean          read  = qfalse;
 
         for (int i = 0; i < MAX_CLIENTS; i++) {
             const radarClient_t *c = &g_radarClients[i];
@@ -3543,6 +3641,13 @@ void UIHudRadar::Draw(void)
             place(c->origin[0], c->origin[1], &x, &y);
             dist    = sqrtf(x * x + y * y);
             clamped = dist > r - 7.0f * k * s;
+            if (!clamped && ways && dist > 0.0f) {
+                if (!read) {
+                    sent = RM_SnapClients();
+                    read = qtrue;
+                }
+                clamped = !(sent >> i & 1);
+            }
             if (clamped) {
                 x *= (r - 7.0f * k * s) / dist;
                 y *= (r - 7.0f * k * s) / dist;
@@ -3559,12 +3664,14 @@ void UIHudRadar::Draw(void)
         }
     }
 
-    // the player: a dot in the middle, its tip up
+    // the player: a dot in the middle (RM_View: or where they are), its tip up
     {
         int             d;
         const qhandle_t sh = Comp_PlayerShader(k, s, &d);
+        float           x, y;
 
-        uii.Rend_DrawPicStretched(floorf(r - d * 0.5f), floorf(r - d * 0.5f), d, d, 0, 0, 1, 1, sh);
+        place(eye[0], eye[1], &x, &y);
+        uii.Rend_DrawPicStretched(floorf(r + x - d * 0.5f), floorf(r + y - d * 0.5f), d, d, 0, 0, 1, 1, sh);
     }
 }
 
