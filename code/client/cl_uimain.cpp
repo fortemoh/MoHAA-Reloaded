@@ -2191,7 +2191,7 @@ OPTIONS
 Omaha's settings: tabs, sections titled in brass, a row a setting: its
 label and a line describing it on the left, its control on the right (a
 choice of segments, a slider with its value, a switch, colour swatches, a
-text field). Two columns (the right one the crosshair's), one
+text field, a button). Two columns (the right one the crosshair's), one
 under 1100 units across, scrolled when it doesn't fit. A setting is set as
 it changes; those the renderer or the sound take at a restart wait for
 APPLY; DEFAULTS resets the settings shown
@@ -2201,26 +2201,28 @@ APPLY; DEFAULTS resets the settings shown
 
 static const char *const rl_optTabs[OT_NUM] = {"CONTROLS", "VIDEO", "AUDIO", "GAMEPLAY", "HUD"};
 
-enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW, OC_CODE, OC_KEYS };
+enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW, OC_CODE, OC_KEYS, OC_BUTTON };
 
 #define OF_RIGHT   1   // a section in the right column (the second)
 #define OF_PCT     2   // a slider's value shown as a percentage
 #define OF_NOT     8   // a switch on at 0
 #define OF_NEG     16  // a switch on below 0, the value's sign (the mouse inverted: m_pitch)
 #define OF_DISPLAY 64  // r_fullscreen and r_noborder: fullscreen, windowed, borderless
-#define OF_ANISO   128 // r_ext_texture_filter_anisotropic and r_ext_max_anisotropy: off, or how much
+#define OF_LEVEL   128 // a switch and its level in one row (segments): OFF, or how much (the level's cvar: other)
 #define OF_RES     256 // r_mode: the desktop's, or a size of the display's (r_customwidth, r_customheight)
 #define OF_THIRD   512 // a section in the third column (CONTROLS' alone have three; else the right one)
 #define OF_LEFT2   2048 // a section in the left column where there are two (else its own)
 #define OF_FONT    4096 // cg_hud_font: a cycle of the HUD's fonts (rl_fonts), each name in its own font
+#define OF_HDRCAL  8192 // a button on while HDR or the HDR look runs (r_hdrOutputActive) and nothing waits for APPLY
 
 typedef struct {
     int                kind, tab, flags; // the tab: a section's
     const char        *label, *desc;     // a section's title
     const char        *cvar, *def;
     const char *const *choices; // segments, a cycle: their labels; swatches: their colours (RRGGBB); NULL-ended
-    const char *const *values;  // segments, a cycle: their values (NULL: their places)
+    const char *const *values;  // segments, a cycle: their values (NULL: their places); OF_LEVEL: the levels' (from the 2nd)
     float              lo, hi, step; // a slider's; swatches: step the swatches a row (0: one row)
+    const char        *other;        // OF_LEVEL: the level's cvar; a button: its command (def: its label)
 } rlOpt_t;
 
 #define O_SECTION(tab, title, flags)                             {OC_SECTION, tab, flags, title, "", NULL, NULL, NULL, NULL, 0, 0, 0}
@@ -2229,6 +2231,10 @@ typedef struct {
 #define O_SLIDER(label, desc, cvar, def, lo, hi, step, flags)    {OC_SLIDER, 0, flags, label, desc, cvar, def, NULL, NULL, lo, hi, step}
 #define O_TOGGLE(label, desc, cvar, def, flags)                  {OC_TOGGLE, 0, flags, label, desc, cvar, def, NULL, NULL, 0, 0, 0}
 #define O_SWATCH(label, desc, cvar, def, colours, across)        {OC_SWATCH, 0, 0, label, desc, cvar, def, colours, NULL, 0, 0, across}
+// a switch and its level: OFF (the switch 0), or the switch 1 and the level's cvar (other) at the choice's value
+#define O_LEVEL(label, desc, cvar, def, other, choices, values)  {OC_SEG, 0, OF_LEVEL, label, desc, cvar, def, choices, values, 0, 0, 0, other}
+// a button (its label, then the command it runs) at the row's right
+#define O_BUTTON(label, desc, button, command, flags)            {OC_BUTTON, 0, flags, label, desc, NULL, button, NULL, NULL, 0, 0, 0, command}
 // a row of keys a stock action (ui/bind.scr's), from the action of command from up to the next O_KEYS's
 #define O_KEYS(from)                                             {OC_KEYS, 0, 0, from, "", NULL, NULL, NULL, NULL, 0, 0, 0}
 
@@ -2241,6 +2247,12 @@ static const char *const rl_oAniso[]       = {"OFF", "2X", "4X", "8X", "16X", NU
 static const char *const rl_oAnisoValues[] = {"0", "2", "4", "8", "16", NULL};
 static const char *const rl_oMsaa[]        = {"OFF", "2X", "4X", "8X", NULL};
 static const char *const rl_oMsaaValues[]  = {"0", "2", "4", "8", NULL};
+// Enhanced Rendering's: r_aoQuality 0 to 3; r_motionBlurQuality and r_dofQuality 0 to 2
+static const char *const rl_oAo[]          = {"OFF", "LOW", "MEDIUM", "HIGH", "ULTRA", NULL};
+static const char *const rl_oAoValues[]    = {"", "0", "1", "2", "3", NULL};
+static const char *const rl_oBlur[]        = {"OFF", "LOW", "MEDIUM", "HIGH", NULL};
+static const char *const rl_oBlurValues[]  = {"", "0", "1", "2", NULL};
+static const char *const rl_oHdr[]         = {"OFF", "HDR", "HDR LOOK", NULL}; // r_hdrOutput 0, 1, 2
 static const char *const rl_oShadows[]     = {"OFF", "BLOB", "FULL", NULL};
 static const char *const rl_oDlights[]     = {"4", "8", "16", "32", "64", NULL};
 static const char *const rl_oDetail[]      = {"LOW", "MEDIUM", "HIGH", NULL};
@@ -2300,15 +2312,26 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Flat Model Lighting", "On is recommended. Off makes players and guns much darker.", "r_fastentlight", "1", 0),
     O_SECTION(OT_VIDEO, "PICTURE", OF_RIGHT),
     O_SLIDER("Brightness", "", "r_gamma", "1", 0.5f, 3, 0.05f, 0),
+    O_SLIDER("Contrast", "", "r_contrast", "1", 0.5f, 2, 0.05f, 0),
     O_SEG("Texture Quality", "", "r_picmip", "0", rl_oTextures, rl_oTextureMips, 0),
     O_SEG("Filtering", "", "r_textureMode", "GL_LINEAR_MIPMAP_LINEAR", rl_oFilters, rl_oFilterModes, 0),
-    O_SEG("Anisotropic", "", "r_ext_texture_filter_anisotropic", "0", rl_oAniso, rl_oAnisoValues, OF_ANISO),
-    O_SEG("Multisampling", "Smoother edges.", "r_ext_multisample", "0", rl_oMsaa, rl_oMsaaValues, 0),
+    O_LEVEL("Anisotropic", "", "r_ext_texture_filter_anisotropic", "0", "r_ext_max_anisotropy", rl_oAniso, rl_oAnisoValues),
+    O_SEG("Multisampling", "Smoother edges. Not with Enhanced Rendering.", "r_ext_multisample", "0", rl_oMsaa, rl_oMsaaValues, 0),
     O_SECTION(OT_VIDEO, "EFFECTS", OF_RIGHT),
     O_SEG("Effect Detail", "Smoke, sparks, debris.", "cg_effectdetail", "1.0", rl_oDetail, rl_oDetailValues, 0),
     O_TOGGLE("Volumetric Smoke", "Smoke grenades' clouds.", "vss_draw", "1", 0),
     O_TOGGLE("Weather", "Rain and snow.", "cg_rain", "1", 0),
     O_TOGGLE("Bullet Holes", "The marks shots leave.", "cg_marks_add", "1", 0),
+    // Project: Omaha's ENHANCEMENTS (its 70c35fc5), one row an effect; the effects turn Enhanced Rendering on, off
+    // turns them off (cl_effects.cpp)
+    O_SECTION(OT_VIDEO, "ENHANCED RENDERING", OF_RIGHT),
+    O_TOGGLE("Enhanced Rendering", "Needed by the rows below. Not with Multisampling.", "r_temporal", "0", 0),
+    O_TOGGLE("Anti-Aliasing (TAA)", "Smooth edges from recent frames.", "r_taa", "0", 0),
+    O_LEVEL("Ambient Occlusion", "Soft shadows where things meet.", "r_ao", "0", "r_aoQuality", rl_oAo, rl_oAoValues),
+    O_LEVEL("Motion Blur", "Smears the picture in fast turns.", "r_motionBlur", "0", "r_motionBlurQuality", rl_oBlur, rl_oBlurValues),
+    O_LEVEL("Depth of Field", "Blurs what the crosshair isn't on.", "r_dof", "0", "r_dofQuality", rl_oBlur, rl_oBlurValues),
+    O_SEG("HDR", "HDR: an HDR display. HDR Look: any display.", "r_hdrOutput", "0", rl_oHdr, NULL, 0),
+    O_BUTTON("Calibrate HDR", "With HDR on: the black level, the brightest white.", "CALIBRATE", "set r_hdrOutputTest 1", OF_HDRCAL),
     O_SECTION(OT_AUDIO, "VOLUME", 0),
     O_SLIDER("Master", "Every sound.", "s_volume", "0.9", 0, 1, 0.01f, OF_PCT),
     O_SLIDER("Music", "The music the maps' scripts play.", "s_musicvolume", "0.9", 0, 1, 0.01f, OF_PCT),
@@ -2369,6 +2392,7 @@ static const char *const rl_optRestart[] = {
     "r_gamma",
 #endif
     "r_picmip", "r_ext_texture_filter_anisotropic", "r_ext_max_anisotropy", "r_ext_multisample", "r_maxDlights", "r_fastdlights",
+    "r_temporal", "r_hdrOutput",
     "s_khz",
 };
 
@@ -2719,13 +2743,13 @@ static int RL_OptChoice(int i)
     if (o.flags & OF_FONT) {
         return (int)(RL_FindFont(value) - rl_fonts);
     }
-    if (o.flags & OF_ANISO && !atoi(value)) {
+    if (o.flags & OF_LEVEL && !atoi(value)) {
         return 0;
     }
     for (int k = 0; o.choices[k]; k++) {
-        const char *const is = o.flags & OF_ANISO ? RL_Latched(RL_OptOther("r_ext_max_anisotropy")) : value;
+        const char *const is = o.flags & OF_LEVEL ? RL_Latched(RL_OptOther(o.other)) : value;
 
-        if ((o.flags & OF_ANISO) ? k && RL_OptIs(is, o.values[k]) : o.values ? RL_OptIs(is, o.values[k]) : RL_OptIs(is, va("%d", k))) {
+        if ((o.flags & OF_LEVEL) ? k && RL_OptIs(is, o.values[k]) : o.values ? RL_OptIs(is, o.values[k]) : RL_OptIs(is, va("%d", k))) {
             return k;
         }
     }
@@ -2788,10 +2812,10 @@ static void RL_OptPick(int i, int k)
     if (o.flags & OF_DISPLAY) {
         RL_OptCvarSet("r_fullscreen", k ? "0" : "1");
         RL_OptCvarSet("r_noborder", k == 2 ? "1" : "0");
-    } else if (o.flags & OF_ANISO) {
-        RL_OptCvarSet("r_ext_texture_filter_anisotropic", k ? "1" : "0");
+    } else if (o.flags & OF_LEVEL) {
+        RL_OptCvarSet(o.cvar, k ? "1" : "0");
         if (k) {
-            RL_OptCvarSet("r_ext_max_anisotropy", o.values[k]);
+            RL_OptCvarSet(o.other, o.values[k]);
         }
     } else if (o.flags & OF_RES) {
         int w, h;
@@ -3005,8 +3029,8 @@ static void RL_OptDefaults(void)
             continue;
         }
         Cvar_Reset(rl_opts[i].cvar);
-        if (flags & (OF_DISPLAY | OF_ANISO)) {
-            Cvar_Reset(flags & OF_DISPLAY ? "r_noborder" : "r_ext_max_anisotropy");
+        if (flags & (OF_DISPLAY | OF_LEVEL)) {
+            Cvar_Reset(flags & OF_DISPLAY ? "r_noborder" : rl_opts[i].other);
         }
     }
     RL_KeysDefaults();
@@ -3189,6 +3213,14 @@ static void RL_KeyRow(UIReloadedMenu *m, const rlView_t& v, int a, float x, floa
     RL_Box(v, x, y + h - 2, w, 1, RL_LINE);
 }
 
+static int RL_OptPending(void);
+
+// a button's row on (OF_HDRCAL: calibration shows only while HDR or the HDR look runs, and a restart would end it)
+static bool RL_OptButtonOn(int i)
+{
+    return !(rl_opts[i].flags & OF_HDRCAL) || (RL_OptOther("r_hdrOutputActive")->integer && !(RL_OptPending() & 1));
+}
+
 // a setting's row: its label (and its description), its control at the right edge, a line under it
 static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, float y, float w, float h)
 {
@@ -3210,7 +3242,7 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
         RL_Text(v, x + 12, y + h - 12 - 18, "PREVIEW, LIFE-SIZE", 12, RL_Rgb(255, 255, 255, 150), true, RL_LEFT, 1.6f, RL_MID);
         return;
     }
-    float cw = o.kind == OC_TOGGLE ? 56 : o.kind == OC_CODE ? 364 : 260; // the control's width
+    float cw = o.kind == OC_TOGGLE ? 56 : o.kind == OC_CODE ? 364 : o.kind == OC_BUTTON ? 150 : 260; // the control's width
 
     if (o.cvar) {
         UI_DrawDep(rl_opt.cv[i]);
@@ -3252,6 +3284,9 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
         RL_Field(v, right - 364, mid - 18, 260, 36, rl_opt.code, "CS\x85, or the clipboard's", rl_mm.edit == F_CODE, m->Hot(id));
         m->Hit(v, right - 364, mid - 18, 260, 36, id);
         RL_Button(m, v, right - 100, mid - 18, 100, 36, "IMPORT", false, id + 1);
+        break;
+    case OC_BUTTON:
+        RL_Button(m, v, right - 150, mid - 16, 150, 32, o.def, false, id, !RL_OptButtonOn(i));
         break;
     }
     RL_Box(v, x, y + h - 2, w, 1, RL_LINE);
@@ -3431,6 +3466,11 @@ static void RL_OptChoose(int id)
             RL_OptImport();
         } else {
             rl_mm.edit = F_CODE;
+        }
+        break;
+    case OC_BUTTON:
+        if (RL_OptButtonOn(i)) {
+            Cbuf_AddText(va("%s\n", o.other));
         }
         break;
     }

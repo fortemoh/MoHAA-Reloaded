@@ -11824,3 +11824,27 @@ variable-length array, checked with clang's `-Wvla`).
       start, so the renderer never starts with an effect on and the path
       off. `r_saturation` and `r_hdrExpand` play no part: their defaults
       would turn the path on for everyone.
+    - The settings (Omaha's ENHANCEMENTS, 70c35fc5, as rows of the client's
+      Options page, `cl_uimain.cpp`): VIDEO's new ENHANCED RENDERING
+      section: Enhanced Rendering (`r_temporal`), Anti-Aliasing (TAA),
+      Ambient Occlusion OFF LOW MEDIUM HIGH ULTRA (`r_ao` and
+      `r_aoQuality` in one row), Motion Blur and Depth of Field OFF LOW
+      MEDIUM HIGH (with `r_motionBlurQuality`, `r_dofQuality`), HDR OFF HDR
+      HDR LOOK (`r_hdrOutput`) and Calibrate HDR (`r_hdrOutputTest 1`, on
+      while `r_hdrOutputActive` isn't 0 and nothing waits for APPLY); under
+      PICTURE's Brightness, Contrast (`r_contrast`). APPLY restarts the
+      video for `r_temporal` and `r_hdrOutput`. The owner's choices: one row
+      an effect with its levels (not Omaha's switch and quality rows), the
+      section on VIDEO, depth of field added, no colorblind mode. Omaha's
+      Modern UI calibration menu is not taken: this client's own screens
+      (`DrawHdr`) stay.
+    - Measured on this branch's machine (Radeon 780M, RADV, 1920x1080,
+      uncapped, the `dm/mohdm6` room at 448 -160 108, frame time medians
+      of `vkframelog`; the GPU column reads 0.015 to 0.025 ms on RADV, not
+      usable): `r_temporal 0` 0.383 ms, 1 alone 1.02, with `r_taa`, `r_ao`
+      and `r_motionBlur` 3.91; `r_contrast` 1 0.383 ms on this branch and
+      the one before, 1.2 0.557 (each twice, the builds alternated in the
+      same minutes). The effects one by one (the build before, the same
+      code): anti-aliasing 2.52, ambient occlusion LOW to ULTRA 2.82, 2.55,
+      2.79, 3.63 (`r_aoAsync 0`; HIGH with it 2.61), motion blur still 1.53,
+      depth of field 2.49, over 1.09 with the path alone.
