@@ -34,7 +34,7 @@ rect 914 0 92 32
 fgcolor 0.922 0.933 0.949 1
 bgcolor 0 0 0 0
 borderstyle NONE
-font oswald-semibold-28
+font oswald-semibold-28s
 textalign centerx
 linkcvar ui_hud_timer
 enabledcvar cg_hud_timer
@@ -47,7 +47,7 @@ name "scoreleft"
 rect 914 33 46 31
 bgcolor 0 0 0 0
 borderstyle NONE
-font oswald-semibold-28
+font oswald-semibold-28s
 textalign centerx
 linkcvar ui_hud_score_l
 colorcvar ui_hud_score_lc
@@ -61,7 +61,7 @@ name "scoreright"
 rect 960 33 46 31
 bgcolor 0 0 0 0
 borderstyle NONE
-font oswald-semibold-28
+font oswald-semibold-28s
 textalign centerx
 linkcvar ui_hud_score_r
 colorcvar ui_hud_score_rc

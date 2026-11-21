@@ -1742,29 +1742,40 @@ static qboolean Comp_Outline(const char *pic)
     return strcmp(pic, "glove_50") && strcmp(pic, "headshot_50") && strcmp(pic, "skull_50") ? qtrue : qfalse;
 }
 
-// a picture baked at pw x ph pixels
-static qhandle_t Comp_PictureShader(const char *pic, int pw, int ph, float s, qboolean mirror)
+// "in" a shape's layer, the shadow's margin (UI_ShadowMargin) in from the picture's edges
+static const char *Comp_ShadowIn(float s)
 {
-    char        layer[MAX_QPATH * 2];
-    const char *layers[1] = {layer};
+    const float u = UI_ShadowMargin(s) / s;
 
-    if (Comp_Outline(pic)) {
-        Com_sprintf(layer, sizeof(layer), "svg 1 1 1 1 " COMP_OUTLINES "%s.svg center%s", pic, mirror ? " mirror" : "");
-    } else {
-        Com_sprintf(layer, sizeof(layer), "picture 1 1 1 1 " COMP_PICTURES "%s.png center%s", pic, mirror ? " mirror" : "");
-    }
-    return UI_BakeShape("comp", layers, 1, pw, ph, s);
+    return va("in %gpx %gpx -%gpx -%gpx ", u, u, u, u);
 }
 
-// a picture baked at its size (w x h design pixels at x y), tinted
-static void Comp_Picture(const char *pic, float x, float y, float w, float h, float s, qboolean mirror, const UColor& c)
+// a picture baked at pw x ph pixels; shadow: with the faces' drop shadow
+// under it, the margin wider all round (UI_ShadowMargin)
+static qhandle_t Comp_PictureShader(const char *pic, int pw, int ph, float s, qboolean mirror, bool shadow = false)
 {
-    const int    pw = (int)(w * s + 0.5f), ph = (int)(h * s + 0.5f);
+    const int   m = shadow ? UI_ShadowMargin(s) : 0;
+    char        layer[MAX_QPATH * 2];
+    const char *layers[2] = {layer, "shadow"};
+
+    if (Comp_Outline(pic)) {
+        Com_sprintf(layer, sizeof(layer), "%ssvg 1 1 1 1 " COMP_OUTLINES "%s.svg center%s", m ? Comp_ShadowIn(s) : "", pic, mirror ? " mirror" : "");
+    } else {
+        Com_sprintf(layer, sizeof(layer), "%spicture 1 1 1 1 " COMP_PICTURES "%s.png center%s", m ? Comp_ShadowIn(s) : "", pic, mirror ? " mirror" : "");
+    }
+    return UI_BakeShape("comp", layers, m ? 2 : 1, pw + 2 * m, ph + 2 * m, s);
+}
+
+// a picture baked at its size (w x h design pixels at x y), tinted; shadow:
+// the faces' drop shadow under it (over the game, not in a box)
+static void Comp_Picture(const char *pic, float x, float y, float w, float h, float s, qboolean mirror, const UColor& c, bool shadow = false)
+{
+    const int    pw = (int)(w * s + 0.5f), ph = (int)(h * s + 0.5f), m = shadow ? UI_ShadowMargin(s) : 0;
     const vec4_t color = {c.r, c.g, c.b, c.a};
-    qhandle_t    shader = Comp_PictureShader(pic, pw, ph, s, mirror);
+    qhandle_t    shader = Comp_PictureShader(pic, pw, ph, s, mirror, shadow);
 
     uii.Rend_SetColor(color);
-    uii.Rend_DrawPicStretched(floorf(x * s + 0.5f), floorf(y * s + 0.5f), pw, ph, 0, 0, 1, 1, shader);
+    uii.Rend_DrawPicStretched(floorf(x * s + 0.5f) - m, floorf(y * s + 0.5f) - m, pw + 2 * m, ph + 2 * m, 0, 0, 1, 1, shader);
 }
 
 // a weapon's picture fitted in a box of design pixels: its size there
@@ -1781,13 +1792,17 @@ static void Comp_Fit(const char *pic, float boxW, float boxH, float s, float *w,
 }
 
 // the dot of a weapon list's row with nothing left in it (CS2's empty
-// grenade slots): d x d pixels, white (tinted when drawn)
+// grenade slots): d x d pixels, white (tinted when drawn), with the faces'
+// drop shadow in the margin round it (UI_ShadowMargin)
 static qhandle_t Comp_EmptyShader(float s, int *d)
 {
-    const char *layers[1] = {"circle 1 1 1 1 1"};
+    const int   m = UI_ShadowMargin(s);
+    char        dot[64];
+    const char *layers[2] = {dot, "shadow"};
 
+    Com_sprintf(dot, sizeof(dot), "%scircle 1 1 1 1 1", Comp_ShadowIn(s));
     *d = (int)(6.0f * s + 0.5f);
-    return UI_BakeShape("comp_empty", layers, 1, *d, *d, s);
+    return UI_BakeShape("comp_empty", layers, 2, *d + 2 * m, *d + 2 * m, s);
 }
 
 // a text's width, smaller to fit a width
@@ -2306,7 +2321,8 @@ void UIHudFollow::Draw(void)
     static cvar_t *const team    = Cvar_Get("ui_hud_follow_team", "", 0);
     static cvar_t *const corners = Cvar_Get("ui_hud_corners", "", 0);
     static const rlColor_t fill = {0.047f, 0.055f, 0.071f, 0.78f}, caption = {1.0f, 1.0f, 1.0f, 0.612f};
-    rlView_t               v;
+    // (the HUD's: its faces those baked ahead, its small text in the HUD's font)
+    rlView_t               v = Comp_HudView();
     rlColor_t              c = {1.0f, 1.0f, 1.0f, 1.0f};
 
     UI_DrawDep(name);
@@ -2417,7 +2433,7 @@ void UIHudWeapons::Item(float right, float *bottom, const char **pics, const int
             x += 4.0f;
         }
         Comp_Picture(pics[i], x, top + floorf((ph - phi[i]) * 0.5f * s) / s, pw[i], phi[i], s, qfalse,
-                     UColor(comp_accent[ACC_WEAPON][0], comp_accent[ACC_WEAPON][1], comp_accent[ACC_WEAPON][2], alpha));
+                     UColor(comp_accent[ACC_WEAPON][0], comp_accent[ACC_WEAPON][1], comp_accent[ACC_WEAPON][2], alpha), true);
         x += pw[i] + (counts ? 8.0f : 0.0f) + 4.0f;
     }
     if (hand >= 0) {
@@ -2475,12 +2491,13 @@ void UIHudWeapons::Draw(void)
         float           pw, ph;
         int             d;
         const qhandle_t dot = Comp_EmptyShader(s, &d);
+        const int       m   = UI_ShadowMargin(s);
 
         Comp_Fit(Comp_Weapon(comp_issued[comp.nation][1])->pic, 200.0f, 38.0f, s, &pw, &ph);
         bottom -= ph + 2.0f + lineH;
         uii.Rend_SetColor(color);
-        uii.Rend_DrawPicStretched(floorf((right - pw * 0.5f) * s - d * 0.5f), floorf((bottom + ph * 0.5f) * s - d * 0.5f), d, d, 0, 0, 1,
-                                  1, dot);
+        uii.Rend_DrawPicStretched(floorf((right - pw * 0.5f) * s - d * 0.5f) - m, floorf((bottom + ph * 0.5f) * s - d * 0.5f) - m, d + 2 * m,
+                                  d + 2 * m, 0, 0, 1, 1, dot);
         bottom -= 8.0f;
     }
     if (comp.sidearm[0] && Comp_Weapon(comp.sidearm)) {
@@ -3354,7 +3371,7 @@ void UI_CompHud_PreBake(qboolean ahead)
 
         Comp_Fit(comp_weapons[i].pic, kind == WK_SIDEARM ? 110.0f : kind == WK_PRIMARY ? 160.0f : 200.0f,
                  kind == WK_SIDEARM ? 30.0f : kind == WK_PRIMARY ? 34.0f : 38.0f, s, &w, &h);
-        Comp_PictureShader(comp_weapons[i].pic, (int)(w * s + 0.5f), (int)(h * s + 0.5f), s, qfalse);
+        Comp_PictureShader(comp_weapons[i].pic, (int)(w * s + 0.5f), (int)(h * s + 0.5f), s, qfalse, true);
     }
     Comp_EmptyShader(s, &d);
     if (menuManager.FindMenu("hud_comp_score")) {
