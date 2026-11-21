@@ -2250,8 +2250,9 @@ static const char *const rl_oKhzValues[]   = {"22", "44", "48", NULL};
 static const char *const rl_oWeapon[]      = {"OFF", "WEAPON", "WEAPON & HANDS", NULL};
 static const char *const rl_oMoveRates[]   = {"STOCK", "100", "125", NULL};
 static const char *const rl_oMoveValues[]  = {"0", "100", "125", NULL};
-static const char *const rl_oHudStyles[]   = {"CS:GO", "CS2", NULL};
-static const char *const rl_oHudValues[]   = {"1", "2", NULL};
+static const char *const rl_oHudStyles[]   = {"CS:GO", "CS2", "CLASSIC", NULL};
+static const char *const rl_oHudValues[]   = {"1", "2", "3", NULL};
+static const char *const rl_oClassicKills[] = {"CHAT", "BESIDE", "UNDER", NULL}; // cg_hud_classic_kills 0, 1, 2
 static const char *const rl_oLagometer[]   = {"OFF", "GRAPH", "COMPACT", NULL};
 // the accent's: 12 hues (red to pink) and a grey across, pastel, vivid and deep down; with the five before
 // (f6f67a, deb250, 78c8f0, 96dc8c, f0f0f0) in their places
@@ -2334,7 +2335,8 @@ static const rlOpt_t rl_opts[] = {
     O_SECTION(OT_GAMEPLAY, "DEMOS", OF_RIGHT),
     O_TOGGLE("Record Every Match", "A demo of each match you play.", "cl_autoRecordDemo", "0", 0),
     O_SECTION(OT_HUD, "HUD", 0),
-    O_SEG("HUD Style", "The CS:GO or CS2 look.", "cg_hudstyle", "1", rl_oHudStyles, rl_oHudValues, 0),
+    O_SEG("HUD Style", "Classic: the chat along the top, as the original.", "cg_hudstyle", "1", rl_oHudStyles, rl_oHudValues, 0),
+    O_SEG("Classic Kills", "Classic only: in the chat, or beside or under the timer.", "cg_hud_classic_kills", "0", rl_oClassicKills, NULL, 0),
     O_CYCLE("HUD Font", "Chat, messages, kill feed and names.", "cg_hud_font", "oswald", NULL, NULL, OF_FONT),
     O_SLIDER("HUD Scale", "Bigger or smaller, the whole HUD.", "cg_hud_scale", "1", 0.25f, 2, 0.05f, 0),
     O_SLIDER("Radar Size", "Bigger or smaller, the radar alone.", "cg_hud_radar_size", "1", 0.5f, 1.5f, 0.05f, OF_PCT),

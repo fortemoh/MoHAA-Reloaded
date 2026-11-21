@@ -57,15 +57,20 @@ static cvar_t *cg_hudstyle;
 const char *const ui_compHudMenus[UI_COMPHUD_MENUS] = {
     "hud_comp_topleft",     "hud_comp_topleft_compass", "hud_comp_score",      "hud_comp_killfeed", "hud_comp_chat",
     "hud_comp_strip",       "hud_comp_weapons",         "hud_comp_damage",     "hud_comp_bars",     "hud_comp_vote",
-    "hud_comp_csgo_health", "hud_comp_csgo_ammo",       "hud_comp_follow",
+    "hud_comp_csgo_health", "hud_comp_csgo_ammo",       "hud_comp_follow",     "hud_comp_chattop",
 };
 
 // cg_hudstyle's presets, the bottom's health and ammo: 1 CS:GO's corners
 // (the default), 2 CS2's strip along the middle (the team's badge between
-// them); each menu's preset (0 both's). The other's menus are hidden (cl_ui.cpp
+// them), 3 Classic: CS:GO's with the chat along the top as the stock HUD's
+// and the top bar in the top right corner; each menu's presets (a bit each,
+// 1 << (preset - 1); 0 all's). The others' menus are hidden (cl_ui.cpp
 // UI_CompHuds), not drawn; all are baked (a change of preset bakes nothing)
+#define COMP_CSGO    1
+#define COMP_CS2     2
+#define COMP_CLASSIC 4
 static const signed char comp_menuLayout[UI_COMPHUD_MENUS] = {
-    0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 1, 0,
+    0, 0, 0, 0, 0, COMP_CS2, 0, 0, 0, 0, COMP_CSGO | COMP_CLASSIC, COMP_CSGO | COMP_CLASSIC, 0, COMP_CLASSIC,
 };
 
 bool ui_compHudInLayout[UI_COMPHUD_MENUS];
@@ -92,7 +97,8 @@ static const char *const comp_menuCvars[] = {
     "ui_hud_score_rc", "ui_hud_stopwatch", "ui_hud_stopwatch_on", "ui_hud_timer", "ui_hud_vote_on",
     "ui_hud_vote_prompt", "ui_hud_vote_tally", "ui_hud_vote_text", "ui_hud_vote_time", "ui_hud_weapons_on",
     "ui_hud_cards_allies", "ui_hud_cards_axis", "ui_hud_cards_on", "ui_hud_feed_under", "ui_hud_follow_team",
-    "ui_hud_never",
+    "ui_hud_never", "ui_hud_classic", "ui_hud_chat_low", "ui_hud_kf_cs", "ui_hud_kf_beside", "ui_hud_kf_text",
+    "ui_hud_kf_low",
 };
 
 // the accent (cg_hud_accent, the HUD's pale yellow by default) and its
@@ -121,6 +127,7 @@ typedef struct {
     char     text[160];
     float    color[3];
     qboolean bold;
+    qboolean kill; // a kill printed as the stock HUD's, in the chat (Classic's along the top only)
 } compLine_t;
 
 typedef struct {
@@ -551,7 +558,7 @@ static qboolean Comp_AddKill(const char *text, qboolean ourVictim)
     return qtrue;
 }
 
-static void Comp_AddLine(compLine_t *lines, int *count, const char *text, float r, float g, float b, qboolean bold)
+static void Comp_AddLine(compLine_t *lines, int *count, const char *text, float r, float g, float b, qboolean bold, qboolean kill = qfalse)
 {
     compLine_t *l;
 
@@ -571,6 +578,7 @@ static void Comp_AddLine(compLine_t *lines, int *count, const char *text, float 
     l->color[1] = g;
     l->color[2] = b;
     l->bold     = bold;
+    l->kill     = kill;
 }
 
 void UI_CompHud_Print(const char *msg)
@@ -593,11 +601,18 @@ void UI_CompHud_Print(const char *msg)
         break;
     case MESSAGE_CHAT_RED:
     case MESSAGE_CHAT_GREEN:
-        // (a line no phrase matches: a game message in its color, as the stock HUD prints it)
-        if (!Comp_AddKill(msg + 1, (byte)msg[0] == MESSAGE_CHAT_GREEN)) {
-            const UColor& c = (byte)msg[0] == MESSAGE_CHAT_GREEN ? UGreenChatMessageColor : URedChatMessageColor;
+        {
+            const UColor&  c    = (byte)msg[0] == MESSAGE_CHAT_GREEN ? UGreenChatMessageColor : URedChatMessageColor;
+            const qboolean text = Cvar_VariableIntegerValue("ui_hud_kf_text") != 0;
 
-            Comp_AddLine(comp.msgs, &comp.numMsgs, msg + 1, c.r, c.g, c.b, qfalse);
+            // (a line no phrase matches: a game message in its color, as the stock HUD prints it; with the kills
+            // as text, ui_hud_kf_text, every such line in the chat in its color, as the stock HUD's chat has it)
+            if (!Comp_AddKill(msg + 1, (byte)msg[0] == MESSAGE_CHAT_GREEN) && !text) {
+                Comp_AddLine(comp.msgs, &comp.numMsgs, msg + 1, c.r, c.g, c.b, qfalse);
+            }
+            if (text) {
+                Comp_AddLine(comp.chat, &comp.numChat, msg + 1, c.r, c.g, c.b, qfalse, qtrue);
+            }
         }
         break;
     }
@@ -745,16 +760,19 @@ static void Comp_Accent(void)
     comp_accentStamp++;
 }
 
-// cg_hudstyle's menus shown (2 CS2's, else CS:GO's); the chat above the
-// health in CS:GO's corners (ui_hud_corners)
+// cg_hudstyle's menus shown (2 CS2's, 3 Classic's, else CS:GO's); the chat
+// above the health in CS:GO's corners (ui_hud_corners), Classic's along the
+// top (ui_hud_classic: the bottom's hidden, ui_hud_chat_low)
 static void Comp_Layout(void)
 {
-    const int layout = cg_hudstyle->integer == 2 ? 2 : 1;
+    const int layout = cg_hudstyle->integer == 2 || cg_hudstyle->integer == 3 ? cg_hudstyle->integer : 1;
 
     for (size_t i = 0; i < UI_COMPHUD_MENUS; i++) {
-        ui_compHudInLayout[i] = !comp_menuLayout[i] || comp_menuLayout[i] == layout;
+        ui_compHudInLayout[i] = !comp_menuLayout[i] || (comp_menuLayout[i] & (1 << (layout - 1)));
     }
-    Comp_Set("ui_hud_corners", layout == 1 ? "1" : "0");
+    Comp_Set("ui_hud_corners", layout != 2 ? "1" : "0");
+    Comp_Set("ui_hud_classic", layout == 3 ? "1" : "0");
+    Comp_Set("ui_hud_chat_low", layout != 3 ? "1" : "0");
 }
 
 // who is alive and the cards (round modes), and the silent score requests:
@@ -1021,6 +1039,67 @@ static void Comp_RadarSize(void)
     }
 }
 
+// Classic's places (cg_hudstyle 3; else the files' own): the top bar
+// (hud_comp_score: the timer and the scores; no cards, counts or jail) in
+// the top right corner, 25 from the screen's top and right as the radar
+// from its top and left (the kill feed by it: hud_comp_killfeed.urc); the
+// chat (hud_comp_chattop) along the top right of the radar or the compass,
+// as the stock HUD's beside its compass
+#define COMP_CLASSIC_MARGIN 25.0f
+static void Comp_ClassicPlace(void)
+{
+    static int                     generation = -1;
+    static std::vector<UIWidget *> widgets;
+    static std::vector<UIRect2D>   urc;
+    static UIWidget               *chat;
+    static UIRect2D                chatUrc;
+    static float                   placed[3] = {-1.0f, -1.0f, -1.0f}; // the bar's shift across and down, the chat's left
+    const bool                     classic   = Comp_Int("ui_hud_classic") != 0;
+    const float                    screenW   = uid.vidWidth / UI_DesignScale(1920.0f, 1080.0f);
+    float                          dx, dy, x;
+
+    if (generation != menuManager.Generation()) {
+        Menu     *score = menuManager.FindMenu("hud_comp_score");
+        Menu     *top   = menuManager.FindMenu("hud_comp_chattop");
+        UIWidget *c     = score ? score->GetContainerWidget() : NULL;
+
+        generation = menuManager.Generation();
+        widgets.clear();
+        urc.clear();
+        for (UIWidget *w = c ? c->getFirstChild() : NULL; w; w = c->getNextChild(w)) {
+            widgets.push_back(w);
+            urc.push_back(w->DesignRect());
+        }
+        chat = top ? top->GetNamedWidget("chat") : NULL;
+        if (chat) {
+            chatUrc = chat->DesignRect();
+        }
+        placed[0] = placed[1] = placed[2] = -1.0f;
+    }
+    // the bar: the box's right edge (the file's 1006, the menu's middle 960) and its top (0) the margin from the screen's
+    dx = classic ? floorf(960.0f + screenW * 0.5f - COMP_CLASSIC_MARGIN - 1006.0f) : 0.0f;
+    dy = classic ? COMP_CLASSIC_MARGIN : 0.0f;
+    if (dx != placed[0] || dy != placed[1]) {
+        placed[0] = dx;
+        placed[1] = dy;
+        for (size_t i = 0; i < widgets.size(); i++) {
+            const UIRect2D& r = urc[i];
+
+            widgets[i]->SetDesignRect(UIRect2D(r.pos.x + dx, r.pos.y + dy, r.size.width, r.size.height));
+        }
+    }
+    // the chat: 25 right of the radar (its size: cg_hud_radar_size) or the compass
+    if (Comp_Int("ui_hud_radar_on")) {
+        x = 25.0f + 248.0f * Com_Clamp(0.5f, 1.5f, Comp_Cvar("cg_hud_radar_size")->value) + 25.0f;
+    } else {
+        x = Comp_Int("ui_hud_compass_on") ? 141.0f + 25.0f : 25.0f;
+    }
+    if (chat && x != placed[2]) {
+        placed[2] = x;
+        chat->SetDesignRect(UIRect2D(x, chatUrc.pos.y, chatUrc.size.width, chatUrc.size.height));
+    }
+}
+
 static const char *const comp_arcAlpha[3] = {"ui_hud_arc0_alpha", "ui_hud_arc1_alpha", "ui_hud_arc2_alpha"};
 static const char *const comp_arcAngle[3] = {"ui_hud_arc0_angle", "ui_hud_arc1_angle", "ui_hud_arc2_angle"};
 // the teammates the radar and the tracker show (g_radarClients, the
@@ -1204,7 +1283,7 @@ void UI_CompHud_Frame(void)
         Comp_Set("ui_hud_score_rc", teams ? "0.902 0.478 0.408 1" : "0.922 0.933 0.949 1");
         // the players' cards, or (cg_hud_alivecount, CS2's) how many of each
         // team are alive in their place: no cards then (ui_hud_cards_on
-        // says whether either shows)
+        // says whether either shows; Classic's top bar has neither)
         const qboolean count = rounds && Comp_Int("cg_hud_alivecount");
 
         Comp_Set("ui_hud_cards_allies", rounds && !count ? comp.cards[0] : "");
@@ -1228,7 +1307,7 @@ void UI_CompHud_Frame(void)
             const qboolean     jail = gametype == GT_LIBERATION && !Q_stricmp(e[105].shaderName, "textures/hud/lock_icon")
                                && sscanf(e[102].string, "%d(%d)", &j[0], &j[1]) == 2 && sscanf(e[101].string, "%d(%d)", &j[2], &j[3]) == 2;
 
-            Comp_Set("ui_hud_jail_on", jail ? "1" : "0");
+            Comp_Set("ui_hud_jail_on", jail && !Comp_Int("ui_hud_classic") ? "1" : "0");
             if (jail) {
                 Comp_Set("ui_hud_jail_allies", va("%d/%d", j[0], j[1]));
                 Comp_Set("ui_hud_jail_axis", va("%d/%d", j[2], j[3]));
@@ -1362,12 +1441,21 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_msgs_r", msgs && radar);
         flag("ui_hud_msgs_c", msgs && !radar);
         flag("ui_hud_score_on", Comp_Int("cg_hud_score") && gametype != GT_SINGLE_PLAYER);
-        flag("ui_hud_cards_on", rounds && Comp_Int("cg_hud_alive"));
+        // Classic's kills (cg_hud_classic_kills): 0 the stock HUD's lines in the chat, 1 the feed beside the
+        // top bar, 2 under it; else the feed in its place
+        const qboolean classic = Comp_Int("ui_hud_classic") != 0;
+        const int      kills   = classic ? Comp_Int("cg_hud_classic_kills") : -1;
+
+        flag("ui_hud_kf_text", kills == 0);
+        flag("ui_hud_kf_cs", kills != 0);
+        flag("ui_hud_kf_beside", kills == 1);
+        flag("ui_hud_kf_low", kills == 2);
+        flag("ui_hud_cards_on", rounds && Comp_Int("cg_hud_alive") && !classic);
         // the kill feed under the cards where the screen has no room for both in a row (a 4:3 screen, a large
         // cg_hud_scale): the cards' box ends 476 right of the middle, the feed's is the last 445
         flag(
             "ui_hud_feed_under",
-            rounds && Comp_Int("cg_hud_alive") && !Comp_Int("cg_hud_alivecount")
+            rounds && Comp_Int("cg_hud_alive") && !Comp_Int("cg_hud_alivecount") && !classic
                 && uid.vidWidth / UI_DesignScale(1920.0f, 1080.0f) < 2 * (476.0f + 445.0f)
         );
         flag("ui_hud_health_on", strip && Comp_Int("cg_hud_health"));
@@ -1382,6 +1470,7 @@ void UI_CompHud_Frame(void)
         if (!Comp_Int("cg_hud_stopwatch")) {
             Comp_Set("ui_hud_stopwatch", "0");
         }
+        Comp_ClassicPlace();
     }
 
     // the compass: what the stock compass points at, and its distance. The
@@ -1597,10 +1686,11 @@ void UI_CompHud_HeadIcons(void)
 
 void UI_CompHud_Init(void)
 {
-    // the HUD: 1 as CS:GO's (the default), 2 as CS2's (an old config's 0, the
-    // stock HUD's, made 1)
+    // the HUD: 1 as CS:GO's (the default), 2 as CS2's, 3 Classic (CS:GO's, the
+    // chat along the top: Comp_Layout) (an old config's 0, the stock HUD's,
+    // made 1)
     cg_hudstyle = Cvar_Get("cg_hudstyle", "1", CVAR_ARCHIVE);
-    Cvar_CheckRange(cg_hudstyle, 1, 2, qtrue);
+    Cvar_CheckRange(cg_hudstyle, 1, 3, qtrue);
     for (size_t i = 0; i < ARRAY_LEN(comp_toggles); i++) {
         Cvar_Get(comp_toggles[i], "1", CVAR_ARCHIVE);
     }
@@ -1616,6 +1706,9 @@ void UI_CompHud_Init(void)
     Cvar_Get("cg_hud_accent", "f6f67a", CVAR_ARCHIVE);
     // the top's teams, beside the score: 0 a card per player, 1 how many are alive (CS2's)
     Cvar_Get("cg_hud_alivecount", "0", CVAR_ARCHIVE);
+    // Classic's kills (cg_hudstyle 3): 0 lines in the chat as the stock HUD's, 1 the kill feed beside the top bar,
+    // 2 under it
+    Cvar_CheckRange(Cvar_Get("cg_hud_classic_kills", "0", CVAR_ARCHIVE), 0, 2, qtrue);
     // what the menus read, made now, empty (ui_hud_never stays so: the never
     // shown widgets, the teams' icons and the cards' shapes): a widget
     // reading a cvar that isn't there draws every frame (the draw cache
@@ -1741,10 +1834,12 @@ public:
 
     int     m_kind; // 0 kills, 1 chat, 2 messages
     UIFont *m_bold;
+    bool    m_top; // the chat's lines from the box's top down (Classic's along the top), else up from its bottom
 
-    UIHudFeed() : m_kind(2), m_bold(NULL) {}
+    UIHudFeed() : m_kind(2), m_bold(NULL), m_top(false) {}
     void SetFeed(Event *ev);
     void SetBoldFont(Event *ev);
+    void SetFromTop(Event *ev) { m_top = true; }
     void Draw(void) override;
     // kept while no line fades: the lines shown
     bool Lines(int *key);
@@ -1762,10 +1857,12 @@ public:
 
 Event EV_HudFeed_Feed("feed", EV_DEFAULT, "s", "kind", "kills, chat or messages");
 Event EV_HudFeed_BoldFont("boldfont", EV_DEFAULT, "s", "font", "the bold lines' font");
+Event EV_HudFeed_FromTop("fromtop", EV_DEFAULT, NULL, NULL, "the chat's lines from the box's top down");
 
 CLASS_DECLARATION(UIWidget, UIHudFeed, NULL) {
     {&EV_HudFeed_Feed,     &UIHudFeed::SetFeed    },
     {&EV_HudFeed_BoldFont, &UIHudFeed::SetBoldFont},
+    {&EV_HudFeed_FromTop,  &UIHudFeed::SetFromTop },
     {NULL,                 NULL                   }
 };
 
@@ -1780,6 +1877,9 @@ bool UIHudFeed::Lines(int *key)
     for (int i = 0; i < count; i++) {
         const int time = m_kind == 0 ? comp.kills[i].time : m_kind == 1 ? comp.chat[i].time : comp.msgs[i].time;
 
+        if (m_kind == 1 && comp.chat[i].kill && !(m_top && Comp_Int("ui_hud_kf_text"))) {
+            continue;
+        }
         if (all) {
             h = UI_DrawHash(h, &time, sizeof(time));
         } else if (cls.realtime - time < life) {
@@ -1953,6 +2053,9 @@ void UIHudFeed::Draw(void)
     float       used   = 0.0f;
 
     for (i = count - 1; i >= 0 && (all || cls.realtime - lines[i].time < 8000); i--) {
+        if (lines[i].kill && !(m_top && Comp_Int("ui_hud_kf_text"))) {
+            continue;
+        }
         UIFont          *font = lines[i].bold && m_bold ? m_bold : m_font;
         std::vector<str> wrapped;
         const char      *p = lines[i].text;
@@ -1986,7 +2089,7 @@ void UIHudFeed::Draw(void)
         rows.insert(rows.begin(), wrapped.begin(), wrapped.end());
         rowLine.insert(rowLine.begin(), wrapped.size(), i);
     }
-    y = m_kind == 1 ? bottom - used : top;
+    y = m_kind == 1 && !m_top ? bottom - used : top;
     for (size_t r = 0; r < rows.size(); r++) {
         const compLine_t *l = &lines[rowLine[r]];
         const UColor      c(l->color[0], l->color[1], l->color[2], all ? 1.0f : Comp_Fade(l->time, 8000, 2000));

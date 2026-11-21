@@ -1197,7 +1197,7 @@ static void EX_TypingLine(void)
     int         mode, caret;
     Menu       *menu;
     UIWidget   *chat, *feed;
-    float       left, top;
+    float       left, top, width;
     rlColor_t   col;
     std::string label;
 
@@ -1208,12 +1208,20 @@ static void EX_TypingLine(void)
     const rlView_t v = EX_HudView();
     const float    s = v.s;
 
-    // over the chat, as it is placed (its menu's file moves it: ui_hud_corners)
-    menu = menuManager.FindMenu("hud_comp_chat");
-    chat = menu ? menu->GetContainerWidget() : NULL;
-    feed = menu ? menu->GetNamedWidget("chat") : NULL;
-    left = chat ? chat->getFrame().pos.x : 0.0f;
-    top  = chat && feed ? chat->getFrame().pos.y + feed->getFrame().pos.y : uid.vidHeight - 256.0f * s;
+    // over the chat, as it is placed (its menu's file moves it: ui_hud_corners), or under Classic's along the top
+    // (cg_hudstyle 3, its place cl_uicomp.cpp's Comp_ClassicPlace)
+    const bool high = Cvar_VariableIntegerValue("ui_hud_classic") != 0;
+
+    menu  = menuManager.FindMenu(high ? "hud_comp_chattop" : "hud_comp_chat");
+    chat  = menu ? menu->GetContainerWidget() : NULL;
+    feed  = menu ? menu->GetNamedWidget("chat") : NULL;
+    left  = chat && feed ? chat->getFrame().pos.x + feed->getFrame().pos.x : 25.0f * s;
+    top   = chat && feed ? chat->getFrame().pos.y + feed->getFrame().pos.y : uid.vidHeight - 256.0f * s;
+    width = feed ? feed->getFrame().size.width : 520.0f * s;
+    if (high && feed) {
+        // (the line's bottom 32 + 8 under the chat's box: EX's y1)
+        top += feed->getFrame().size.height + 72.0f * s;
+    }
 
     if (mode == 100) {
         label = "ALL:";
@@ -1230,7 +1238,7 @@ static void EX_TypingLine(void)
     }
 
     {
-        const int   x0 = (int)floorf(left + 25.0f * s + 0.5f), x1 = (int)floorf(left + 545.0f * s + 0.5f);
+        const int   x0 = (int)floorf(left + 0.5f), x1 = (int)floorf(left + width + 0.5f);
         const int   y1 = (int)floorf(top - 32.0f * s + 0.5f), y0 = y1 - Q_max(12, (int)floorf(32.0f * s + 0.5f));
         const int   edge = Q_max(1, (int)floorf(3.0f * s + 0.5f)), bar = Q_max(1, (int)floorf(2.0f * s + 0.5f));
         const float mid = (y0 + y1) * 0.5f / s;
