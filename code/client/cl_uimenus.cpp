@@ -3003,7 +3003,7 @@ The scoreboard: CS2's. One panel: the mode and the map over the server's
 name, the time left; the columns' names (the ping's as bars); a section a
 team, Allies over Axis, its badge at the left (the team's emblem faded
 under its score, its name, how many are alive) beside its rows (ping,
-emblem, name, time, kills, deaths, K/D; from round-based on the stock
+name, time, kills, deaths, K/D; from round-based on the stock
 board's kills and total), the last column a little lighter, the player's
 own row in the accent; the spectators under them. Rows from the player
 configstrings, filled from the latest "scores" ("\x96" where it has no
@@ -3013,7 +3013,8 @@ from 28 to what 36 players take (RL_SB_MOST: 1920x1080 24 px, 1280x720
 folds the rest into "+ N more". Never rows under 12 px (the original
 game's) or letters under 9.6 px (what 1280x720 shows). Tug of War's
 objectives over the columns, an objective game's over each team's rows.
-FFA: one table ranked by kills, the side's emblem in each row. With its
+FFA: one table ranked by kills. No team emblem in the rows (the owner's:
+the sections say the team). With its
 cursor (cl_scoreboardcursor on, a right click: UI_ScoreboardCursor; off,
 the server's order and nothing more) the columns' names sort each
 table: a name its own way first (the most first; the ping the least),
@@ -3099,18 +3100,14 @@ static float RL_ColsW(bool totals)
     return w;
 }
 
-// a row's places from its left: the ping's centre, FFA's rank's, the emblem's (past the rank in FFA), the name's start
+// a row's places from its left: the ping's centre, FFA's rank's, the name's start (past the rank in FFA; where the
+// team's emblem was)
 #define RL_SB_PINGX 22.0f
 #define RL_SB_RANKX 52.0f
 
-static float RL_SbEmblem(bool ranked)
-{
-    return ranked ? 88.0f : 58.0f;
-}
-
 static float RL_SbName(bool ranked)
 {
-    return RL_SbEmblem(ranked) + 18;
+    return ranked ? 79.0f : 49.0f;
 }
 
 // a mode's name in title case ("TUG OF WAR": "Tug of War")
@@ -3212,7 +3209,6 @@ static void RL_SbRow(const rlView_t& v, float x, float y, float w, float rh, con
     if (rank > 0) {
         RL_Text(v, x + RL_SB_RANKX, cy, va("%d", rank), fs, me ? col : rank == 1 ? RL_BRASS : RL_MUTED, true, RL_CENTER, 0, RL_MID);
     }
-    RL_TeamIcon(v, r.side, x + RL_SbEmblem(rank > 0), cy, Q_min(18.0f, rh * 0.62f));
     RL_Text(v, x + RL_SbName(rank > 0), cy, RL_Ellipsize(v, r.p->name, fs, me, w - RL_ColsW(totals) - RL_SbName(rank > 0) - 16).c_str(), fs, col,
             me, RL_LEFT, 0, RL_MID);
     if (r.sc) {
