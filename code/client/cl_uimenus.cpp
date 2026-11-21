@@ -1873,7 +1873,24 @@ void UIReloadedMenu::SetScreen(Event *ev)
              : !str::icmp(s, "hdrblack")   ? SCR_HDRBLACK
              : !str::icmp(s, "hdrpeak")    ? SCR_HDRPEAK
                                            : SCR_WEAPON;
-    AllowActivate(m_screen != SCR_SCOREBOARD && m_screen != SCR_LOADING);
+    AllowKeys();
+}
+
+void UIReloadedMenu::SetLayer(Event *ev)
+{
+    m_back = !str::icmp(ev->GetString(1), "back");
+    AllowKeys();
+}
+
+// the keys never the back layer's: the menu hidden, the front's keys would go
+// to it (DeactivateCurrentSmart) and bring it to the front of the menu's
+// widgets; opened again, the front's Tick takes them back while the menu's
+// widgets are being drawn, which draws the front twice and the back not at
+// all, and the draw cache keeps that frame (Options over the game: its panel
+// gone until the mouse moved over another item)
+void UIReloadedMenu::AllowKeys(void)
+{
+    AllowActivate(!m_back && m_screen != SCR_SCOREBOARD && m_screen != SCR_LOADING);
 }
 
 void UIReloadedMenu::Hit(const rlView_t& v, float x, float y, float w, float h, int id)

@@ -71,7 +71,8 @@ public:
     }
 
     void SetScreen(Event *ev);
-    void SetLayer(Event *ev) { m_back = !str::icmp(ev->GetString(1), "back"); }
+    void SetLayer(Event *ev);
+    void AllowKeys(void);
     void MouseUp(Event *ev);
     void MouseButtons(Event *ev);
     void Draw(void) override;
