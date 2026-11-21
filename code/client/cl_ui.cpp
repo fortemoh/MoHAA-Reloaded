@@ -497,7 +497,7 @@ void UI_GetHighResolutionScale(vec2_t scale)
 ====================
 UI_CompHuds
 
-Added: the Competitive HUD's menus (cg_hudstyle 1 or 2, ui/hud_comp_*.urc),
+Added: the Competitive HUD's menus (cg_hudstyle 1 to 3, ui/hud_comp_*.urc),
 shown in place of the stock HUD's
 ====================
 */
@@ -512,7 +512,7 @@ static void UI_CompHuds(bool show, bool messages)
     if (generation != menuManager.Generation()) {
         // (messages only: the menus with the game messages, the chat, the kills and the vote)
         static const char *const messageMenus[] = {
-            "hud_comp_topleft_compass", "hud_comp_killfeed", "hud_comp_chat", "hud_comp_vote"
+            "hud_comp_topleft_compass", "hud_comp_killfeed", "hud_comp_chat", "hud_comp_vote", "hud_comp_chattop"
         };
 
         generation = menuManager.Generation();

@@ -47,7 +47,7 @@ const char *UI_CompHud_WeaponOutline(const char *name);
 void        UI_DrawTeamTag(int client, float x, float y, int health);
 
 // the HUD's menus (ui/hud_comp_*.urc), in the order they are baked (the atlas is filled in it)
-#define UI_COMPHUD_MENUS 13
+#define UI_COMPHUD_MENUS 14
 extern const char *const ui_compHudMenus[UI_COMPHUD_MENUS];
 // the followed player's plate's height at the bottom's middle (hud_comp_follow, while ui_hud_follow_on)
 #define COMP_FOLLOW_H 62.0f

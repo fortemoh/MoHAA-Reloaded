@@ -353,7 +353,8 @@ void CVAR_Init(void)
     flood_waitdelay = gi.Cvar_Get("flood_waitdelay", "10", 0);
 
     detail     = gi.Cvar_Get("detail", "1", CVAR_ARCHIVE);
-    com_blood  = gi.Cvar_Get("com_blood", "1", CVAR_ARCHIVE);
+    // Changed: off by default (it only spawns gore the retail data has none of; Options has no row for it)
+    com_blood  = gi.Cvar_Get("com_blood", "0", CVAR_ARCHIVE);
     whereami   = gi.Cvar_Get("whereami", "0", 0);
     bosshealth = gi.Cvar_Get("bosshealth", "0", 0);
 
