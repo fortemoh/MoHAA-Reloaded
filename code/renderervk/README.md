@@ -11771,3 +11771,20 @@ variable-length array, checked with clang's `-Wvla`).
     textures' validation messages at a map load (above); the plan numbers
     50 to 52 of the `vulkan` branch (the occlusion's work) and of this one
     (the render thread, each stage cheaper) overlap since the merge.
+54. What Omaha changed in the temporal and output passes since the fork
+    (2026-11-21, the owner's request: port Omaha's ambient occlusion, TAA,
+    motion blur and their settings). This renderer forked from Omaha's
+    `vulkan` branch at f4550a54 (Plan 43); Plans 44 to 52 reached both, so
+    the effects' shaders and passes are the same code (every shader but
+    `output.frag` byte for byte). Taken from Omaha since:
+    - time going back is a cut (Omaha's d243cc60): when the scene's time is
+      less than the last frame's (Omaha's demo seeking in place; a guard
+      here: a whole real objective match, rounds included, 54,517 frames
+      with TAA, never went back), the temporal path starts a new history
+      for the camera and the
+      entities (it kept the old one when the camera landed within
+      `r_temporalCutDist`, so TAA, ambient occlusion and motion blur smeared
+      the frame before into the one after); a light flare's fade that starts
+      in the future restarts (`tr_flares.c`: a visible flare stayed hidden,
+      a hidden one shown, until the time caught up); swipes and ghost
+      textures take no negative step.
