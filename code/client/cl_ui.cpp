@@ -81,6 +81,10 @@ static char          server_mapname[64];
 static Menu         *scoreboard_menu;
 // Added: the scoreboard is up (the Reloaded scoreboard)
 static qboolean      scoreboard_up;
+// Added: its cursor is on (UI_ScoreboardKey); the setting that allows it
+static qboolean      scoreboard_cursor;
+static cvar_t       *cl_scoreboardcursor;
+static void          UI_ScoreboardCursorOff(void);
 
 static const float maxWidthRes  = 1920;
 static const float maxHeightRes = 1080;
@@ -1112,6 +1116,14 @@ void UI_Update(void)
         UI_CompHuds(!messages, messages);
     }
 
+    // Added: the scoreboard's cursor off once it's gone, or a menu, the console or the chat took the mouse, or it was
+    // turned off (cl_scoreboardcursor)
+    if (scoreboard_cursor
+        && (!UI_ScoreboardShown() || UI_MenuActive() || Key_GetCatcher() || !in_guimouse || clc.state != CA_ACTIVE
+            || !cl_scoreboardcursor->integer)) {
+        UI_ScoreboardCursorOff();
+    }
+
     //
     // show the scoreboard
     //
@@ -1572,7 +1584,8 @@ void UI_MenuState_f(void)
                uWinMan.BindActive() ? UI_WidgetDesc(uWinMan.BindActive(), b, sizeof(b)) : "none", catcher ? "" : " none",
                catcher & KEYCATCH_CONSOLE ? " console" : "", catcher & KEYCATCH_UI ? " UI" : "", catcher & KEYCATCH_MESSAGE ? " message" : "",
                catcher & KEYCATCH_CGAME ? " cgame" : "");
-    text += va("  mouse: %s, %s, at %d %d, buttons %u, a click goes to %s\n", in_guimouse ? "the UI's" : "the game's",
+    text += va("  mouse: %s, %s, at %d %d, buttons %u, a click goes to %s\n",
+               in_guimouse ? (scoreboard_cursor ? "the scoreboard's cursor" : "the UI's") : "the game's",
                IN_IsCursorActive() ? "captured" : "free", uid.mouseX, uid.mouseY, cl.mouseButtons, UI_WidgetDesc(uWinMan.ClickTarget(pos), c, sizeof(c)));
     text += va("  game: state %d, team %s, loading %s; %s\n", clc.state, team >= 0 && team < (int)ARRAY_LEN(teams) ? teams[team] : "unknown",
                server_loading ? "yes" : "no", UI_Menus_State());
@@ -1934,6 +1947,10 @@ UI_WantsKeyboard
 */
 void UI_WantsKeyboard()
 {
+    // Added: not a click with the scoreboard's cursor (the keys stay the game's)
+    if (scoreboard_cursor) {
+        return;
+    }
     Key_SetCatcher(Key_GetCatcher() | KEYCATCH_UI);
 }
 
@@ -2518,12 +2535,70 @@ qboolean UI_ScoreboardShown(void)
 
 /*
 ====================
+UI_ScoreboardCursor
+
+Added: the scoreboard's cursor, CS2's, with cl_scoreboardcursor 1 (Options:
+Gameplay, Scoreboard Cursor; off by default, the right button the game's):
+a right click while the scoreboard shows (nothing else open) puts a cursor
+on it, its columns' names then sort it (cl_uimenus.cpp). The mouse moves the cursor and clicks (the view
+stays, nothing fires), the keys still play (TAB, moving). Off with
+another right click or when the scoreboard goes; a menu, the console or
+the chat opened over it takes the mouse
+====================
+*/
+qboolean UI_ScoreboardCursor(void)
+{
+    return scoreboard_cursor;
+}
+
+static void UI_ScoreboardCursorOff(void)
+{
+    if (!scoreboard_cursor) {
+        return;
+    }
+    scoreboard_cursor = qfalse;
+    // (the mouse the game's again, unless what opened over it has it)
+    if (!UI_MenuActive() && !Key_GetCatcher()) {
+        IN_MouseOff();
+    }
+}
+
+qboolean UI_ScoreboardKey(int key, qboolean down, unsigned time)
+{
+    if (key != K_MOUSE2 || !down) {
+        return qfalse;
+    }
+    if (scoreboard_cursor) {
+        UI_ScoreboardCursorOff();
+        return qtrue;
+    }
+    if (!cl_scoreboardcursor || !cl_scoreboardcursor->integer || in_guimouse || Key_GetCatcher() || UI_MenuActive() || clc.state != CA_ACTIVE
+        || !UI_ScoreboardShown()) {
+        return qfalse;
+    }
+    // the other buttons held let go (a shot held stops), not the keys (IN_MouseOn's): TAB and moving go on
+    for (int k = K_MOUSE1; k <= K_MOUSE5; k++) {
+        if (k != key && keys[k].down) {
+            CL_KeyEvent(k, qfalse, time);
+        }
+    }
+    in_guimouse       = qtrue;
+    scoreboard_cursor = qtrue;
+    // (from the middle)
+    cl.mousex = cls.glconfig.vidWidth / 2;
+    cl.mousey = cls.glconfig.vidHeight / 2;
+    return qtrue;
+}
+
+/*
+====================
 UI_HideScoreboard_f
 ====================
 */
 void UI_HideScoreboard_f(void)
 {
     scoreboard_up = qfalse;
+    UI_ScoreboardCursorOff();
 
     if (scoreboard_menuname.length()) {
         // Fixed in 2.30 (scoreboard_menu check)
@@ -2830,6 +2905,7 @@ void CL_InitializeUI(void)
     Cvar_Get("ui_compass", "1", 0); // (the Competitive HUD's compass, shown with no radar)
     ui_newvidmode          = Cvar_Get("ui_newvidmode", "-1", 0);
     ui_drawcoords          = Cvar_Get("ui_drawcoords", "0", 0);
+    cl_scoreboardcursor    = Cvar_Get("cl_scoreboardcursor", "0", CVAR_ARCHIVE);
     Cvar_Get("ui_health_start", "0", 0);
     Cvar_Get("ui_health_end", "0", 0);
     ui_GunneryEvaluation   = Cvar_Get("ui_GunneryEvaluation", "0", 0);

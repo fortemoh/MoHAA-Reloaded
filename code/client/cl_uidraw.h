@@ -98,6 +98,8 @@ void RL_Shape(int x, int y, int w, int h, const char *text, rlColor_t c, float s
 // a box rounded r; its frame, width thick inside its edge
 void RL_Round(const rlView_t& v, float x, float y, float w, float h, float r, rlColor_t c);
 void RL_RoundFrame(const rlView_t& v, float x, float y, float w, float h, float r, float width, rlColor_t c);
+// a small triangle, pointing down (or up), in w x h
+void RL_Arrow(const rlView_t& v, float x, float y, float w, float h, bool up, rlColor_t c);
 // a horizontal gradient from a to b
 void RL_HGradient(const rlView_t& v, float x, float y, float w, float h, rlColor_t a, rlColor_t b);
 bool RL_Outline(const rlView_t& v, const char *name, float cx, float cy, float bw, float bh, rlColor_t c, bool mirror = false);
