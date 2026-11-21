@@ -5683,6 +5683,17 @@ qboolean vk_begin_scene( const vkSceneView_t *view ) {
 		if ( vkt.sceneSerial == vk.frameSerial ) {
 			return qfalse;
 		}
+		// nothing reads the scene (VK_TemporalSceneWanted): this frame's views
+		// are drawn as without the path, at its cost; the images readers left
+		// are freed first
+		if ( !VK_TemporalSceneWanted() ) {
+			vkt.sceneSerial = vk.frameSerial;
+			if ( vkt.groups ) {
+				VK_EndRenderPass();
+				VK_TemporalUpdateFeatures();
+			}
+			return qfalse;
+		}
 		VK_EndRenderPass();
 		// the other images hold the last scene's
 		vkt.current ^= 1;

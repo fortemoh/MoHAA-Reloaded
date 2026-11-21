@@ -11824,6 +11824,25 @@ variable-length array, checked with clang's `-Wvla`).
       start, so the renderer never starts with an effect on and the path
       off. `r_saturation` and `r_hdrExpand` play no part: their defaults
       would turn the path on for everyone.
+    - Better than Omaha's: the path only while something reads it
+      (`VK_TemporalSceneWanted`, notuern's advice to the owner: "just turning
+      on r_temporal ... has a per pixel frame cost that is fairly big").
+      With `r_temporal 1` and no effect on (no `r_taa`, `r_ao`,
+      `r_motionBlur`, `r_dof`, `r_temporalShow`, `r_temporalJitter`, HDR
+      output on an HDR swapchain or the HDR look), a frame's 3D views are
+      drawn as without the path (`vk_begin_scene` declines them, as it does
+      a view after the scene), and the readers' images left are freed
+      first. `r_saturation` alone doesn't keep the path (its default 1.1
+      would): the colours are 10 % richer only while an effect runs. Frames
+      of the `dm/mohdm6` room with no effect on are `r_temporal 0`'s to the
+      bit (the build before: 39 % of the pixels off by up to 5). Frame time
+      medians (Radeon 780M, uncapped, the room; off, then on with no effect
+      the build before and now): 1920x1080 0.383, 1.019, 0.399 ms;
+      2560x1440 0.609, 1.704, 0.632; 3840x2160 1.268, 3.591, 1.269. With
+      the effects both builds the same: TAA 2.08, 3.64, 8.30; ambient
+      occlusion HIGH 2.48, 4.33, 9.58; motion blur (still) 1.41, 2.39, 5.62;
+      depth of field 2.36, 3.86, 9.21; TAA, occlusion and blur 3.93, 6.89,
+      16.07 ms at the three sizes.
     - The settings (Omaha's ENHANCEMENTS, 70c35fc5, as rows of the client's
       Options page, `cl_uimain.cpp`): VIDEO's new ENHANCED RENDERING
       section: Enhanced Rendering (`r_temporal`), Anti-Aliasing (TAA),

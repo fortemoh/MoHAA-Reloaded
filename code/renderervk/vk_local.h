@@ -1092,7 +1092,7 @@ typedef struct {
 	qboolean		enabled;
 	qboolean		active;			// a scene is being drawn (between vk_begin_scene and vk_end_scene)
 	qboolean		clearPending;	// the scene's first render pass clears its images (renderPassClear)
-	uint64_t		sceneSerial;	// the frame of the last scene, 0 for none
+	uint64_t		sceneSerial;	// the frame of the last scene (or of one left out: nothing read it), 0 for none
 	uint64_t		historySerial;	// the frame whose scene the other images hold, 0 for none
 	int				current;		// the images of VK_TEMPORAL_HISTORY this frame's scene writes
 
@@ -1297,6 +1297,7 @@ void		VK_TemporalCreateTargets( void );
 void		VK_TemporalDestroyTargets( void );
 void		VK_TemporalDepthChanged( void );
 void		VK_TemporalUpdateFeatures( void );
+qboolean	VK_TemporalSceneWanted( void );
 void		VK_TemporalInitPipelines( void );
 void		VK_TemporalShutdownPipelines( void );
 void		VK_TemporalBeginFrame( vkFrame_t *frame, VkBuffer skinData );
