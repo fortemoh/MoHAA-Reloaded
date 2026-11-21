@@ -2233,7 +2233,8 @@ typedef struct {
 #define O_KEYS(from)                                             {OC_KEYS, 0, 0, from, "", NULL, NULL, NULL, NULL, 0, 0, 0}
 
 static const char *const rl_oDisplay[]     = {"FULLSCREEN", "WINDOWED", "BORDERLESS", NULL};
-static const char *const rl_oTextures[]    = {"HIGH", "MEDIUM", "LOW", NULL};
+static const char *const rl_oTextures[]    = {"LOW", "MEDIUM", "HIGH", NULL};
+static const char *const rl_oTextureMips[] = {"2", "1", "0", NULL}; // r_picmip: the mip levels left out
 static const char *const rl_oFilters[]     = {"BILINEAR", "TRILINEAR", NULL};
 static const char *const rl_oFilterModes[] = {"GL_LINEAR_MIPMAP_NEAREST", "GL_LINEAR_MIPMAP_LINEAR", NULL};
 static const char *const rl_oAniso[]       = {"OFF", "2X", "4X", "8X", "16X", NULL};
@@ -2299,7 +2300,7 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Flat Model Lighting", "On is recommended. Off makes players and guns much darker.", "r_fastentlight", "1", 0),
     O_SECTION(OT_VIDEO, "PICTURE", OF_RIGHT),
     O_SLIDER("Brightness", "", "r_gamma", "1", 0.5f, 3, 0.05f, 0),
-    O_SEG("Texture Quality", "", "r_picmip", "0", rl_oTextures, NULL, 0),
+    O_SEG("Texture Quality", "", "r_picmip", "0", rl_oTextures, rl_oTextureMips, 0),
     O_SEG("Filtering", "", "r_textureMode", "GL_LINEAR_MIPMAP_LINEAR", rl_oFilters, rl_oFilterModes, 0),
     O_SEG("Anisotropic", "", "r_ext_texture_filter_anisotropic", "0", rl_oAniso, rl_oAnisoValues, OF_ANISO),
     O_SEG("Multisampling", "Smoother edges.", "r_ext_multisample", "0", rl_oMsaa, rl_oMsaaValues, 0),
@@ -2308,7 +2309,6 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Volumetric Smoke", "Smoke grenades' clouds.", "vss_draw", "1", 0),
     O_TOGGLE("Weather", "Rain and snow.", "cg_rain", "1", 0),
     O_TOGGLE("Bullet Holes", "The marks shots leave.", "cg_marks_add", "1", 0),
-    O_TOGGLE("Blood", "On servers you host.", "com_blood", "1", 0),
     O_SECTION(OT_AUDIO, "VOLUME", 0),
     O_SLIDER("Master", "Every sound.", "s_volume", "0.9", 0, 1, 0.01f, OF_PCT),
     O_SLIDER("Music", "The music the maps' scripts play.", "s_musicvolume", "0.9", 0, 1, 0.01f, OF_PCT),
