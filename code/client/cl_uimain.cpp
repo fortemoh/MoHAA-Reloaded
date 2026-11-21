@@ -2295,6 +2295,7 @@ static const rlOpt_t rl_opts[] = {
     O_SEG("Shadows", "", "cg_shadows", "0", rl_oShadows, NULL, 0),
     O_SEG("Dynamic Lights", "The most at once.", "r_maxDlights", "4", rl_oDlights, rl_oDlights, 0),
     O_TOGGLE("Fast Dynamic Lights", "Cheaper, a little coarser.", "r_fastdlights", "0", 0),
+    O_TOGGLE("Flat Model Lighting", "On is recommended. Off makes players and guns much darker.", "r_fastentlight", "1", 0),
     O_SECTION(OT_VIDEO, "PICTURE", OF_RIGHT),
     O_SLIDER("Brightness", "", "r_gamma", "1", 0.5f, 3, 0.05f, 0),
     O_SEG("Texture Quality", "", "r_picmip", "0", rl_oTextures, NULL, 0),
