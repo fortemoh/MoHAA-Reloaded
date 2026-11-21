@@ -47,8 +47,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // the teammates the cgame tracks (CL_InitRadar), and the player's own place in them
 static radarClient_t *g_radarClients;
 static int            g_radarClientNum;
-#define COMP_CARD_H   64 // a team card's height: the score box's (hud_comp_score.urc)
-#define COMP_CARD_W   64 // its most width (square; narrower for a bigger team)
+#define COMP_CARD_H   52 // a team card's height: the score box's (hud_comp_score.urc)
+#define COMP_CARD_W   52 // its most width (square; narrower for a bigger team)
 #define COMP_LINES    8
 #define COMP_KILLS    6
 
@@ -1076,8 +1076,8 @@ static void Comp_ClassicPlace(void)
         }
         placed[0] = placed[1] = placed[2] = -1.0f;
     }
-    // the bar: the box's right edge (the file's 1006, the menu's middle 960) and its top (0) the margin from the screen's
-    dx = classic ? floorf(960.0f + screenW * 0.5f - COMP_CLASSIC_MARGIN - 1006.0f) : 0.0f;
+    // the bar: the box's right edge (the file's 997, the menu's middle 960) and its top (0) the margin from the screen's
+    dx = classic ? floorf(960.0f + screenW * 0.5f - COMP_CLASSIC_MARGIN - 997.0f) : 0.0f;
     dy = classic ? COMP_CLASSIC_MARGIN : 0.0f;
     if (dx != placed[0] || dy != placed[1]) {
         placed[0] = dx;
@@ -1452,11 +1452,11 @@ void UI_CompHud_Frame(void)
         flag("ui_hud_kf_low", kills == 2);
         flag("ui_hud_cards_on", rounds && Comp_Int("cg_hud_alive") && !classic);
         // the kill feed under the cards where the screen has no room for both in a row (a 4:3 screen, a large
-        // cg_hud_scale): the cards' box ends 476 right of the middle, the feed's is the last 445
+        // cg_hud_scale): the cards' box ends 382 right of the middle, the feed's is the last 445
         flag(
             "ui_hud_feed_under",
             rounds && Comp_Int("cg_hud_alive") && !Comp_Int("cg_hud_alivecount") && !classic
-                && uid.vidWidth / UI_DesignScale(1920.0f, 1080.0f) < 2 * (476.0f + 445.0f)
+                && uid.vidWidth / UI_DesignScale(1920.0f, 1080.0f) < 2 * (382.0f + 445.0f)
         );
         flag("ui_hud_health_on", strip && Comp_Int("cg_hud_health"));
         flag("ui_hud_badge_on", strip && Comp_Int("cg_hud_badge"));
@@ -2192,7 +2192,7 @@ in the clients' order), laid out from the widget's right edge leftward
 widgets whose shapes are the Allies' and the Axis' icons), as high as the
 score box beside them (COMP_CARD_H, from the widget's top), a white bar under
 it while alive on the player's own team, greyed out once dead. They narrow
-so the bigger team fits in about 400 px and in the widget, the rest a count
+so the bigger team fits in about 320 px and in the widget, the rest a count
 ================
 */
 class UIHudCards : public UIWidget
@@ -2235,7 +2235,7 @@ void UIHudCards::Draw(void)
 
     UI_DrawDep(allies);
     UI_DrawDep(axis);
-    int         size  = Q_max(20, Q_min(COMP_CARD_W, 400 / most - 4)), fit, i;
+    int         size  = Q_max(20, Q_min(COMP_CARD_W, 320 / most - 4)), fit, i;
 
     if (!n) {
         return;

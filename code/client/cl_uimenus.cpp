@@ -62,6 +62,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define RL_FIGSCALE 0.82f
 #define RL_FIGMID   63.0f
 #define RL_FIGHEAD  98.0f
+// the weapon menu drawn at this of the other menus' size (its design's units,
+// a smaller view; the figure as large as at their size); its captions never
+// under RL_CAPTIONPX pixels
+#define RL_WSCALE    0.7f
+#define RL_CAPTIONPX 11.0f
 
 static cvar_t *ui_reloaded_figure; // the figure's model (the label's linkcvar)
 static cvar_t *ui_dm_primary;
@@ -412,6 +417,17 @@ rlView_t RL_View(void)
     v.hud  = false;
     v.font = NULL;
     return v;
+}
+
+// the view at k of its size: as many more units across and down
+static rlView_t RL_Scaled(const rlView_t& v, float k)
+{
+    rlView_t o = v;
+
+    o.s  = v.s * k;
+    o.dw = v.dw / k;
+    o.dh = v.dh / k;
+    return o;
 }
 
 // laid out to bake what it draws ahead (UI_Menus_PreBake): nothing drawn
@@ -2218,7 +2234,7 @@ void UIReloadedMenu::Draw(void)
         break;
     case SCR_WEAPON:
         RL_Info(&in);
-        DrawWeapon(v, in);
+        DrawWeapon(RL_Scaled(v, RL_WSCALE), in);
         break;
     case SCR_ESC:
         RL_Info(&in);
@@ -2240,7 +2256,7 @@ void UIReloadedMenu::Draw(void)
 ================
 RL_HeaderPanel
 
-The header of the weapon menu, the Esc menu and the scoreboard: a dark
+The header of the end of a level and of a mission's objectives: a dark
 panel, the title (H2 or H3) over its
 caption on the left, the time left over "TIME LEFT" on the right; k scales
 it (the scoreboard's slimmer header); the title and the caption fit
@@ -2268,15 +2284,17 @@ static void RL_HeaderPanel(const rlView_t& v, float x, float y, float w, float h
 
 /*
 ================
-Weapon select: one menu for the side, the model and the weapon. The header
-panel's emblem and side tabs (ALLIES, AXIS: the one previewed underlined in
-its colour) and the time left; the menus' grid, two tiles a row (rifle
-and sniper, SMG and MG, anti-tank and shotgun; Breakthrough's mine detector
-a row of its own), each the weapon's name in its corner, the nation's
-outline, the class as its label, the last pick marked, a banned class
-dimmed in its place; a footer panel cycling the side's models (the name,
-its place, a dash each); the live model beside. The tabs and chevrons only
-preview: a weapon picked sends them (Choose)
+Weapon select: one menu for the side, the model and the weapon, drawn at
+RL_WSCALE of the other menus' size (notuern found it large beside them),
+its figure at theirs. The header panel's emblem and side tabs (ALLIES,
+AXIS: the one previewed underlined in its colour) and the time left at
+their size; the menus' grid, two tiles a row (rifle and sniper, SMG and
+MG, anti-tank and shotgun; Breakthrough's mine detector a row of its own),
+each the weapon's name in its corner, the nation's outline, the class as
+its label, the last pick marked, a banned class dimmed in its place; a
+footer panel cycling the side's models, one line (the name, its place in
+the list); the live model beside. The tabs and chevrons only preview: a
+weapon picked sends them (Choose)
 ================
 */
 
@@ -2304,22 +2322,26 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
     const std::string             axisModel = RL_PreviewModel(1); // (the German sniper's)
     const int                     n         = in.target >= TG_MOHTT ? 7 : 6;
     const int                     rows      = (n + 1) / 2;
-    const float                   head = 104, foot = 104, modelW = 440;
+    // (the model's slot as wide as at the other menus' size, this far right of the block: his arm clear of it)
+    // (figFoot: the footer's height the figure's place is set by, the one before the footer's one line)
+    const float                   head = 104, foot = 80, figFoot = 104, modelW = 440 / RL_WSCALE, modelGap = 70;
+    // (the captions' size: a floor in pixels)
+    const float                   capSize = Q_max(RL_S2, RL_CAPTIONPX / v.s);
     float                         tw, th, gap, gw;
 
     RL_Grid(v, &tw, &th, &gap, &gw);
-    {
-        // the tiles shorter where the rows don't fit (Breakthrough's four at 900 lines)
-        const float fit = (v.dh - 80 - head - foot - (rows + 1) * gap) / rows;
+    // the tiles' height on a screen dh high: shorter where the rows don't fit (Breakthrough's four at 900 lines)
+    const float tile   = th;
+    const auto  tileH  = [&](float dh) { return Q_min(tile, (dh - 80 - head - figFoot - (rows + 1) * gap) / rows); };
+    const auto  height = [&](float dh, float footH) { return head + footH + rows * tileH(dh) + (rows + 1) * gap; };
+    const float total  = height(v.dh, foot);
+    const float wtw    = (gw - gap) / 2; // two a row, as wide as three
 
-        th = Q_min(th, fit);
-    }
-    const float wtw   = (gw - gap) / 2; // two a row, as wide as three
-    const float total = head + foot + rows * th + (rows + 1) * gap;
+    th = tileH(v.dh);
     // the block centred, then 150 units right as far as the model's slot stays
     // on screen: the figure is narrower than his slot and lighter than the
     // grid, so centred on the slot the block reads left of the middle
-    const float spare = Q_max(0.0f, (v.dw - (gw + 40 + modelW)) / 2);
+    const float spare = Q_max(0.0f, (v.dw - (gw + modelGap + modelW)) / 2);
     const float x0 = spare + Q_min(150.0f, spare), y0 = (v.dh - total) / 2;
     const float gy = y0 + head + gap, fy = y0 + total - foot;
 
@@ -2332,23 +2354,27 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
         UI_DrawDep(Cvar_Get(rl_classCvar[i], "1", 0));
     }
     if (m_back) {
+        // (the figure placed at the other menus' size, as if the block were: his head where its header's top would be)
+        const rlView_t    full   = RL_Scaled(v, 1.0f / RL_WSCALE);
         const std::string figure = RL_Figure(RL_PreviewModel(tab));
-        const float       cx     = x0 + gw + 40 + modelW / 2;
+        const float       cx     = (x0 + gw + modelGap + modelW / 2) * RL_WSCALE;
 
         // the scene under a warm haze (one layer, CS2's)
         RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(58, 48, 30, 195));
         // the figure beside, of the side and model previewed, from the knees up,
-        // his head's top level with the header's; his view as wide as an
-        // arm's reach, on screen (he stays in its middle)
+        // his head's top level with where the header's would be at the other
+        // menus' size; his view as wide as an arm's reach, on screen (he stays
+        // in its middle)
         if (Q_stricmp(ui_reloaded_figure->string, figure.c_str())) {
             Cvar_Set("ui_reloaded_figure", figure.c_str());
         }
-        PlaceFigure(v, cx, y0 - 6, 2 * Q_min(280.0f, Q_min(cx, v.dw - cx)));
+        PlaceFigure(full, cx, (full.dh - height(full.dh, figFoot)) / 2 - 6, 2 * Q_min(280.0f, Q_min(cx, full.dw - cx)));
         return;
     }
 
-    // the header: the emblem of the side previewed, the tabs, the time left
-    RL_HeaderPanel(v, x0, y0, gw, head, "", RL_H2, "", RL_TimeLeft(in.gametype));
+    // the header: the emblem of the side previewed, the tabs; the time left at their size
+    RL_Round(v, x0, y0, gw, head, 6, RL_Rgb(10, 11, 12, 236));
+    RL_Text(v, x0 + gw - 28, y0 + 48, RL_TimeLeft(in.gametype), RL_H2, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
     RL_TeamIcon(v, tab, x0 + 28 + 22, y0 + 52, 44);
     {
         float tx = x0 + 28 + 44 + 24;
@@ -2386,7 +2412,7 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
         }
         // the weapon's name in the corner, the class the tile's label (a banned
         // class's "OFF ON THIS SERVER" in its place)
-        RL_Text(v, x + 18, y + 24, w.name, RL_S2, !allowed ? RL_FAINT : hot ? RL_T(T.pale, 220) : RL_MUTED, false, RL_LEFT, 1.8f, RL_MID, cw - 50);
+        RL_Text(v, x + 18, y + 24, w.name, capSize, !allowed ? RL_FAINT : hot ? RL_T(T.pale, 220) : RL_MUTED, false, RL_LEFT, 1.8f, RL_MID, cw - 50);
         if (!Q_stricmp(ui_dm_primary->string, rl_classCmd[i])) {
             // the last pick
             RL_Round(v, x + cw - 26, y + 20, 8, 8, 4, RL_BRASS);
@@ -2422,25 +2448,21 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
         m_order.push_back(cycle ? id : -1);
     }
     {
-        const std::string name   = RL_Upper((pick >= 0 ? models[pick].name : RL_ModelName(RL_PreviewModel(tab).c_str())).c_str());
-        // a dash a model, while they fit between the chevrons
-        const bool        dashes = nm > 1 && nm * 20 - 6 <= gw - 220;
-        const float       ny     = fy + (dashes ? 36 : 42);
-        char              caption[64];
+        // one line: the model's name, its place in the list muted after it (the own model unlisted: none), centred
+        // between the chevrons
+        const std::string name = RL_Upper((pick >= 0 ? models[pick].name : RL_ModelName(RL_PreviewModel(tab).c_str())).c_str());
+        const float       room = gw - 200, cy = fy + foot / 2;
+        char              count[32] = "";
+        float             nw, cw;
 
         if (pick >= 0) {
-            Com_sprintf(caption, sizeof(caption), "PLAYER MODEL  \xb7  %d / %d", pick + 1, nm);
-        } else {
-            Q_strncpyz(caption, "PLAYER MODEL", sizeof(caption));
+            Com_sprintf(count, sizeof(count), "%d / %d", pick + 1, nm);
         }
-        RL_Text(v, x0 + gw / 2, ny, name.c_str(), RL_H2, RL_TEXT, true, RL_CENTER, 0, RL_MID, gw - 200);
-        RL_Text(v, x0 + gw / 2, ny + 30, caption, RL_S2, RL_MUTED, false, RL_CENTER, 2.4f, RL_MID);
-        if (dashes) {
-            const float dx = x0 + gw / 2 - (nm * 20 - 6) / 2.0f;
-
-            for (int i = 0; i < nm; i++) {
-                RL_Box(v, dx + i * 20, fy + 82, 14, 3, i == pick ? RL_T(T.light) : RL_Rgb(255, 255, 255, 40));
-            }
+        cw = count[0] ? RL_TextW(v, count, RL_H3, false) + 14 : 0.0f;
+        nw = Q_min(RL_TextW(v, name.c_str(), RL_H2, true), room - cw);
+        RL_Text(v, x0 + gw / 2 - (nw + cw) / 2, cy, name.c_str(), RL_H2, RL_TEXT, true, RL_LEFT, 0, RL_MID, room - cw);
+        if (count[0]) {
+            RL_Text(v, x0 + gw / 2 - (nw + cw) / 2 + nw + 14, cy, count, RL_H3, RL_MUTED, false, RL_LEFT, 0, RL_MID);
         }
     }
     m_cols = 2;
