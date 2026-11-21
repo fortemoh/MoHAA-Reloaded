@@ -1393,7 +1393,15 @@ void R_Register( void )
 	r_lockpvs = ri.Cvar_Get ("r_lockpvs", "0", CVAR_CHEAT);
 	r_noportals = ri.Cvar_Get ("r_noportals", "0", CVAR_CHEAT);
 	r_entlightmap = ri.Cvar_Get("r_entlightmap", "0", CVAR_CHEAT);
-	r_fastentlight = ri.Cvar_Get("r_fastentlight", "0", CVAR_ARCHIVE);
+	// Changed: 1 by default, the models lit from the light grid (brighter, flat): 0's spherical lights leave players and
+	// guns dark in shade (not for speed: 0 costs less here, ~4 against ~7 us a frame, session 104). Saved configs hold
+	// the old default 0, so the first start turns a 0 into 1 once; r_fastentlightChecked remembers it, and a 0 picked
+	// after that stays (a +set r_fastentlight 0 at a config's first start needs +set r_fastentlightChecked 1 too)
+	r_fastentlight = ri.Cvar_Get("r_fastentlight", "1", CVAR_ARCHIVE);
+	if (!ri.Cvar_Get("r_fastentlightChecked", "0", CVAR_ARCHIVE)->integer) {
+		ri.Cvar_Set("r_fastentlight", "1");
+		ri.Cvar_Set("r_fastentlightChecked", "1");
+	}
 	r_entlight_scale = ri.Cvar_Get("r_entlight_scale", "1.3", CVAR_CHEAT);
 	r_entlight_errbound = ri.Cvar_Get("r_entlight_errbound", "6", CVAR_ARCHIVE);
 	r_entlight_cubelevel = ri.Cvar_Get("r_entlight_cubelevel", "0", CVAR_ARCHIVE);
