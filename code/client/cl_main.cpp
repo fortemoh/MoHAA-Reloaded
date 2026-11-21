@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "../server/server.h"
 #include "cl_lagometer.h"
 #include "cl_effects.h"
+#include "cl_mouseturn.h"
 #include "cl_ui.h"
 #include "cl_uicomp.h"
 #include "cl_uimenus.h"
@@ -2681,6 +2682,9 @@ void CL_Frame ( int msec ) {
 	// Enhanced Rendering (r_temporal) on while an effect needs it (Omaha's)
 	CL_Effects_Sync(EFFECTS_SYNC_FRAME);
 
+	// the turn distance (m_turn) kept when the Field of View or the mouse's DPI changes
+	CL_MouseTurn_Sync();
+
 	// set the time if we loaded a save
 	if( SV_DoSaveGame() )
 	{
@@ -3439,6 +3443,7 @@ void CL_Init( void ) {
 
 	m_pitch = Cvar_Get ("m_pitch", "0.022", CVAR_ARCHIVE);
 	m_yaw = Cvar_Get ("m_yaw", "0.022", CVAR_ARCHIVE);
+	CL_MouseTurn_Init();
 	m_forward = Cvar_Get ("m_forward", "0.25", CVAR_ARCHIVE);
 	m_side = Cvar_Get ("m_side", "0.25", CVAR_ARCHIVE);
 	// no m_filter: upstream's averaged each frame's mouse movement with the

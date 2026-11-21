@@ -41,6 +41,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cl_ui.h"
 #include "cl_uiwidget.h"
 #include "cl_uimenus.h"
+#include "cl_mouseturn.h"
 #include "../uilib/uibake.h"
 #include "../gamespy/goaceng.h"
 #include "../gamespy/sv_gamespy.h"
@@ -86,7 +87,7 @@ enum { HF_TIME, HF_FRAG, HF_PLAYERS, HF_BOTS, HF_NAME, HF_NUM }; // Host's field
 // the field typed in: the browser's search, the name, a crosshair code, a slider's value, a vote's number or text,
 // Host's (F_HOST + its)
 enum { F_NONE, F_SEARCH, F_NAME, F_CODE, F_VALUE, F_VOTE, F_HOST };
-enum { OT_CONTROLS, OT_VIDEO, OT_AUDIO, OT_GAMEPLAY, OT_HUD, OT_NUM }; // Options' tabs (the mouse and the keys: CONTROLS)
+enum { OT_CONTROLS, OT_VIDEO, OT_AUDIO, OT_GAMEPLAY, OT_HUD, OT_NUM }; // Options' tabs (the keys: CONTROLS; the mouse: GAMEPLAY)
 
 // the browser's gametype tabs (Omaha's; round-based, Tug of War and Liberation under OTHER) and sortable columns
 enum { TAB_ALL, TAB_FFA, TAB_TDM, TAB_OBJ, TAB_OTHER, TAB_NUM };
@@ -2212,6 +2213,7 @@ enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW
 #define OF_FONT    4096 // cg_hud_font: a cycle of the HUD's fonts (rl_fonts), each name in its own font
 #define OF_HDRCAL  8192 // a button on while HDR or the HDR look runs (r_hdrOutputActive) and nothing waits for APPLY
 #define OF_UNDER   16384 // off (greyed, no clicks) while Enhanced Rendering (r_temporal, as APPLY will take it) is off
+#define OF_TURN    32  // m_turn: shows the turn distance there is (0 there: not kept), cl_mouseturn.cpp
 
 typedef struct {
     int                kind, tab, flags; // the tab: a section's
@@ -2281,9 +2283,6 @@ static const char *const rl_oOutlines[]    = {"OFF", "FULL", "HALF", NULL};
 
 // (the defaults the cvars' own, set here for those the game makes later, at a map's load)
 static const rlOpt_t rl_opts[] = {
-    O_SECTION(OT_CONTROLS, "MOUSE", 0),
-    O_SLIDER("Sensitivity", "How far the view turns.", "sensitivity", "5", 0.1f, 20, 0.05f, 0),
-    O_TOGGLE("Invert Mouse", "Moving the mouse up looks down.", "m_pitch", "0.022", OF_NEG),
     O_SECTION(OT_CONTROLS, "ATTACK", OF_RIGHT | OF_LEFT2),
     O_KEYS("+attackprimary"),
     O_SECTION(OT_CONTROLS, "MOVEMENT", 0),
@@ -2351,6 +2350,12 @@ static const rlOpt_t rl_opts[] = {
     O_SEG("Lagometer", "The connection: ping, loss, updates.", "cg_lagometer", "0", rl_oLagometer, NULL, 0),
     O_TOGGLE("Remote Prediction", "Players drawn where your shots will find them.", "cg_remotePrediction", "1", 0),
     O_TOGGLE("Scoreboard Cursor", "Right-click while TAB is held: a cursor to sort the columns.", "cl_scoreboardcursor", "0", 0),
+    // (by the Field of View, which turns the view faster as it widens: cl_mouseturn_logic.h)
+    O_SECTION(OT_GAMEPLAY, "MOUSE", OF_RIGHT),
+    O_SLIDER("Sensitivity", "How far the view turns.", "sensitivity", "5", 0.1f, 20, 0.05f, 0),
+    O_SLIDER("Mouse DPI", "Your mouse's dots per inch (its software shows it).", "m_dpi", "800", 100, 6400, 50, 0),
+    O_SLIDER("Turn Distance", "Centimetres of mouse travel for a full turn (cm/360).", "m_turn", "0", 5, 100, 0.1f, OF_TURN),
+    O_TOGGLE("Invert Mouse", "Moving the mouse up looks down.", "m_pitch", "0.022", OF_NEG),
     O_SECTION(OT_GAMEPLAY, "MOVEMENT", OF_RIGHT),
     O_SEG("Movement Rate", "Moves a second, apart from the frame rate.", "cl_movefps", "100", rl_oMoveRates, rl_oMoveValues, 0),
     O_TOGGLE("Shots and Jumps Sooner", "Sent half a move sooner.", "cl_movesubgrid", "1", 0),
@@ -2618,7 +2623,7 @@ the later ones' in the last, OF_LEFT2's in the first of two), a
 section's title 40 high, 14 over it past the first, a row 66 (keys 44;
 swatches 34 more a row past the first), the preview 0.32 of its column
 (220 at most) and 12 under it. The
-columns: CONTROLS' alone (the mouse and the keys) alike, three as the
+columns: CONTROLS' alone (the keys) alike, three as the
 width has room for (two, one); else 0.55 and 0.45 of it, one below 1100.
 The content's height; the columns' lines (their x)
 ----------------
@@ -2653,7 +2658,7 @@ static float RL_OptLayout(float x, float w, std::vector<rlOptPlace_t>& out, std:
             secs.push_back(s);
         }
     }
-    // CONTROLS' alone (the mouse and the keys)
+    // CONTROLS' alone (the keys)
     const bool  alone = rl_opt.tab == OT_CONTROLS && !secs.empty();
     const int   n  = alone ? (w >= 1300 ? 3 : w >= 860 ? 2 : 1) : w < 1100 ? 1 : 2;
     const float lw = floorf(w * 0.55f + 0.5f);
@@ -2698,6 +2703,14 @@ static float RL_OptLayout(float x, float w, std::vector<rlOptPlace_t>& out, std:
 
 static const char *RL_OptValue(int i)
 {
+    if (rl_opts[i].flags & OF_TURN) {
+        // (the distance there is, kept or not: drawn again when what it comes from changes)
+        UI_DrawDep(Cvar_Get("sensitivity", "5", CVAR_ARCHIVE));
+        UI_DrawDep(Cvar_Get("m_yaw", "0.022", CVAR_ARCHIVE));
+        UI_DrawDep(Cvar_Get("m_dpi", "800", CVAR_ARCHIVE));
+        UI_DrawDep(Cvar_Get("cg_fov", "80", CVAR_ARCHIVE));
+        return va("%g", CL_MouseTurn_Distance());
+    }
     return RL_Latched(rl_opt.cv[i]);
 }
 
