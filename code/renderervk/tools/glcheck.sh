@@ -48,6 +48,8 @@ allowed = [
 	(r"^code/renderervk/tr_image\.c$", r"\{\"GL_[A-Z_]+\", TEXFILTER_"),
 	(r"^code/renderervk/tr_init\.c$", r"\"gl_linear_mipmap_linear\"|\"GL_BACK\""),
 	(r"^code/renderervk/tr_cmds\.c$", r"\"GL_FRONT\""),
+	# the same r_textureMode values, written by the Filtering setting of the Reloaded Options page
+	(r"^code/client/cl_uimain\.cpp$", r"\"GL_(NEAREST|LINEAR_MIPMAP_(NEAREST|LINEAR))\""),
 	# GLSL built-ins of the Vulkan shaders (and comments naming them), and the
 	# glslang extension behind their #include lines
 	(r"^code/renderervk/", r"\bgl_(Position|ClipDistance|InstanceIndex|VertexIndex|FrontFacing|FragCoord|GlobalInvocationID|LocalInvocationID|LocalInvocationIndex|WorkGroupID)\b|\bGL_GOOGLE_include_directive\b"),
@@ -62,6 +64,9 @@ allowed = [
 	(r"^code/(renderercommon/tr_public\.h|client/cl_main\.cpp|sys/sys_local\.h|sys/sys_unix\.c|sys/sys_win32\.c)$",
 	 r"Sys_GLimp(Safe)?Init"),
 	(r"^code/qcommon/q_math\.c$", r"the OpenGL order"),
+	# vendored stb_truetype.h (the TrueType faces of the URC HUD, uilib/uibake.cpp): the GL calls of its usage
+	# example, in a comment, and its opengl_fillrule argument (the texel offset of a baked quad)
+	(r"^code/thirdparty/stb/stb_truetype\.h$", r"gl[A-Z]\w*\([^;]*\);|opengl(_fillrule)?|GL_\w+"),
 	# CL_InitRef resets an old configs cl_renderer opengl1 to vulkan
 	(r"^code/client/cl_main\.cpp$", r"OpenGL renderers are gone: an old config.s opengl1|\"opengl\", 6|no OpenGL renderer any more"),
 	# the downloads tell players the OpenGL renderers are gone
