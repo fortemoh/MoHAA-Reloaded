@@ -2212,6 +2212,8 @@ enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW
 #define OF_LEFT2   2048 // a section in the left column where there are two (else its own)
 #define OF_FONT    4096 // cg_hud_font: a cycle of the HUD's fonts (rl_fonts), each name in its own font
 #define OF_TURN    32  // m_turn: shows the turn distance there is (0 there: not kept), cl_mouseturn.cpp
+#define OF_NOTCS   32768 // off (greyed, no clicks) while CS Mode (m_csmode) sets it
+#define OF_CS      65536 // off while CS Mode is off
 
 typedef struct {
     int                kind, tab, flags; // the tab: a section's
@@ -2318,7 +2320,7 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Taunts From Other Players", "Their voices; the chat line stays.", "cg_tauntsounds", "1", 0),
     O_SEG("Hit Sound", "Played when you hit someone.", "cg_hitmarker_sound", "none", rl_oHitSounds, rl_oHitSoundValues, 0),
     O_SECTION(OT_GAMEPLAY, "GENERAL", 0),
-    O_SLIDER("Field of View", "How wide you see, in degrees.", "cg_fov", "80", 65, 120, 1, 0),
+    O_SLIDER("Field of View", "How wide you see, in degrees.", "cg_fov", "80", 65, 120, 1, OF_NOTCS),
     O_SEG("Show Weapon", "", "cg_drawviewmodel", "2", rl_oWeapon, NULL, 0),
     O_TOGGLE("Left-Handed", "The weapon in the left hand.", "cg_righthand", "1", OF_NOT),
     O_SLIDER("Weapon Dip", "How far it dips as you run: none (CS2's) to the game's own.", "cg_viewmodel_movedrop", "1", 0, 1, 0.05f, OF_PCT),
@@ -2329,9 +2331,11 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Scoreboard Cursor", "Right-click while TAB is held: a cursor to sort the columns.", "cl_scoreboardcursor", "0", 0),
     // (by the Field of View, which turns the view faster as it widens: cl_mouseturn_logic.h)
     O_SECTION(OT_GAMEPLAY, "MOUSE", OF_RIGHT),
-    O_SLIDER("Sensitivity", "How far the view turns.", "sensitivity", "5", 0.1f, 20, 0.05f, 0),
+    O_SLIDER("Sensitivity", "How far the view turns.", "sensitivity", "5", 0.1f, 20, 0.05f, OF_NOTCS),
     O_SLIDER("Mouse DPI", "Your mouse's dots per inch (its software shows it).", "m_dpi", "800", 100, 6400, 50, 0),
-    O_SLIDER("Turn Distance", "Centimetres of mouse travel for a full turn (cm/360).", "m_turn", "0", 5, 100, 0.1f, OF_TURN),
+    O_SLIDER("Turn Distance", "Centimetres of mouse travel for a full turn (cm/360).", "m_turn", "0", 5, 100, 0.1f, OF_TURN | OF_NOTCS),
+    O_TOGGLE("CS Mode", "Field of View 90 and your Counter-Strike sensitivity: the same turn.", "m_csmode", "0", 0),
+    O_SLIDER("CS Sensitivity", "As in CS 1.6, CS:GO or CS2 (its m_yaw 0.022).", "m_cssens", "1.25", 0.1f, 10, 0.01f, OF_CS),
     O_TOGGLE("Invert Mouse", "Moving the mouse up looks down.", "m_pitch", "0.022", OF_NEG),
     O_SECTION(OT_GAMEPLAY, "MOVEMENT", OF_RIGHT),
     O_SEG("Movement Rate", "Moves a second, apart from the frame rate.", "cl_movefps", "100", rl_oMoveRates, rl_oMoveValues, 0),
@@ -3235,6 +3239,14 @@ static void RL_KeyRow(UIReloadedMenu *m, const rlView_t& v, int a, float x, floa
     RL_Box(v, x, y + h - 2, w, 1, RL_LINE);
 }
 
+// a setting's row off (greyed, no clicks): the rows CS Mode sets while it is on, CS Sensitivity while it is off
+static bool RL_OptOff(int i)
+{
+    const int flags = rl_opts[i].flags;
+
+    return (flags & (OF_NOTCS | OF_CS)) && (RL_OptOther("m_csmode")->integer != 0) == ((flags & OF_NOTCS) != 0);
+}
+
 // a setting's row: its label (and its description), its control at the right edge, a line under it
 static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, float y, float w, float h)
 {
@@ -3242,6 +3254,7 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
     const int         id   = ID_OPT + i * RL_OPT_IDS;
     const float       mid  = y + 32, right = x + w;
     const char *const desc = RL_OptDesc(o);
+    const bool        off  = RL_OptOff(i);
 
     if (o.kind == OC_SECTION) {
         // (keys: their boxes' names over them)
@@ -3268,9 +3281,9 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
             cw += o.kind == OC_SWATCH ? 34 : RL_TextW(v, o.choices[k], 15, true, 1.6f) + 40;
         }
     }
-    RL_Text(v, x, desc[0] ? y + 21 : mid, o.label, 19, RL_TEXT, false, RL_LEFT, 0, RL_MID, w - cw - 24);
+    RL_Text(v, x, desc[0] ? y + 21 : mid, o.label, 19, off ? RL_MUTED : RL_TEXT, false, RL_LEFT, 0, RL_MID, w - cw - 24);
     if (desc[0]) {
-        RL_Text(v, x, y + 45, desc, 14, RL_MUTED, false, RL_LEFT, 0, RL_MID, w - cw - 24);
+        RL_Text(v, x, y + 45, desc, 14, off ? RL_FAINT : RL_MUTED, false, RL_LEFT, 0, RL_MID, w - cw - 24);
     }
     switch (o.kind) {
     case OC_SEG:
@@ -3451,6 +3464,9 @@ static void RL_OptChoose(int id)
     const int      i = (id - ID_OPT) / RL_OPT_IDS, part = (id - ID_OPT) % RL_OPT_IDS;
     const rlOpt_t& o = rl_opts[i];
 
+    if (RL_OptOff(i)) {
+        return;
+    }
     switch (o.kind) {
     case OC_SEG:
         RL_OptPick(i, part);
