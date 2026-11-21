@@ -53,8 +53,8 @@ static int         hitSoundMod = -1; // cg_hitmarker_sound's modificationCount w
 void CG_Hitmarker_RegisterCvars(void)
 {
     cg_hitmarker       = cgi.Cvar_Get("cg_hitmarker", "0", CVAR_ARCHIVE);
-    // a file of sound/prom/hitmarkers/ (thump, classic, beep), or none
-    cg_hitmarker_sound = cgi.Cvar_Get("cg_hitmarker_sound", "thump", CVAR_ARCHIVE);
+    // a file of sound/prom/hitmarkers/ (thump, classic, beep), or none: both off by default
+    cg_hitmarker_sound = cgi.Cvar_Get("cg_hitmarker_sound", "none", CVAR_ARCHIVE);
 }
 
 /*

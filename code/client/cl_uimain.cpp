@@ -2261,8 +2261,8 @@ static const char *const rl_oAccents[] = {
     "d11d1d", "d15f1d", "d1951d", "d1c51d", "95d11d", "1dd12c", "1dd19b", "1dbfd1", "1d8fd1", "1d53d1", "711dd1", "d11d9b", "8c8c8c",
     NULL,
 };
-static const char *const rl_oHitSounds[]      = {"THUMP", "CLASSIC", "BEEP", "NONE", NULL}; // the files of sound/prom/hitmarkers/
-static const char *const rl_oHitSoundValues[] = {"thump", "classic", "beep", "none", NULL};
+static const char *const rl_oHitSounds[]      = {"OFF", "THUMP", "CLASSIC", "BEEP", NULL}; // the files of sound/prom/hitmarkers/
+static const char *const rl_oHitSoundValues[] = {"none", "thump", "classic", "beep", NULL};
 // (the launcher's)
 static const char *const rl_oColours[]     = {"FFFFFF", "00FF00", "FFFF00", "00FFFF", "FF0000", "FF00FF", "000000", NULL};
 static const char *const rl_oOutlines[]    = {"OFF", "FULL", "HALF", NULL};
@@ -2317,6 +2317,7 @@ static const rlOpt_t rl_opts[] = {
     O_SEG("Sound Quality", "Headphones: always 48.", "s_khz", "44", rl_oKhz, rl_oKhzValues, 0),
     O_SECTION(OT_AUDIO, "SOUNDS", OF_RIGHT),
     O_TOGGLE("Taunts From Other Players", "Their voices; the chat line stays.", "cg_tauntsounds", "1", 0),
+    O_SEG("Hit Sound", "Played when you hit someone.", "cg_hitmarker_sound", "none", rl_oHitSounds, rl_oHitSoundValues, 0),
     O_SECTION(OT_GAMEPLAY, "GENERAL", 0),
     O_SLIDER("Field of View", "How wide you see, in degrees.", "cg_fov", "80", 65, 120, 1, 0),
     O_SEG("Show Weapon", "", "cg_drawviewmodel", "2", rl_oWeapon, NULL, 0),
@@ -2342,7 +2343,6 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Players Alive", "A count of each side by the score, not a card each.", "cg_hud_alivecount", "0", 0),
     O_TOGGLE("Damage Indicator", "Red marks round the crosshair toward a hit.", "cg_hud_damage", "1", 0),
     O_TOGGLE("Hitmarker", "A white X round the crosshair when you hit.", "cg_hitmarker", "0", 0),
-    O_SEG("Hitmarker Sound", "Played when you hit, with or without the X.", "cg_hitmarker_sound", "thump", rl_oHitSounds, rl_oHitSoundValues, 0),
     O_SECTION(OT_HUD, "CROSSHAIR", OF_RIGHT),
     {OC_PREVIEW, 0, 0, "", "", NULL, NULL, NULL, NULL, 0, 0, 0},
     O_SLIDER("Length", "", "cg_crosshair_length", "8", 0, 20, 0.5f, 0),
