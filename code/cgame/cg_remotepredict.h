@@ -23,7 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 // cg_remotepredict.h: remote prediction (Added; cg_remotepredict.cpp,
 // Project: Omaha's): other players drawn where the server will have them
-// when a shot fired now is traced (cg_remotePrediction, off by default)
+// when a shot fired now is traced (cg_remotePrediction, on by default)
 
 #pragma once
 
