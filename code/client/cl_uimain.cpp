@@ -2203,6 +2203,7 @@ enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW
 
 #define OF_RIGHT   1   // a section in the right column (the second)
 #define OF_PCT     2   // a slider's value shown as a percentage
+#define OF_RP      4   // off (greyed, no clicks) while Remote Prediction (cg_remotePrediction) is off
 #define OF_NOT     8   // a switch on at 0
 #define OF_NEG     16  // a switch on below 0, the value's sign (the mouse inverted: m_pitch)
 #define OF_DISPLAY 64  // r_fullscreen and r_noborder: fullscreen, windowed, borderless
@@ -2351,6 +2352,7 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Server Lag Icon", "Shown while the server stops answering.", "cg_drawsvlag", "1", 0),
     O_SEG("Lagometer", "The connection: ping, loss, updates.", "cg_lagometer", "0", rl_oLagometer, NULL, 0),
     O_TOGGLE("Remote Prediction", "Players drawn where your shots will find them.", "cg_remotePrediction", "1", 0),
+    O_TOGGLE("Smooth Lagging Players", "A new update's jump faded out, not snapped.", "cg_remotePredictionSmooth", "15", OF_RP),
     O_TOGGLE("Scoreboard Cursor", "Right-click while TAB is held: a cursor to sort the columns.", "cl_scoreboardcursor", "0", 0),
     // (by the Field of View, which turns the view faster as it widens: cl_mouseturn_logic.h)
     O_SECTION(OT_GAMEPLAY, "MOUSE", OF_RIGHT),
@@ -2857,7 +2859,8 @@ static void RL_OptFlip(int i)
     if (rl_opts[i].flags & OF_NEG) {
         RL_OptSet(i, va("%g", -atof(RL_OptValue(i))));
     } else {
-        RL_OptSet(i, atoi(RL_OptValue(i)) ? "0" : "1");
+        // (on: the default when that is a level, cg_remotePredictionSmooth's ms, else 1)
+        RL_OptSet(i, atoi(RL_OptValue(i)) ? "0" : atoi(rl_opts[i].def) > 1 ? rl_opts[i].def : "1");
     }
 }
 
@@ -3250,12 +3253,14 @@ static bool RL_OptButtonOn(int i)
     return !(rl_opts[i].flags & OF_HDRCAL) || (RL_OptOther("r_hdrOutputActive")->integer && !(RL_OptPending() & 1));
 }
 
-// a setting's row off: OF_UNDER's while Enhanced Rendering is off (its value waiting for APPLY too)
+// a setting's row off: OF_UNDER's while Enhanced Rendering is off (its value waiting for APPLY too), OF_RP's
+// while Remote Prediction is off
 static bool RL_OptOff(int i)
 {
     const int flags = rl_opts[i].flags;
 
     return ((flags & OF_UNDER) && !atoi(RL_Latched(RL_OptOther("r_temporal"))))
+        || ((flags & OF_RP) && !atoi(RL_Latched(RL_OptOther("cg_remotePrediction"))))
         || ((flags & (OF_NOTCS | OF_CS)) && (RL_OptOther("m_csmode")->integer != 0) == ((flags & OF_NOTCS) != 0));
 }
 
