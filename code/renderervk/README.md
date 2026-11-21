@@ -11813,3 +11813,14 @@ variable-length array, checked with clang's `-Wvla`).
       `vk_shaders_hdr.c` was made with this machine's glslc (shaderc
       2026.1): `compile_shaders.sh` with it gives the other three files
       other bytes than the glslang that made them, so they were left alone.
+    - Enhanced Rendering's rules (Omaha's 70c35fc5, the client's
+      `cl_effects.cpp` and `cl_effects_logic.h`, unit tested by
+      `test_effects_logic`): `r_taa`, `r_ao`, `r_motionBlur` or `r_dof`
+      (not in Omaha's rules: its menu has no depth of field) on, or
+      `r_hdrOutput` turned on from 0, turns `r_temporal` on (latched: it
+      starts with the next `vid_restart`); `r_temporal` turned off turns
+      the four off, so it doesn't come back. Whether they change in Options,
+      the console or a config; the rules also run before every renderer
+      start, so the renderer never starts with an effect on and the path
+      off. `r_saturation` and `r_hdrExpand` play no part: their defaults
+      would turn the path on for everyone.

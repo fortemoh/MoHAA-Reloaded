@@ -220,7 +220,7 @@ static const int vk_dofSamples[3] = { 16, 32, 48 };
 
 void VK_TemporalRegisterCvars( void ) {
 	r_temporal = ri.Cvar_Get( "r_temporal", "0", CVAR_ARCHIVE | CVAR_LATCH );
-	ri.Cvar_SetDescription( r_temporal, "1: the 3D view is drawn with motion vectors, normals, a depth pyramid and the last frame's color and depth (for temporal anti-aliasing and ambient occlusion; see the renderer's README)" );
+	ri.Cvar_SetDescription( r_temporal, "1: the 3D view is drawn with motion vectors, normals, a depth pyramid and the last frame's color and depth (for r_taa, r_ao, r_motionBlur, r_dof and HDR output's expansion; see the renderer's README). Enhanced Rendering in Options; the client turns it on with any of those and r_taa, r_ao, r_motionBlur and r_dof off with it" );
 	r_temporalJitter = ri.Cvar_Get( "r_temporalJitter", "0", 0 );
 	ri.Cvar_SetDescription( r_temporalJitter, "with r_temporal 1: the 3D view's projection moves by a sub-pixel offset every frame (Halton 2, 3)" );
 	r_temporalJitterSamples = ri.Cvar_Get( "r_temporalJitterSamples", "8", 0 );

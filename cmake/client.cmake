@@ -18,6 +18,7 @@ set(CLIENT_SOURCES
     ${SOURCE_DIR}/client/cl_keys.cpp
     ${SOURCE_DIR}/client/cl_lagometer.cpp
     ${SOURCE_DIR}/client/cl_main.cpp
+    ${SOURCE_DIR}/client/cl_effects.cpp
     ${SOURCE_DIR}/client/cl_net_chan.cpp
     ${SOURCE_DIR}/client/cl_parse.cpp
     ${SOURCE_DIR}/client/cl_scrn.cpp

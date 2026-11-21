@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "client.h"
 #include "../server/server.h"
 #include "cl_lagometer.h"
+#include "cl_effects.h"
 #include "cl_ui.h"
 #include "cl_uicomp.h"
 #include "cl_uimenus.h"
@@ -2677,6 +2678,9 @@ void CL_Frame ( int msec ) {
 	// decide on the serverTime to render
 	CL_SetCGameTime();
 
+	// Enhanced Rendering (r_temporal) on while an effect needs it (Omaha's)
+	CL_Effects_Sync(EFFECTS_SYNC_FRAME);
+
 	// set the time if we loaded a save
 	if( SV_DoSaveGame() )
 	{
@@ -3050,6 +3054,10 @@ void CL_InitRef( void ) {
 
 	Com_Printf( "----- Initializing Renderer ----\n" );
 
+	// the renderer reads r_temporal once, as it starts: turn it on first if
+	// an effect needs it (Omaha's cl_effects)
+	CL_Effects_Sync(EFFECTS_SYNC_START);
+
 #define RENDERER_ARCH_DLL_EXT DLL_SUFFIX DLL_EXT
 
 #ifdef USE_RENDERER_DLOPEN
@@ -3211,6 +3219,7 @@ void CL_InitRef( void ) {
 	}
 
 	re = *ret;
+	CL_Effects_RendererStarted();
 
 	// unpause so the cgame definately gets a snapshot and renders a frame
 	Cvar_Set( "cl_paused", "0" );
