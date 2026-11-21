@@ -2520,8 +2520,10 @@ THE RADAR'S MAP
 The floors a player can reach, walked over a grid of 16 units (box traces
 down from a jump's height above each floor, on the world and the brush
 entities: crates, bridges) from the spawn points and the tops of the
-ladders at the map's load, and again from where a player stands that the
-walk didn't reach (every 250 ms, a few thousand cells a frame). Drawn top
+ladders it reaches at the map's load, and again from where a player
+stands that the walk didn't reach (every 250 ms, a few thousand cells a
+frame); not onto the sky box's floor nor up a gully only its probe fits
+(RM_Floor). Drawn top
 down into a picture: each cell's floor nearest the player's height filled,
 brighter the higher, its walls and ledges only the shade's edge (no
 outlines, as CS2's radar), that edge smoothed where it meets no floor (a
@@ -2541,6 +2543,7 @@ same list and uploaded, again at each change of storey
 #define RM_STAIR    7.0f    // a floor this much higher beside: a stair (to a ledge's 40)
 #define RM_PER_STEP 2000    // cells walked a frame after the load
 #define RM_PAGE     16384   // the floors' memory in whole pages: the renderer reads it in place
+#define RM_MOST     600000  // floors at most (the largest stock map's walk, Omaha's: 418,674)
 
 typedef struct {
     float z;
@@ -2553,9 +2556,9 @@ typedef struct {
 } rmSolid_t;
 
 typedef struct {
-    float    top, bottom;
-    vec3_t   at;
-    qboolean ok;
+    float  top, bottom;
+    vec3_t at;
+    byte   ok, flat, undrawn; // a floor there; level (else a slope: the ground under a whole player asked); never drawn
 } rmDown_t;
 
 static struct {
@@ -2591,12 +2594,21 @@ static struct {
 
 // the first floor straight down from top to bottom (the world's or a brush
 // entity's, the higher), not too steep, not one of column c's (within 24
-// units: found again it adds nothing), with room for a crouched player. A
+// units: found again it adds nothing), with room for a crouched player, on
+// a slope the ground under all of them walkable (the probe is 14 units
+// across, a player 30: up a gully between a wall and a steep bank the probe
+// found a floor a player slides off, and from its top mohdm4's walk fell out
+// of the town). Not a floor never drawn (the sky's, a caulked brush's) fallen
+// onto from more than a jump (72) below where the walk comes from (top - 72):
+// off a map's edges that fall led to the sky box's floor, under the whole
+// map (Gewitter, Castello, Berlin, Omaha, mohdm3); walked onto from beside
+// it one counts (terrain over a caulked brush: obj_team4's west yard). A
 // column's trace down asked again (its neighbours on a flat floor ask the
 // same) gives the answer it gave
 static qboolean RM_Floor(int c, float x, float y, float top, float bottom, float *z)
 {
     static const vec3_t mins = {-7, -7, 0}, maxs = {7, 7, 1}, cmins = {-15, -15, 18}, cmaxs = {15, 15, 50};
+    static const vec3_t pmins = {-15, -15, 0}, pmaxs = {15, 15, 32};
     const vec3_t        start = {x, y, top}, end = {x, y, bottom};
     trace_t             tr, t;
     rmDown_t            own, *d = c < (int)rm.down.size() ? &rm.down[c] : &own;
@@ -2612,9 +2624,10 @@ static qboolean RM_Floor(int c, float x, float y, float top, float bottom, float
                 tr = t;
             }
         }
-        *d = {top, bottom, {tr.endpos[0], tr.endpos[1], tr.endpos[2]}, !(tr.startsolid || tr.allsolid || tr.fraction >= 1.0f || tr.plane.normal[2] < 0.7f)};
+        *d = {top, bottom, {tr.endpos[0], tr.endpos[1], tr.endpos[2]}, !(tr.startsolid || tr.allsolid || tr.fraction >= 1.0f || tr.plane.normal[2] < 0.7f),
+              tr.plane.normal[2] >= 0.99f, (tr.surfaceFlags & SURF_SKY) || ((tr.surfaceFlags & SURF_NODRAW) && (tr.contents & CONTENTS_SOLID))};
     }
-    if (!d->ok) {
+    if (!d->ok || (d->undrawn && top - d->at[2] > 144.0f)) {
         return qfalse;
     }
     *z = d->at[2];
@@ -2623,17 +2636,41 @@ static qboolean RM_Floor(int c, float x, float y, float top, float bottom, float
             return qfalse;
         }
     }
-    // a crouched player has room there
-    CM_BoxTrace(&t, d->at, d->at, cmins, cmaxs, 0, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, qfalse);
-    for (const rmSolid_t& s : rm.solids) {
-        if (t.startsolid || t.allsolid) {
-            break;
+    if (d->flat) {
+        // a crouched player has room there
+        CM_BoxTrace(&t, d->at, d->at, cmins, cmaxs, 0, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, qfalse);
+        for (const rmSolid_t& s : rm.solids) {
+            if (t.startsolid || t.allsolid) {
+                break;
+            }
+            if (x >= s.mins[0] - 16 && x <= s.maxs[0] + 16 && y >= s.mins[1] - 16 && y <= s.maxs[1] + 16) {
+                CM_TransformedBoxTrace(&t, d->at, d->at, cmins, cmaxs, s.model, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, s.origin, vec3_origin, qfalse);
+            }
         }
-        if (x >= s.mins[0] - 16 && x <= s.maxs[0] + 16 && y >= s.mins[1] - 16 && y <= s.maxs[1] + 16) {
-            CM_TransformedBoxTrace(&t, d->at, d->at, cmins, cmaxs, s.model, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, s.origin, vec3_origin, qfalse);
-        }
+        return !t.startsolid && !t.allsolid;
     }
-    return !t.startsolid && !t.allsolid;
+    // on a slope a crouched player let down from a step above (the same
+    // room where it starts): the first ground they land on walkable
+    {
+        const vec3_t from = {d->at[0], d->at[1], d->at[2] + 18.0f}, to = {d->at[0], d->at[1], d->at[2] - 2.0f};
+
+        CM_BoxTrace(&t, from, to, pmins, pmaxs, 0, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, qfalse);
+        for (const rmSolid_t& s : rm.solids) {
+            trace_t u;
+
+            if (t.startsolid || t.allsolid) {
+                break;
+            }
+            if (x >= s.mins[0] - 16 && x <= s.maxs[0] + 16 && y >= s.mins[1] - 16 && y <= s.maxs[1] + 16 && s.mins[2] <= from[2] + 32.0f
+                && s.maxs[2] >= to[2]) {
+                CM_TransformedBoxTrace(&u, from, to, pmins, pmaxs, s.model, CONTENTS_SOLID | CONTENTS_PLAYERCLIP, s.origin, vec3_origin, qfalse);
+                if (u.startsolid || u.allsolid || u.fraction < t.fraction) {
+                    t = u;
+                }
+            }
+        }
+        return !t.startsolid && !t.allsolid && (t.fraction >= 1.0f || t.plane.normal[2] >= 0.7f);
+    }
 }
 
 // the column's floor within 24 units of z, else a new one; -1 when full
@@ -2645,7 +2682,7 @@ static int RM_Node(int c, float z, qboolean *added)
             return n;
         }
     }
-    if (rm.nodes.size() >= 400000) {
+    if (rm.nodes.size() >= RM_MOST) {
         return -1;
     }
     rm.nodes.push_back({z, rm.head[c]});
@@ -2709,11 +2746,33 @@ static void RM_Step(size_t most)
     }
 }
 
+// the walk has a floor beside ladder s (within 2 cells of it, from a jump
+// below its foot to its top)
+static qboolean RM_Reached(const rmSolid_t& s)
+{
+    const int cx0 = Q_max(0, (int)((s.mins[0] - rm.x0) / RM_CELL) - 2), cx1 = Q_min(rm.cw - 1, (int)((s.maxs[0] - rm.x0) / RM_CELL) + 2);
+    const int cy0 = Q_max(0, (int)((s.mins[1] - rm.y0) / RM_CELL) - 2), cy1 = Q_min(rm.ch - 1, (int)((s.maxs[1] - rm.y0) / RM_CELL) + 2);
+
+    for (int cy = cy0; cy <= cy1; cy++) {
+        for (int cx = cx0; cx <= cx1; cx++) {
+            for (int n = rm.head[cy * rm.cw + cx]; n >= 0; n = rm.nodes[n].next) {
+                if (rm.nodes[n].z >= s.mins[2] - 72.0f && rm.nodes[n].z <= s.maxs[2]) {
+                    return qtrue;
+                }
+            }
+        }
+    }
+    return qfalse;
+}
+
 static void RM_Walk(void)
 {
-    const char *p;
-    vec3_t      mins, maxs;
-    const int   start = Sys_Milliseconds();
+    const char            *p;
+    vec3_t                 mins, maxs;
+    const int              start = Sys_Milliseconds();
+    std::vector<rmSolid_t> ladders;
+    std::vector<float>     starts; // info_player_start's places, x y z each
+    int                    spawns = 0;
 
     CM_ModelBounds(CM_InlineModel(0), mins, maxs);
     rm.x0 = mins[0];
@@ -2722,7 +2781,7 @@ static void RM_Walk(void)
     rm.ch = Q_min(2048, (int)((maxs[1] - mins[1]) / RM_CELL) + 1);
     rm.head.assign(rm.cw * rm.ch, -1);
     // (up to a million columns: 24 MB)
-    rm.down.assign(rm.cw * rm.ch <= (1 << 20) ? rm.cw * rm.ch : 0, {NAN, NAN, {0, 0, 0}, qfalse});
+    rm.down.assign(rm.cw * rm.ch <= (1 << 20) ? rm.cw * rm.ch : 0, {NAN, NAN, {0, 0, 0}, 0, 0, 0});
     rm.nodes.clear();
     rm.solids.clear();
     rm.queue.clear();
@@ -2732,8 +2791,11 @@ static void RM_Walk(void)
     rm.zMax   = -99999.0f;
     rm.cxMin = rm.cyMin = INT_MAX;
     rm.cxMax = rm.cyMax = -1;
-    // the brush entities one stands on (not the triggers, ladders, doors or
-    // windows) first, then the spawn points and the tops of the ladders
+    // the brush entities one stands on (not the triggers, ladders, doors,
+    // windows or rain: func_rain is the game's SOLID_NOT, and mohdm5's two
+    // were the whole park) first, then the spawn points: multiplayer's (the
+    // single player's info_player_start, multiplayer's last resort, only on
+    // a map without them: on Flughafen it stood in a room above the sky)
     for (int pass = 0; pass < 2; pass++) {
         p = CM_EntityString();
         for (const char *tok = COM_Parse((char **)&p); p && tok[0] == '{'; tok = COM_Parse((char **)&p)) {
@@ -2764,23 +2826,45 @@ static void RM_Walk(void)
                 VectorAdd(s.mins, origin, s.mins);
                 VectorAdd(s.maxs, origin, s.maxs);
                 if (!pass && Q_stricmpn(classname, "trigger_", 8) && Q_stricmp(classname, "func_ladder") && !Q_stristr(classname, "door")
-                    && Q_stricmp(classname, "func_window") && Q_stricmp(classname, "func_areaportal")) {
+                    && Q_stricmp(classname, "func_window") && Q_stricmp(classname, "func_areaportal") && Q_stricmp(classname, "func_rain")) {
                     rm.solids.push_back(s);
                 } else if (pass && !Q_stricmp(classname, "func_ladder")) {
-                    // its top: the floors beside it
-                    for (float x = s.mins[0] - RM_CELL; x <= s.maxs[0] + RM_CELL; x += RM_CELL) {
-                        for (float y = s.mins[1] - RM_CELL; y <= s.maxs[1] + RM_CELL; y += RM_CELL) {
-                            RM_Seed(x, y, s.maxs[2] + 72.0f, s.maxs[2] - 64.0f);
-                        }
-                    }
+                    ladders.push_back(s);
                 }
             }
-            if (pass && !Q_stricmpn(classname, "info_player_", 12) && Q_stricmp(classname, "info_player_intermission")) {
+            if (pass && !Q_stricmp(classname, "info_player_start")) {
+                starts.insert(starts.end(), origin, origin + 3);
+            } else if (pass && !Q_stricmpn(classname, "info_player_", 12) && Q_stricmp(classname, "info_player_intermission")) {
                 RM_Seed(origin[0], origin[1], origin[2] + 40.0f, origin[2] - 200.0f);
+                spawns++;
             }
         }
     }
+    for (size_t i = 0; !spawns && i < starts.size(); i += 3) {
+        RM_Seed(starts[i], starts[i + 1], starts[i + 2] + 40.0f, starts[i + 2] - 200.0f);
+    }
+    // out from them, then from the tops of the ladders reached (the floors
+    // beside their tops; one seeded unreached led into Flughafen's room),
+    // again while a round reaches one more
     RM_Step((size_t)-1);
+    for (size_t left = (size_t)-1; left != ladders.size(); RM_Step((size_t)-1)) {
+        left = ladders.size();
+        for (size_t i = 0; i < ladders.size();) {
+            const rmSolid_t s = ladders[i];
+
+            if (!RM_Reached(s)) {
+                i++;
+                continue;
+            }
+            for (float x = s.mins[0] - RM_CELL; x <= s.maxs[0] + RM_CELL; x += RM_CELL) {
+                for (float y = s.mins[1] - RM_CELL; y <= s.maxs[1] + RM_CELL; y += RM_CELL) {
+                    RM_Seed(x, y, s.maxs[2] + 72.0f, s.maxs[2] - 64.0f);
+                }
+            }
+            ladders[i] = ladders.back();
+            ladders.pop_back();
+        }
+    }
     rm.walked = (int)rm.nodes.size();
     Com_DPrintf("Radar: %d floors (%d brush entities) in %d ms\n", (int)rm.nodes.size(), (int)rm.solids.size(), Sys_Milliseconds() - start);
 }
