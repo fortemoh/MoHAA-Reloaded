@@ -141,6 +141,10 @@ static constexpr int OM_STREAM_REFILL_MAX = 8;
 static constexpr float s_fVolumeGain = 1.f; // = 84.f;
 /* Miles sample volume was 0–127 after ×84; full-knob content ceiling = 127/84. */
 static constexpr float OM_CONTENT_VOLUME_MAX = 127.f / 84.f;
+/* Added in MoHAA Reloaded: the most one of its own sounds (OM_OWN_SOUNDS) may ask for, past that ceiling. */
+static constexpr float OM_OWN_VOLUME_MAX = 8.f;
+/* Added in MoHAA Reloaded: its own sounds' folder (the hitmarker's three, shipped beside the client), none of the game's. */
+static const char OM_OWN_SOUNDS[] = "sound/prom/hitmarkers/";
 
 static cvar_t *s_milesdriver;
 static cvar_t *s_show_cpu;
@@ -705,6 +709,28 @@ static float S_OMAHA_ClampContentVolume(float fVolume)
         return OM_CONTENT_VOLUME_MAX;
     }
     return fVolume;
+}
+
+/*
+==============
+S_OMAHA_ClampSfxVolume
+
+Added in MoHAA Reloaded: a one-shot's content volume. The game's sounds stay at
+the Miles ceiling (S_OMAHA_ClampContentVolume); MoHAA Reloaded's own
+(OM_OWN_SOUNDS) may ask for up to OM_OWN_VOLUME_MAX, so the hitmarker's 10 dB
+over the stock dings' is heard over the player's own shot (as the metal
+branch's driver lets its own sounds past the ceiling, SNM_VolumeOwn).
+==============
+*/
+static float S_OMAHA_ClampSfxVolume(const sfx_t *pSfx, float fVolume)
+{
+    if (Q_stricmpn(pSfx->name, OM_OWN_SOUNDS, sizeof(OM_OWN_SOUNDS) - 1)) {
+        return S_OMAHA_ClampContentVolume(fVolume);
+    }
+    if (fVolume < 0.f) {
+        return 1.f;
+    }
+    return fVolume < OM_OWN_VOLUME_MAX ? fVolume : OM_OWN_VOLUME_MAX;
 }
 
 /*
@@ -1765,8 +1791,9 @@ static void S_OMAHA_Start2DSound(
     }
     pChannel->force_free();
 
-    /* Changed in Omaha: content ≤ 127/84 (Miles ceiling); OM_MIX_* may raise afterward. */
-    fVolume = S_OMAHA_ClampContentVolume(fVolume);
+    /* Changed in Omaha: content ≤ 127/84 (Miles ceiling); OM_MIX_* may raise afterward. Changed in MoHAA Reloaded:
+     * its own sounds up to OM_OWN_VOLUME_MAX. */
+    fVolume = S_OMAHA_ClampSfxVolume(pSfx, fVolume);
 
     /* Added in Omaha: category mix multipliers; the category also feeds the music duck. */
     pChannel->iCategory = (int)S_OMAHA_ResolveCategory(pSfx, iEntChannel);
@@ -2270,8 +2297,9 @@ void S_OMAHA_StartSound(
         fMaxDist = fMinDist * 64;
     }
 
-    /* Changed in Omaha: content ≤ 127/84 (Miles ceiling); OM_MIX_* may raise afterward. */
-    fVolume = S_OMAHA_ClampContentVolume(fVolume);
+    /* Changed in Omaha: content ≤ 127/84 (Miles ceiling); OM_MIX_* may raise afterward. Changed in MoHAA Reloaded:
+     * its own sounds up to OM_OWN_VOLUME_MAX. */
+    fVolume = S_OMAHA_ClampSfxVolume(pSfx, fVolume);
 
     /* Added in Omaha: category mix multipliers (local/other for FIRE). */
     cat = S_OMAHA_ResolveCategory(pSfx, iEntChannel);
