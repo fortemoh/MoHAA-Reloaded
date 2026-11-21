@@ -180,6 +180,8 @@ enum sfx_flags_t {
     // Added in Omaha: streamed combat VO force-load (s_pain_hrtf) was tried once
     SFX_FLAG_PROMOTE_DONE   = 32,
     SFX_FLAG_PROMOTE_FAILED = 64,
+    // Added in the Metal port
+    SFX_FLAG_STREAM_FAILED = 128, // the stream couldn't be opened; not searched for again until the next registration
 };
 
 enum loopsound_flags_t {
