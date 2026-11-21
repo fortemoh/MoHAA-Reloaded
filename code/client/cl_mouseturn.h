@@ -21,14 +21,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 // cl_mouseturn.h -- the turn distance (cm/360, m_turn) kept when the Field of
-// View or the mouse's DPI changes (cl_mouseturn_logic.h); Options' MOUSE
-// rows read it
+// View or the mouse's DPI changes, and CS Mode (m_csmode: CS's turn at Field
+// of View 90) (cl_mouseturn_logic.h); Options' MOUSE rows read them
 
 #pragma once
 
 #include "../qcommon/q_shared.h"
 
-// registers the cvars (m_dpi, m_turn)
+// registers the cvars (m_dpi, m_turn, m_csmode, m_cssens)
 void  CL_MouseTurn_Init(void);
 // every frame: applies the rule to the cvars
 void  CL_MouseTurn_Sync(void);
