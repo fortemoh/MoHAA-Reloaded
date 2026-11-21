@@ -3127,7 +3127,8 @@ static void RL_Swatches(UIReloadedMenu *m, const rlView_t& v, int i, float right
     }
 }
 
-// the crosshair as CG_UpdateCrosshair lays it out at this screen's height, a pixel of it 2 here, centred in x y w h
+// the crosshair as CG_UpdateCrosshair lays it out at this screen's height, life-size (a pixel of it a pixel here: twice
+// as big read as another size from the game's), centred in x y w h
 static void RL_Crosshair(const rlView_t& v, float x, float y, float w, float h)
 {
     static cvar_t *outline[2];
@@ -3173,17 +3174,17 @@ static void RL_Crosshair(const rlView_t& v, float x, float y, float w, float h)
         for (int k = 0; mode && k < n; k++) {
             const int *p = piece[k];
 
-            RL_BoxPx(cx + 2 * (p[0] - 1), cy + 2 * (p[1] - 1), cx + 2 * (p[0] + p[2] + (mode == 1)), cy + 2 * p[1], oc);
-            RL_BoxPx(cx + 2 * (p[0] - 1), cy + 2 * p[1], cx + 2 * p[0], cy + 2 * (p[1] + p[3]), oc);
+            RL_BoxPx(cx + p[0] - 1, cy + p[1] - 1, cx + p[0] + p[2] + (mode == 1), cy + p[1], oc);
+            RL_BoxPx(cx + p[0] - 1, cy + p[1], cx + p[0], cy + p[1] + p[3], oc);
             if (mode == 1) {
-                RL_BoxPx(cx + 2 * (p[0] - 1), cy + 2 * (p[1] + p[3]), cx + 2 * (p[0] + p[2] + 1), cy + 2 * (p[1] + p[3] + 1), oc);
-                RL_BoxPx(cx + 2 * (p[0] + p[2]), cy + 2 * p[1], cx + 2 * (p[0] + p[2] + 1), cy + 2 * (p[1] + p[3]), oc);
+                RL_BoxPx(cx + p[0] - 1, cy + p[1] + p[3], cx + p[0] + p[2] + 1, cy + p[1] + p[3] + 1, oc);
+                RL_BoxPx(cx + p[0] + p[2], cy + p[1], cx + p[0] + p[2] + 1, cy + p[1] + p[3], oc);
             }
         }
         for (int k = 0; k < n; k++) {
             const int *p = piece[k];
 
-            RL_BoxPx(cx + 2 * p[0], cy + 2 * p[1], cx + 2 * (p[0] + p[2]), cy + 2 * (p[1] + p[3]), c);
+            RL_BoxPx(cx + p[0], cy + p[1], cx + p[0] + p[2], cy + p[1] + p[3], c);
         }
     }
 }
@@ -3242,7 +3243,7 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
     if (o.kind == OC_PREVIEW) {
         RL_Frame(v, x, y, w, h - 12, 1, RL_LINE);
         RL_Crosshair(v, x, y, w, h - 12);
-        RL_Text(v, x + 12, y + h - 12 - 18, "PREVIEW, 2X", 12, RL_Rgb(255, 255, 255, 150), true, RL_LEFT, 1.6f, RL_MID);
+        RL_Text(v, x + 12, y + h - 12 - 18, "PREVIEW, LIFE-SIZE", 12, RL_Rgb(255, 255, 255, 150), true, RL_LEFT, 1.6f, RL_MID);
         return;
     }
     float cw = o.kind == OC_TOGGLE ? 56 : o.kind == OC_CODE ? 364 : 260; // the control's width
