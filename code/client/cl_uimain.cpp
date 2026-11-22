@@ -198,7 +198,7 @@ static struct {
     int         confirm; // what the confirmation asks: ID_QUIT, ID_DISCONNECT, ID_CDELETE or ID_KEYMOVE
     int         clickAt;
     int         serial; // changes with all of the above
-} rl_mm = {PAGE_PLAY, F_NONE, "", "", TAB_ALL, COL_PING, true, "", 0, 1, -1, 0, "", ID_QUIT, 0, 0};
+} rl_mm = {PAGE_PLAY, F_NONE, "", "", TAB_ALL, COL_PLAYERS, false, "", 0, 1, -1, 0, "", ID_QUIT, 0, 0}; // (the most players first)
 
 // the confirmation's asker: esc, the Esc menu (RL_EscConfirm: the box as wide as its block; DISCONNECT's answer shows
 // the main menu on the page show after leaving), else the main menu
@@ -438,13 +438,15 @@ static void RL_SvShown(void)
             c = x.ping - y.ping;
             break;
         }
-        if (!c) {
-            c = Q_stricmp(x.name.c_str(), y.name.c_str());
+        if (c) {
+            return rl_mm.asc ? c < 0 : c > 0;
         }
-        if (!c) {
-            c = x.addr.compare(y.addr);
+        // a tie whichever way: as many players, the lowest ping first; then by name, A first
+        if (rl_mm.sort == COL_PLAYERS && x.ping != y.ping) {
+            return x.ping < y.ping;
         }
-        return rl_mm.asc ? c < 0 : c > 0;
+        c = Q_stricmp(x.name.c_str(), y.name.c_str());
+        return c ? c < 0 : x.addr.compare(y.addr) < 0;
     });
     rl_mm.top = Q_max(0, Q_min(rl_mm.top, (int)rl_vis.rows.size() - rl_mm.fit));
 }
@@ -1651,7 +1653,8 @@ static const rlBarItem_t rl_pages[] = {
 /*
 ================
 MULTIPLAYER: Omaha's server browser. The gametype tabs, the columns (the one
-sorted by marked, clicked again for the other way), a row a server (a
+sorted by marked, clicked again for the other way; PLAYERS at first, the most
+first), a row a server (a
 star to keep it a favourite; picked: brass; joined with a double click
 or JOIN), the status row (servers and players shown, the lists' state),
 REFRESH, the search, JOIN. Narrower than 800 units (4:3), no GAMETYPE
