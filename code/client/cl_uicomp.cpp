@@ -1597,7 +1597,7 @@ static std::vector<builtinFile_t> comp_files;
 UI_CompHud_AddFile
 
 A file made while the game runs, given to the filesystem with the files
-compiled in (the head icons, the weapon menu's figures); its name and data
+compiled in (the head icons, the team and weapon pages' figures); its name and data
 are the caller's, kept until the client quits. The list has room made once,
 so it never moves, and an entry is written before the list's end moves past
 it: a file read on another thread meanwhile finds the list whole
