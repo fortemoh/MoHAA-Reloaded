@@ -44,14 +44,17 @@ static const rlColor_t RL_FAINT = {110 / 255.0f, 107 / 255.0f, 100 / 255.0f, 1};
 extern rlColor_t RL_BRASS, RL_BRASS_HOT;
 static const rlColor_t RL_INK   = {8 / 255.0f, 9 / 255.0f, 10 / 255.0f, 1}; // on brass
 
+// icon: the badge (the star or cross on its disc); mark: the star or cross
+// alone (the team page's medallions, where the badge's disc drawn faint in
+// the medallion's showed as a ring)
 typedef struct {
     int         deep[3], base[3], mid[3], light[3], pale[3];
-    const char *name, *icon;
+    const char *name, *icon, *mark;
 } rlTeam_t;
 
 static const rlTeam_t rl_teams[2] = {
-    {{18, 30, 43}, {30, 50, 70}, {58, 94, 128}, {150, 192, 228}, {218, 233, 246}, "ALLIES", RL_OUTLINES "team/allies.svg"},
-    {{44, 18, 16}, {70, 32, 28}, {134, 62, 50}, {234, 162, 142}, {248, 218, 208}, "AXIS", RL_OUTLINES "team/axis.svg"  },
+    {{18, 30, 43}, {30, 50, 70}, {58, 94, 128}, {150, 192, 228}, {218, 233, 246}, "ALLIES", RL_OUTLINES "team/allies.svg", RL_OUTLINES "team/allies-mark.svg"},
+    {{44, 18, 16}, {70, 32, 28}, {134, 62, 50}, {234, 162, 142}, {248, 218, 208}, "AXIS", RL_OUTLINES "team/axis.svg", RL_OUTLINES "team/axis-mark.svg"},
 };
 
 // a font the HUD's small text can take (cg_hud_font, Options' HUD Font): the
