@@ -416,10 +416,14 @@ qboolean	mbRadarImage( int cw, int ch, int texels, void *memory, int bytes, void
 	int floorsOffset, int changingOffset, int numChanging, float z );
 void		mbRadarHeight( unsigned int texture, float z );
 
-// The temporal path (r_temporal, tr_temporal.c; the idea from JayRewd's Vulkan renderer): the 3D view's scene drawn
-// with motion vectors and a jittered projection, then its effects (r_taa) before the 2D. While it is off nothing of it
-// exists or runs: mbTemporalEnable makes its targets (and the depth target readable) and frees them again, between
-// frames. Without it (qfalse) the calls below do nothing.
+// The temporal path (r_temporal, tr_temporal.c; the ideas from JayRewd's Vulkan renderer): the 3D view's effects. While
+// none is on nothing of it exists or runs: mbTemporalEnable makes the targets of the effects asked for (and the depth
+// target readable) and frees them again, between frames. Without an effect the calls below for it do nothing.
+//  - MB_TEMPORAL_TAA (r_taa): the scene drawn with motion vectors and a jittered projection, anti-aliased before the 2D
+//  - MB_TEMPORAL_AO (r_ao): ambient occlusion, applied in the main view after its opaque surfaces (mbTemporalAo)
+#define MB_TEMPORAL_TAA		1
+#define MB_TEMPORAL_AO		2
+
 typedef struct {
 	float		cameraDelta[16];	// the last frame's view times this frame's view's inverse; identity: no motion
 	float		jitter[2];			// the projection's offset this frame, in pixels (x right, y down)
@@ -436,7 +440,25 @@ typedef struct {
 	float		showScale;			// r_temporalShowScale
 } mbTemporalEffects_t;
 
-qboolean	mbTemporalEnable( qboolean on );
+typedef struct {
+	float		projection[16];		// the main view's, GL's (without the jitter)
+	float		reproject[16];		// the last frame's projection times the camera's motion: from this frame's eye space
+	qboolean	history;			// the camera has a last frame (reproject is valid)
+	float		zFar;				// the view's far distance
+	qboolean	fog;				// the view's linear fog: start, end, color (the opaque surfaces')
+	float		fogStart, fogEnd, fogColor[3];
+	float		radius;				// r_aoRadius, world units
+	float		falloff;			// r_aoFalloff, the share of the radius over which occluders fade
+	float		thickness;			// r_aoThickness
+	float		strength;			// r_aoStrength (a power of the visibility)
+	float		multiBounce;		// r_aoMultiBounce (an albedo, 0: none)
+	int			quality;			// r_aoQuality 0-3
+	int			frames;				// r_aoTemporal: the most frames blended, 1 none
+	int			show;				// r_temporalShow 3: the occlusion alone
+} mbTemporalAo_t;
+
+// effects: MB_TEMPORAL_*; returns the effects whose targets exist (those that couldn't be made are left out)
+int			mbTemporalEnable( int effects );
 // a view of the world: the first begins the scene (before the view's clear), the later ones (the main view after the
 // sky portal's) continue it with their cameras; one scene a frame
 void		mbTemporalBeginView( const mbTemporalView_t *view );
@@ -444,6 +466,9 @@ void		mbTemporalBeginView( const mbTemporalView_t *view );
 void		mbTemporalPrevProjection( const float *m );
 // what moves the current object: m times its modelview is its last frame's; NULL: the camera's motion only
 void		mbTemporalObject( const float *m );
+// in the main view, once a frame, after its opaque surfaces and before what is blended over them: the scene pass ends
+// (its targets stored), the occlusion is computed from its depth, and a new pass goes on with it applied
+void		mbTemporalAo( const mbTemporalAo_t *ao );
 // before the 2D (or at the frame's end): the effects, then the frame goes on in a new pass, depth and stencil cleared
 void		mbTemporalEndScene( const mbTemporalEffects_t *effects );
 

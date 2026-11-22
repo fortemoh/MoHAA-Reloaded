@@ -20,23 +20,29 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
-// tr_temporal.c -- the temporal path (r_temporal with r_taa): what the 3D view's effects need from the back end's
-// view loop: the cameras and the entities of the last frame, and the projection's jitter. The ideas are JayRewd's
-// (the Vulkan renderer's temporal path, renderervk/tr_temporal.c), written again for the Metal backend (mbTemporal* in
-// tr_mtl.h; tr_mtl.m, tr_mtl_temporal.metal).
+// tr_temporal.c -- the temporal path (r_temporal with r_taa or r_ao): what the 3D view's effects need from the back
+// end's view loop: the cameras and the entities of the last frame, the projection's jitter, and where the ambient
+// occlusion goes. The ideas are JayRewd's (the Vulkan renderer's temporal path, renderervk/tr_temporal.c), written
+// again for the Metal backend (mbTemporal* in tr_mtl.h; tr_mtl.m, tr_mtl_temporal.metal, tr_mtl_ao.metal).
 //
-// Off (the default: r_temporal 0, or no effect on) the views test one flag (rt.on) and the frame's end reads two cvars
-// (RB_TemporalFrame): nothing else runs and nothing is kept; the back end has no target or pass of it.
+// Off (the default: r_temporal 0, or no effect on) the views test one flag (rt.on), the back end's surface list one
+// (backEnd.temporalAo) a shader, and the frame's end reads at most three cvars (RB_TemporalFrame): nothing else runs
+// and nothing is kept; the back end has no target or pass of it.
 //
-// On, the frame's first view of the world begins the scene (mbTemporalBeginView), and the views after it (the main
-// view after the sky portal's) continue it. The main view (not a portal, not the sky portal) keeps its camera for the
-// next frame, which has a last frame when the camera didn't jump (r_temporalCutDist), the field of view is the same and
-// the game's time didn't go back; the sky portal's camera is kept the same way, apart. Other portal views have no
-// motion. Entities: the main view keeps each one's model matrix, known by its game entity number, its model and how
-// many entities of the scene had both before it (attached models share the number); the next frame finds it there and
-// gives the back end its motion (mbTemporalObject). Entities without a game entity number (temporary models, effects)
-// and those that jumped move with the camera only, as what doesn't move (the world, static models, sprites); the
-// view weapon without a last frame moves with the view.
+// With the anti-aliasing (r_taa) the frame's first view of the world begins the scene (mbTemporalBeginView), and the
+// views after it (the main view after the sky portal's) continue it. The main view (not a portal, not the sky portal)
+// keeps its camera for the next frame, which has a last frame when the camera didn't jump (r_temporalCutDist), the
+// field of view is the same and the game's time didn't go back; the sky portal's camera is kept the same way, apart.
+// Other portal views have no motion. Entities: the main view keeps each one's model matrix, known by its game entity
+// number, its model and how many entities of the scene had both before it (attached models share the number); the
+// next frame finds it there and gives the back end its motion (mbTemporalObject). Entities without a game entity
+// number (temporary models, effects) and those that jumped move with the camera only, as what doesn't move (the world,
+// static models, sprites); the view weapon without a last frame moves with the view.
+//
+// With the ambient occlusion (r_ao) the main view's camera is kept the same way (its motion moves the occlusion's
+// history), and the back end's surface list calls RB_TemporalAo once, before the main view's first blended surface
+// (or after its last surface): the occlusion of what is drawn so far (mbTemporalAo). Alone it needs no motion vectors,
+// no jitter and no entities: the scene is drawn as without the path.
 
 #include "tr_local.h"
 
@@ -72,9 +78,10 @@ typedef struct {
 } rtCamera_t;
 
 static struct {
-	qboolean		on;					// the back end's targets exist (mbTemporalEnable)
-	qboolean		failed;				// they couldn't be made: not again until the path is turned off
+	int				on;					// the effects whose back end targets exist (MB_TEMPORAL_*, mbTemporalEnable)
+	int				failed;				// those that couldn't be made: not again until they are turned off
 	unsigned		frame;				// frames since R_TemporalInit, from 1
+	unsigned		aoFrame;			// the frame the occlusion last ran in
 	rtCamera_t		camera[2];			// the main view's, the sky portal's
 	rtEntities_t	*entities;			// while on
 	float			jitter[2];			// this frame's, in pixels
@@ -89,12 +96,20 @@ static cvar_t	*r_temporalJitterSamples;
 static cvar_t	*r_temporalCutDist;
 static cvar_t	*r_temporalShow;
 static cvar_t	*r_temporalShowScale;
+static cvar_t	*r_ao;
+static cvar_t	*r_aoQuality;
+static cvar_t	*r_aoRadius;
+static cvar_t	*r_aoStrength;
+static cvar_t	*r_aoFalloff;
+static cvar_t	*r_aoThickness;
+static cvar_t	*r_aoTemporal;
+static cvar_t	*r_aoMultiBounce;
 
 static const float rt_identity[16] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
 
 void R_TemporalInit( void ) {
 	r_temporal = ri.Cvar_Get( "r_temporal", "0", CVAR_ARCHIVE );
-	ri.Cvar_SetDescription( r_temporal, "1: the 3D view is drawn with motion vectors and a jittered projection while one of its effects is on (r_taa): Enhanced Rendering in Options. Off, nothing of it exists or runs" );
+	ri.Cvar_SetDescription( r_temporal, "1: the 3D view's effects (r_taa, r_ao): Enhanced Rendering in Options. Off, or with none of them on, nothing of it exists or runs" );
 	r_taa = ri.Cvar_Get( "r_taa", "0", CVAR_ARCHIVE );
 	ri.Cvar_SetDescription( r_taa, "with r_temporal 1: temporal anti-aliasing (the projection is jittered with it)" );
 	r_taaFeedback = ri.Cvar_Get( "r_taaFeedback", "0.75", CVAR_ARCHIVE );
@@ -109,10 +124,34 @@ void R_TemporalInit( void ) {
 	r_temporalCutDist = ri.Cvar_Get( "r_temporalCutDist", "256", 0 );
 	ri.Cvar_SetDescription( r_temporalCutDist, "with r_temporal 1: a camera or an entity that moves farther than this in a frame has no last frame (a cut, a teleport)" );
 	r_temporalShow = ri.Cvar_Get( "r_temporalShow", "0", CVAR_CHEAT );
-	ri.Cvar_SetDescription( r_temporalShow, "with r_taa 1, instead of the 3D view: 1 the motion vectors (right red, down green), 2 the scene without the anti-aliasing" );
-	ri.Cvar_CheckRange( r_temporalShow, 0, 2, qtrue );
+	ri.Cvar_SetDescription( r_temporalShow, "instead of the 3D view: with r_taa 1, 1 the motion vectors (right red, down green), 2 the scene without the anti-aliasing; with r_ao 1, 3 the occlusion alone (white none)" );
+	ri.Cvar_CheckRange( r_temporalShow, 0, 3, qtrue );
 	r_temporalShowScale = ri.Cvar_Get( "r_temporalShowScale", "1", CVAR_CHEAT );
 	ri.Cvar_SetDescription( r_temporalShowScale, "with r_temporalShow 1: the motion vectors' scale; at 1 a move of 32 pixels a frame is the brightest" );
+	// the Vulkan renderer's cvars and defaults (vk_temporal.c; not its r_aoNormals: no normals are drawn here)
+	r_ao = ri.Cvar_Get( "r_ao", "0", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_ao, "with r_temporal 1: ambient occlusion (ground truth ambient occlusion, GTAO), the contact shadows of corners, creases and what stands on a floor" );
+	r_aoQuality = ri.Cvar_Get( "r_aoQuality", "2", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_aoQuality, "with r_ao 1: 0 low, 1 medium, 2 high, 3 ultra (directions and samples per pixel)" );
+	ri.Cvar_CheckRange( r_aoQuality, 0, 3, qtrue );
+	r_aoRadius = ri.Cvar_Get( "r_aoRadius", "48", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_aoRadius, "with r_ao 1: how far occluders reach, in world units" );
+	ri.Cvar_CheckRange( r_aoRadius, 4.0f, 256.0f, qfalse );
+	r_aoStrength = ri.Cvar_Get( "r_aoStrength", "1.5", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_aoStrength, "with r_ao 1: the occlusion's strength (a power of the visibility), 1 as computed" );
+	ri.Cvar_CheckRange( r_aoStrength, 0.0f, 4.0f, qfalse );
+	r_aoFalloff = ri.Cvar_Get( "r_aoFalloff", "0.6", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_aoFalloff, "with r_ao 1: the share of the radius over which occluders fade out" );
+	ri.Cvar_CheckRange( r_aoFalloff, 0.05f, 1.0f, qfalse );
+	r_aoThickness = ri.Cvar_Get( "r_aoThickness", "0.25", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_aoThickness, "with r_ao 1: the thin occluder compensation: occluders in front along the view fade sooner (less dark halos behind thin objects)" );
+	ri.Cvar_CheckRange( r_aoThickness, 0.0f, 4.0f, qfalse );
+	r_aoTemporal = ri.Cvar_Get( "r_aoTemporal", "16", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_aoTemporal, "with r_ao 1: the most frames blended (less noise, slower to react); 1: none" );
+	ri.Cvar_CheckRange( r_aoTemporal, 1, 64, qtrue );
+	r_aoMultiBounce = ri.Cvar_Get( "r_aoMultiBounce", "0.4", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_aoMultiBounce, "with r_ao 1: the albedo of the light bounced back by occluders (lightens the occlusion), 0 none" );
+	ri.Cvar_CheckRange( r_aoMultiBounce, 0.0f, 0.9f, qfalse );
 
 	// the back end starts without the path (mbInit); the frames are counted again
 	if ( rt.entities ) {
@@ -325,24 +364,22 @@ At the end of every frame (RB_SwapBuffers, after the back end's): the path on or
 ===============
 */
 void RB_TemporalFrame( void ) {
-	qboolean want = r_temporal->integer && r_taa->integer;
+	int want = r_temporal->integer ? ( r_taa->integer ? MB_TEMPORAL_TAA : 0 ) | ( r_ao->integer ? MB_TEMPORAL_AO : 0 ) : 0;
 
 	rt.frame++;
-	if ( !want ) {
-		rt.failed = qfalse;
-	}
-	if ( want == rt.on || rt.failed ) {
+	backEnd.temporalAo = qfalse;
+	rt.failed &= want;
+	want &= ~rt.failed;
+	if ( want == rt.on ) {
 		return;
 	}
-	if ( want ) {
+	rt.on = mbTemporalEnable( want );
+	rt.failed |= want & ~rt.on;
+	// the entities' last frames: for the anti-aliasing's motion vectors only
+	if ( ( rt.on & MB_TEMPORAL_TAA ) && !rt.entities ) {
 		rt.entities = ri.Malloc( sizeof( *rt.entities ) );
 		Com_Memset( rt.entities, 0, sizeof( *rt.entities ) );
-		rt.on = mbTemporalEnable( qtrue );
-		rt.failed = !rt.on;
-	} else {
-		rt.on = mbTemporalEnable( qfalse );
-	}
-	if ( !rt.on && rt.entities ) {
+	} else if ( !( rt.on & MB_TEMPORAL_TAA ) && rt.entities ) {
 		ri.Free( rt.entities );
 		rt.entities = NULL;
 	}
@@ -366,6 +403,7 @@ void RB_TemporalBeginView( void ) {
 	if ( !rt.on ) {
 		return;
 	}
+	backEnd.temporalAo = qfalse;
 	if ( backEnd.refdef.rdflags & ( RDF_NOWORLDMODEL | RDF_HYPERSPACE | RDF_HUD ) ) {
 		RB_TemporalEndScene();
 		return;
@@ -380,14 +418,19 @@ void RB_TemporalBeginView( void ) {
 	if ( camera && camera->frame != rt.frame ) {
 		R_TemporalCamera( camera );
 	}
-	if ( primary && rt.entities->frame != rt.frame ) {
-		R_TemporalEntities();
+	// the occlusion, once a frame in the main view (RB_TemporalAo)
+	backEnd.temporalAo = primary && ( rt.on & MB_TEMPORAL_AO ) && rt.aoFrame != rt.frame;
+
+	if ( rt.on & MB_TEMPORAL_TAA ) {
+		if ( primary && rt.entities->frame != rt.frame ) {
+			R_TemporalEntities();
+		}
+		R_TemporalJitter();
 	}
-	R_TemporalJitter();
 
 	Com_Memcpy( view.cameraDelta, camera && camera->history ? camera->delta : rt_identity, sizeof( view.cameraDelta ) );
-	view.jitter[0] = rt.jitter[0];
-	view.jitter[1] = rt.jitter[1];
+	view.jitter[0] = ( rt.on & MB_TEMPORAL_TAA ) ? rt.jitter[0] : 0.0f;
+	view.jitter[1] = ( rt.on & MB_TEMPORAL_TAA ) ? rt.jitter[1] : 0.0f;
 	view.viewport[0] = backEnd.viewParms.viewportX;
 	view.viewport[1] = backEnd.viewParms.viewportY;
 	view.viewport[2] = backEnd.viewParms.viewportWidth;
@@ -396,8 +439,11 @@ void RB_TemporalBeginView( void ) {
 	view.history = rt.camera[0].history;
 	mbTemporalBeginView( &view );
 
-	backEnd.temporalScene = qtrue;
-	backEnd.temporalCamera = camera ? camera - rt.camera : -1;
+	// the anti-aliasing's scene: the draws' motion
+	if ( rt.on & MB_TEMPORAL_TAA ) {
+		backEnd.temporalScene = qtrue;
+		backEnd.temporalCamera = camera ? camera - rt.camera : -1;
+	}
 }
 
 /*
@@ -449,6 +495,51 @@ void RB_TemporalModelview( void ) {
 	} else {
 		mbTemporalObject( NULL );
 	}
+}
+
+/*
+===============
+RB_TemporalAo
+
+The back end's surface list in the main view (backEnd.temporalAo), before its first surface sorted at SS_UNDERWATER or
+later (what is blended over the opaque surfaces, decals, see-through ones and banners: the effects in front of a
+corner aren't darkened), or after its last surface: the ambient occlusion of what is drawn so far, under the view's
+fog (RB_SetupFog), once a frame
+===============
+*/
+void RB_TemporalAo( void ) {
+	const rtCamera_t *c = &rt.camera[0];
+	mbTemporalAo_t ao;
+
+	backEnd.temporalAo = qfalse;
+	rt.aoFrame = rt.frame;
+	if ( tess.numIndexes ) {
+		RB_EndSurface();
+	}
+
+	Com_Memcpy( ao.projection, backEnd.viewParms.projectionMatrix, sizeof( ao.projection ) );
+	ao.history = c->history && c->frame == rt.frame;
+	if ( ao.history ) {
+		R_TemporalMultiply( c->prevProjection, c->delta, ao.reproject );
+	} else {
+		Com_Memcpy( ao.reproject, rt_identity, sizeof( ao.reproject ) );
+	}
+	ao.zFar = backEnd.viewParms.zFar;
+	ao.fog = ( glState.externalSetState & GLS_FOG ) != 0;
+	ao.fogStart = backEnd.viewParms.farplane_bias;
+	ao.fogEnd = backEnd.viewParms.farplane_distance;
+	ao.fogColor[0] = backEnd.viewParms.farplane_color[0] * tr.identityLight;
+	ao.fogColor[1] = backEnd.viewParms.farplane_color[1] * tr.identityLight;
+	ao.fogColor[2] = backEnd.viewParms.farplane_color[2] * tr.identityLight;
+	ao.radius = r_aoRadius->value;
+	ao.falloff = r_aoFalloff->value;
+	ao.thickness = r_aoThickness->value;
+	ao.strength = r_aoStrength->value;
+	ao.multiBounce = r_aoMultiBounce->value;
+	ao.quality = r_aoQuality->integer;
+	ao.frames = r_aoTemporal->integer;
+	ao.show = r_temporalShow->integer == 3;
+	mbTemporalAo( &ao );
 }
 
 /*

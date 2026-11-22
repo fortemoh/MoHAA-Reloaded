@@ -302,7 +302,9 @@ static struct {
 // of their own (MB_PIPE_TEMPORAL) and with the projection jittered; when it ends (mbTemporalEndScene, before the 2D)
 // the anti-aliasing blends it with the last frame's result into a history target, and the frame goes on in the scene
 // target's other copy, its first draw the result sharpened (the composite), the 2D drawn over it. The two copies
-// trade places each scene, so the frame always ends in mb_sceneColor.
+// trade places each scene, so the frame always ends in mb_sceneColor. The ambient occlusion (mbTemporalAo,
+// tr_mtl_ao.metal) has targets of its own and needs neither the motion vectors nor the jitter: alone, the scene is
+// drawn as without the path, its pass broken once in the main view for the occlusion.
 typedef struct {
 	float		prevMvp[16];						// MbTemporalVSUniforms
 	float		jitter[4];
@@ -314,8 +316,9 @@ typedef struct {
 	float		weights[12];
 } mbTaaUniforms_t;
 
-static qboolean						mb_temporalOn;			// its targets exist (mbTemporalEnable)
-static qboolean						mb_temporalPass;		// a scene is being drawn: its passes get the motion vectors
+static qboolean						mb_temporalOn;			// an effect's targets exist (mbTemporalEnable): the depth target is readable
+static int							mb_temporalEffects;		// those effects (MB_TEMPORAL_*)
+static qboolean						mb_temporalPass;		// the anti-aliasing's scene is being drawn: its passes get the motion vectors
 static qboolean						mb_temporalEnded;		// this frame's scene ended (one a frame)
 static qboolean						mb_velocityValid;		// the motion vectors were stored by an interrupted pass
 static qboolean						mb_sceneColorDiscard;	// the next pass's first draw covers the target (the composite)
@@ -338,7 +341,40 @@ static float						mb_temporalObjectDelta[16];
 static qboolean						mb_temporalObjectOn;
 static mbTemporalVSUniforms_t		mb_tvsu;
 static qboolean						mb_tvsuDirty;			// mb_tvsu changed since the encoder got it
+
+// The ambient occlusion's (MB_TEMPORAL_AO): the view distances (level 0 at full size, R16F: the apply pass's, the main
+// pass reads level 0 from the depth target itself; levels 1 to 4 a mipmapped R16F target of half the size, written
+// through a view of each level), the grid's (R32F, a texel a 2x2 of pixels: its top left one's; this frame's and the
+// last one's), one frame's visibility, its blend over frames (this frame's and the last one's), the first of two blurs
+// and the last blur's result, which the apply pass upsamples
+#define MB_AO_LEVELS		5
+typedef struct {
+	int32_t		rect[4];							// MbAoUniforms (tr_mtl_ao.metal)
+	int32_t		ints[4];
+	float		proj[4];
+	float		depth[4];
+	float		view[4];
+	float		ao[4];
+	float		ao2[4];
+	float		fogColor[4];
+	float		fogParams[4];
+	float		reproject[16];
+} mbAoUniforms_t;
+
+static id<MTLTexture>				mb_aoDist;				// level 0
+static id<MTLTexture>				mb_aoLevels;			// levels 1 to 4
+static id<MTLTexture>				mb_aoLevelViews[MB_AO_LEVELS - 1];
+static id<MTLTexture>				mb_aoGrid[2];			// R32F
+static id<MTLTexture>				mb_aoRaw;				// R8
+static id<MTLTexture>				mb_aoHistory[2];		// RG16F: the visibility, the frames blended
+static id<MTLTexture>				mb_aoBlur;				// RG16F
+static id<MTLTexture>				mb_aoResult;			// R16F
+static int							mb_aoCurrent;			// the grid and history the last occlusion wrote
+static uint64_t						mb_aoSerial;			// the frame it ran in
+static id<MTLComputePipelineState>	mb_aoPrefilterPipeline, mb_aoMainPipelines[4], mb_aoTemporalPipeline, mb_aoDenoisePipeline;
+static id<MTLRenderPipelineState>	mb_aoApplyPipelines[2];	// without, with the motion vectors' attachment
 static void MB_TemporalFreeTargets( void );
+static void MB_AoFreeTargets( void );
 static void MB_TemporalTransformChanged( void );
 
 static void MB_HarvestQueries( uint64_t completed );
@@ -1573,7 +1609,7 @@ void mbPrecachePipeline( int numUnits, qboolean alphaTest, qboolean blend, int s
 		key |= MB_PIPE_SKIN;
 	}
 	MB_PrecacheKey( key );
-	if ( mb_temporalOn ) {
+	if ( mb_temporalEffects & MB_TEMPORAL_TAA ) {
 		MB_PrecacheKey( key | MB_PIPE_TEMPORAL );	// its scene's variant
 	}
 }
@@ -2400,8 +2436,9 @@ void mbShutdown( void )
 				(double)mb_statCompletion / 1e6 / mb_statGPUFrames, (int)mb_statGPUFrames );
 		}
 		ri.Printf( PRINT_ALL, "Metal: %d GPU wake-ups before a frame (r_metalWakeGPU)\n", mb_statWakes );
-		ri.Printf( PRINT_ALL, "Metal: %.1f MB allocated on the device, the temporal path %s\n",
-			(double)mb_device.currentAllocatedSize / ( 1024.0 * 1024.0 ), mb_temporalOn ? "on" : "off" );
+		ri.Printf( PRINT_ALL, "Metal: %.1f MB allocated on the device, the temporal path %s%s%s\n",
+			(double)mb_device.currentAllocatedSize / ( 1024.0 * 1024.0 ), mb_temporalOn ? "on:" : "off",
+			( mb_temporalEffects & MB_TEMPORAL_TAA ) ? " taa" : "", ( mb_temporalEffects & MB_TEMPORAL_AO ) ? " ao" : "" );
 	}
 	mb_statFrames = mb_statSkipped = 0;
 	mb_statLate = 0;
@@ -2449,8 +2486,10 @@ void mbShutdown( void )
 	mb_sceneColor = nil;
 	mb_sceneDepth = nil;
 	MB_TemporalFreeTargets();
+	MB_AoFreeTargets();
 	MB_ReleaseRetired( UINT64_MAX );
 	mb_temporalOn = mb_temporalPass = mb_temporalEnded = qfalse;
+	mb_temporalEffects = 0;
 	mb_temporalObjectOn = qfalse;
 	for ( i = 0; i < MB_BLUR_TARGETS; i++ ) {
 		mb_blurTargets[i] = nil;
@@ -5363,7 +5402,7 @@ static qboolean MB_TemporalDepthTarget( qboolean readable )
 /*
 ** MB_TemporalPipelines
 **
-** The temporal path's shaders and pipelines, made at its first use (none while it was never on).
+** The anti-aliasing's shaders and pipelines, made at its first use (none while it was never on).
 */
 static qboolean MB_TemporalPipelines( void )
 {
@@ -5433,42 +5472,222 @@ static void MB_TemporalFreeTargets( void )
 }
 
 /*
-** mbTemporalEnable
+** MB_AoPipelines
 **
-** Between frames: on makes the targets (the scene target's other copy, the motion vectors, the two histories: at
-** 1920x1080 8 + 8 + 2 x 8 MB) and the depth target readable; off frees them and makes the depth target as it is
-** without the path. Returns whether the path is on.
+** The ambient occlusion's pipelines (tr_mtl_ao.metal), made at its first use: the main pass's for each r_aoQuality
+** (its slices and steps a side as function constants: the loops unroll, a slice's reads go out together).
 */
-qboolean mbTemporalEnable( qboolean on )
-{
-	if ( !on == !mb_temporalOn || mb_enc || mb_temporalPass || !mb_sceneColor ) {
-		return mb_temporalOn;
-	}
+static const int mb_aoQuality[4][2] = { { 1, 2 }, { 2, 2 }, { 3, 3 }, { 9, 3 } };	// XeGTAO's low to ultra
 
-	@autoreleasepool {
-		if ( on ) {
-			if ( !MB_TemporalPipelines() ) {
+static qboolean MB_AoPipelines( void )
+{
+	static NSString *const kernels[3] = { @"mb_ao_prefilter_cs", @"mb_ao_temporal_cs", @"mb_ao_denoise_cs" };
+	__strong id<MTLComputePipelineState> *pipelines[3] = { &mb_aoPrefilterPipeline, &mb_aoTemporalPipeline, &mb_aoDenoisePipeline };
+	NSError *error = nil;
+	int i;
+
+	for ( i = 0; i < 3; i++ ) {
+		if ( !*pipelines[i] ) {
+			id<MTLFunction> f = [mb_library newFunctionWithName:kernels[i]];
+
+			*pipelines[i] = f ? [mb_device newComputePipelineStateWithFunction:f error:&error] : nil;
+			if ( !*pipelines[i] ) {
+				ri.Printf( PRINT_WARNING, "Metal: the ambient occlusion's %s failed: %s\n", kernels[i].UTF8String,
+					error ? error.localizedDescription.UTF8String : "not in the metallib" );
 				return qfalse;
 			}
+		}
+	}
+	for ( i = 0; i < 4; i++ ) {
+		if ( !mb_aoMainPipelines[i] ) {
+			MTLFunctionConstantValues *values = [MTLFunctionConstantValues new];
+			id<MTLFunction> f;
+
+			[values setConstantValue:&mb_aoQuality[i][0] type:MTLDataTypeInt atIndex:0];
+			[values setConstantValue:&mb_aoQuality[i][1] type:MTLDataTypeInt atIndex:1];
+			f = [mb_library newFunctionWithName:@"mb_ao_main_cs" constantValues:values error:&error];
+			mb_aoMainPipelines[i] = f ? [mb_device newComputePipelineStateWithFunction:f error:&error] : nil;
+			if ( !mb_aoMainPipelines[i] ) {
+				ri.Printf( PRINT_WARNING, "Metal: the ambient occlusion's main pass failed: %s\n",
+					error ? error.localizedDescription.UTF8String : "not in the metallib" );
+				return qfalse;
+			}
+		}
+	}
+	// its pipelines need their threadgroups whole (8x8, the temporal pass 16x16)
+	if ( mb_aoTemporalPipeline.maxTotalThreadsPerThreadgroup < 256 || mb_aoPrefilterPipeline.maxTotalThreadsPerThreadgroup < 64 ) {
+		ri.Printf( PRINT_WARNING, "Metal: the ambient occlusion's threadgroups are too large for this GPU\n" );
+		return qfalse;
+	}
+	for ( i = 0; i < 2; i++ ) {
+		if ( !mb_aoApplyPipelines[i] ) {
+			// in the scene pass after the occlusion, its first draw: dst * a + rgb into the color only
+			MTLRenderPipelineDescriptor *desc = [MTLRenderPipelineDescriptor new];
+			MTLRenderPipelineColorAttachmentDescriptor *color = desc.colorAttachments[0];
+
+			desc.label = i ? @"ao apply (temporal)" : @"ao apply";
+			desc.vertexFunction = [mb_library newFunctionWithName:@"mb_temporal_vs"];
+			desc.fragmentFunction = [mb_library newFunctionWithName:@"mb_ao_apply_fs"];
+			color.pixelFormat = MTLPixelFormatRGBA8Unorm;
+			color.writeMask = MTLColorWriteMaskRed | MTLColorWriteMaskGreen | MTLColorWriteMaskBlue;
+			color.blendingEnabled = YES;
+			color.sourceRGBBlendFactor = color.sourceAlphaBlendFactor = MTLBlendFactorOne;
+			color.destinationRGBBlendFactor = color.destinationAlphaBlendFactor = MTLBlendFactorSourceAlpha;
+			color.rgbBlendOperation = color.alphaBlendOperation = MTLBlendOperationAdd;
+			if ( i ) {
+				desc.colorAttachments[1].pixelFormat = MTLPixelFormatRG16Float;
+				desc.colorAttachments[1].writeMask = MTLColorWriteMaskNone;
+			}
+			desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+			desc.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+			mb_aoApplyPipelines[i] = desc.fragmentFunction ? MB_NewRenderPipeline( desc, &error ) : nil;
+			if ( !mb_aoApplyPipelines[i] ) {
+				ri.Printf( PRINT_WARNING, "Metal: the ambient occlusion's apply pass failed: %s\n",
+					error ? error.localizedDescription.UTF8String : "not in the metallib" );
+				return qfalse;
+			}
+		}
+	}
+	return qtrue;
+}
+
+static void MB_AoFreeTargets( void )
+{
+	int i;
+
+	MB_Retire( mb_aoDist );
+	MB_Retire( mb_aoLevels );
+	for ( i = 0; i < MB_AO_LEVELS - 1; i++ ) {
+		MB_Retire( mb_aoLevelViews[i] );
+		mb_aoLevelViews[i] = nil;
+	}
+	MB_Retire( mb_aoGrid[0] );
+	MB_Retire( mb_aoGrid[1] );
+	MB_Retire( mb_aoRaw );
+	MB_Retire( mb_aoHistory[0] );
+	MB_Retire( mb_aoHistory[1] );
+	MB_Retire( mb_aoBlur );
+	MB_Retire( mb_aoResult );
+	mb_aoDist = mb_aoLevels = mb_aoRaw = mb_aoBlur = mb_aoResult = nil;
+	mb_aoGrid[0] = mb_aoGrid[1] = mb_aoHistory[0] = mb_aoHistory[1] = nil;
+}
+
+// a target of the occlusion's, written by its compute passes and read
+static id<MTLTexture> MB_AoTarget( MTLPixelFormat format, int width, int height, int levels, NSString *label )
+{
+	MTLTextureDescriptor *desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+		width:width > 1 ? width : 1 height:height > 1 ? height : 1 mipmapped:NO];
+	id<MTLTexture> t;
+
+	desc.mipmapLevelCount = levels;
+	desc.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+	desc.storageMode = MTLStorageModePrivate;
+	t = [mb_device newTextureWithDescriptor:desc];
+	t.label = label;
+	return t;
+}
+
+/*
+** MB_AoTargets
+**
+** At 1920x1080: the view distances 4.1 + 1.4 MB, the grids 2 x 2.1, one frame's visibility 0.5, the histories 2 x
+** 2.1, the blurs 2.1 + 1.0: ~17 MB.
+*/
+static qboolean MB_AoTargets( void )
+{
+	int gw = ( mb_width + 1 ) >> 1, gh = ( mb_height + 1 ) >> 1;
+	int lw = mb_width >> 1 > 1 ? mb_width >> 1 : 1, lh = mb_height >> 1 > 1 ? mb_height >> 1 : 1;
+	int i;
+
+	mb_aoDist = MB_AoTarget( MTLPixelFormatR16Float, mb_width, mb_height, 1, @"ao distances" );
+	mb_aoLevels = MB_AoTarget( MTLPixelFormatR16Float, lw, lh, MB_AO_LEVELS - 1, @"ao distance levels" );
+	mb_aoGrid[0] = MB_AoTarget( MTLPixelFormatR32Float, gw, gh, 1, @"ao grid 0" );
+	mb_aoGrid[1] = MB_AoTarget( MTLPixelFormatR32Float, gw, gh, 1, @"ao grid 1" );
+	mb_aoRaw = MB_AoTarget( MTLPixelFormatR8Unorm, gw, gh, 1, @"ao raw" );
+	mb_aoHistory[0] = MB_AoTarget( MTLPixelFormatRG16Float, gw, gh, 1, @"ao history 0" );
+	mb_aoHistory[1] = MB_AoTarget( MTLPixelFormatRG16Float, gw, gh, 1, @"ao history 1" );
+	mb_aoBlur = MB_AoTarget( MTLPixelFormatRG16Float, gw, gh, 1, @"ao blur" );
+	mb_aoResult = MB_AoTarget( MTLPixelFormatR16Float, gw, gh, 1, @"ao result" );
+	if ( !mb_aoDist || !mb_aoLevels || !mb_aoGrid[0] || !mb_aoGrid[1] || !mb_aoRaw || !mb_aoHistory[0] || !mb_aoHistory[1]
+		|| !mb_aoBlur || !mb_aoResult ) {
+		MB_AoFreeTargets();
+		return qfalse;
+	}
+	for ( i = 0; i < MB_AO_LEVELS - 1; i++ ) {
+		mb_aoLevelViews[i] = [mb_aoLevels newTextureViewWithPixelFormat:MTLPixelFormatR16Float textureType:MTLTextureType2D
+			levels:NSMakeRange( i, 1 ) slices:NSMakeRange( 0, 1 )];
+		if ( !mb_aoLevelViews[i] ) {
+			MB_AoFreeTargets();
+			return qfalse;
+		}
+	}
+	mb_aoSerial = 0;
+	return qtrue;
+}
+
+/*
+** mbTemporalEnable
+**
+** Between frames: the effects asked for get their targets, the others' are freed. The anti-aliasing's: the scene
+** target's other copy, the motion vectors, the two histories (at 1920x1080 8 + 8 + 2 x 8 MB); the ambient
+** occlusion's (MB_AoTargets, ~22 MB); with any, the depth target made readable, without, as it is without the path.
+** Returns the effects on.
+*/
+int mbTemporalEnable( int effects )
+{
+	int add, drop;
+
+	effects &= MB_TEMPORAL_TAA | MB_TEMPORAL_AO;
+	if ( effects == mb_temporalEffects || mb_enc || mb_temporalPass || !mb_sceneColor ) {
+		return mb_temporalEffects;
+	}
+	add = effects & ~mb_temporalEffects;
+	drop = mb_temporalEffects & ~effects;
+
+	@autoreleasepool {
+		if ( drop & MB_TEMPORAL_TAA ) {
+			MB_TemporalFreeTargets();
+		}
+		if ( drop & MB_TEMPORAL_AO ) {
+			MB_AoFreeTargets();
+		}
+		mb_temporalEffects &= ~drop;
+		if ( add && !mb_temporalOn ) {
+			if ( !MB_TemporalDepthTarget( qtrue ) ) {
+				ri.Printf( PRINT_WARNING, "Metal: no memory for the temporal path's depth target\n" );
+				add = 0;
+			} else {
+				mb_temporalOn = qtrue;
+			}
+		}
+		if ( add & MB_TEMPORAL_TAA ) {
 			mb_sceneColorOther = MB_TemporalTarget( MTLPixelFormatRGBA8Unorm, @"scene color (other)", qfalse );
 			mb_velocity = MB_TemporalTarget( MTLPixelFormatRG16Float, @"motion vectors", qfalse );
 			mb_taaHistory[0] = MB_TemporalTarget( MTLPixelFormatRGB10A2Unorm, @"taa history 0", qtrue );
 			mb_taaHistory[1] = MB_TemporalTarget( MTLPixelFormatRGB10A2Unorm, @"taa history 1", qtrue );
-			if ( !mb_sceneColorOther || !mb_velocity || !mb_taaHistory[0] || !mb_taaHistory[1] || !MB_TemporalDepthTarget( qtrue ) ) {
+			if ( !MB_TemporalPipelines() || !mb_sceneColorOther || !mb_velocity || !mb_taaHistory[0] || !mb_taaHistory[1] ) {
 				MB_TemporalFreeTargets();
-				ri.Printf( PRINT_WARNING, "Metal: no memory for the temporal path's targets\n" );
-				return qfalse;
+				ri.Printf( PRINT_WARNING, "Metal: no memory or pipelines for the anti-aliasing\n" );
+			} else {
+				mb_taaSerial = 0;
+				mb_temporalEffects |= MB_TEMPORAL_TAA;
 			}
-			mb_taaSerial = 0;
-			mb_temporalOn = qtrue;
-		} else {
+		}
+		if ( add & MB_TEMPORAL_AO ) {
+			if ( !MB_AoPipelines() || !MB_AoTargets() ) {
+				ri.Printf( PRINT_WARNING, "Metal: no memory or pipelines for the ambient occlusion\n" );
+			} else {
+				mb_temporalEffects |= MB_TEMPORAL_AO;
+			}
+		}
+		if ( !mb_temporalEffects && mb_temporalOn ) {
 			MB_TemporalDepthTarget( qfalse );	// (if that fails the readable one stays, at no cost)
-			MB_TemporalFreeTargets();
 			mb_temporalOn = qfalse;
 		}
 	}
-	ri.Printf( PRINT_DEVELOPER, "Metal: the temporal path %s\n", mb_temporalOn ? "on" : "off" );
-	return mb_temporalOn;
+	ri.Printf( PRINT_DEVELOPER, "Metal: the temporal path %s%s%s\n", mb_temporalOn ? "on:" : "off",
+		( mb_temporalEffects & MB_TEMPORAL_TAA ) ? " taa" : "", ( mb_temporalEffects & MB_TEMPORAL_AO ) ? " ao" : "" );
+	return mb_temporalEffects;
 }
 
 // the transform must be computed again (MB_TemporalTransform)
@@ -5478,12 +5697,36 @@ static void MB_TemporalTransformChanged( void )
 	mb_dirty |= MB_DIRTY_TRANSFORM;
 }
 
+// the main view's rectangle in target pixels (from the top left), its jitter and whether its camera has a last frame
+static void MB_TemporalViewRect( const mbTemporalView_t *view )
+{
+	int x0 = Com_Clamp( 0, mb_width, view->viewport[0] );
+	int y0 = Com_Clamp( 0, mb_height, mb_height - ( view->viewport[1] + view->viewport[3] ) );
+	int x1 = Com_Clamp( 0, mb_width, view->viewport[0] + view->viewport[2] );
+	int y1 = Com_Clamp( 0, mb_height, mb_height - view->viewport[1] );
+
+	mb_temporalRect[0] = x0;
+	mb_temporalRect[1] = y0;
+	mb_temporalRect[2] = x1 - x0;
+	mb_temporalRect[3] = y1 - y0;
+	mb_temporalJitterPixels[0] = view->jitter[0];
+	mb_temporalJitterPixels[1] = view->jitter[1];
+	mb_temporalHistory = view->history;
+}
+
 /*
 ** mbTemporalBeginView
 */
 void mbTemporalBeginView( const mbTemporalView_t *view )
 {
 	if ( !mb_temporalOn || mb_temporalEnded || view->viewport[2] <= 0 || view->viewport[3] <= 0 ) {
+		return;
+	}
+	if ( !( mb_temporalEffects & MB_TEMPORAL_TAA ) ) {
+		// the occlusion alone: the main view's rectangle (mbTemporalAo)
+		if ( view->primary ) {
+			MB_TemporalViewRect( view );
+		}
 		return;
 	}
 	if ( !mb_temporalPass ) {
@@ -5499,18 +5742,7 @@ void mbTemporalBeginView( const mbTemporalView_t *view )
 	mb_temporalJitterClip[0] = 2.0f * view->jitter[0] / view->viewport[2];
 	mb_temporalJitterClip[1] = -2.0f * view->jitter[1] / view->viewport[3];
 	if ( view->primary ) {
-		int x0 = Com_Clamp( 0, mb_width, view->viewport[0] );
-		int y0 = Com_Clamp( 0, mb_height, mb_height - ( view->viewport[1] + view->viewport[3] ) );
-		int x1 = Com_Clamp( 0, mb_width, view->viewport[0] + view->viewport[2] );
-		int y1 = Com_Clamp( 0, mb_height, mb_height - view->viewport[1] );
-
-		mb_temporalRect[0] = x0;
-		mb_temporalRect[1] = y0;
-		mb_temporalRect[2] = x1 - x0;
-		mb_temporalRect[3] = y1 - y0;
-		mb_temporalJitterPixels[0] = view->jitter[0];
-		mb_temporalJitterPixels[1] = view->jitter[1];
-		mb_temporalHistory = view->history;
+		MB_TemporalViewRect( view );
 	}
 	memcpy( mb_temporalPrevProj, mb_projection[mb_projectionDepth], sizeof( mb_temporalPrevProj ) );
 	mb_temporalObjectOn = qfalse;
@@ -5663,6 +5895,170 @@ void mbTemporalEndScene( const mbTemporalEffects_t *effects )
 	if ( drawn && effects && effects->taa ) {
 		MB_TemporalResolve( effects );
 	}
+}
+
+/*
+** mbTemporalAo
+**
+** The ambient occlusion (tr_mtl_ao.metal; the ideas from JayRewd's Vulkan renderer: its gtao_main.comp, ao_prefilter,
+** ao_temporal, ao_denoise and ao_apply, as Intel's XeGTAO does it): in the main view after its opaque surfaces, once a
+** frame. The scene pass ends with color, depth, stencil (and the motion vectors) stored; one compute encoder makes the
+** view distances and their levels (the prefilter), the noisy occlusion of a half-size grid (the main pass), blends it
+** with the last frames' and blurs it within the depth's edges (the temporal pass, a second blur after it at quality 3
+** and without history); then the scene goes on in a new pass that loads them all, its first draw the result upsampled
+** to the pixels and blended into the color (mb_ao_apply_fs: dst * a + the fog's share), the scissor the main view.
+** At 1920x1080, quality 2, ~0.9 ms of GPU a frame (session 111: the break 0.01, the prefilter 0.12, the main pass 0.5,
+** the temporal pass 0.13, the apply pass 0.16; quality 0 ~0.6). Without the anti-aliasing the scene is drawn as
+** without the path: the occlusion's history moves with the camera (a moving model's own motion isn't known, the
+** depth match and the clamp to this frame's 3x3 keep it from smearing); with it, by the motion vectors.
+*/
+void mbTemporalAo( const mbTemporalAo_t *ao )
+{
+	const int *rect = mb_temporalRect;
+	int cur = mb_aoCurrent ^ 1;
+	int q = ao->quality < 0 ? 0 : ao->quality > 3 ? 3 : ao->quality;
+	int gx0, gy0, gw, gh;
+	qboolean history, twoBlurs, velocity;
+	mbAoUniforms_t u;
+
+	if ( !( mb_temporalEffects & MB_TEMPORAL_AO ) || mb_temporalEnded || mb_aoSerial == mb_frameSerial
+		|| rect[2] <= 0 || rect[3] <= 0 || !mb_sceneColor ) {
+		return;
+	}
+	if ( mb_pendingClear ) {
+		MB_BeginPass();		// the scene's clears
+	}
+	if ( !mb_enc && !mb_depthValid ) {
+		return;		// nothing drawn: no depth to read
+	}
+	// everything stored: the scene goes on after the occlusion
+	MB_EndPass( qtrue );
+	MB_BeginCommandBuffer();
+	velocity = mb_temporalPass && mb_velocity;
+
+	history = mb_aoSerial && mb_aoSerial + 1 == mb_frameSerial && ao->history && ao->frames > 1;
+	twoBlurs = q == 3 || !history;
+	memset( &u, 0, sizeof( u ) );
+	memcpy( u.rect, rect, sizeof( u.rect ) );
+	u.ints[0] = mb_aoQuality[q][0];
+	u.ints[1] = mb_aoQuality[q][1];
+	// the noise moves with the frames only when they are blended
+	u.ints[2] = ao->frames > 1 ? (int)( mb_frameSerial & 63 ) : 0;
+	u.ints[3] = twoBlurs ? 0 : 1;		// MB_AO_PASS_HISTORY_TO_BLUR, MB_AO_PASS_HISTORY_TO_RESULT
+	u.proj[0] = ao->projection[0];
+	u.proj[1] = ao->projection[5];
+	u.proj[2] = ao->projection[8];
+	u.proj[3] = ao->projection[9];
+	u.depth[0] = ao->projection[10];
+	u.depth[1] = ao->projection[14];
+	u.depth[2] = mb_depthFloor;
+	u.depth[3] = ao->zFar > 1.0f && ao->zFar < 60000.0f ? ao->zFar : 60000.0f;
+	u.view[0] = 2.0f * mb_temporalJitterPixels[0] / rect[2];
+	u.view[1] = -2.0f * mb_temporalJitterPixels[1] / rect[3];
+	u.view[2] = history ? 1.0f : 0.0f;
+	u.view[3] = velocity ? 1.0f : 0.0f;
+	u.ao[0] = ao->radius;
+	u.ao[1] = ao->falloff;
+	u.ao[2] = ao->thickness;
+	u.ao[3] = ao->strength;
+	u.ao2[0] = ao->multiBounce;
+	u.ao2[1] = 1.0f / mb_width;
+	u.ao2[2] = (float)ao->frames;
+	u.ao2[3] = 1.2f;		// XeGTAO's DenoiseBlurBeta
+	if ( ao->fog ) {
+		// f = ( end - d ) / ( end - start ), as the draws' (tr_mtl_stage.metal)
+		float range = ao->fogEnd - ao->fogStart;
+		float scale = range != 0.0f ? -1.0f / range : -1e30f;
+
+		u.fogParams[0] = scale;
+		u.fogParams[1] = -ao->fogEnd * scale;
+		u.fogColor[0] = Com_Clamp( 0.0f, 1.0f, ao->fogColor[0] );
+		u.fogColor[1] = Com_Clamp( 0.0f, 1.0f, ao->fogColor[1] );
+		u.fogColor[2] = Com_Clamp( 0.0f, 1.0f, ao->fogColor[2] );
+		u.fogColor[3] = 1.0f;
+	}
+	u.fogParams[2] = ao->show ? 1.0f : 0.0f;
+	u.fogParams[3] = 1.0f / mb_height;
+	memcpy( u.reproject, ao->reproject, sizeof( u.reproject ) );
+
+	// the grid's texels of the main view (a texel a 2x2 of pixels)
+	gx0 = rect[0] >> 1;
+	gy0 = rect[1] >> 1;
+	gw = ( ( rect[0] + rect[2] - 1 ) >> 1 ) - gx0 + 1;
+	gh = ( ( rect[1] + rect[3] - 1 ) >> 1 ) - gy0 + 1;
+
+	@autoreleasepool {
+		id<MTLComputeCommandEncoder> enc = [mb_cmd computeCommandEncoder];
+		int i;
+
+		enc.label = @"ao";
+		[enc setBytes:&u length:sizeof( u ) atIndex:0];
+
+		// the view distances of the whole target (its levels line up with it): 16x16 pixels a threadgroup, 2x2 a thread
+		[enc setComputePipelineState:mb_aoPrefilterPipeline];
+		[enc setTexture:mb_sceneDepth atIndex:0];
+		[enc setTexture:mb_aoDist atIndex:1];
+		for ( i = 0; i < MB_AO_LEVELS - 1; i++ ) {
+			[enc setTexture:mb_aoLevelViews[i] atIndex:2 + i];
+		}
+		[enc setTexture:mb_aoGrid[cur] atIndex:6];
+		[enc dispatchThreadgroups:MTLSizeMake( ( mb_width + 15 ) / 16, ( mb_height + 15 ) / 16, 1 )
+			threadsPerThreadgroup:MTLSizeMake( 8, 8, 1 )];
+
+		// the occlusion of the grid's texels, 8x8 a threadgroup
+		[enc setComputePipelineState:mb_aoMainPipelines[q]];
+		[enc setTexture:mb_sceneDepth atIndex:0];
+		[enc setTexture:mb_aoLevels atIndex:1];
+		[enc setTexture:mb_aoRaw atIndex:2];
+		[enc dispatchThreadgroups:MTLSizeMake( ( gw + 7 ) / 8, ( gh + 7 ) / 8, 1 ) threadsPerThreadgroup:MTLSizeMake( 8, 8, 1 )];
+
+		// blended over frames and blurred, 16x16 texels a threadgroup: into the result, or into the first blur's target
+		// for a second blur
+		[enc setComputePipelineState:mb_aoTemporalPipeline];
+		[enc setTexture:mb_aoRaw atIndex:0];
+		[enc setTexture:mb_aoGrid[cur] atIndex:1];
+		[enc setTexture:mb_aoGrid[cur ^ 1] atIndex:2];
+		[enc setTexture:mb_aoHistory[cur ^ 1] atIndex:3];
+		[enc setTexture:mb_aoHistory[cur] atIndex:4];
+		[enc setTexture:twoBlurs ? mb_aoBlur : mb_aoResult atIndex:5];
+		[enc setTexture:velocity ? mb_velocity : mb_aoGrid[cur] atIndex:6];		// (read only with the motion vectors)
+		[enc dispatchThreadgroups:MTLSizeMake( ( gw + 15 ) / 16, ( gh + 15 ) / 16, 1 ) threadsPerThreadgroup:MTLSizeMake( 16, 16, 1 )];
+		if ( twoBlurs ) {
+			u.ints[3] = 2;		// MB_AO_PASS_BLUR_TO_RESULT
+			[enc setBytes:&u length:sizeof( u ) atIndex:0];
+			[enc setComputePipelineState:mb_aoDenoisePipeline];
+			[enc setTexture:mb_aoBlur atIndex:0];
+			[enc setTexture:mb_aoGrid[cur] atIndex:1];
+			[enc setTexture:mb_aoResult atIndex:2];
+			[enc dispatchThreadgroups:MTLSizeMake( ( gw + 7 ) / 8, ( gh + 7 ) / 8, 1 ) threadsPerThreadgroup:MTLSizeMake( 8, 8, 1 )];
+		}
+		[enc endEncoding];
+		mb_statPasses++;
+	}
+	mb_aoCurrent = cur;
+	mb_aoSerial = mb_frameSerial;
+
+	// the scene goes on, the result blended first over the main view
+	if ( !MB_BeginPass() ) {
+		return;
+	}
+	mb_enc.label = @"scene after ao";
+	[mb_enc setRenderPipelineState:mb_aoApplyPipelines[mb_temporalPass ? 1 : 0]];
+	[mb_enc setDepthStencilState:MB_OBJ( MB_DepthStencilState( 0 ) )];
+	[mb_enc setViewport:(MTLViewport){ 0.0, 0.0, mb_width, mb_height, 0.0, 1.0 }];
+	[mb_enc setScissorRect:(MTLScissorRect){ (NSUInteger)rect[0], (NSUInteger)rect[1], (NSUInteger)rect[2], (NSUInteger)rect[3] }];
+	[mb_enc setCullMode:MTLCullModeNone];
+	[mb_enc setTriangleFillMode:MTLTriangleFillModeFill];
+	[mb_enc setDepthBias:0.0f slopeScale:0.0f clamp:0.0f];
+	[mb_enc setFragmentTexture:mb_aoDist atIndex:0];
+	[mb_enc setFragmentTexture:mb_aoGrid[cur] atIndex:1];
+	[mb_enc setFragmentTexture:mb_aoResult atIndex:2];
+	[mb_enc setFragmentBytes:&u length:sizeof( u ) atIndex:0];
+	[mb_enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+	mb_statDraws++;
+
+	// the draw state must be set again
+	MB_InvalidateEncoderState();
 }
 
 /*
