@@ -371,12 +371,6 @@ typedef struct {
 
 	// rendering info
 	glconfig_t	glconfig;
-	int total_tris;
-	int total_verts;
-	int total_texels;
-	int world_tris;
-	int world_verts;
-	int character_lights;
 	hdelement_t HudDrawElements[ MAX_HUDDRAW_ELEMENTS ];
 	clientAnim_t anim;
 	stopWatch_t stopwatch;

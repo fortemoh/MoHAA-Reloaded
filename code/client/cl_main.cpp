@@ -2742,21 +2742,6 @@ static Q_PRINTF_FUNC(2, 3) void QDECL CL_RefPrintf( int print_level, const char 
 
 /*
 ============
-CL_RefSetPerformanceCounters
-============
-*/
-void CL_RefSetPerformanceCounters( int total_tris, int total_verts, int total_texels, int world_tris, int world_verts, int character_lights )
-{
-	cls.total_tris = total_tris;
-	cls.total_verts = total_verts;
-	cls.total_texels = total_texels;
-	cls.world_tris = world_tris;
-	cls.world_verts = world_verts;
-	cls.character_lights = character_lights;
-}
-
-/*
-============
 CL_ShutdownRef
 ============
 */
@@ -3153,7 +3138,6 @@ void CL_InitRef( void ) {
 	ri.CM_TerrainSquareType = CM_TerrainSquareType;
 	ri.CG_ProcessInitCommands = CL_CG_ProcessInitCommands;
 	ri.CG_EndTiki = CL_CG_EndTiki;
-	ri.SetPerformanceCounters = CL_RefSetPerformanceCounters;
 
     ri.DebugLines = &DebugLines;
     ri.numDebugLines = &numDebugLines;

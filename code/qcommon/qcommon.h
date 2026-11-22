@@ -1040,7 +1040,6 @@ void	Com_PresentMark( uint64_t token );
 extern	cvar_t	*paused;
 extern	cvar_t	*config;
 extern	cvar_t	*fps;
-extern	cvar_t	*fps_location;
 extern	cvar_t	*developer;
 extern	cvar_t	*com_dedicated;
 extern	cvar_t	*com_speeds;

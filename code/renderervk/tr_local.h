@@ -1813,7 +1813,6 @@ extern	cvar_t* r_loadftx;
 
 extern  cvar_t* r_showSkeleton;
 extern  cvar_t* r_developer;
-extern  cvar_t* r_fps;
 
 //====================================================================
 
@@ -3075,7 +3074,6 @@ void R_AddDrawSurfCmd( drawSurf_t *drawSurfs, int numDrawSurfs );
 void R_AddSpriteSurfCmd( drawSurf_t* drawSurfs, int numDrawSurfs );
 void RB_ExecuteRenderCommands( const void *data );
 
-void R_SavePerformanceCounters(void);
 void R_InitCommandBuffers( void );
 void R_ShutdownCommandBuffers( void );
 
