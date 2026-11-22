@@ -2091,6 +2091,7 @@ enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW
 
 #define OF_RIGHT   1   // a section in the right column (the second)
 #define OF_PCT     2   // a slider's value shown as a percentage
+#define OF_RP      4   // off (greyed, no clicks) while Remote Prediction (cg_remotePrediction) is off
 #define OF_NOT     8   // a switch on at 0
 #define OF_NEG     16  // a switch on below 0, the value's sign (the mouse inverted: m_pitch)
 #define OF_DISPLAY 64  // r_fullscreen and r_noborder: fullscreen, windowed, borderless (RL_BorderlessFull)
@@ -2218,6 +2219,7 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Server Lag Icon", "Shown while the server stops answering.", "cg_drawsvlag", "1", 0),
     O_SEG("Lagometer", "The connection: ping, loss, updates.", "cg_lagometer", "0", rl_oLagometer, NULL, 0),
     O_TOGGLE("Remote Prediction", "Players drawn where your shots will find them.", "cg_remotePrediction", "1", 0),
+    O_TOGGLE("Smooth Lagging Players", "A player whose updates come late keeps moving, not freezing.", "cg_remotePredictionPush", "1", OF_RP),
     O_TOGGLE("Scoreboard Cursor", "Right-click while TAB is held: a cursor to sort the columns.", "cl_scoreboardcursor", "0", 0),
     // (by the Field of View, which turns the view faster as it widens: cl_mouseturn_logic.h)
     O_SECTION(OT_GAMEPLAY, "MOUSE", OF_RIGHT),
@@ -3010,8 +3012,13 @@ static void RL_Cycle(UIReloadedMenu *m, const rlView_t& v, float x, float y, con
     m->Hit(v, x + 32, y, 228, 32, id + 1);
 }
 
-static void RL_Toggle(const rlView_t& v, float x, float y, bool on, bool hot)
+static void RL_Toggle(const rlView_t& v, float x, float y, bool on, bool hot, bool off = false)
 {
+    if (off) {
+        RL_Round(v, x, y, 56, 28, 14, RL_Rgb(255, 255, 255, 14));
+        RL_Round(v, x + 3, y + 3, 22, 22, 11, RL_Rgb(255, 255, 255, 40));
+        return;
+    }
     RL_Round(v, x, y, 56, 28, 14, on ? (hot ? RL_BRASS_HOT : RL_BRASS) : RL_Rgb(255, 255, 255, hot ? 64 : 40));
     RL_Round(v, x + (on ? 31 : 3), y + 3, 22, 22, 11, on ? RL_INK : RL_Rgb(214, 220, 228));
 }
@@ -3134,12 +3141,14 @@ static void RL_KeyRow(UIReloadedMenu *m, const rlView_t& v, int a, float x, floa
     RL_Box(v, x, y + h - 2, w, 1, RL_LINE);
 }
 
-// a setting's row off (greyed, no clicks): the rows CS Mode sets while it is on, CS Sensitivity while it is off
+// a setting's row off (greyed, no clicks): OF_RP's while Remote Prediction is off, the rows CS Mode sets while it is
+// on, CS Sensitivity while it is off
 static bool RL_OptOff(int i)
 {
     const int flags = rl_opts[i].flags;
 
-    return (flags & (OF_NOTCS | OF_CS)) && (RL_OptOther("m_csmode")->integer != 0) == ((flags & OF_NOTCS) != 0);
+    return ((flags & OF_RP) && !atoi(RL_Latched(RL_OptOther("cg_remotePrediction"))))
+        || ((flags & (OF_NOTCS | OF_CS)) && (RL_OptOther("m_csmode")->integer != 0) == ((flags & OF_NOTCS) != 0));
 }
 
 // a setting's row: its label (and its description), its control at the right edge, a line under it
@@ -3197,8 +3206,10 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
         RL_Slider(m, v, i, right - 260, mid - 14, id, off);
         break;
     case OC_TOGGLE:
-        RL_Toggle(v, right - 56, mid - 14, RL_OptOn(i), m->Hot(id));
-        m->Hit(v, right - 56, mid - 14, 56, 28, id);
+        RL_Toggle(v, right - 56, mid - 14, RL_OptOn(i), !off && m->Hot(id), off);
+        if (!off) {
+            m->Hit(v, right - 56, mid - 14, 56, 28, id);
+        }
         break;
     case OC_SWATCH:
         RL_Swatches(m, v, i, right, mid - 14, id);
