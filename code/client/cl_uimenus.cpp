@@ -2220,7 +2220,7 @@ int UIReloadedMenu::DrawKey(void)
     if (m_screen == SCR_SCOREBOARD || m_screen == SCR_TEAM) {
         k.scores = rl_sb.stamp;
     }
-    if (m_screen == SCR_WEAPON || m_screen == SCR_TEAM || m_screen == SCR_ESC || m_screen == SCR_SCOREBOARD) {
+    if (m_screen == SCR_WEAPON || m_screen == SCR_ESC || m_screen == SCR_SCOREBOARD) {
         // (the time left's seconds)
         k.seconds = (atoi(CL_ConfigString(CS_MATCHEND)) - cl.serverTime) / 1000;
     }
@@ -2584,9 +2584,9 @@ its name over it in its colour, its players and bots under that; the
 medallion and the figure join the side (lighter under the mouse). Between
 them the two lists either side of a thin divider, the names alone (a bot's
 muted, the player's own brass); the rows 72 high tighten to fit 16 a side,
-the rest folded ("+ N more"). The time left at
-the top right, a line across the foot, SPECTATE and AUTO SELECT (team
-games) under it at the right, on the time's margin. A side picked: the
+the rest folded ("+ N more"). No time left (the
+weapon page and the Esc menu have it). A line across the foot, SPECTATE
+and AUTO SELECT (team games) under it at the right. A side picked: the
 models cycled to set, then the side joined (the player's own: its weapon
 page), as the stock team menus do (the server pushes the weapon page when
 it wants a weapon: fgame's Player::Join_DM_Team). Free-for-all: a side is
@@ -2596,7 +2596,7 @@ screen is
 ================
 */
 
-#define RL_TEDGE   64.0f  // the screen's margin: the time's, the foot's items'
+#define RL_TEDGE   64.0f  // the foot's items' margin from the screen's edge
 #define RL_TMED    510.0f // a medallion across, at most
 #define RL_TINNER  187.0f // a medallion's inner edge from the middle
 #define RL_TROWMAX 72.0f  // a list's row, at most
@@ -2666,9 +2666,6 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
         }
         return;
     }
-
-    // the time left at the top right, alone (as the weapon page's and the Esc menu's)
-    RL_Text(v, v.dw - RL_TEDGE, 53 * ky, RL_TimeLeft(in.gametype), RL_H2, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
 
     // each side: its name in its colour over its medallion, its players and bots under it
     for (int t = 0; t < 2; t++) {
