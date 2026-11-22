@@ -370,6 +370,9 @@ static snapshot_t *CG_ReadNextSnapshot(void)
 
         // if it succeeded, return
         if (r) {
+            // Added in Reloaded
+            //  a followed player watched through their eyes on any server (cg_spectatefirstperson)
+            CG_FollowEyes_Snapshot(dest);
             return dest;
         }
 
