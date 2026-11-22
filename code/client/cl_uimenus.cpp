@@ -2099,7 +2099,8 @@ void UIReloadedMenu::Tick(void)
     if (m_tick == cls.framecount) {
         return;
     }
-    // shown again: nothing hot until the mouse moves or a key is pressed. A
+    // shown again: nothing hot this frame (its hits are the last show's until it is drawn), from the next what the
+    // mouse rests on, as when it moves (CS's: a side under the cursor lit as the team page opens). A
     // widget hidden (setShow, Disable) has lastShowTime -1 until it is drawn
     // again, which sets it; drawn from its list it isn't, so it is set here as
     // that would. (Not "not drawn the frame before": the Metal port's
@@ -2112,8 +2113,7 @@ void UIReloadedMenu::Tick(void)
         }
         m_shownAt  = lastShowTime;
         m_focus    = -1;
-        m_mouse[0] = uid.mouseX;
-        m_mouse[1] = uid.mouseY;
+        m_mouse[0] = m_mouse[1] = -1;
         if (!m_back) {
             rl_hot[m_screen] = -1;
         }
@@ -2138,7 +2138,7 @@ void UIReloadedMenu::Tick(void)
         // (its cursor on: what it is over hot)
         if (!UI_ScoreboardCursor()) {
             m_focus = -1;
-        } else if (uid.mouseX != m_mouse[0] || uid.mouseY != m_mouse[1]) {
+        } else if (!opened && (uid.mouseX != m_mouse[0] || uid.mouseY != m_mouse[1])) {
             m_mouse[0] = uid.mouseX;
             m_mouse[1] = uid.mouseY;
             m_focus    = HitAt(uid.mouseX - (int)m_screenframe.pos.x, uid.mouseY - (int)m_screenframe.pos.y);
@@ -2146,8 +2146,9 @@ void UIReloadedMenu::Tick(void)
         return;
     }
     if (!menuManager.CurrentMenu() || !getParent() || menuManager.CurrentMenu()->GetContainerWidget() != getParent()) {
-        // another menu over it (Options over the Esc menu)
+        // another menu over it (Options over the Esc menu); after it, what the mouse rests on hot
         m_focus = rl_hot[m_screen] = -1;
+        m_mouse[0] = m_mouse[1] = -1;
         return;
     } else if (uWinMan.ActiveControl() != this && !RL_FloatingHasKeys()) {
         // the keys come here while the menu is up (a menu shown gives them
@@ -2156,8 +2157,8 @@ void UIReloadedMenu::Tick(void)
         // theirs until it closes or the menu is clicked)
         uWinMan.ActivateControl(this);
     }
-    // the mouse moved: what it is over is hot
-    if (uid.mouseX != m_mouse[0] || uid.mouseY != m_mouse[1]) {
+    // the mouse moved (or the menu just shown): what it is over is hot
+    if (!opened && (uid.mouseX != m_mouse[0] || uid.mouseY != m_mouse[1])) {
         const int id = HitAt(uid.mouseX - (int)m_screenframe.pos.x, uid.mouseY - (int)m_screenframe.pos.y);
 
         m_mouse[0] = uid.mouseX;
