@@ -2857,16 +2857,12 @@ static const char *RL_OptShow(int i)
     return va("%.*f", o.step < 0.01f ? 3 : o.step < 0.1f ? 2 : o.step < 1 ? 1 : 0, value);
 }
 
-// the crosshair code typed (none: the clipboard's) imported by crosshair_import, which keeps it in cg_crosshair_code
+// the crosshair code typed (none: the clipboard's) imported as crosshair_import does, kept in cg_crosshair_code; the
+// note says how it went
 static void RL_OptImport(void)
 {
-    cvar_t   *kept = Cvar_Get("cg_crosshair_code", "", CVAR_ARCHIVE);
-    const int was  = kept->modificationCount;
-
-    Cmd_ExecuteString(va("crosshair_import %s", rl_opt.code.c_str()));
-    rl_opt.note = kept->modificationCount != was || (!rl_opt.code.empty() && !strcmp(kept->string, rl_opt.code.c_str())) ? "CROSSHAIR IMPORTED"
-                                                                                                                       : "NOT A CS2 CROSSHAIR CODE";
-    rl_mm.edit = F_NONE;
+    rl_opt.note = CL_CrosshairImportNote(rl_opt.code.empty() ? NULL : rl_opt.code.c_str());
+    rl_mm.edit  = F_NONE;
 }
 
 // the boxes synced to the bindings when they changed (key_serial): a box's key bound to another command let go, an
@@ -4720,6 +4716,20 @@ qboolean UIReloadedMenu::MainKey(int key)
                 text.erase(text.size() - 1);
                 if (rl_mm.edit == F_SEARCH) {
                     rl_vis.dirty = true;
+                }
+            }
+            RL_Changed();
+            return qtrue;
+        }
+        if (key == 'v' && keys[K_CTRL].down && rl_mm.edit == F_CODE) {
+            // Ctrl+V, as in the console: the clipboard's first word for the code (what can be typed of it)
+            const char *clip = Sys_GetWholeClipboard();
+
+            text.clear();
+            if (clip) {
+                clip += strspn(clip, " \t\r\n");
+                for (; *clip && !strchr(" \t\r\n", *clip); clip++) {
+                    MainChar((unsigned char)*clip);
                 }
             }
             RL_Changed();
