@@ -2586,7 +2586,8 @@ them the two lists either side of a thin divider, the names alone (a bot's
 muted, the player's own brass); the rows 72 high tighten to fit 16 a side,
 the rest folded ("+ N more"). No time left (the
 weapon page and the Esc menu have it). A line across the foot, SPECTATE
-and AUTO SELECT (team games) under it at the right. A side picked: the
+and AUTO SELECT (team games) under it at the right (in the screen's middle
+16:9 on a wider one, as the main menu's screens). A side picked: the
 models cycled to set, then the side joined (the player's own: its weapon
 page), as the stock team menus do (the server pushes the weapon page when
 it wants a weapon: fgame's Player::Join_DM_Team). Free-for-all: a side is
@@ -2596,7 +2597,7 @@ screen is
 ================
 */
 
-#define RL_TEDGE   64.0f  // the foot's items' margin from the screen's edge
+#define RL_TEDGE   64.0f  // the foot's items' margin from the middle 16:9's edge
 #define RL_TMED    510.0f // a medallion across, at most
 #define RL_TINNER  187.0f // a medallion's inner edge from the middle
 #define RL_TROWMAX 72.0f  // a list's row, at most
@@ -2727,7 +2728,7 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
     RL_BoxPx(0, RL_P(v, lineY), uid.vidWidth, RL_P(v, lineY) + 1, RL_Rgb(255, 255, 255, 40));
     {
         const float y = 1035 * ky;
-        float       right = v.dw - RL_TEDGE;
+        float       right = (v.dw + Q_min(v.dw, 16.0f / 9.0f * v.dh)) / 2 - RL_TEDGE;
         const auto  item  = [&](const char *glyph, const char *label, int id, bool off) {
             const bool  hot = !off && Hot(id);
             const float lw = RL_TextW(v, label, 18, true, 2.4f), x = right - lw - 12 - 26;
