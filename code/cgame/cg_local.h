@@ -143,6 +143,11 @@ extern "C" {
         vec3_t   shadowTraceOrigin;
         int      shadowTraceNoCurves;
         trace_t  shadowTrace;
+
+        // Added: when the entity last came into the snapshots (CG_ResetEntity), the server
+        // time of the snapshot before, which didn't have it: an animation it was already
+        // in by then began out of our sight (CG_ModelAnim)
+        int unseenBefore;
     } centity_t;
 
     //======================================================================
@@ -563,6 +568,9 @@ extern "C" {
     void     CG_RestartCommandManager();
     void     CG_CleanUpTempModels();
     qboolean CG_ProcessEntityCommands(int frame, int anim, int entnum, refEntity_t *ent, centity_t *cent);
+    // Added: only the commands whose effect lasts (emitters, loop sounds...), not the
+    // one-time sounds and effects
+    qboolean CG_ProcessEntityLastingCommands(int frame, int anim, int entnum, refEntity_t *ent, centity_t *cent);
     void     CG_ClientCommands(refEntity_t *ent, centity_t *cent, int slot);
     float    RandomizeRange(float start, float end);
 

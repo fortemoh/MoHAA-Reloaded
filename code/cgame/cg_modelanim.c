@@ -26,6 +26,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "cg_local.h"
 #include "../corepp/tiki.h"
 
+// Added: an animation an entity coming into the snapshots is this far into (s) began
+// too long ago for its one-time start (sounds, flashes) to be played now (CG_ModelAnim)
+#define CG_ANIM_STALE_START 0.2f
+
 static qboolean cg_forceModelAllowed = qfalse;
 
 /*
@@ -1729,7 +1733,20 @@ void CG_ModelAnim(centity_t *cent, qboolean bDoShaderTime)
         // process the entry commands of the current anim
         if (model.frameInfo[i].weight) {
             if (!((cent->animLastWeight >> i) & 1) || model.frameInfo[i].index != cent->animLast[i]) {
-                CG_ProcessEntityCommands(TIKI_FRAME_ENTRY, model.frameInfo[i].index, s1->number, &model, cent);
+                if (cent->animLastTimes[i] == -1 && s1->frameInfo[i].index == model.frameInfo[i].index
+                    && cg.snap->serverTime - s1->frameInfo[i].time * 1000 < cent->unseenBefore
+                    && (s1->frameInfo[i].time > CG_ANIM_STALE_START
+                        || s1->frameInfo[i].time >= cgi.Anim_Time(model.tiki, model.frameInfo[i].index) - 0.001f)) {
+                    // Added: just come into the snapshots (a player round a corner or
+                    // behind a wall, dropped by the server's visibility test a moment)
+                    // in an animation that began out of our sight and is well under way
+                    // or over and held (a cocked grenade's): what it started stays on,
+                    // but its one-time sounds and effects are stale (else his grenade's
+                    // pin is heard pulled again). A shot just fired still sounds.
+                    CG_ProcessEntityLastingCommands(TIKI_FRAME_ENTRY, model.frameInfo[i].index, s1->number, &model, cent);
+                } else {
+                    CG_ProcessEntityCommands(TIKI_FRAME_ENTRY, model.frameInfo[i].index, s1->number, &model, cent);
+                }
                 if (cent->animLastTimes[i] == -1) {
                     cent->animLast[i]      = model.frameInfo[i].index;
                     cent->animLastTimes[i] = model.frameInfo[i].time;
