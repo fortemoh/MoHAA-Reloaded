@@ -77,6 +77,7 @@ cvar_t	*r_drawworld;
 cvar_t	*r_speeds;
 cvar_t	*r_fullbright;
 cvar_t	*r_novis;
+cvar_t	*r_fatpvs;
 cvar_t	*r_nocull;
 cvar_t	*r_showcull;
 cvar_t	*r_facePlaneCull;
@@ -1725,6 +1726,8 @@ void R_Register( void )
 	r_nocull = ri.Cvar_Get ("r_nocull", "0", CVAR_CHEAT);
 	r_showcull = ri.Cvar_Get("r_showcull", "0", CVAR_CHEAT);
 	r_novis = ri.Cvar_Get ("r_novis", "0", CVAR_CHEAT);
+	// Added: see R_MarkLeaves
+	r_fatpvs = ri.Cvar_Get ("r_fatpvs", "32", CVAR_ARCHIVE);
 	r_showcluster = ri.Cvar_Get ("r_showcluster", "0", CVAR_CHEAT);
 	r_speeds = ri.Cvar_Get ("r_speeds", "0", CVAR_CHEAT);
 	r_verbose = ri.Cvar_Get( "r_verbose", "0", CVAR_CHEAT );
