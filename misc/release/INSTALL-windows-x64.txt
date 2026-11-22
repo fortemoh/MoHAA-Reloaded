@@ -1,4 +1,4 @@
-MoHAA Reloaded (Vulkan), version 1.0.0: OpenMoHAA with a native Vulkan renderer, for Windows
+MoHAA Reloaded (Vulkan), version @VERSION@: OpenMoHAA with a native Vulkan renderer, for Windows
 ===========================================================================================
 
 A Vulkan port of OpenMoHAA for 64-bit Windows (x64). It plays Medal of Honor: Allied Assault,

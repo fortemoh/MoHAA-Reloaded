@@ -20,9 +20,9 @@ pub const REPO: &str = "fortemoh/MoHAA-Reloaded";
 const ASSET: Option<(&str, &str)> = if cfg!(not(target_arch = "x86_64")) {
     None
 } else if cfg!(windows) {
-    Some(("openmohaa-vulkan-", "-windows-x64.zip"))
+    Some(("mohreloaded-", "-windows-x64.zip"))
 } else if cfg!(target_os = "linux") {
-    Some(("openmohaa-vulkan-", "-linux-amd64.tar.gz"))
+    Some(("mohreloaded-", "-linux-amd64.tar.gz"))
 } else {
     None
 };
@@ -159,7 +159,7 @@ pub fn notes_sha256(notes: &str, name: &str) -> Option<String> {
     })
 }
 
-/// A path in the download below its top folder `top` ("openmohaa-vulkan-1.0.0-linux-amd64", the download's name
+/// A path in the download below its top folder `top` ("mohreloaded-1.0.0-linux-amd64", the download's name
 /// without .tar.gz or .zip): None for the top folder itself, and for a path outside it, with "..", or from the root
 fn inner_path(path: &Path, top: &str) -> Option<PathBuf> {
     let mut parts = path.components().filter(|c| *c != Component::CurDir);
@@ -592,38 +592,38 @@ mod tests {
         let notes = format!(
             "Built from the `metal` branch at the tagged commit.\n\
              Built by this repository's CI from commit [`aaaaaaaa`](https://github.com/x/y/commit/{}) of the `metal` branch\n\
-             | `openmohaa-vulkan-1.0.0-linux-amd64.tar.gz` | 64-bit Linux |\n\
+             | `mohreloaded-1.0.0-linux-amd64.tar.gz` | 64-bit Linux |\n\
              Built by this repository's CI from commit [`c2f07c2b`](https://github.com/fortemoh/MoHAA-Reloaded/commit/{commit}) \
              of the `vulkan` branch, with OpenMoHAA 0.83.0 (upstream `a2f34019`) as its base.\n\
              | File | SHA-256 |\n\
-             | `openmohaa-vulkan-1.0.0-linux-amd64.tar.gz` | `EA8E48375fd9d4b1545e4a3f359c754213fa48ea60b8f87bae657a2478671876` |\n\
-             | `openmohaa-vulkan-1.0.0-windows-x64.zip` | `34251e03` |\n",
+             | `mohreloaded-1.0.0-linux-amd64.tar.gz` | `EA8E48375fd9d4b1545e4a3f359c754213fa48ea60b8f87bae657a2478671876` |\n\
+             | `mohreloaded-1.0.0-windows-x64.zip` | `34251e03` |\n",
             "a".repeat(40)
         );
         assert_eq!(notes_commit(&notes).as_deref(), Some(commit));
         assert_eq!(notes_commit("Built by this repository's CI from commit [`c2f07c2b`] of the `vulkan` branch"), None);
         assert_eq!(
-            notes_sha256(&notes, "openmohaa-vulkan-1.0.0-linux-amd64.tar.gz").as_deref(),
+            notes_sha256(&notes, "mohreloaded-1.0.0-linux-amd64.tar.gz").as_deref(),
             Some("ea8e48375fd9d4b1545e4a3f359c754213fa48ea60b8f87bae657a2478671876")
         );
-        assert_eq!(notes_sha256(&notes, "openmohaa-vulkan-1.0.0-windows-x64.zip"), None);
+        assert_eq!(notes_sha256(&notes, "mohreloaded-1.0.0-windows-x64.zip"), None);
         assert_eq!(notes_sha256(&notes, "other.zip"), None);
     }
 
     #[test]
     fn keeps_paths_inside_the_top_folder() {
-        let top = "openmohaa-vulkan-1.0.0-linux-amd64";
+        let top = "mohreloaded-1.0.0-linux-amd64";
         let inner = |p: &str| inner_path(Path::new(p), top);
-        assert_eq!(inner("openmohaa-vulkan-1.0.0-linux-amd64/mohreloaded"), Some(PathBuf::from("mohreloaded")));
+        assert_eq!(inner("mohreloaded-1.0.0-linux-amd64/mohreloaded"), Some(PathBuf::from("mohreloaded")));
         assert_eq!(
-            inner("./openmohaa-vulkan-1.0.0-linux-amd64/main/sound/x.sofa"),
+            inner("./mohreloaded-1.0.0-linux-amd64/main/sound/x.sofa"),
             Some(PathBuf::from("main/sound/x.sofa"))
         );
-        assert_eq!(inner("openmohaa-vulkan-1.0.0-linux-amd64/"), None);
+        assert_eq!(inner("mohreloaded-1.0.0-linux-amd64/"), None);
         assert_eq!(inner("mohreloaded"), None);
         assert_eq!(inner("other/mohreloaded"), None);
-        assert_eq!(inner("openmohaa-vulkan-1.0.0-linux-amd64/../x"), None);
-        assert_eq!(inner("/openmohaa-vulkan-1.0.0-linux-amd64/x"), None);
+        assert_eq!(inner("mohreloaded-1.0.0-linux-amd64/../x"), None);
+        assert_eq!(inner("/mohreloaded-1.0.0-linux-amd64/x"), None);
     }
 
     /// The same files in a tarball and a zip, as misc/release/package.sh makes them
@@ -636,7 +636,7 @@ mod tests {
             ("main/sound/prom/hrtf/README.txt", b"hrtf", 0o644),
         ];
 
-        let top = "openmohaa-vulkan-1.0.0-linux-amd64";
+        let top = "mohreloaded-1.0.0-linux-amd64";
         let tarball = dir.join(format!("{top}.tar.gz"));
         {
             let gz = flate2::write::GzEncoder::new(File::create(&tarball).unwrap(), flate2::Compression::default());
@@ -670,7 +670,7 @@ mod tests {
             assert_eq!((mode("mohreloaded"), mode("cgame.so")), (0o755, 0o644));
         }
 
-        let top = "openmohaa-vulkan-1.0.0-windows-x64";
+        let top = "mohreloaded-1.0.0-windows-x64";
         let zipped = dir.join(format!("{top}.zip"));
         {
             let mut zip = zip::ZipWriter::new(File::create(&zipped).unwrap());
@@ -769,7 +769,7 @@ mod tests {
         let root = File::create(dir.join("probe")).is_ok(); // writes anyway
         let update = Update {
             commit: "c".repeat(40),
-            asset: "openmohaa-vulkan-1.0.0-linux-amd64.tar.gz".into(),
+            asset: "mohreloaded-1.0.0-linux-amd64.tar.gz".into(),
             url: "http://127.0.0.1:9/".into(),
             size: 1,
             sha256: None,

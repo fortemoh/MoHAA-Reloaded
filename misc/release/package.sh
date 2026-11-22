@@ -1,13 +1,15 @@
 #!/bin/bash
 #
-# The v1.0.0 release's Linux and Windows downloads from CI's build artifacts (out-linux-amd64, out-windows-x64):
-# the build's files without the dedicated server, plus COPYING.txt, this folder's INSTALL-<platform>.txt as INSTALL.txt (with the commit) and
-# this folder's licenses/. The download must hold
+# A release's Linux and Windows downloads, mohreloaded-<version>-<platform> (the version is cmake/identity.cmake's),
+# from CI's build artifacts (out-linux-amd64, out-windows-x64): the build's files without the dedicated server, plus
+# COPYING.txt, this folder's INSTALL-<platform>.txt as INSTALL.txt (with the version and the commit) and this folder's
+# licenses/. The download must hold
 # exactly the files in files-<platform>.txt, so a build that adds or drops a file stops here instead of shipping.
 #
 #   misc/release/package.sh <linux-amd64|windows-x64> <artifact dir> <output dir> <commit>
 #
-# Prints the archive's path. .github/workflows/branches-build.yml runs it for each push to vulkan that changes code.
+# Prints the archive's path. .github/workflows/branches-build.yml runs it for each push to vulkan that changes code,
+# tags-publish-release.yml for a version tag.
 #
 set -euo pipefail
 
@@ -21,7 +23,9 @@ commit=$4
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
-name="openmohaa-vulkan-1.0.0-$platform"
+version=$(sed -n 's/^set(PROJECT_VERSION \([0-9][0-9.]*\))$/\1/p' "$root/cmake/identity.cmake")
+[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "no version in cmake/identity.cmake"
+name="mohreloaded-$version-$platform"
 stage="$out/$name"
 
 [[ $commit =~ ^[0-9a-f]{40}$ ]] || die "not a full commit ID: $commit"
@@ -37,11 +41,11 @@ cp -R "$here/licenses" "$stage/"
 
 case $platform in
 linux-amd64)
-	sed "s/@COMMIT@/$commit/" "$here/INSTALL-$platform.txt" > "$stage/INSTALL.txt"
+	sed "s/@COMMIT@/$commit/; s/@VERSION@/$version/g" "$here/INSTALL-$platform.txt" > "$stage/INSTALL.txt"
 	;;
 windows-x64)
 	# Notepad's line endings
-	sed "s/@COMMIT@/$commit/; s/\$/\r/" "$here/INSTALL-$platform.txt" > "$stage/INSTALL.txt"
+	sed "s/@COMMIT@/$commit/; s/@VERSION@/$version/g; s/\$/\r/" "$here/INSTALL-$platform.txt" > "$stage/INSTALL.txt"
 	;;
 *)
 	die "unknown platform: $platform"
