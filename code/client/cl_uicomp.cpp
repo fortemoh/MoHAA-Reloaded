@@ -1249,8 +1249,10 @@ void UI_CompHud_Frame(void)
     if (eyes) {
         health    = eyes->stats[STAT_HEALTH];
         maxHealth = 100;
-    } else if (following && !(ps->stats[STAT_WEAPONS] & 0x3F) && ps->stats[STAT_INFOCLIENT_HEALTH] > 0) {
-        health    = ps->stats[STAT_INFOCLIENT_HEALTH];
+    } else if (following && !(ps->stats[STAT_WEAPONS] & 0x3F)) {
+        // theirs from behind too: the server sends their health itself, 0 or
+        // below while they die (not our own)
+        health    = Q_max(0, ps->stats[STAT_INFOCLIENT_HEALTH]);
         maxHealth = 100;
     }
     Comp_SetI("ui_hud_health", health);
