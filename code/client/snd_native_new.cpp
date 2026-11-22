@@ -1295,8 +1295,8 @@ static void S_NATIVE_Start2DSound(
     pChannel->force_free();
 
     // Changed in the Metal port (A2)
-    //  The content volume up to Miles' ceiling; negative = 1. MoHAA Reloaded's own sounds (compiled in) may pass it
-    fVolume           = (pSfx->iFlags & SFX_FLAG_BUILTIN) ? SNM_VolumeOwn(fVolume) : SNM_Volume(fVolume);
+    //  The content volume up to Miles' ceiling; negative = 1
+    fVolume           = SNM_Volume(fVolume);
     pChannel->fVolume = fVolume;
 
     // Fixed in the Metal port (C4)
@@ -1507,8 +1507,8 @@ void S_NATIVE_StartSound(
 
     // Fixed in the Metal port (A1, A2)
     //  The 3D one-shot plays at its own volume (OpenAL's set_3d overwrote it with s_volume, so every one played at
-    //  one level), up to Miles' ceiling (MoHAA Reloaded's own sounds, compiled in, may pass it)
-    fVolume           = (pSfx->iFlags & SFX_FLAG_BUILTIN) ? SNM_VolumeOwn(fVolume) : SNM_Volume(fVolume);
+    //  one level), up to Miles' ceiling
+    fVolume           = SNM_Volume(fVolume);
     pChannel->fVolume = fVolume;
     pChannel->set_gain(pChannel->fVolume);
     pChannel->set_3d();

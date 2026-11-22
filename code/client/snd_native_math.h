@@ -39,7 +39,6 @@ extern "C" {
 #define SNM_BEHIND   0.70794578f    // C6: Fast 2D's -3 dB straight behind the listener (kept at 9e)
 #define SNM_EDGE     0.05f          // B1: the fade to silence before the max distance, as a part of it
 #define SNM_NEAR     1.f            // 9f: closer than this a 3D voice has no direction (at the listener: the centre)
-#define SNM_OWN_MOST 8.f            // MoHAA Reloaded's own sounds (compiled in): the most their volume may ask for
 
 /*
 ==============
@@ -55,23 +54,6 @@ static inline float SNM_Volume(float volume)
         return 1;
     }
     return volume < SNM_CEILING ? volume : SNM_CEILING;
-}
-
-/*
-==============
-SNM_VolumeOwn
-
-Added (MoHAA Reloaded): the content volume of one of its own sounds, compiled into the client (SFX_FLAG_BUILTIN), none
-of the game's: negative means 1, up to SNM_OWN_MOST, past the ceiling (A2 keeps the game's own sounds in Miles' range;
-the hitmarker's asks for 10 dB more, to be heard over the player's own shot)
-==============
-*/
-static inline float SNM_VolumeOwn(float volume)
-{
-    if (volume < 0) {
-        return 1;
-    }
-    return volume < SNM_OWN_MOST ? volume : SNM_OWN_MOST;
 }
 
 /*
