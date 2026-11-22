@@ -2572,8 +2572,9 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
 ================
 The team page, CS:GO's team select in our colours: the game under it
 blurred and dimmed, no title. Each side a medallion (a disc in its
-colours, no border, its star or cross large and faint in it, without the
-badge's own disc: rlTeam_t's mark), its figure standing
+colours, no border, its star or cross large in it in a lighter tone, as
+CS:GO's emblems; the symbol alone, not the badge on its own disc:
+rlTeam_t's mark), its figure standing
 full length in front of it (the model previewed; its cycler under him),
 its name over it in its colour, its players and bots under that; the
 medallion and the figure join the side (lighter under the mouse). Between
@@ -2654,7 +2655,8 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
             const std::string figure = RL_Figure(RL_PreviewModel(t));
 
             RL_Disc(v, cx[t], medY, d, RL_T(hot ? T.base : T.deep, 235));
-            RL_Outline(v, T.mark, cx[t], medY, d * 0.8f, d * 0.8f, RL_Rgb(255, 255, 255, hot ? 76 : 46));
+            // (as strong as CS:GO's: about 65 levels lighter than the disc, under the mouse 100)
+            RL_Outline(v, T.mark, cx[t], medY, d * 0.8f, d * 0.8f, RL_Rgb(255, 255, 255, hot ? 120 : 74));
             if (Q_stricmp(ui_reloaded_sides[t]->string, figure.c_str())) {
                 Cvar_Set(ui_reloaded_sides[t]->name, figure.c_str());
             }
