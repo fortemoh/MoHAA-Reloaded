@@ -461,14 +461,18 @@ static void RL_SvFavorite(const std::string& addr)
 CONNECTING
 
 The connect screen (shown for the stock "connecting" and the menus its
-end opens: cl_uimenus.cpp's aliases), the load screen's first stage in
-its look, no box: the server's name (the browser's row's on its JOIN,
-else its address) over a bar, what goes on, CANCEL. Nothing more is
-asked of the server: its map shows on the load screen a moment later. A
-refusal or a drop in its place: what happened in plain words, RETRY and
-BACK, the password typed there when the server wants one. Whatever ends
-a connect, the main menu shows Multiplayer next. Over the main menu's
-backdrop, dimmed; black for the game's own server (a mission's, Host's),
+end opens: cl_uimenus.cpp's aliases), the load screen's first stage: one
+screen from a connect to the game, the same layout and pictures
+(RL_LoadLayout, RL_LoadDraw), so nothing moves when the load screen takes
+over. Joined from the browser, its row's map is known: its pictures made
+as the connect begins (RL_LoadMap), its name the title; else (a direct
+connect, the launcher's, a typed address) the title is the server's name
+or address, the card empty over the main menu's backdrop dimmed, until
+the map loads. Nothing more is asked of the server. What goes on under
+the bar, CANCEL in the card; a refusal or a drop in the card: what
+happened in plain words, RETRY and BACK, the password typed there when
+the server wants one. Whatever ends a connect, the main menu shows
+Multiplayer next. Black for the game's own server (a mission's, Host's),
 joined in a moment
 
 ====================================================================
@@ -480,18 +484,20 @@ enum { CE_NONE, CE_FULL, CE_PASSWORD, CE_BANNED, CE_KICKED, CE_VERSION, CE_TIMEO
 static struct {
     std::string addr;       // as connected to
     std::string name;       // the server's (the browser's row's, a map's serverinfo's): "" not known
+    std::string map;        // its map's file ("dm/mohdm6": the browser's row's, the map it loaded): "" not known
     int         maxPlayers; // its places (the browser's row's), -1 not known
     bool        joined;     // a map of it loaded: its end a drop
     int         end;        // CE_*
     std::string said;       // the server's word (a refusal, a drop's reason)
     std::string typed;      // the password typed
-} rl_cn = {"", "", -1};
+} rl_cn = {"", "", "", -1};
 
 // another server: nothing known of it
 static void RL_ConnectTo(const char *addr)
 {
     rl_cn.addr = addr;
     rl_cn.name.clear();
+    rl_cn.map.clear();
     rl_cn.maxPlayers = -1;
     rl_cn.joined     = false;
 }
@@ -509,7 +515,7 @@ void UI_Menus_Connect(const char *server)
     RL_Changed();
 }
 
-void RL_ConnectLoaded(const char *info)
+void RL_ConnectLoaded(const char *info, const char *map)
 {
     std::string name = Info_ValueForKey(info, "sv_hostname");
 
@@ -518,6 +524,7 @@ void RL_ConnectLoaded(const char *info)
         RL_ConnectTo(clc.servername);
     }
     rl_cn.joined = true;
+    rl_cn.map    = map;
     name.erase(0, name.find_first_not_of(' '));
     name.erase(name.find_last_not_of(' ') + 1);
     if (!name.empty()) {
@@ -597,10 +604,12 @@ static void RL_SvJoin(void)
         return;
     }
     RL_SvHalt();
-    // (the connect screen names the server as the row does)
+    // (the connect screen names the server as the row does, its map's pictures made now: the load screen's)
     RL_ConnectTo(r.addr.c_str());
     rl_cn.name       = r.name;
+    rl_cn.map        = r.file;
     rl_cn.maxPlayers = r.maxPlayers;
+    RL_LoadMap(r.file.c_str());
     Cbuf_AddText(va("connect %s\n", r.addr.c_str()));
 }
 
@@ -3961,14 +3970,16 @@ void UIReloadedMenu::DrawConfirm(const rlView_t& v)
 
 /*
 ================
-DrawConnect: the connect screen in the load screen's look, its width
-(the load screen's bar's), in the screen's middle: the server's name
-(its address while not named) and at the right what goes on (CONNECTING,
-PASSWORD in the accent; CAN'T JOIN, DISCONNECTED red) over the bar (a
-dash sweeping while it connects); under it what goes on, or what happened
-over a word more and the password's field; the buttons a row under them,
-the same row whatever shows (CANCEL; BACK on the left, RETRY or JOIN on
-the right). Its address at the right of the first line once it is named
+DrawConnect: the connect screen, the load screen's layout (RL_LoadDraw):
+the title the map's name when known (the browser's, the map a drop left),
+else the server's (its address while not named); the word at its right
+what goes on (CONNECTING, PASSWORD in the accent; CAN'T JOIN, DISCONNECTED
+red); the card the map's photo or empty; the bar a dash sweeping while it
+connects. Under the bar what goes on, the server (or its address) at the
+right. In the card, at its foot, 24 in: CANCEL; or what happened over a
+word more (on a dark band: the map's photo may be under it) and the
+password's field, BACK on the left and RETRY or JOIN on the right, on
+CANCEL's row
 ================
 */
 
@@ -4060,48 +4071,53 @@ static const char *RL_ConnectWords(std::string& what, std::string& more)
 void UIReloadedMenu::DrawConnect(const rlView_t& v)
 {
     static const char *const steps[] = {"Contacting the server\x85", "Asking to join\x85", "Waiting for the server\x85"};
-    const bool  ended = rl_cn.end != CE_NONE, password = rl_cn.end == CE_PASSWORD, named = !rl_cn.name.empty();
-    // (the load screen's width: RL_DrawLoading's; its lines, the password's field and the buttons' row under the bar)
-    const float cw = Q_min(720.0f, v.dw * 0.88f), x = (v.dw - cw) / 2, cy = v.dh / 2;
-    const float l1 = cy + 28, l2 = cy + 62, fy = cy + 100, by = password ? cy + 176 : cy + 108;
-    std::string what, more;
-    const char *head = ended ? RL_ConnectWords(what, more) : "CONNECTING";
-    const float hw = RL_TextW(v, head, 16, true, 2.6f), aw = named ? RL_TextW(v, rl_cn.addr.c_str(), 16, false) + 24 : 0.0f;
+    const bool           ended = rl_cn.end != CE_NONE, password = rl_cn.end == CE_PASSWORD;
+    const bool           named = !rl_cn.name.empty(), map = !rl_cn.map.empty();
+    const rlLoadLayout_t l = RL_LoadLayout(v);
+    const float          pad = 24, by = l.y + l.h - pad - 48;
+    // the title the map's (known), else the server's; the other under the bar at the right
+    const std::string    server = named ? rl_cn.name : rl_cn.addr;
+    const std::string    title = map ? RL_MapName(rl_cn.map.c_str()) : server, right = map ? server : named ? rl_cn.addr : "";
+    const float          rw = right.empty() ? 0.0f : Q_min(RL_TextW(v, right.c_str(), 16, false), l.w / 2) + 24;
+    std::string          what, more;
+    const char          *word = ended ? RL_ConnectWords(what, more) : "CONNECTING";
 
     if (RL_ConnectOwn()) {
         RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0));
         return;
     }
-    RL_Background(v);
-    RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(8, 9, 10, 200));
-    RL_Text(v, x, cy - 26, RL_Ellipsize(v, (named ? rl_cn.name : rl_cn.addr).c_str(), 44, true, cw - hw - 32).c_str(), 44, RL_FG, true,
-            RL_LEFT, 0, RL_BASE);
-    RL_Text(v, x + cw, cy - 26, head, 16, ended && !password ? RL_Rgb(226, 104, 84) : RL_BRASS, true, RL_RIGHT, 2.6f, RL_BASE);
-    RL_Box(v, x, cy, cw, 4, RL_Rgb(255, 255, 255, 30));
-    if (named) {
-        RL_Text(v, x + cw, l1, rl_cn.addr.c_str(), 16, RL_FG_FAINT, false, RL_RIGHT, 0, RL_TOP);
+    if (!map) {
+        RL_Background(v);
+        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(8, 9, 10, 200));
+    }
+    RL_LoadDraw(v, l, map, title.c_str(), word, ended && !password ? RL_Rgb(226, 104, 84) : RL_BRASS, ended ? 0.0f : -1.0f);
+    if (!right.empty()) {
+        RL_Text(v, l.x + l.w, l.line, RL_Ellipsize(v, right.c_str(), 16, false, l.w / 2).c_str(), 16, RL_FG_FAINT, false, RL_RIGHT, 0, RL_TOP);
     }
 
     if (!ended) {
-        // the dash sweeping; what goes on (the server's word, else the step), CANCEL
-        const int   at = clc.state >= CA_CONNECTED ? 2 : clc.state == CA_CHALLENGING ? 1 : 0;
-        const float dw = cw * 0.2f, dx = (cw + dw) * (cls.realtime % 1400) / 1400.0f - dw;
+        // what goes on (the server's word, else the step); CANCEL
+        const int   at   = clc.state >= CA_CONNECTED ? 2 : clc.state == CA_CHALLENGING ? 1 : 0;
         std::string said = RL_OneLine(clc.serverMessage);
 
-        RL_Box(v, x + Q_max(dx, 0.0f), cy, Q_min(dx + dw, cw) - Q_max(dx, 0.0f), 4, RL_BRASS);
-        RL_Text(v, x, l1, RL_Ellipsize(v, said.empty() ? steps[at] : said.c_str(), 20, false, cw - aw).c_str(), 20,
+        RL_Text(v, l.x, l.line, RL_Ellipsize(v, said.empty() ? steps[at] : said.c_str(), 20, false, l.w - rw).c_str(), 20,
                 said.empty() ? RL_FG_MUTED : RL_FG, false, RL_LEFT, 0, RL_TOP);
-        RL_Button(this, v, x, by, 150, 48, "CANCEL", false, ID_CANCEL, false, RL_SL_RIGHT);
+        RL_Button(this, v, l.x + pad, by, 150, 48, "CANCEL", false, ID_CANCEL, false, RL_SL_RIGHT);
         return;
     }
-    // what happened, a word more; the password's field
-    RL_Text(v, x, l1, RL_Ellipsize(v, what.c_str(), 24, true, cw - aw).c_str(), 24, RL_FG, true, RL_LEFT, 0, RL_TOP);
-    RL_Text(v, x, l2, RL_Ellipsize(v, more.c_str(), 17, false, cw).c_str(), 17, RL_FG_SOFT, false, RL_LEFT, 0, RL_TOP);
-    if (password) {
-        RL_Field(v, x, fy, cw, 44, std::string(rl_cn.typed.size(), '\x95'), "Password", true, false);
+    {
+        // what happened over a word more, the password's field: at the card's foot over the buttons, on a dark band
+        const float fy = by - 24 - 44, my = (password ? fy : by) - 24 - 18, wy = my - 12 - 26;
+
+        RL_Box(v, l.x, wy - pad, l.w, l.y + l.h - (wy - pad), RL_Rgb(8, 9, 10, 215));
+        RL_Text(v, l.x + pad, wy, RL_Ellipsize(v, what.c_str(), 24, true, l.w - 2 * pad).c_str(), 24, RL_FG, true, RL_LEFT, 0, RL_TOP);
+        RL_Text(v, l.x + pad, my, RL_Ellipsize(v, more.c_str(), 17, false, l.w - 2 * pad).c_str(), 17, RL_FG_SOFT, false, RL_LEFT, 0, RL_TOP);
+        if (password) {
+            RL_Field(v, l.x + pad, fy, l.w - 2 * pad, 44, std::string(rl_cn.typed.size(), '\x95'), "Password", true, false);
+        }
+        RL_Button(this, v, l.x + pad, by, 150, 48, "BACK", false, ID_CANCEL, false, RL_SL_RIGHT);
+        RL_Button(this, v, l.x + l.w - pad - 170, by, 170, 48, password ? "JOIN" : "RETRY", true, ID_CONFIRM, false, RL_SL_LEFT);
     }
-    RL_Button(this, v, x, by, 150, 48, "BACK", false, ID_CANCEL, false, RL_SL_RIGHT);
-    RL_Button(this, v, x + cw - 170, by, 170, 48, password ? "JOIN" : "RETRY", true, ID_CONFIRM, false, RL_SL_LEFT);
 }
 
 /*
