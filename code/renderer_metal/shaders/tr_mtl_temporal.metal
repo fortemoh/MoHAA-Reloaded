@@ -1,7 +1,7 @@
 // tr_mtl_temporal.metal -- the temporal path's effects (r_temporal; tr_temporal.c, mbTemporalEndScene in tr_mtl.m),
 // drawn when the 3D view's scene ends, before the 2D. Ideas from JayRewd's Vulkan renderer (renderervk's
-// taa_resolve.comp, motion_blur.comp and temporal_composite.frag), written for Metal: the scene's targets stay render
-// targets, never shader-written (only the history and the motion blur's targets are).
+// taa_resolve.comp, motion_blur.comp, dof.comp and temporal_composite.frag), written for Metal: the scene's targets stay
+// render targets, never shader-written (only the history's, the depth of field's and the motion blur's targets are).
 //
 // mb_taa_cs (r_taa): a compute pass over the 3D view into the history's target. The scene was drawn with its projection
 // moved by a different sub-pixel offset each frame (the jitter, tr_temporal.c); each pixel blends this frame's color
@@ -44,6 +44,29 @@
 //    a pair. What the samples don't cover is the pixel's own color. Summed in near-linear light (squared: the game's
 //    colors are gamma 2.2, a square the cheap stand-in). The anti-aliasing's history stays unblurred. r_temporalShow
 //    4 shows each pixel's blur, 5 the longest around its tile (a tile's side the brightest).
+//
+// The depth of field (r_dof; a thin lens, the gather of Jimenez's "Next Generation Post Processing in Call of Duty:
+// Advanced Warfare", 2014, at half the resolution, the background and the foreground apart; JayRewd's Vulkan renderer's
+// passes): after the anti-aliasing, from its result (or the scene) and the depth, before the motion blur, which then
+// gathers from its result. A pixel's blur, its circle of confusion (CoC), is a radius in pixels of
+// lens.x * (1 / F - 1 / d) for its view distance d and the focus distance F, positive behind the focus (the
+// background), negative in front of it (the foreground), no more than a tile's side. The view weapon (its depth range
+// below the floor) is never blurred.
+//  - mb_dof_focus_cs (one threadgroup): the focus, as 1 / F in a 1x1 target, eased toward the nearest quarter of the
+//    view distances of 8x8 points around the main view's center (the crosshair; the sky the far distance)
+//  - mb_dof_setup_cs (a threadgroup a tile): each half resolution texel's CoC (its nearest pixel's) and color in
+//    near-linear light (its four pixels weighted by how close their CoC is to that one); the tile's largest foreground
+//    CoC and largest CoC
+//  - mb_dof_gather_cs (half resolution): the largest CoC of the 3x3 tiles around the texel's (which reaches every
+//    pixel a blur can cover; kept for the passes after it by the tile's first texel), the background over the texel's own CoC (what is behind doesn't spread over
+//    what is in front), the foreground over the largest around its tile (each sample its share of the disc it spreads
+//    over: its opacity), premultiplied so that the apply pass filters them bilinearly
+//  - mb_dof_apply_cs (full resolution, the tiles a blur reaches, or all with the motion blur): the sharp scene, the
+//    background over it by the pixel's own CoC, the foreground over that by its opacity, both upsampled with a tent;
+//    alpha 1 where the pixel stays as it was (the composite sharpens only those: r_taaSharpen)
+//  - mb_dof_blend_fs: the result over the scene where it changed it, in the tiles a blur reaches (without the motion
+//    blur, which reads the result itself in its composite)
+// Summed in near-linear light, squared as the motion blur's. r_temporalShow 6 shows each pixel's CoC.
 //
 // Keep the structs in sync with tr_mtl.m.
 
@@ -243,10 +266,14 @@ static float4 MB_ShowVelocity( texture2d<float, access::read> velocity, int2 p, 
 	return float4( saturate( 0.5f + v.x ), saturate( 0.5f + v.y ), 0.5f, 1.0f );
 }
 
-// the result at p, sharpened by sharpen (0: as it is)
+// the result at p, sharpened by sharpen times its alpha (0: as it is; the history's alpha is 1, the depth of field's
+// result's 0 where it blurred the pixel)
 static float3 MB_CompositeColor( texture2d<float, access::read> result, int2 p, int2 lo, int2 hi, float sharpen )
 {
-	float3 c = result.read( uint2( p ) ).rgb;
+	float4 c4 = result.read( uint2( p ) );
+	float3 c = c4.rgb;
+
+	sharpen *= c4.a;
 
 	if ( sharpen > 0.0f ) {
 		float3 l = result.read( uint2( max( p.x - 1, lo.x ), p.y ) ).rgb;
@@ -514,4 +541,377 @@ fragment float4 mb_composite_motion_fs( MbTemporalVertexOut in [[stage_in]],
 	}
 	sum /= float( 2 * pairs );
 	return float4( sqrt( max( sum.rgb + ( 1.0f - sum.a ) * MB_MotionLinear( center ), 0.0f ) ), 1.0f );
+}
+
+// THE DEPTH OF FIELD
+
+#define MB_DOF_GROUP	8		// its threadgroups' width and height (MB_DOF_GROUP in tr_mtl.m)
+
+struct MbDofUniforms
+{
+	int4	rect;		// the main view in target pixels: x, y (from the top left), width, height
+	int4	tiles;		// xy: the tiles across and down (from the target's top left), z: a tile's side in pixels (even), w: the gathers' samples
+	float4	depth;		// the main view's projection's [10], [14], the depth floor (below it the view weapon's range; 0: none), the far distance
+	float4	lens;		// x: the CoC's scale (pixels times units), y: the largest CoC (a tile's side), z: 1 / r_dofFocus (0: the crosshair's), w: the focus's step (1: at once)
+	float4	params;		// x: the focus area's half side in pixels, y: 1 r_temporalShow 6, z: 1 the apply pass writes every tile, w: 1 the focus has no last value
+};
+
+// the view distance of a window depth, 0 for the view weapon (below the floor: in front of all, never blurred); the
+// sky (and what nothing drew) the far distance
+static float MB_DofDistance( constant MbDofUniforms &u, float wz )
+{
+	if ( wz < u.depth.z ) {
+		return 0.0f;
+	}
+	float ndc = ( wz - u.depth.z ) / ( 1.0f - u.depth.z ) * 2.0f - 1.0f;
+	float denom = ndc + u.depth.x;
+
+	return abs( denom ) < 1e-9f ? u.depth.w : clamp( u.depth.y / denom, 0.0f, u.depth.w );
+}
+
+// the CoC of a view distance in full pixels, signed: behind the focus positive
+static float MB_DofCoc( constant MbDofUniforms &u, float d, float invFocus )
+{
+	if ( d <= 0.0f ) {
+		return 0.0f;
+	}
+	return clamp( u.lens.x * ( invFocus - 1.0f / max( d, 1.0f ) ), -u.lens.y, u.lens.y );
+}
+
+// near-linear light (squared, as the motion blur's) and back
+static float3 MB_DofLinear( float3 c )
+{
+	c = max( c, 0.0f );
+	return c * c;
+}
+
+static float3 MB_DofEncode( float3 lin )
+{
+	return sqrt( max( lin, 0.0f ) );
+}
+
+// 8x8 points over a square of 2 * params.x around the main view's center; the view weapon left out. The thread whose
+// distance ranks at a quarter of the others' writes the focus: the nearest of what is under the crosshair wins, a stray
+// pixel doesn't, and a sliver of roof at the edge of the sky doesn't either
+kernel void mb_dof_focus_cs( depth2d<float, access::read> depth [[texture(0)]],
+	texture2d<float, access::read_write> focus [[texture(1)]],
+	constant MbDofUniforms &u [[buffer(0)]],
+	uint2 local [[thread_position_in_threadgroup]],
+	uint index [[thread_index_in_threadgroup]] )
+{
+	threadgroup float dists[MB_DOF_GROUP * MB_DOF_GROUP];
+	int2 lo = u.rect.xy, hi = u.rect.xy + u.rect.zw - 1;
+	float2 center = float2( u.rect.xy ) + float2( u.rect.zw ) * 0.5f;
+	float2 offset = ( float2( local ) - 3.5f ) / 3.5f * u.params.x;
+	int2 p = clamp( int2( center + offset ), lo, hi );
+	float wz = depth.read( uint2( p ) );
+	float d = wz < u.depth.z ? -1.0f : MB_DofDistance( u, wz );
+	int valid = 0, rank = 0;
+
+	dists[index] = d;
+	threadgroup_barrier( mem_flags::mem_threadgroup );
+	for ( uint j = 0; j < MB_DOF_GROUP * MB_DOF_GROUP; j++ ) {
+		float o = dists[j];
+
+		if ( o >= 0.0f ) {
+			valid++;
+			if ( o < d || ( o == d && j < index ) ) {
+				rank++;
+			}
+		}
+	}
+	// only the view weapon there: the focus stays (the far distance when there is none yet)
+	if ( valid == 0 ? index == 0 : d >= 0.0f && rank == valid / 4 ) {
+		bool reset = u.params.w != 0.0f;
+		float last = reset ? 0.0f : focus.read( uint2( 0 ) ).r;
+		float target = valid > 0 ? 1.0f / max( d, 8.0f ) : last > 0.0f ? last : 1.0f / u.depth.w;
+
+		if ( u.lens.z > 0.0f ) {
+			target = u.lens.z;
+		}
+		// eased in 1 / F, so near and far changes take as long
+		focus.write( float4( last > 0.0f ? mix( last, target, u.lens.w ) : target, 0.0f, 0.0f, 0.0f ), uint2( 0 ) );
+	}
+}
+
+kernel void mb_dof_setup_cs( depth2d<float, access::read> depth [[texture(0)]],
+	texture2d<float, access::read> color [[texture(1)]],		// the sharp scene: the anti-aliased one with r_taa
+	texture2d<float, access::read> focus [[texture(2)]],
+	texture2d<float, access::write> halfRes [[texture(3)]],	// near-linear color, the CoC in full pixels
+	texture2d<float, access::write> tiles [[texture(4)]],		// the largest foreground CoC (as a radius), the largest |CoC|
+	constant MbDofUniforms &u [[buffer(0)]],
+	uint2 group [[threadgroup_position_in_grid]],
+	uint2 local [[thread_position_in_threadgroup]],
+	uint index [[thread_index_in_threadgroup]],
+	uint lane [[thread_index_in_simdgroup]],
+	uint simd [[simdgroup_index_in_threadgroup]],
+	uint simds [[simdgroups_per_threadgroup]] )
+{
+	threadgroup float2 simdBest[MB_DOF_GROUP * MB_DOF_GROUP];
+	int side = u.tiles.z / 2;		// a tile's half resolution texels across
+	int2 origin = int2( group ) * side;
+	int2 size = int2( halfRes.get_width(), halfRes.get_height() );
+	int2 lo = u.rect.xy, hi = u.rect.xy + u.rect.zw - 1;
+	float invFocus = focus.read( uint2( 0 ) ).r;
+	float2 best = float2( 0.0f );
+
+	for ( int y = int( local.y ); y < side; y += MB_DOF_GROUP ) {
+		for ( int x = int( local.x ); x < side; x += MB_DOF_GROUP ) {
+			int2 h = origin + int2( x, y );
+			float3 colors[4];
+			float cocs[4];
+			bool inside[4];
+			float nearest = 1e30f, coc = 0.0f;
+			float4 sum = float4( 0.0f );
+
+			if ( any( h >= size ) ) {
+				continue;
+			}
+			for ( int k = 0; k < 4; k++ ) {
+				int2 p = h * 2 + int2( k & 1, k >> 1 );
+
+				inside[k] = all( p >= lo ) && all( p <= hi );
+				if ( inside[k] ) {
+					float d = MB_DofDistance( u, depth.read( uint2( p ) ) );
+
+					colors[k] = MB_DofLinear( color.read( uint2( p ) ).rgb );
+					cocs[k] = MB_DofCoc( u, d, invFocus );
+					if ( d < nearest ) {
+						nearest = d;
+						coc = cocs[k];
+					}
+				}
+			}
+			// the texel is its nearest pixel's: of the others, what is at another depth counts less (no background color
+			// in the foreground's blur at its outline)
+			for ( int k = 0; k < 4; k++ ) {
+				if ( inside[k] ) {
+					sum += float4( colors[k], 1.0f ) / ( 1.0f + abs( cocs[k] - coc ) );
+				}
+			}
+			halfRes.write( sum.a > 0.0f ? float4( sum.rgb / sum.a, coc ) : float4( 0.0f ), uint2( h ) );
+			best = max( best, float2( -coc, abs( coc ) ) );
+		}
+	}
+
+	// the largest of the threadgroup: of each SIMD group, then of those
+	float2 most = float2( simd_max( best.x ), simd_max( best.y ) );
+
+	if ( lane == 0 ) {
+		simdBest[simd] = most;
+	}
+	threadgroup_barrier( mem_flags::mem_threadgroup );
+	if ( index == 0 ) {
+		for ( uint i = 1; i < simds; i++ ) {
+			most = max( most, simdBest[i] );
+		}
+		tiles.write( float4( most, 0.0f, 0.0f ), group );
+	}
+}
+
+// the golden angle's cosine and sine: a sample's direction is the one before turned by it (no sin and cos a sample)
+constant float2 MB_DOF_GOLDEN_TURN = float2( -0.73736887f, 0.67549029f );
+
+// the next sample of a golden angle spiral over a disc (rScale: its radius over the root of the samples, in half
+// resolution texels), as dense at the rim as in the middle: sample i at i golden angles plus the texel's turn (dir:
+// its cosine and sine, turned on to the next sample's), at rScale sqrt(i + 0.5)
+static float2 MB_DofDisc( int i, float rScale, thread float2 &dir, thread float &dist )
+{
+	float2 o;
+
+	dist = rScale * sqrt( float( i ) + 0.5f );
+	o = dist * dir;
+	dir = float2( dir.x * MB_DOF_GOLDEN_TURN.x - dir.y * MB_DOF_GOLDEN_TURN.y, dir.x * MB_DOF_GOLDEN_TURN.y + dir.y * MB_DOF_GOLDEN_TURN.x );
+	return o;
+}
+
+kernel void mb_dof_gather_cs( texture2d<float, access::read> halfRes [[texture(0)]],
+	texture2d<float, access::read> tiles [[texture(1)]],
+	texture2d<float, access::write> farOut [[texture(2)]],		// the background's color times k, k: the texel's share of background
+	texture2d<float, access::write> nearOut [[texture(3)]],	// the foreground's color times its opacity, its opacity
+	texture2d<float, access::write> neighbor [[texture(4)]],	// the largest of the 3x3 tiles around each tile
+	constant MbDofUniforms &u [[buffer(0)]],
+	uint2 gid [[thread_position_in_grid]] )
+{
+	int2 h = int2( gid );
+	int2 size = int2( halfRes.get_width(), halfRes.get_height() );
+	int2 lo = u.rect.xy / 2, hi = ( u.rect.xy + u.rect.zw - 1 ) / 2;
+	int side = u.tiles.z / 2;
+	int2 t = h / side;
+	int n = u.tiles.w;
+	float invN = rsqrt( float( n ) );
+	float2 around = float2( 0.0f );
+
+	if ( any( h >= size ) ) {
+		return;
+	}
+	// the largest of the 3x3 tiles around the texel's (the Vulkan renderer's pass of its own folded in here: a dispatch
+	// and a pipeline fewer, the same GPU time): the tile's first texel keeps it for the apply pass and the blend
+	for ( int y = -1; y <= 1; y++ ) {
+		for ( int x = -1; x <= 1; x++ ) {
+			around = max( around, tiles.read( uint2( clamp( t + int2( x, y ), int2( 0 ), u.tiles.xy - 1 ) ) ).xy );
+		}
+	}
+	if ( all( h == t * side ) ) {
+		neighbor.write( float4( around, 0.0f, 0.0f ), uint2( t ) );
+	}
+	around *= 0.5f;		// in half resolution texels
+	float4 c = halfRes.read( uint2( h ) );
+	float cc = c.a * 0.5f;
+	float rot = MB_MotionNoise( float2( h ) ) * 6.2831853f;
+	float2 turn = float2( cos( rot ), sin( rot ) );
+	float4 far = float4( c.rgb, 1.0f ), near = float4( 0.0f );
+
+	// the background: the texel's own blur
+	if ( cc >= 0.5f ) {
+		float2 dir = turn;
+
+		for ( int i = 0; i < n; i++ ) {
+			float r;
+			float2 o = MB_DofDisc( i, ( cc + 0.5f ) * invN, dir, r );
+			float4 s = halfRes.read( uint2( clamp( h + int2( round( o ) ), lo, hi ) ) );
+			float sc = s.a * 0.5f;
+
+			if ( sc > 0.0f ) {
+				far += saturate( min( sc, cc ) - r + 1.0f ) * float4( s.rgb, 1.0f );
+			}
+		}
+	}
+
+	// the foreground: what spreads over the texel from around it, each sample standing for the disc's area over n, its
+	// share of its own disc
+	float nearR = around.x;
+
+	if ( nearR >= 0.5f ) {
+		float2 dir = turn;
+		float area;
+
+		nearR += 0.5f;
+		area = nearR * nearR / float( n );
+		for ( int i = 0; i < n; i++ ) {
+			float r;
+			float2 o = MB_DofDisc( i, nearR * invN, dir, r );
+			float4 s = halfRes.read( uint2( clamp( h + int2( round( o ) ), lo, hi ) ) );
+			float sr = -s.a * 0.5f;
+
+			if ( sr > 0.0f ) {
+				near += saturate( sr - r + 1.0f ) * area / max( sr * sr, 1.0f ) * float4( s.rgb, 1.0f );
+			}
+		}
+	}
+
+	// premultiplied, for the apply pass's bilinear taps: the background by the texel's share of background (what the
+	// apply pass's tent counts it with), the foreground by its opacity
+	float k = saturate( c.a - 0.5f );
+	float a = min( near.a, 1.0f );
+
+	farOut.write( float4( far.rgb / far.a * k, k ), uint2( h ) );
+	nearOut.write( near.a > 0.0f ? float4( near.rgb / near.a * a, a ) : float4( 0.0f ), uint2( h ) );
+}
+
+kernel void mb_dof_apply_cs( depth2d<float, access::read> depth [[texture(0)]],
+	texture2d<float, access::read> color [[texture(1)]],
+	texture2d<float, access::read> focus [[texture(2)]],
+	texture2d<float, access::read> neighbor [[texture(3)]],
+	texture2d<float> farIn [[texture(4)]],
+	texture2d<float> nearIn [[texture(5)]],
+	texture2d<float, access::write> result [[texture(6)]],		// gamma-encoded, alpha 1 where the pixel is as it was
+	constant MbDofUniforms &u [[buffer(0)]],
+	uint2 gid [[thread_position_in_grid]] )
+{
+	constexpr sampler bilinear( filter::linear, address::clamp_to_edge );
+	int2 p = u.rect.xy + int2( gid );
+	int2 lo = u.rect.xy, hi = u.rect.xy + u.rect.zw - 1;
+
+	if ( any( p > hi ) ) {
+		return;
+	}
+	// no blur reaches the tile: what is shown there is the sharp scene (but with the motion blur, whose samples then
+	// read this everywhere, or r_temporalShow 6)
+	float2 around = neighbor.read( uint2( p / u.tiles.z ) ).xy;
+
+	if ( around.y < 0.5f && u.params.y == 0.0f && u.params.z == 0.0f ) {
+		return;
+	}
+	float3 sharp = color.read( uint2( p ) ).rgb;
+	float d = MB_DofDistance( u, depth.read( uint2( p ) ) );
+	float cc = MB_DofCoc( u, d, focus.read( uint2( 0 ) ).r );
+
+	if ( u.params.y != 0.0f ) {
+		// r_temporalShow 6: the foreground's CoC red, the background's blue (8 pixels the brightest), in focus the scene
+		// in grey; the focus area's square green
+		float2 off = abs( float2( p ) + 0.5f - ( float2( u.rect.xy ) + float2( u.rect.zw ) * 0.5f ) );
+		float3 c = float3( dot( MB_DofLinear( sharp ), float3( 0.2126f, 0.7152f, 0.0722f ) ) * 0.4f );
+
+		c += float3( saturate( -cc / 8.0f ), 0.0f, saturate( cc / 8.0f ) );
+		if ( abs( max( off.x, off.y ) - u.params.x ) < 1.0f ) {
+			c = float3( 0.0f, 1.0f, 0.0f );
+		}
+		result.write( float4( MB_DofEncode( c ), 0.0f ), uint2( p ) );
+		return;
+	}
+	if ( around.y < 0.5f || d <= 0.0f ) {
+		result.write( float4( sharp, 1.0f ), uint2( p ) );
+		return;
+	}
+	float3 lin = MB_DofLinear( sharp );
+
+	// the 3x3 half resolution texels around the nearest, a tent of 1.5 texels (the background only from texels that are
+	// background: farIn is premultiplied by their share of it), as 2x2 bilinear taps: on each axis the weights 0.5 - f,
+	// 1.5 - |f|, 0.5 + f of the texels b - 1, b, b + 1 (f the pixel's offset from b), the middle one split between the
+	// two taps as the outer ones are. Taps clamped to the view's texels as the texels were
+	float2 hp = ( float2( p ) + 0.5f ) * 0.5f - 0.5f;
+	float2 b = round( hp );
+	float2 f = hp - b;
+	float2 wl = 0.5f - f, wc = 1.5f - abs( f ), wr = 0.5f + f;
+	float2 split = wc * wl;		// of the middle weight, to the first tap
+	float2 w0 = wl + split, w1 = wc - split + wr;
+	float2 t0 = b - 1.0f + split / max( w0, 1e-6f ), t1 = b + wr / max( w1, 1e-6f );
+	float2 halfSize = float2( farIn.get_width(), farIn.get_height() );
+	float2 tlo = float2( lo / 2 ), thi = float2( hi / 2 );
+	float2 uv0 = ( clamp( t0, tlo, thi ) + 0.5f ) / halfSize, uv1 = ( clamp( t1, tlo, thi ) + 0.5f ) / halfSize;
+	float4 far = farIn.sample( bilinear, uv0, level( 0 ) ) * ( w0.x * w0.y )
+		+ farIn.sample( bilinear, float2( uv1.x, uv0.y ), level( 0 ) ) * ( w1.x * w0.y )
+		+ farIn.sample( bilinear, float2( uv0.x, uv1.y ), level( 0 ) ) * ( w0.x * w1.y )
+		+ farIn.sample( bilinear, uv1, level( 0 ) ) * ( w1.x * w1.y );
+	float4 near = nearIn.sample( bilinear, uv0, level( 0 ) ) * ( w0.x * w0.y )
+		+ nearIn.sample( bilinear, float2( uv1.x, uv0.y ), level( 0 ) ) * ( w1.x * w0.y )
+		+ nearIn.sample( bilinear, float2( uv0.x, uv1.y ), level( 0 ) ) * ( w0.x * w1.y )
+		+ nearIn.sample( bilinear, uv1, level( 0 ) ) * ( w1.x * w1.y );
+	float wn = ( wl.x + wc.x + wr.x ) * ( wl.y + wc.y + wr.y );
+	bool changed = false;
+
+	if ( cc > 0.5f && far.a > 1e-4f ) {
+		lin = mix( lin, far.rgb / far.a, smoothstep( 0.5f, 2.0f, cc ) );
+		changed = true;
+	}
+	if ( near.a > 1e-4f ) {
+		// a pixel of the foreground takes its blur whole: at its edge the coverage is about half, which would leave its
+		// sharp outline
+		float alpha = max( saturate( near.a / wn ), smoothstep( 0.5f, 2.0f, -cc ) );
+
+		lin = mix( lin, near.rgb / near.a, alpha );
+		changed = true;
+	}
+	result.write( changed ? float4( MB_DofEncode( lin ), 0.0f ) : float4( sharp, 1.0f ), uint2( p ) );
+}
+
+// the depth of field's result over the scene where it changed a pixel, in the tiles a blur reaches (r_temporalShow 6:
+// everywhere); the scissor is the main view
+fragment float4 mb_dof_blend_fs( MbTemporalVertexOut in [[stage_in]],
+	texture2d<float, access::read> result [[texture(0)]],
+	texture2d<float, access::read> neighbor [[texture(1)]],
+	constant MbDofUniforms &u [[buffer(0)]] )
+{
+	uint2 p = uint2( in.position.xy );
+
+	if ( u.params.y == 0.0f && neighbor.read( p / uint( u.tiles.z ) ).y < 0.5f ) {
+		discard_fragment();
+	}
+	float4 c = result.read( p );
+
+	if ( c.a > 0.5f ) {
+		discard_fragment();
+	}
+	return float4( c.rgb, 1.0f );
 }

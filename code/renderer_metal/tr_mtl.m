@@ -306,7 +306,8 @@ static struct {
 // along the motion), the 2D drawn over it. The two copies trade places each scene, so the frame always ends in
 // mb_sceneColor. The ambient occlusion (mbTemporalAo, tr_mtl_ao.metal) has targets of its own and needs neither the
 // motion vectors nor the jitter: alone, the scene is drawn as without the path, its pass broken once in the main view
-// for the occlusion.
+// for the occlusion. Neither does the depth of field (mbTemporalEndScene, MB_DofScene): alone, the scene is drawn as
+// without the path, and at its end the pass is broken once, its result drawn over the scene where it blurs.
 typedef struct {
 	float		prevMvp[16];						// MbTemporalVSUniforms
 	float		jitter[4];
@@ -395,10 +396,34 @@ static int							mb_motionTile;			// a tile's side in pixels, the longest half b
 static int							mb_motionTilesX, mb_motionTilesY;
 static id<MTLComputePipelineState>	mb_motionTilesPipeline, mb_motionNeighborPipeline;
 static id<MTLRenderPipelineState>	mb_compositeMotionPipeline;
+
+// The depth of field's (MB_TEMPORAL_DOF): its focus (1 / F, 1x1), the half resolution's color and CoC, the largest CoC
+// of each tile and of the 3x3 tiles around it, the half resolution's background and foreground, and the result
+typedef struct {
+	int32_t		rect[4];							// MbDofUniforms (tr_mtl_temporal.metal)
+	int32_t		tiles[4];
+	float		depth[4];
+	float		lens[4];
+	float		params[4];
+} mbDofUniforms_t;
+
+static id<MTLTexture>				mb_dofFocus;			// R32F, 1x1
+static id<MTLTexture>				mb_dofHalf;				// RGBA16F, half the size
+static id<MTLTexture>				mb_dofTiles;			// RG16F, a texel a tile
+static id<MTLTexture>				mb_dofNeighbor;			// RG16F
+static id<MTLTexture>				mb_dofFar, mb_dofNear;	// RGBA16F, half the size
+static id<MTLTexture>				mb_dofResult;			// RGB10A2Unorm (the anti-aliasing's history's: its colors copied exactly)
+static int							mb_dofTile;				// a tile's side in pixels (even): the largest CoC
+static int							mb_dofTilesX, mb_dofTilesY;
+static uint64_t						mb_dofSerial;			// the frame its focus was last written in
+static qboolean						mb_dofScene;			// a scene without the motion vectors began: its depth of field is to come
+static id<MTLComputePipelineState>	mb_dofFocusPipeline, mb_dofSetupPipeline, mb_dofGatherPipeline, mb_dofApplyPipeline;
+static id<MTLRenderPipelineState>	mb_dofBlendPipeline;
 static void MB_TemporalFreeTargets( void );
 static void MB_TaaFreeTargets( void );
 static void MB_AoFreeTargets( void );
 static void MB_MotionFreeTargets( void );
+static void MB_DofFreeTargets( void );
 static void MB_TemporalTransformChanged( void );
 
 static void MB_HarvestQueries( uint64_t completed );
@@ -2460,10 +2485,10 @@ void mbShutdown( void )
 				(double)mb_statCompletion / 1e6 / mb_statGPUFrames, (int)mb_statGPUFrames );
 		}
 		ri.Printf( PRINT_ALL, "Metal: %d GPU wake-ups before a frame (r_metalWakeGPU)\n", mb_statWakes );
-		ri.Printf( PRINT_ALL, "Metal: %.1f MB allocated on the device, the temporal path %s%s%s%s\n",
+		ri.Printf( PRINT_ALL, "Metal: %.1f MB allocated on the device, the temporal path %s%s%s%s%s\n",
 			(double)mb_device.currentAllocatedSize / ( 1024.0 * 1024.0 ), mb_temporalOn ? "on:" : "off",
 			( mb_temporalEffects & MB_TEMPORAL_TAA ) ? " taa" : "", ( mb_temporalEffects & MB_TEMPORAL_AO ) ? " ao" : "",
-			( mb_temporalEffects & MB_TEMPORAL_MB ) ? " motion blur" : "" );
+			( mb_temporalEffects & MB_TEMPORAL_MB ) ? " motion blur" : "", ( mb_temporalEffects & MB_TEMPORAL_DOF ) ? " dof" : "" );
 	}
 	mb_statFrames = mb_statSkipped = 0;
 	mb_statLate = 0;
@@ -2514,8 +2539,9 @@ void mbShutdown( void )
 	MB_TaaFreeTargets();
 	MB_AoFreeTargets();
 	MB_MotionFreeTargets();
+	MB_DofFreeTargets();
 	MB_ReleaseRetired( UINT64_MAX );
-	mb_temporalOn = mb_temporalPass = mb_temporalEnded = qfalse;
+	mb_temporalOn = mb_temporalPass = mb_temporalEnded = mb_dofScene = qfalse;
 	mb_temporalEffects = 0;
 	mb_temporalObjectOn = qfalse;
 	for ( i = 0; i < MB_BLUR_TARGETS; i++ ) {
@@ -2713,9 +2739,9 @@ void mbEndFrame( void )
 		}
 		MB_EndPass( qfalse );
 		MB_BeginCommandBuffer();
-		if ( mb_temporalPass || mb_temporalEnded ) {
+		if ( mb_temporalPass || mb_temporalEnded || mb_dofScene ) {
 			// the next frame's scene (one the front end didn't end is shown without its effects)
-			mb_temporalPass = mb_temporalEnded = qfalse;
+			mb_temporalPass = mb_temporalEnded = mb_dofScene = qfalse;
 			mb_temporalObjectOn = qfalse;
 			mb_dirty |= MB_DIRTY_PIPELINE;
 			MB_TemporalTransformChanged();
@@ -5388,6 +5414,7 @@ THE TEMPORAL PATH
 #define MB_TAA_GROUP				16		// the anti-aliasing's workgroups: 16x16 pixels (tr_mtl_temporal.metal)
 #define MB_MOTION_GROUP				16		// the motion blur's tiles pass's: 16x16 threads a tile
 #define MB_MOTION_NEIGHBOR_GROUP	8		// its neighbour pass's: 8x8 tiles
+#define MB_DOF_GROUP				8		// the depth of field's: 8x8 threads (tr_mtl_temporal.metal)
 
 // written: by a compute pass (the histories), else drawn into
 static id<MTLTexture> MB_TemporalTarget( MTLPixelFormat format, NSString *label, qboolean written )
@@ -5757,19 +5784,114 @@ static qboolean MB_MotionTargets( void )
 }
 
 /*
+** MB_DofPipelines
+**
+** The depth of field's pipelines (tr_mtl_temporal.metal), made at its first use: its four compute passes and the draw
+** of its result over the scene.
+*/
+static qboolean MB_DofPipelines( void )
+{
+	static NSString *const kernels[4] = { @"mb_dof_focus_cs", @"mb_dof_setup_cs", @"mb_dof_gather_cs", @"mb_dof_apply_cs" };
+	__strong id<MTLComputePipelineState> *pipelines[4] = { &mb_dofFocusPipeline, &mb_dofSetupPipeline, &mb_dofGatherPipeline,
+		&mb_dofApplyPipeline };
+	NSError *error = nil;
+	int i;
+
+	for ( i = 0; i < 4; i++ ) {
+		if ( !*pipelines[i] ) {
+			id<MTLFunction> f = [mb_library newFunctionWithName:kernels[i]];
+
+			*pipelines[i] = f ? [mb_device newComputePipelineStateWithFunction:f error:&error] : nil;
+			if ( !*pipelines[i] ) {
+				ri.Printf( PRINT_WARNING, "Metal: the depth of field's %s failed: %s\n", kernels[i].UTF8String,
+					error ? error.localizedDescription.UTF8String : "not in the metallib" );
+				return qfalse;
+			}
+		}
+		// its threadgroups must be whole (8x8)
+		if ( ( *pipelines[i] ).maxTotalThreadsPerThreadgroup < MB_DOF_GROUP * MB_DOF_GROUP ) {
+			ri.Printf( PRINT_WARNING, "Metal: the depth of field's threadgroups are too large for this GPU\n" );
+			return qfalse;
+		}
+	}
+	if ( !mb_dofBlendPipeline ) {
+		// the result over the scene where it changed it, into the color only (MB_DofBlend)
+		MTLRenderPipelineDescriptor *desc = [MTLRenderPipelineDescriptor new];
+
+		desc.label = @"dof blend";
+		desc.vertexFunction = [mb_library newFunctionWithName:@"mb_temporal_vs"];
+		desc.fragmentFunction = [mb_library newFunctionWithName:@"mb_dof_blend_fs"];
+		desc.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA8Unorm;
+		desc.colorAttachments[0].writeMask = MTLColorWriteMaskRed | MTLColorWriteMaskGreen | MTLColorWriteMaskBlue;
+		desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+		desc.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+		mb_dofBlendPipeline = desc.fragmentFunction ? MB_NewRenderPipeline( desc, &error ) : nil;
+		if ( !mb_dofBlendPipeline ) {
+			ri.Printf( PRINT_WARNING, "Metal: the depth of field's blend failed: %s\n",
+				error ? error.localizedDescription.UTF8String : "not in the metallib" );
+			return qfalse;
+		}
+	}
+	return qtrue;
+}
+
+static void MB_DofFreeTargets( void )
+{
+	MB_Retire( mb_dofFocus );
+	MB_Retire( mb_dofHalf );
+	MB_Retire( mb_dofTiles );
+	MB_Retire( mb_dofNeighbor );
+	MB_Retire( mb_dofFar );
+	MB_Retire( mb_dofNear );
+	MB_Retire( mb_dofResult );
+	mb_dofFocus = mb_dofHalf = mb_dofTiles = mb_dofNeighbor = mb_dofFar = mb_dofNear = mb_dofResult = nil;
+}
+
+/*
+** MB_DofTargets
+**
+** A tile's side is the largest CoC, a share of the height, so that the blur looks the same at any resolution (54
+** pixels at 1080, 72 at 1440, 108 at 2160; the Vulkan renderer's), and even (its half resolution texels whole). At
+** 1920x1080: the half resolution's color and CoC, background and foreground 3 x 4.1 MB, the result 8.3, the tiles
+** 2 x 3 KB: ~21 MB.
+*/
+static qboolean MB_DofTargets( void )
+{
+	int hw = ( mb_width + 1 ) / 2, hh = ( mb_height + 1 ) / 2, side;
+
+	mb_dofTile = ( ( mb_height + 10 ) / 20 > 16 ? ( mb_height + 10 ) / 20 : 16 ) & ~1;
+	side = mb_dofTile / 2;
+	mb_dofTilesX = ( hw + side - 1 ) / side;
+	mb_dofTilesY = ( hh + side - 1 ) / side;
+	mb_dofFocus = MB_AoTarget( MTLPixelFormatR32Float, 1, 1, 1, @"dof focus" );
+	mb_dofHalf = MB_AoTarget( MTLPixelFormatRGBA16Float, hw, hh, 1, @"dof half" );
+	mb_dofTiles = MB_AoTarget( MTLPixelFormatRG16Float, mb_dofTilesX, mb_dofTilesY, 1, @"dof tiles" );
+	mb_dofNeighbor = MB_AoTarget( MTLPixelFormatRG16Float, mb_dofTilesX, mb_dofTilesY, 1, @"dof neighbours" );
+	mb_dofFar = MB_AoTarget( MTLPixelFormatRGBA16Float, hw, hh, 1, @"dof background" );
+	mb_dofNear = MB_AoTarget( MTLPixelFormatRGBA16Float, hw, hh, 1, @"dof foreground" );
+	mb_dofResult = MB_AoTarget( MTLPixelFormatRGB10A2Unorm, mb_width, mb_height, 1, @"dof result" );
+	if ( !mb_dofFocus || !mb_dofHalf || !mb_dofTiles || !mb_dofNeighbor || !mb_dofFar || !mb_dofNear || !mb_dofResult ) {
+		MB_DofFreeTargets();
+		return qfalse;
+	}
+	mb_dofSerial = 0;
+	return qtrue;
+}
+
+/*
 ** mbTemporalEnable
 **
 ** Between frames: the effects asked for get their targets, the others' are freed. The motion vectors' scene's (with
 ** the anti-aliasing or the motion blur): the scene target's other copy and the motion vectors (at 1920x1080 8 + 8 MB);
 ** the anti-aliasing's: the two histories (2 x 8 MB); the ambient occlusion's (MB_AoTargets, ~17 MB); the motion
-** blur's (MB_MotionTargets, ~17 MB); with any, the depth target made readable, without, as it is without the path.
-** Returns the effects on.
+** blur's (MB_MotionTargets, ~17 MB); the depth of field's (MB_DofTargets, ~21 MB); with any, the depth target made
+** readable, without, as it is without the path. Returns the effects on.
 */
 int mbTemporalEnable( int effects )
 {
 	int add, drop;
 
-	effects &= MB_TEMPORAL_TAA | MB_TEMPORAL_AO | MB_TEMPORAL_MB;
+	effects &= MB_TEMPORAL_TAA | MB_TEMPORAL_AO | MB_TEMPORAL_MB | MB_TEMPORAL_DOF;
 	if ( effects == mb_temporalEffects || mb_enc || mb_temporalPass || !mb_sceneColor ) {
 		return mb_temporalEffects;
 	}
@@ -5785,6 +5907,9 @@ int mbTemporalEnable( int effects )
 		}
 		if ( drop & MB_TEMPORAL_MB ) {
 			MB_MotionFreeTargets();
+		}
+		if ( drop & MB_TEMPORAL_DOF ) {
+			MB_DofFreeTargets();
 		}
 		mb_temporalEffects &= ~drop;
 		if ( add && !mb_temporalOn ) {
@@ -5829,6 +5954,13 @@ int mbTemporalEnable( int effects )
 				mb_temporalEffects |= MB_TEMPORAL_AO;
 			}
 		}
+		if ( add & MB_TEMPORAL_DOF ) {
+			if ( !MB_DofPipelines() || !MB_DofTargets() ) {
+				ri.Printf( PRINT_WARNING, "Metal: no memory or pipelines for the depth of field\n" );
+			} else {
+				mb_temporalEffects |= MB_TEMPORAL_DOF;
+			}
+		}
 		if ( !( mb_temporalEffects & MB_TEMPORAL_VECTORS ) && mb_velocity ) {
 			MB_TemporalFreeTargets();	// no effect left (or made) that draws the scene with the motion vectors
 		}
@@ -5837,9 +5969,9 @@ int mbTemporalEnable( int effects )
 			mb_temporalOn = qfalse;
 		}
 	}
-	ri.Printf( PRINT_DEVELOPER, "Metal: the temporal path %s%s%s%s\n", mb_temporalOn ? "on:" : "off",
+	ri.Printf( PRINT_DEVELOPER, "Metal: the temporal path %s%s%s%s%s\n", mb_temporalOn ? "on:" : "off",
 		( mb_temporalEffects & MB_TEMPORAL_TAA ) ? " taa" : "", ( mb_temporalEffects & MB_TEMPORAL_AO ) ? " ao" : "",
-		( mb_temporalEffects & MB_TEMPORAL_MB ) ? " motion blur" : "" );
+		( mb_temporalEffects & MB_TEMPORAL_MB ) ? " motion blur" : "", ( mb_temporalEffects & MB_TEMPORAL_DOF ) ? " dof" : "" );
 	return mb_temporalEffects;
 }
 
@@ -5876,9 +6008,13 @@ void mbTemporalBeginView( const mbTemporalView_t *view )
 		return;
 	}
 	if ( !( mb_temporalEffects & MB_TEMPORAL_VECTORS ) ) {
-		// the occlusion alone: the main view's rectangle (mbTemporalAo)
+		// the occlusion or the depth of field without the motion vectors: the main view's rectangle (mbTemporalAo,
+		// MB_DofScene); the scene is drawn as without the path
 		if ( view->primary ) {
 			MB_TemporalViewRect( view );
+		}
+		if ( mb_temporalEffects & MB_TEMPORAL_DOF ) {
+			mb_dofScene = qtrue;
 		}
 		return;
 	}
@@ -5955,22 +6091,135 @@ static void MB_MotionUniforms( const mbTemporalEffects_t *effects, mbMotionUnifo
 }
 
 /*
+** MB_DofUniforms
+**
+** The depth of field's passes' and its blend's uniforms (MbDofUniforms): the main view, the tiles and the gathers'
+** samples, the projection's depth range (the view distances), the lens (its scale in pixels times units: the front
+** end's times the main view's height), the focus (fixed, or eased by the step), the focus area (2% of the view's height
+** each side of its center), r_temporalShow 6, whether the apply pass writes every tile (the motion blur's composite
+** reads its result) and whether the focus has a last value (written in the last frame).
+*/
+static void MB_DofUniforms( const mbTemporalEffects_t *effects, qboolean everywhere, qboolean show, mbDofUniforms_t *d )
+{
+	const int *rect = mb_temporalRect;
+
+	memset( d, 0, sizeof( *d ) );
+	memcpy( d->rect, rect, sizeof( d->rect ) );
+	d->tiles[0] = mb_dofTilesX;
+	d->tiles[1] = mb_dofTilesY;
+	d->tiles[2] = mb_dofTile;
+	d->tiles[3] = effects->dofSamples > 0 ? effects->dofSamples : 1;
+	d->depth[0] = effects->projection[10];
+	d->depth[1] = effects->projection[14];
+	d->depth[2] = mb_depthFloor;
+	d->depth[3] = effects->zFar > 1.0f && effects->zFar < 60000.0f ? effects->zFar : 60000.0f;
+	d->lens[0] = effects->dofLens * rect[3];
+	d->lens[1] = (float)mb_dofTile;
+	d->lens[2] = effects->dofFocus;
+	d->lens[3] = effects->dofStep;
+	d->params[0] = 0.02f * rect[3];
+	d->params[1] = show ? 1.0f : 0.0f;
+	d->params[2] = everywhere ? 1.0f : 0.0f;
+	d->params[3] = mb_dofSerial && mb_dofSerial + 1 == mb_frameSerial ? 0.0f : 1.0f;
+}
+
+/*
+** MB_DofPasses
+**
+** The depth of field's four passes (tr_mtl_temporal.metal) in a compute encoder, from the depth target and the sharp
+** scene (the anti-aliasing's result, or the scene target): the focus (one threadgroup), each tile's half resolution
+** texels and largest CoC (a threadgroup a tile: at 1920x1080 36x20 tiles of 54x54 pixels), the gathers over the half
+** resolution (and the 3x3 tiles' largest), the apply pass over the main view's pixels into the result (the encoder's
+** dispatches run in order). At 1920x1080, MEDIUM, ~1.05 ms of GPU (session 113: the setup 0.16, the 3x3 tiles' largest
+** 0.07 (a wait for the setup to drain, whichever pass follows it), the gathers 0.42, the apply 0.30, the pass break and
+** the result's draw 0.09; bound by the bytes they move, the gathers by their reads).
+*/
+static void MB_DofPasses( id<MTLComputeCommandEncoder> enc, id<MTLTexture> sharp, const mbDofUniforms_t *d )
+{
+	MTLSize group = MTLSizeMake( MB_DOF_GROUP, MB_DOF_GROUP, 1 );
+
+	[enc setBytes:d length:sizeof( *d ) atIndex:0];
+	[enc setComputePipelineState:mb_dofFocusPipeline];
+	[enc setTexture:mb_sceneDepth atIndex:0];
+	[enc setTexture:mb_dofFocus atIndex:1];
+	[enc dispatchThreadgroups:MTLSizeMake( 1, 1, 1 ) threadsPerThreadgroup:group];
+
+	[enc setComputePipelineState:mb_dofSetupPipeline];
+	[enc setTexture:sharp atIndex:1];
+	[enc setTexture:mb_dofFocus atIndex:2];
+	[enc setTexture:mb_dofHalf atIndex:3];
+	[enc setTexture:mb_dofTiles atIndex:4];
+	[enc dispatchThreadgroups:MTLSizeMake( mb_dofTilesX, mb_dofTilesY, 1 ) threadsPerThreadgroup:group];
+
+	[enc setComputePipelineState:mb_dofGatherPipeline];
+	[enc setTexture:mb_dofHalf atIndex:0];
+	[enc setTexture:mb_dofTiles atIndex:1];
+	[enc setTexture:mb_dofFar atIndex:2];
+	[enc setTexture:mb_dofNear atIndex:3];
+	[enc setTexture:mb_dofNeighbor atIndex:4];
+	[enc dispatchThreadgroups:MTLSizeMake( ( mb_dofHalf.width + MB_DOF_GROUP - 1 ) / MB_DOF_GROUP,
+		( mb_dofHalf.height + MB_DOF_GROUP - 1 ) / MB_DOF_GROUP, 1 ) threadsPerThreadgroup:group];
+
+	[enc setComputePipelineState:mb_dofApplyPipeline];
+	[enc setTexture:mb_sceneDepth atIndex:0];
+	[enc setTexture:sharp atIndex:1];
+	[enc setTexture:mb_dofFocus atIndex:2];
+	[enc setTexture:mb_dofNeighbor atIndex:3];
+	[enc setTexture:mb_dofFar atIndex:4];
+	[enc setTexture:mb_dofNear atIndex:5];
+	[enc setTexture:mb_dofResult atIndex:6];
+	[enc dispatchThreadgroups:MTLSizeMake( ( d->rect[2] + MB_DOF_GROUP - 1 ) / MB_DOF_GROUP,
+		( d->rect[3] + MB_DOF_GROUP - 1 ) / MB_DOF_GROUP, 1 ) threadsPerThreadgroup:group];
+	mb_dofSerial = mb_frameSerial;
+}
+
+/*
+** MB_DofBlend
+**
+** In the pass the frame goes on in (the scene target, after the composite or as it was drawn): the depth of field's
+** result where it changed a pixel, in the tiles a blur reaches (mb_dof_blend_fs), the scissor the main view.
+*/
+static void MB_DofBlend( const mbDofUniforms_t *d )
+{
+	[mb_enc setRenderPipelineState:mb_dofBlendPipeline];
+	[mb_enc setDepthStencilState:MB_OBJ( MB_DepthStencilState( 0 ) )];
+	[mb_enc setViewport:(MTLViewport){ 0.0, 0.0, mb_width, mb_height, 0.0, 1.0 }];
+	[mb_enc setScissorRect:(MTLScissorRect){ (NSUInteger)d->rect[0], (NSUInteger)d->rect[1], (NSUInteger)d->rect[2], (NSUInteger)d->rect[3] }];
+	[mb_enc setCullMode:MTLCullModeNone];
+	[mb_enc setTriangleFillMode:MTLTriangleFillModeFill];
+	[mb_enc setDepthBias:0.0f slopeScale:0.0f clamp:0.0f];
+	[mb_enc setFragmentTexture:mb_dofResult atIndex:0];
+	[mb_enc setFragmentTexture:mb_dofNeighbor atIndex:1];
+	[mb_enc setFragmentBytes:d length:sizeof( *d ) atIndex:0];
+	[mb_enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+	mb_statDraws++;
+}
+
+/*
 ** MB_TemporalResolve
 **
-** The anti-aliasing (tr_mtl_temporal.metal mb_taa_cs) from the scene target into this scene's history, the motion
-** blur's passes (each pixel's blur and the tiles' longest, mb_motion_tiles_cs and mb_motion_neighbor_cs: at 1920x1080
-** 2,880 threadgroups of 16x16 threads, a tile of 27x27 pixels each), then the pass the frame goes on in, in the scene
-** target's other copy, its first draw the composite (the anti-aliased result sharpened, or the scene as drawn; with
-** the motion blur gathered along its tiles).
+** The anti-aliasing (tr_mtl_temporal.metal mb_taa_cs) from the scene target into this scene's history, the depth of
+** field's passes (MB_DofPasses) from its result or the scene, the motion blur's passes (each pixel's blur and the tiles'
+** longest, mb_motion_tiles_cs and mb_motion_neighbor_cs: at 1920x1080 2,880 threadgroups of 16x16 threads, a tile of
+** 27x27 pixels each), then the pass the frame goes on in, in the scene target's other copy, its first draw the
+** composite (the anti-aliased result sharpened, or the scene as drawn; with the motion blur gathered along its tiles,
+** from the depth of field's result when it is on); without the motion blur the depth of field's result drawn next.
 */
 static void MB_TemporalResolve( const mbTemporalEffects_t *effects )
 {
 	id<MTLTexture> scene = mb_sceneColor;
 	qboolean taa = effects->taa && ( mb_temporalEffects & MB_TEMPORAL_TAA );
 	qboolean blur = effects->motionBlur && ( mb_temporalEffects & MB_TEMPORAL_MB ) && effects->halfExposure > 0.0f;
+	int show = effects->show;
+	qboolean dof = effects->dof && ( mb_temporalEffects & MB_TEMPORAL_DOF ) && ( show == 0 || show == 6 );
+	// with the motion blur its composite reads the depth of field's result (its gather's samples too), written everywhere
+	qboolean dofComposite = dof && blur && show != 6;
+	static NSString *const labels[8] = { @"", @"taa", @"dof", @"taa, dof", @"motion blur", @"taa, motion blur",
+		@"dof, motion blur", @"taa, dof, motion blur" };
 	int cur = mb_taaCurrent ^ 1;
 	mbTaaUniforms_t u;
 	mbMotionUniforms_t m;
+	mbDofUniforms_t d;
 	float sum;
 	int x, y;
 
@@ -6003,12 +6252,15 @@ static void MB_TemporalResolve( const mbTemporalEffects_t *effects )
 	if ( blur ) {
 		MB_MotionUniforms( effects, &m );
 	}
+	if ( dof ) {
+		MB_DofUniforms( effects, dofComposite, show == 6, &d );
+	}
 
-	if ( taa || blur ) {
+	if ( taa || blur || dof ) {
 		@autoreleasepool {
 			id<MTLComputeCommandEncoder> enc = [mb_cmd computeCommandEncoder];
 
-			enc.label = taa && blur ? @"taa, motion blur" : taa ? @"taa" : @"motion blur";
+			enc.label = labels[( taa ? 1 : 0 ) | ( dof ? 2 : 0 ) | ( blur ? 4 : 0 )];
 			if ( taa ) {
 				[enc setComputePipelineState:mb_taaPipeline];
 				[enc setTexture:scene atIndex:0];
@@ -6019,6 +6271,9 @@ static void MB_TemporalResolve( const mbTemporalEffects_t *effects )
 				[enc setBytes:&u length:sizeof( u ) atIndex:0];
 				[enc dispatchThreadgroups:MTLSizeMake( ( u.rect[2] + MB_TAA_GROUP - 1 ) / MB_TAA_GROUP, ( u.rect[3] + MB_TAA_GROUP - 1 ) / MB_TAA_GROUP, 1 )
 					threadsPerThreadgroup:MTLSizeMake( MB_TAA_GROUP, MB_TAA_GROUP, 1 )];
+			}
+			if ( dof ) {
+				MB_DofPasses( enc, taa ? mb_taaHistory[cur] : scene, &d );
 			}
 			if ( blur ) {
 				// a threadgroup a tile over the target (the tiles start at its corner; outside the main view no blur),
@@ -6059,7 +6314,7 @@ static void MB_TemporalResolve( const mbTemporalEffects_t *effects )
 
 	mb_enc.label = @"temporal composite, then 2D";
 	u.params[0] = taa ? effects->taaSharpen : 0.0f;
-	u.params[1] = (float)effects->show;
+	u.params[1] = (float)( show == 6 ? 0 : show );		// (the depth of field's own: its result drawn next)
 	u.params[2] = effects->showScale;
 	u.params[3] = 0.0f;
 	[mb_enc setRenderPipelineState:blur ? mb_compositeMotionPipeline : mb_compositePipeline];
@@ -6069,7 +6324,7 @@ static void MB_TemporalResolve( const mbTemporalEffects_t *effects )
 	[mb_enc setCullMode:MTLCullModeNone];
 	[mb_enc setTriangleFillMode:MTLTriangleFillModeFill];
 	[mb_enc setDepthBias:0.0f slopeScale:0.0f clamp:0.0f];
-	[mb_enc setFragmentTexture:taa ? mb_taaHistory[cur] : scene atIndex:0];
+	[mb_enc setFragmentTexture:dofComposite ? mb_dofResult : taa ? mb_taaHistory[cur] : scene atIndex:0];
 	[mb_enc setFragmentTexture:scene atIndex:1];
 	[mb_enc setFragmentTexture:mb_velocity atIndex:2];
 	[mb_enc setFragmentBytes:&u length:32 atIndex:0];	// MbCompositeUniforms: rect, params
@@ -6081,6 +6336,63 @@ static void MB_TemporalResolve( const mbTemporalEffects_t *effects )
 	}
 	[mb_enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
 	mb_statDraws++;
+	if ( dof && !dofComposite ) {
+		MB_DofBlend( &d );
+	}
+
+	// the draw state must be set again
+	MB_InvalidateEncoderState();
+}
+
+/*
+** MB_DofScene
+**
+** The depth of field of a scene drawn without the motion vectors (the depth of field alone, or with the ambient
+** occlusion): the scene pass ends with depth stored (stencil not: nothing reads it after), the depth of field's passes
+** run from the scene target, and the frame goes on in it in a new pass that loads it, depth and stencil cleared, its
+** first draw the result where it blurs (MB_DofBlend). Nothing when the main view wasn't drawn (or another effect's
+** r_temporalShow is on).
+*/
+static void MB_DofScene( const mbTemporalEffects_t *effects )
+{
+	int show = effects ? effects->show : 0;
+	mbDofUniforms_t d;
+
+	if ( !effects || !effects->dof || !( mb_temporalEffects & MB_TEMPORAL_DOF ) || ( show != 0 && show != 6 )
+		|| mb_temporalRect[2] <= 0 || mb_temporalRect[3] <= 0 || !mb_sceneColor ) {
+		return;
+	}
+	if ( mb_pendingClear ) {
+		MB_BeginPass();		// the scene's clears
+	}
+	if ( !mb_enc && !mb_depthValid ) {
+		return;		// nothing drawn: no depth to read
+	}
+	if ( mb_enc ) {
+		[mb_enc setDepthStoreAction:MTLStoreActionStore];
+		[mb_enc setStencilStoreAction:MTLStoreActionDontCare];
+		[mb_enc endEncoding];
+		mb_enc = nil;
+	}
+	mb_depthValid = qfalse;
+	mb_temporalEnded = qtrue;
+	MB_BeginCommandBuffer();
+
+	MB_DofUniforms( effects, qfalse, show == 6, &d );
+	@autoreleasepool {
+		id<MTLComputeCommandEncoder> enc = [mb_cmd computeCommandEncoder];
+
+		enc.label = @"dof";
+		MB_DofPasses( enc, mb_sceneColor, &d );
+		[enc endEncoding];
+		mb_statPasses++;
+	}
+
+	if ( !MB_BeginPass() ) {
+		return;
+	}
+	mb_enc.label = @"dof blend, then 2D";
+	MB_DofBlend( &d );
 
 	// the draw state must be set again
 	MB_InvalidateEncoderState();
@@ -6098,6 +6410,10 @@ void mbTemporalEndScene( const mbTemporalEffects_t *effects )
 	qboolean drawn;
 
 	if ( !mb_temporalPass ) {
+		if ( mb_dofScene ) {
+			mb_dofScene = qfalse;
+			MB_DofScene( effects );		// the scene without the motion vectors
+		}
 		return;
 	}
 	if ( mb_pendingClear ) {
@@ -6117,7 +6433,7 @@ void mbTemporalEndScene( const mbTemporalEffects_t *effects )
 	mb_dirty |= MB_DIRTY_PIPELINE;
 	MB_TemporalTransformChanged();
 
-	if ( drawn && effects && ( effects->taa || ( mb_temporalEffects & MB_TEMPORAL_MB ) ) ) {
+	if ( drawn && effects && ( effects->taa || ( mb_temporalEffects & ( MB_TEMPORAL_MB | MB_TEMPORAL_DOF ) ) ) ) {
 		MB_TemporalResolve( effects );
 	}
 }

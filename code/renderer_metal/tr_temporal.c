@@ -20,14 +20,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
-// tr_temporal.c -- the temporal path (r_temporal with r_taa, r_ao or r_motionBlur): what the 3D view's effects need from
-// the back end's view loop: the cameras and the entities of the last frame, the projection's jitter, the time between
-// the frames, and where the ambient occlusion goes. The ideas are JayRewd's (the Vulkan renderer's temporal path,
+// tr_temporal.c -- the temporal path (r_temporal with r_taa, r_ao, r_motionBlur or r_dof): what the 3D view's effects need
+// from the back end's view loop: the cameras and the entities of the last frame, the projection's jitter, the time
+// between the frames, where the ambient occlusion goes, and the depth of field's lens. The ideas are JayRewd's (the Vulkan renderer's temporal path,
 // renderervk/tr_temporal.c and vk_temporal.c), written again for the Metal backend (mbTemporal* in tr_mtl.h; tr_mtl.m,
 // tr_mtl_temporal.metal, tr_mtl_ao.metal).
 //
 // Off (the default: r_temporal 0, or no effect on) the views test one flag (rt.on), the back end's surface list one
-// (backEnd.temporalAo) a shader, and the frame's end reads one cvar (r_temporal 0) or four (RB_TemporalFrame): nothing
+// (backEnd.temporalAo) a shader, and the frame's end reads one cvar (r_temporal 0) or five (RB_TemporalFrame): nothing
 // else runs and nothing is kept; the back end has no target or pass of it.
 //
 // With the anti-aliasing (r_taa) or the motion blur (r_motionBlur: MB_TEMPORAL_VECTORS, the scene drawn with the motion
@@ -47,6 +47,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // history), and the back end's surface list calls RB_TemporalAo once, before the main view's first blended surface
 // (or after its last surface): the occlusion of what is drawn so far (mbTemporalAo). Alone it needs no motion vectors,
 // no jitter and no entities: the scene is drawn as without the path.
+//
+// With the depth of field (r_dof) the main view's camera is kept too (its time between frames eases the focus), and the
+// frame's views of the world are a scene that ends before the 2D (RB_TemporalEndScene) with or without the motion
+// vectors: the back end blurs it there by the depth (after the anti-aliasing, before the motion blur). Alone it needs
+// no motion vectors, no jitter and no entities either.
 
 #include "tr_local.h"
 
@@ -92,6 +97,7 @@ static struct {
 	rtEntities_t	*entities;			// while on
 	float			jitter[2];			// this frame's, in pixels
 	unsigned		jitterFrame;
+	qboolean		dofScene;			// the depth of field's scene began (a view of the world), not ended yet
 } rt;
 
 static cvar_t	*r_temporal;
@@ -115,15 +121,27 @@ static cvar_t	*r_motionBlurQuality;
 static cvar_t	*r_motionBlurShutter;
 static cvar_t	*r_motionBlurFps;
 static cvar_t	*r_motionBlurCamera;
+static cvar_t	*r_dof;
+static cvar_t	*r_dofAperture;
+static cvar_t	*r_dofFocus;
+static cvar_t	*r_dofFocusSpeed;
+static cvar_t	*r_dofQuality;
 
 // the motion blur's pairs of samples a pixel at r_motionBlurQuality 0, 1, 2 (the Vulkan renderer's)
 static const int rt_blurPairs[3] = { 4, 6, 8 };
+// the depth of field's samples of each gather at r_dofQuality 0, 1, 2 (the Vulkan renderer's)
+static const int rt_dofSamples[3] = { 16, 32, 48 };
+// its lens (the Vulkan renderer's): r_dofAperture is the far distance's blur when the focus is this far (128 units, about
+// 3 m), at the projection's [5] of the game's default field of view (fov 80 at 4:3; a narrower field, a scope's zoom,
+// blurs more, by its zoom)
+#define RT_DOF_REFERENCE_FOCUS		128.0f
+#define RT_DOF_PROJ_FOV80			1.5890f
 
 static const float rt_identity[16] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
 
 void R_TemporalInit( void ) {
 	r_temporal = ri.Cvar_Get( "r_temporal", "0", CVAR_ARCHIVE );
-	ri.Cvar_SetDescription( r_temporal, "1: the 3D view's effects (r_taa, r_ao, r_motionBlur): Enhanced Rendering in Options. Off, or with none of them on, nothing of it exists or runs" );
+	ri.Cvar_SetDescription( r_temporal, "1: the 3D view's effects (r_taa, r_ao, r_motionBlur, r_dof): Enhanced Rendering in Options. Off, or with none of them on, nothing of it exists or runs" );
 	r_taa = ri.Cvar_Get( "r_taa", "0", CVAR_ARCHIVE );
 	ri.Cvar_SetDescription( r_taa, "with r_temporal 1: temporal anti-aliasing (the projection is jittered with it)" );
 	r_taaFeedback = ri.Cvar_Get( "r_taaFeedback", "0.75", CVAR_ARCHIVE );
@@ -138,8 +156,8 @@ void R_TemporalInit( void ) {
 	r_temporalCutDist = ri.Cvar_Get( "r_temporalCutDist", "256", 0 );
 	ri.Cvar_SetDescription( r_temporalCutDist, "with r_temporal 1: a camera or an entity that moves farther than this in a frame has no last frame (a cut, a teleport)" );
 	r_temporalShow = ri.Cvar_Get( "r_temporalShow", "0", CVAR_CHEAT );
-	ri.Cvar_SetDescription( r_temporalShow, "instead of the 3D view: with r_taa or r_motionBlur 1, 1 the motion vectors (right red, down green), 2 the scene without the anti-aliasing and the motion blur; with r_ao 1, 3 the occlusion alone (white none); with r_motionBlur 1, 4 each pixel's blur, 5 the longest blur around each tile (a tile's side the brightest)" );
-	ri.Cvar_CheckRange( r_temporalShow, 0, 5, qtrue );
+	ri.Cvar_SetDescription( r_temporalShow, "instead of the 3D view: with r_taa or r_motionBlur 1, 1 the motion vectors (right red, down green), 2 the scene without the anti-aliasing, the depth of field and the motion blur; with r_ao 1, 3 the occlusion alone (white none); with r_motionBlur 1, 4 each pixel's blur, 5 the longest blur around each tile (a tile's side the brightest); with r_dof 1, 6 each pixel's blur, in front of the focus red, behind it blue (8 pixels the brightest), over the scene in grey, the focus's square green" );
+	ri.Cvar_CheckRange( r_temporalShow, 0, 6, qtrue );
 	r_temporalShowScale = ri.Cvar_Get( "r_temporalShowScale", "1", CVAR_CHEAT );
 	ri.Cvar_SetDescription( r_temporalShowScale, "with r_temporalShow 1: the motion vectors' scale; at 1 a move of 32 pixels a frame is the brightest" );
 	// the Vulkan renderer's cvars and defaults (vk_temporal.c; not its r_aoNormals: no normals are drawn here)
@@ -181,6 +199,21 @@ void R_TemporalInit( void ) {
 	r_motionBlurCamera = ri.Cvar_Get( "r_motionBlurCamera", "1", CVAR_ARCHIVE );
 	ri.Cvar_SetDescription( r_motionBlurCamera, "with r_motionBlur 1: the share of the camera's motion (turning, moving) in the blur; 0: only what moves" );
 	ri.Cvar_CheckRange( r_motionBlurCamera, 0.0f, 1.0f, qfalse );
+	// the Vulkan renderer's cvars and defaults (vk_temporal.c)
+	r_dof = ri.Cvar_Get( "r_dof", "0", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_dof, "with r_temporal 1: depth of field, focused on what is under the crosshair (or at r_dofFocus); the view weapon stays sharp" );
+	r_dofAperture = ri.Cvar_Get( "r_dofAperture", "0.5", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_dofAperture, "with r_dof 1: the lens' aperture: the blur of the far distance when focused 128 units (3 m) away, in percent of the view's height; a scope's zoom blurs more" );
+	ri.Cvar_CheckRange( r_dofAperture, 0.0f, 5.0f, qfalse );
+	r_dofFocus = ri.Cvar_Get( "r_dofFocus", "0", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_dofFocus, "with r_dof 1: 0 focus on what is under the crosshair; more: a fixed focus distance in units (screenshots)" );
+	ri.Cvar_CheckRange( r_dofFocus, 0.0f, 65536.0f, qfalse );
+	r_dofFocusSpeed = ri.Cvar_Get( "r_dofFocusSpeed", "0.25", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_dofFocusSpeed, "with r_dof 1: how long the focus takes to follow, in seconds (the time constant of its easing); 0 at once" );
+	ri.Cvar_CheckRange( r_dofFocusSpeed, 0.0f, 10.0f, qfalse );
+	r_dofQuality = ri.Cvar_Get( "r_dofQuality", "1", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_dofQuality, "with r_dof 1: 0 low, 1 medium, 2 high (16, 32, 48 samples per gather where something is blurred)" );
+	ri.Cvar_CheckRange( r_dofQuality, 0, 2, qtrue );
 
 	// the back end starts without the path (mbInit); the frames are counted again
 	if ( rt.entities ) {
@@ -404,7 +437,7 @@ At the end of every frame (RB_SwapBuffers, after the back end's): the path on or
 */
 void RB_TemporalFrame( void ) {
 	int want = r_temporal->integer ? ( r_taa->integer ? MB_TEMPORAL_TAA : 0 ) | ( r_ao->integer ? MB_TEMPORAL_AO : 0 )
-		| ( r_motionBlur->integer ? MB_TEMPORAL_MB : 0 ) : 0;
+		| ( r_motionBlur->integer ? MB_TEMPORAL_MB : 0 ) | ( r_dof->integer ? MB_TEMPORAL_DOF : 0 ) : 0;
 
 	rt.frame++;
 	backEnd.temporalAo = qfalse;
@@ -425,6 +458,7 @@ void RB_TemporalFrame( void ) {
 	}
 	// a new start: no last frame
 	rt.camera[0].frame = rt.camera[1].frame = 0;
+	rt.dofScene = qfalse;
 }
 
 /*
@@ -485,6 +519,10 @@ void RB_TemporalBeginView( void ) {
 	if ( rt.on & MB_TEMPORAL_VECTORS ) {
 		backEnd.temporalScene = qtrue;
 		backEnd.temporalCamera = camera ? camera - rt.camera : -1;
+	}
+	// the depth of field's scene, which ends with it (with or without the motion vectors)
+	if ( rt.on & MB_TEMPORAL_DOF ) {
+		rt.dofScene = qtrue;
 	}
 }
 
@@ -595,9 +633,9 @@ effects
 void RB_TemporalEndScene( void ) {
 	const rtCamera_t *c = &rt.camera[0];
 	mbTemporalEffects_t effects;
-	float exposure;
+	float exposure, zoom;
 
-	if ( !backEnd.temporalScene ) {
+	if ( !backEnd.temporalScene && !rt.dofScene ) {
 		return;
 	}
 	if ( tess.numIndexes ) {
@@ -605,6 +643,7 @@ void RB_TemporalEndScene( void ) {
 	}
 	backEnd.temporalScene = qfalse;
 	backEnd.temporalCamera = -1;
+	rt.dofScene = qfalse;
 
 	Com_Memset( &effects, 0, sizeof( effects ) );
 	effects.taa = ( rt.on & MB_TEMPORAL_TAA ) != 0;
@@ -626,8 +665,26 @@ void RB_TemporalEndScene( void ) {
 		effects.halfExposure = 0.5f * exposure;		// the blur reaches half of it on each side
 		effects.cameraShare = Com_Clamp( 0.0f, 1.0f, r_motionBlurCamera->value );
 		effects.blurPairs = rt_blurPairs[(int)Com_Clamp( 0, 2, r_motionBlurQuality->integer )];
-		Com_Memcpy( effects.projection, c->projection, sizeof( effects.projection ) );
 		R_TemporalMultiply( c->prevProjection, c->delta, effects.reproject );
+	}
+
+	// the depth of field: a thin lens, its blur r_dofAperture percent of the view's height at the far distance when the
+	// focus is 128 units away, times the zoom (no more than 4 times); the focus eased toward its target with the time
+	// constant r_dofFocusSpeed over the main view's game time between the frames, at once after a cut
+	effects.dof = ( rt.on & MB_TEMPORAL_DOF ) && c->frame == rt.frame;
+	if ( effects.dof ) {
+		zoom = Com_Clamp( 0.5f, 4.0f, fabsf( c->projection[5] ) / RT_DOF_PROJ_FOV80 );
+		effects.dofLens = r_dofAperture->value * 0.01f * RT_DOF_REFERENCE_FOCUS * zoom;
+		effects.dofFocus = r_dofFocus->value > 0.0f ? 1.0f / ( r_dofFocus->value > 8.0f ? r_dofFocus->value : 8.0f ) : 0.0f;
+		if ( !c->history || c->frameMsec <= 0.0f || r_dofFocusSpeed->value <= 0.0f ) {
+			effects.dofStep = 1.0f;
+		} else {
+			effects.dofStep = 1.0f - expf( -c->frameMsec / ( 1000.0f * r_dofFocusSpeed->value ) );
+		}
+		effects.dofSamples = rt_dofSamples[(int)Com_Clamp( 0, 2, r_dofQuality->integer )];
+	}
+	if ( effects.motionBlur || effects.dof ) {
+		Com_Memcpy( effects.projection, c->projection, sizeof( effects.projection ) );
 		effects.zFar = c->zFar;
 	}
 	mbTemporalEndScene( &effects );

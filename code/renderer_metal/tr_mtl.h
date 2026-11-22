@@ -422,9 +422,12 @@ void		mbRadarHeight( unsigned int texture, float z );
 //  - MB_TEMPORAL_TAA (r_taa): the scene drawn with motion vectors and a jittered projection, anti-aliased before the 2D
 //  - MB_TEMPORAL_AO (r_ao): ambient occlusion, applied in the main view after its opaque surfaces (mbTemporalAo)
 //  - MB_TEMPORAL_MB (r_motionBlur): the scene drawn with motion vectors (no jitter), blurred along them before the 2D
+//  - MB_TEMPORAL_DOF (r_dof): depth of field before the 2D, from the depth and the scene's color (no motion vectors: alone
+//    the scene is drawn as without the path)
 #define MB_TEMPORAL_TAA		1
 #define MB_TEMPORAL_AO		2
 #define MB_TEMPORAL_MB		4
+#define MB_TEMPORAL_DOF		8
 #define MB_TEMPORAL_VECTORS	( MB_TEMPORAL_TAA | MB_TEMPORAL_MB )	// the effects whose scene has the motion vectors
 
 typedef struct {
@@ -446,9 +449,15 @@ typedef struct {
 	float		halfExposure;		// half the exposure, in frames of motion (r_motionBlurShutter, r_motionBlurFps)
 	float		cameraShare;		// r_motionBlurCamera: the share of the camera's motion in the blur
 	int			blurPairs;			// the gather's pairs of samples a pixel (r_motionBlurQuality)
-	float		projection[16];		// the main view's, GL's (without the jitter)
+	float		projection[16];		// the main view's, GL's (without the jitter); with the motion blur or the depth of field
 	float		reproject[16];		// the last frame's projection times the camera's motion: from this frame's eye space
-	float		zFar;				// the main view's far distance
+	float		zFar;				// the main view's far distance; with the motion blur or the depth of field
+	// the depth of field (r_dof): focused on what is under the crosshair, or at a fixed distance
+	qboolean	dof;
+	float		dofLens;			// a view distance d's blur is dofLens * (1 / F - 1 / d) times the view's height, in pixels
+	float		dofFocus;			// 1 / r_dofFocus; 0: the focus on what is under the crosshair
+	float		dofStep;			// the focus's share of the way to its target this frame (1: at once)
+	int			dofSamples;			// each of its gathers' samples (r_dofQuality)
 } mbTemporalEffects_t;
 
 typedef struct {
@@ -480,8 +489,8 @@ void		mbTemporalObject( const float *m );
 // in the main view, once a frame, after its opaque surfaces and before what is blended over them: the scene pass ends
 // (its targets stored), the occlusion is computed from its depth, and a new pass goes on with it applied
 void		mbTemporalAo( const mbTemporalAo_t *ao );
-// before the 2D (or at the frame's end): the anti-aliasing and the motion blur, then the frame goes on in a new pass,
-// depth and stencil cleared
+// before the 2D (or at the frame's end): the anti-aliasing, the depth of field and the motion blur, then the frame goes
+// on in a new pass, depth and stencil cleared
 void		mbTemporalEndScene( const mbTemporalEffects_t *effects );
 
 static ID_INLINE int mbGetError( void ) { return MB_NO_ERROR; }
