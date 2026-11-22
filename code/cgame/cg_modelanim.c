@@ -30,8 +30,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // too long ago for its one-time start (sounds, flashes) to be played now (CG_ModelAnim)
 #define CG_ANIM_STALE_START 0.2f
 
-static qboolean cg_forceModelAllowed = qfalse;
-
 /*
 ===============
 CG_GetPlayerModelTiki
@@ -1016,7 +1014,7 @@ CG_CheckValidModels
 
 This verifies the allied player model and the german player model:
 - If they don't exist on the client, reset to the default allied player model
-- If they don't exist on the server, don't allow forceModel so the client explicitly know the skin isn't supported
+- If they don't exist on the server, force models draw that side in its default model (CG_UpdateForceModels)
 ===============
 */
 void CG_CheckValidModels()
@@ -1044,7 +1042,7 @@ void CG_CheckValidModels()
         modelpath = va("models/player/%s.tik", dm_playergermanmodel->string);
         if (!cgi.R_RegisterModel(modelpath)) {
             cgi.Printf(
-                "Allied model '%s' is invalid, resetting to '%s'\n",
+                "Axis model '%s' is invalid, resetting to '%s'\n",
                 dm_playergermanmodel->string,
                 dm_playergermanmodel->resetString
             );
@@ -1054,10 +1052,6 @@ void CG_CheckValidModels()
         }
 
         cg.serverAxisModelValid = CG_IsValidServerModel(modelpath);
-    }
-
-    if (dm_playermodel->modified || dm_playergermanmodel->modified) {
-        cg_forceModelAllowed = cg.serverAlliedModelValid && cg.serverAxisModelValid;
     }
 }
 
@@ -1105,6 +1099,14 @@ void CG_ServerModelUnloaded(qhandle_t handle)
 /*
 ===============
 CG_UpdateForceModels
+
+Changed in Reloaded: each side on its own. OPM forced no model at all while
+either side's model wasn't loaded on the server; now that side is drawn in
+its default model (american_army, german_wehrmacht_soldier), so force models
+work on any server. Stock servers load every stock model but four the model
+picker offers (global/DMprecache.scr names allied_oss, german_elite_gestapo,
+german_winter1 and 2, not allied_sas, german_elite_officer, german_winter_1
+and 2): those load only once a player wears them
 ===============
 */
 void CG_UpdateForceModels()
@@ -1117,17 +1119,6 @@ void CG_UpdateForceModels()
     qboolean  isDirty;
 
     isDirty = dm_playermodel->modified || dm_playergermanmodel->modified || cg_forceModel->modified;
-
-    if (!cg_forceModelAllowed) {
-        if (isDirty) {
-            cgi.Printf(
-                "One or more of the selected players model don't exist on the server or are not loaded, using the "
-                "default skin\n"
-            );
-        }
-
-        return;
-    }
 
     if (cg.pAlliedPlayerModel && cg.pAxisPlayerModel && !isDirty) {
         return;
@@ -1143,6 +1134,13 @@ void CG_UpdateForceModels()
     if (!hModel) {
         Com_sprintf(szAlliesModel, sizeof(szAlliesModel), "models/player/%s.tik", dm_playermodel->resetString);
         hModel = cgi.R_RegisterModel(szAlliesModel);
+        if (hModel && Q_stricmp(pszAlliesPartial, dm_playermodel->resetString)) {
+            cgi.Printf(
+                "Force Models: the server has no '%s', the Allies drawn as '%s'\n",
+                pszAlliesPartial,
+                dm_playermodel->resetString
+            );
+        }
     }
 
     if (hModel) {
@@ -1160,6 +1158,13 @@ void CG_UpdateForceModels()
     if (!hModel) {
         Com_sprintf(szAxisModel, sizeof(szAxisModel), "models/player/%s.tik", dm_playergermanmodel->resetString);
         hModel = cgi.R_RegisterModel(szAxisModel);
+        if (hModel && Q_stricmp(pszAxisPartial, dm_playergermanmodel->resetString)) {
+            cgi.Printf(
+                "Force Models: the server has no '%s', the Axis drawn as '%s'\n",
+                pszAxisPartial,
+                dm_playergermanmodel->resetString
+            );
+        }
     }
 
     if (hModel) {
@@ -1349,7 +1354,7 @@ void CG_ModelAnim(centity_t *cent, qboolean bDoShaderTime)
     model.tiki      = cgi.R_Model_GetHandle(cgs.model_draw[s1->modelindex]);
 
     if (s1->number != cg.snap->ps.clientNum && (s1->eType == ET_PLAYER || (s1->eFlags & EF_DEAD))) {
-        if (cg_forceModel->integer && cg_forceModelAllowed) {
+        if (cg_forceModel->integer) {
             //CG_UpdateForceModels();
 
             if (s1->eFlags & EF_AXIS) {
