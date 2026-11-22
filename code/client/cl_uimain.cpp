@@ -68,6 +68,9 @@ static const rlColor_t RL_SOFT     = {200 / 255.0f, 196 / 255.0f, 186 / 255.0f, 
 static const rlColor_t RL_PANEL = {10 / 255.0f, 12 / 255.0f, 17 / 255.0f, 236 / 255.0f};
 static const rlColor_t RL_HEAD  = {0, 0, 0, 70 / 255.0f};
 static const rlColor_t RL_LINE  = {1, 1, 1, 24 / 255.0f};
+// the secondary buttons (REFRESH, DEFAULTS, CANCEL), the choices not chosen, the model pickers: dark, lighter under the mouse
+static const rlColor_t RL_DARK     = {30 / 255.0f, 34 / 255.0f, 42 / 255.0f, 1};
+static const rlColor_t RL_DARK_HOT = {44 / 255.0f, 50 / 255.0f, 62 / 255.0f, 1};
 
 #define RL_GLYPH(name) RL_OUTLINES "glyphs/" name ".svg"
 
@@ -1342,13 +1345,14 @@ static void RL_Divider(const rlView_t& v, float x, float y, float h)
     RL_Shape(x0, y0, RL_P(v, x + 6 + sw / 2) - x0, RL_P(v, y + h - m) - y0, "poly 1 1 1 1 0.84 0 1 0 0.16 1 0 1", RL_Rgb(255, 255, 255, 84), v.s);
 }
 
+// a button: primary the accent, else Omaha's dark one, its label softer (off: faint)
 void RL_Button(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, int id, bool off)
 {
     const bool      hot  = m->Hot(id);
-    const rlColor_t fill = primary ? (hot ? RL_BRASS_HOT : RL_BRASS) : RL_Rgb(255, 255, 255, hot ? 44 : 26);
+    const rlColor_t fill = primary ? (hot ? RL_BRASS_HOT : RL_BRASS) : hot ? RL_DARK_HOT : RL_DARK;
 
     RL_Box(v, x, y, w, h, off ? RL_Rgb(255, 255, 255, 14) : fill);
-    RL_Text(v, x + w / 2, y + h / 2, label, 18, off ? RL_FG_FAINT : primary ? RL_INK : RL_FG, true, RL_CENTER, 2, RL_MID);
+    RL_Text(v, x + w / 2, y + h / 2, label, 18, off ? RL_FG_FAINT : primary ? RL_INK : hot ? RL_FG : RL_FG_SOFT, true, RL_CENTER, 2.4f, RL_MID);
     m->Hit(v, x, y, w, h, id);
 }
 
@@ -1359,8 +1363,8 @@ static void RL_Field(const rlView_t& v, float x, float y, float w, float h, cons
     const float tx = x + 16, room = w - 32;
     std::string shown = editing ? text : RL_Ellipsize(v, text.c_str(), 17, false, room);
 
-    RL_Box(v, x, y, w, h, RL_Rgb(255, 255, 255, editing ? 70 : hot ? 48 : 30));
-    RL_Box(v, x + 1, y + 1, w - 2, h - 2, RL_Rgb(0, 0, 0, 120));
+    RL_Box(v, x, y, w, h, RL_Rgb(255, 255, 255, editing ? 70 : hot ? 44 : 20));
+    RL_Box(v, x + 1, y + 1, w - 2, h - 2, RL_Rgb(0, 0, 0, 130));
     if (text.empty() && !editing) {
         RL_Text(v, tx, y + h / 2, placeholder, 17, RL_FG_MUTED, false, RL_LEFT, 0, RL_MID, room);
         return;
@@ -1424,7 +1428,7 @@ static float RL_Segments(UIReloadedMenu *m, const rlView_t& v, float x, float y,
         const float w = RL_TextW(v, labels[i], 15, true, 1.6f) + 36;
         const bool  hot = !off && m->Hot(id + i), chosen = !off && i == on;
 
-        RL_Box(v, x, y, w, h, chosen ? RL_BRASS : RL_Rgb(255, 255, 255, off ? 10 : hot ? 36 : 18));
+        RL_Box(v, x, y, w, h, chosen ? RL_BRASS : off ? RL_Rgb(255, 255, 255, 10) : hot ? RL_DARK_HOT : RL_DARK);
         RL_Text(v, x + w / 2, y + h / 2, labels[i], 15, chosen ? RL_INK : off ? RL_FG_FAINT : hot ? RL_FG : RL_FG_SOFT, true, RL_CENTER, 1.6f, RL_MID);
         if (!off) {
             m->Hit(v, x, y, w, h, id + i);
@@ -1909,14 +1913,9 @@ static void RL_Profile(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         const float     cx  = x + RL_PAD + t * (cw + 10), fh = RL_CTRL;
         const int       own = RL_OwnIndex(t);
         const bool      hot = m->Hot(ID_SELECT + t) || rl_mm.pick == t;
-        const rlColor_t edge = hot ? RL_Rgb(255, 255, 255, 70) : RL_Rgb(255, 255, 255, 30);
 
         RL_TeamIcon(v, t, cx + cw / 2, vy - 48, 44);
-        RL_Box(v, cx, fy, cw, fh, RL_Rgb(0, 0, 0, 110));
-        RL_BoxPx(RL_P(v, cx), RL_P(v, fy), RL_P(v, cx + cw), RL_P(v, fy) + 1, edge);
-        RL_BoxPx(RL_P(v, cx), RL_P(v, fy + fh) - 1, RL_P(v, cx + cw), RL_P(v, fy + fh), edge);
-        RL_BoxPx(RL_P(v, cx), RL_P(v, fy), RL_P(v, cx) + 1, RL_P(v, fy + fh), edge);
-        RL_BoxPx(RL_P(v, cx + cw) - 1, RL_P(v, fy), RL_P(v, cx + cw), RL_P(v, fy + fh), edge);
+        RL_Box(v, cx, fy, cw, fh, hot ? RL_DARK_HOT : RL_DARK);
         RL_Text(v, cx + 14, fy + fh / 2,
                 RL_Ellipsize(v, own >= 0 ? rl_models[t][own].name.c_str() : RL_ModelName(RL_OwnModel(t).c_str()).c_str(), 16, false, cw - 48).c_str(),
                 16, RL_FG, false, RL_LEFT, 0, RL_MID);
