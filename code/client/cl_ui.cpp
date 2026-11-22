@@ -1151,8 +1151,9 @@ void UI_PushMenu(const char *name)
     Menu    *menu  = menuManager.CurrentMenu();
     qboolean bDiff = qfalse;
 
-    // Added: the Reloaded menus told what they are opened as (and the weapon
-    // menu the server pushes after a side picked in it not shown again)
+    // Added: the Reloaded menus told what they are opened as (the team and
+    // weapon pages' preview; F2's, F3's and F4's pages and the vote menus
+    // shown instead)
     if (!UI_Menus_Pushing(name)) {
         return;
     }

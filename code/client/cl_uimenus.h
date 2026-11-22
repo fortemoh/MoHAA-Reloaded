@@ -20,8 +20,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 ===========================================================================
 */
 
-// cl_uimenus.h: the Reloaded menus (Added): the team page, weapon select, the
-// Esc menu, the scoreboard, the load screen, the end of a mission's level
+// cl_uimenus.h: the Reloaded menus (Added): the team page, the weapon page,
+// the Esc menu, the scoreboard, the load screen, the end of a mission's level
 // and the connect's box (ui/reloaded_*.urc), shown in place of the stock
 // menus, and the cursor
 
@@ -30,12 +30,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 void        UI_Menus_Init(void);
 // a player model's name ("US - Soldier"), else the file's (fileName)
 const char *PM_FilenameToDisplayname(const char *fileName);
-// a menu about to be pushed by that name (the team page's and the weapon
-// menu's preview, the weapon menu's nation); qfalse: not pushed (the server's push after a side picked in the
-// weapon menu, F2's mpoptions, F3's and F4's pages shown instead)
+// a menu about to be pushed by that name (the team and weapon pages' preview,
+// the weapon page's nation); qfalse: not pushed (F2's mpoptions, F3's and F4's
+// pages and the vote menus shown instead)
 qboolean    UI_Menus_Pushing(const char *name);
 // the menu pushed by that name takes the place of the menu up, not over it: the Esc menu's (the team page, the weapon
-// menu, the main menu: TEAM & WEAPON, MAIN MENU, LOAD), the team page's (the weapon menu, the player's own side picked);
+// page, the main menu: TEAM & WEAPON, MAIN MENU, LOAD), the team page's (the weapon page, the player's own side picked);
 // qfalse: pushed over the menu up as before
 qboolean    UI_Menus_Replacing(const char *name);
 // the keys to the menu up's front layer now (unless a floating window has them), not at its first Tick: the menu it
@@ -52,11 +52,10 @@ void        UI_Menus_ServerCommand(void);
 int         UI_Menus_ScoreTeam(int client);
 // the scoreboard of this (stock) name is the Reloaded one
 qboolean    UI_Menus_Scoreboard(const char *name);
-// the menu up is the Reloaded team page, weapon menu or Esc menu (or Options over it): no HUD under it (the scoreboard
+// the menu up is the Reloaded team page, weapon page or Esc menu (or Options over it): no HUD under it (the scoreboard
 // keeps it)
 qboolean    UI_Menus_Covering(void);
-// the console's menustate (cl_ui.cpp): the team page's models, the weapon menu's side and its next push, the Esc menu's
-// page
+// the console's menustate (cl_ui.cpp): the team page's models, the weapon page's side, the Esc menu's page
 const char *UI_Menus_State(void);
 // a configstring changed
 void        UI_Menus_ConfigString(void);
