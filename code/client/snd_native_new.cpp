@@ -3561,11 +3561,26 @@ static float S_NATIVE_SongGain(int song_number, float fade)
 
 /*
 ==============
+S_NATIVE_SongOff
+
+Added in MoHAA Reloaded: the song isn't played or opened. s_ambientvolume 0: no song; Cinematic (s_cinematic 1):
+none of the soundtrack's ambiences, the songs not in sound/music/ (the maps' background loops of sound/amb_stereo),
+what the stock "cinematic" command was typed to stop; its music (the win music) plays on
+==============
+*/
+static bool S_NATIVE_SongOff(const song_t *song)
+{
+    return s_ambientVolume->value <= 0 || (s_cinematic->integer && Q_stricmpn(song->path, "sound/music/", 12));
+}
+
+/*
+==============
 S_NATIVE_AmbientOff
 
 Added in the Metal port (9g, the user's): s_ambientvolume 0 plays no song of the soundtrack (the mood music and the
 amb_stereo ambiences): none is opened, decoded or mixed, and those playing, fading or kept where they stopped (G8)
 stop and free their streams. Raised again, Music_Update starts the mood's song (music_currentsong -1: not playing).
+Cinematic on, the ambiences stop the same way (S_NATIVE_SongOff), the music plays.
 ==============
 */
 static bool S_NATIVE_AmbientOff()
@@ -3573,6 +3588,22 @@ static bool S_NATIVE_AmbientOff()
     int i;
 
     if (s_ambientVolume->value > 0) {
+        if (s_cinematic->integer) {
+            for (i = 0; i < MAX_SOUNDSYSTEM_SONGS; i++) {
+                if ((chan_song[i].is_playing() || chan_song[i].is_paused())
+                    && S_NATIVE_SongOff(&music_songs[chan_song[i].song_number])) {
+                    MUSIC_StopChannel(i);
+                }
+            }
+            for (i = 0; i < NATIVE_PARKED; i++) {
+                if (native.parked[i].bParked && S_NATIVE_SongOff(&music_songs[native.parkedSong[i]])) {
+                    S_NATIVE_CloseStream(&native.parked[i]);
+                }
+            }
+            if (music_currentsong >= 0 && S_NATIVE_SongOff(&music_songs[music_currentsong])) {
+                music_currentsong = -1;
+            }
+        }
         return false;
     }
 
@@ -3651,8 +3682,11 @@ void Music_Update()
             MUSIC_StopAllSongs();
         }
     } else if (music_current_mood != currentsong) {
-        const char *mood = MusicMood_NumToName(music_current_mood);
-        if (MUSIC_SongValid(mood) && MUSIC_Loaded() && strlen(current_soundtrack)) {
+        const char *mood    = MusicMood_NumToName(music_current_mood);
+        const int   songnum = MUSIC_FindSong(mood);
+
+        // (a song off isn't tried: S_NATIVE_SongOff)
+        if (songnum != -1 && !S_NATIVE_SongOff(&music_songs[songnum]) && MUSIC_Loaded() && strlen(current_soundtrack)) {
             Com_DebugPrintf("Playing %s.\n", mood);
             MUSIC_PlaySong(mood);
         }
@@ -3960,8 +3994,9 @@ qboolean MUSIC_PlaySong(const char *alias)
     song = &music_songs[songnum];
 
     // Added in the Metal port (9g)
-    //  s_ambientvolume 0: no song, and not taken as the current one (S_NATIVE_AmbientOff)
-    if (s_ambientVolume->value <= 0) {
+    //  s_ambientvolume 0: no song, and not taken as the current one (S_NATIVE_AmbientOff); Cinematic's
+    //  ambiences neither (S_NATIVE_SongOff, MoHAA Reloaded)
+    if (S_NATIVE_SongOff(song)) {
         return true;
     }
 
