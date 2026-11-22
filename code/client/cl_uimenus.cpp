@@ -23,7 +23,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // cl_uimenus.cpp: the Reloaded menus (Added). The team page (the side and
 // each side's model), the weapon page, the Esc menu, the
 // scoreboard, the load screen (UI_Menus_Loading), the end of a mission's
-// level, the main menu and the connect's box (cl_uimain.cpp), each a URC
+// level, the main menu and the connect screen (cl_uimain.cpp), each a URC
 // menu (ui/reloaded_*.urc) of a ReloadedMenu widget, which lays the screen
 // out and draws it, and the stock 3D player model views it places. They are
 // shown for the stock menus' names (SelectTeam, ObjSelectTeam,
@@ -253,7 +253,7 @@ static void RL_ScoreRow(int client, int at, int team, qboolean dead, int& order)
 ================
 UI_Menus_ServerCommand
 
-"disconnect"'s reason (the connect's box shows it), and "scores"
+"disconnect"'s reason (the connect screen shows it), and "scores"
 (fgame's DM_Manager::Score, read as the cgame's CG_ParseScores reads it):
 its entries, the team games' a header per team (-1, the team, [SH/BT: the
 players], the score, ...) and a row per player (client, team negative when
@@ -263,7 +263,7 @@ deaths, time, ping)
 */
 void UI_Menus_ServerCommand(void)
 {
-    // (the server drops the player: its reason for the connect's box)
+    // (the server drops the player: its reason for the connect screen)
     if (!strcmp(Cmd_Argv(0), "disconnect")) {
         RL_ConnectDropped(Cmd_Argv(1));
         return;
@@ -1217,7 +1217,7 @@ static const struct {
     {"Tow_Scoreboard",              "reloaded_scoreboard"},
     {"Lib_Scoreboard",              "reloaded_scoreboard"},
     {"main",                        "reloaded_main"      },
-    // a connect and how it ends: the connect's box (cl_uimain.cpp)
+    // a connect and how it ends: the connect screen (cl_uimain.cpp)
     {"connecting",                  "reloaded_connect"   },
     {"errormessage",                "reloaded_connect"   },
     {"servertimeout",               "reloaded_connect"   },
@@ -1710,8 +1710,8 @@ const char *UI_Menus_Loading(Menu *stock, const char *map)
         rl_ld.stock = stock;
         RL_LoadPictures();
     }
-    // (the server's name and map, should it drop the player)
-    RL_ConnectLoaded(info, name);
+    // (the server's name, should it drop the player)
+    RL_ConnectLoaded(info);
     return ours;
 }
 

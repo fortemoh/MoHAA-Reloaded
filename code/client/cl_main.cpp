@@ -1335,8 +1335,8 @@ void CL_Connect( const char *server, netadrtype_t family ) {
 	}
 	serverString = NET_AdrToStringwPort(clc.serverAddress);
 
-	// Added: the Reloaded connect's box asks the server for its name and map
-	UI_Menus_Connect(server, &clc.serverAddress);
+	// Added: the Reloaded connect screen told a connect begins
+	UI_Menus_Connect(server);
 
 	Com_Printf( "%s resolved to %s\n", clc.servername, serverString );
 
@@ -3631,11 +3631,6 @@ void CL_ServerInfoPacket( netadr_t from, msg_t *msg ) {
 	qboolean gameMismatch;
 
 	infoString = MSG_ReadString( msg );
-
-	// Added: the answer the Reloaded connect's box asked for (it has no gamename)
-	if (UI_Menus_ServerInfo(&from, infoString)) {
-		return;
-	}
 
 	// if this isn't the correct gamename, ignore it
 	gamename = Info_ValueForKey( infoString, "gamename" );
