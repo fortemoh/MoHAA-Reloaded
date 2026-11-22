@@ -58,11 +58,12 @@ typedef struct {
     int id;
 } rlHit_t;
 
-// a tile of the in-game block (the weapon page's): its label in the corner (a state, a class; warn: a refusal, red), its
-// picture (an outline; NULL: the caller draws it), its name under it, in the colours of team (-1 none); off: dimmed, not
-// chosen; marked: the last pick's dot
+// a tile of the in-game block (the weapon page's, the Esc menu's): its label in the corner (a state, a class; warn:
+// a refusal, red), its picture (an outline, picW across at most, 0: as in a tile two a row; NULL: the caller draws it),
+// its name under it, in the colours of team (-1 none); off: dimmed, not chosen; marked: the last pick's dot
 typedef struct {
     const char *label, *name, *outline;
+    float       picW;
     int         team;
     bool        off, warn, marked;
 } rlTile_t;
@@ -141,11 +142,8 @@ public:
     int      MainDrawKey(void);
 };
 
-// Options over the Esc menu clicked off its page, at x y (a ReloadedMenu's, all of them the screen's): the Esc menu's
-// item there chosen, Options closed first (cl_uimenus.cpp); false: none there
-bool        RL_EscClick(int x, int y);
-// the page over the Esc menu (ui/reloaded_options.urc: the main menu's page beside the Esc menu's rail): Options, or
-// VOTE's (Spearhead's and Breakthrough's matches; cl_uimain.cpp)
+// the page over the Esc menu (ui/reloaded_options.urc: the main menu's page over the game, the Esc menu's block
+// hidden under it): Options, or CALL A VOTE's (Spearhead's and Breakthrough's matches; cl_uimain.cpp)
 enum { RL_OVER_OPTIONS, RL_OVER_VOTE };
 // that page shown (over the Esc menu up, else the Esc menu opened, the page shown over it from its Tick: RL_OverTick);
 // the one shown, -1 none
@@ -158,15 +156,11 @@ void        RL_VoteRead(int part, const char *text);
 // KEYS: Options' KEYS tab (in a game the Options over the Esc menu's, the main menu's page kept unless it is up)
 enum { RL_SHOW_PLAY, RL_SHOW_MISSIONS, RL_SHOW_SAVES, RL_SHOW_KEYS };
 void        RL_MainShow(int what);
-// the rail (the main menu's, the Esc menu's; cl_uimain.cpp): the lockup at its head (head: the match under it, a title
-// over two lines), the items from 380 down (on: the id of the one filled brass, -1 none), the foot's up from its foot (a
-// glyph before each; the last muted, those over it red)
+// an item of the main menu's top bar (its pages, its foot's: a glyph before each; cl_uimain.cpp)
 typedef struct {
     int         id;
     const char *label, *glyph;
-} rlRailItem_t;
-void        RL_Rail(UIReloadedMenu *m, const rlView_t& v, const rlRailItem_t *items, int n, int on, const rlRailItem_t *foot, int nf,
-                    const std::string *head = NULL);
+} rlBarItem_t;
 // the Esc menu's caption in a mission ("MISSION 2  ·  SCUTTLING THE U-529  ·  MEDIUM")
 std::string RL_MissionLine(const char *map);
 // a Spearhead or Breakthrough level's painting (its load screen's, else its mission's; the missions' crop),
