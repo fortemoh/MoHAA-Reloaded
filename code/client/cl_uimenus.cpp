@@ -2559,8 +2559,9 @@ colours, no border, its star or cross large in it in a lighter tone, as
 CS:GO's emblems; the symbol alone, not the badge on its own disc:
 rlTeam_t's mark), its figure standing
 full length in front of it (the model previewed; its cycler under him),
-its name over it in its colour, its players and bots under that; the
-medallion and the figure join the side (lighter under the mouse). Between
+its name over it in its colour, its players and bots under that; its
+whole half of the screen over the foot's line joins the side (as CS's;
+the medallion lighter under the mouse), its cycler's row apart. Between
 them the two lists either side of a thin divider, the names alone (a bot's
 muted, the player's own brass); the rows 72 high tighten to fit 16 a side,
 the rest folded ("+ N more"). No time left (the
@@ -2666,7 +2667,8 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
         }
         RL_Text(v, cx[t], 239 * ky, T.name, RL_H3, RL_T(hot ? T.pale : T.light), true, RL_CENTER, 2.4f, RL_MID);
         RL_Text(v, cx[t], 274 * ky, caption.c_str(), RL_S1, RL_Rgb(200, 196, 186), false, RL_CENTER, 0.6f, RL_MID);
-        Hit(v, cx[t] - d / 2, 205 * ky, d, feetY - 205 * ky, ID_TJOIN + t);
+        // (its whole half over the foot's line, the divider between)
+        Hit(v, t ? mid : 0, 0, t ? v.dw - mid : mid, lineY, ID_TJOIN + t);
     }
 
     // the lists either side of the divider, the same rows both sides (72 high, tighter to fit, the rest folded)
@@ -2701,6 +2703,8 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
     bool cycles[2];
 
     for (int t = 0; t < 2; t++) {
+        // (its row no side's: a click that misses a chevron joins nothing)
+        Hit(v, cx[t] - d / 2, 944 * ky - 24, d, 48, -1);
         cycles[t] = ModelCycler(v, cx[t], 944 * ky, d, 48, t, ID_TPREV + t, RL_S1, 18);
     }
 
