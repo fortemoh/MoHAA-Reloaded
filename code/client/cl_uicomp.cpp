@@ -1138,13 +1138,31 @@ static bool Comp_MateShown(const compMates_t& m, int i)
         && cl.snap.serverTime - c->time < m.fresh;
 }
 
-// what the stock compass points at (the compass with no radar, HudMates):
-// shown, an objective (not a teammate), its place from this frame's view
-// (units right and ahead)
+// what the stock compass points at (the compass with no radar, HudMates; the
+// radar where it's a teammate): shown, an objective (not a teammate), its
+// place in the world (x and y) and its distance from the player
 static struct {
     qboolean on, objective;
-    float    right, ahead;
+    qboolean close; // 4.3 m or nearer (the compass's least)
+    float    at[2], units;
 } comp_mate;
+
+// a teammate's place (x, y) is where the stock compass points: within 5 m
+// of it (the compass says 4.3 m for any nearer) or 30% of its distance
+static bool Comp_AtNeedle(float x, float y)
+{
+    return comp_mate.on && !comp_mate.objective
+        && Square(x - comp_mate.at[0]) + Square(y - comp_mate.at[1]) < Square(Q_max(260.0f, 0.3f * comp_mate.units));
+}
+
+// the stock compass points at a teammate the radar and the tracker show
+// (where none of the snapshot's is at it): not at 4.3 m or nearer, where a
+// teammate is nearly always in the snapshot and a stock Freeze-Tag server's
+// needle points 4.3 m behind one whichever way one looks, nobody there
+static bool Comp_NeedleMate(void)
+{
+    return comp_mate.on && !comp_mate.objective && !comp_mate.close;
+}
 
 void UI_CompHud_Frame(void)
 {
@@ -1507,20 +1525,24 @@ void UI_CompHud_Frame(void)
     // bearing from the view (+ 180, tenths of a degree), LEFT and RIGHT that
     // bearing -+ 60 - atan(300 / distance) degrees (at least 7), so the gap
     // gives the distance; the game's own 52 units a metre (the battle
-    // language's; the gap's least, 7 degrees, is 4.3 m or nearer). Its
-    // bearing turned from the server's view to this frame's
-    if (Comp_Int("ui_hud_compass_on")) {
+    // language's; the gap's least, 7 degrees, is 4.3 m or nearer). Its place
+    // from the server's: the snapshot's place and view. The radar shows the
+    // teammate too (the server measures it to every one: the snapshot has
+    // only those in sight, roughly)
+    if (Comp_Int("ui_hud_compass_on") || Comp_Int("ui_hud_radar_on")) {
         const int center = ps->stats[STAT_OBJECTIVECENTER], left = ps->stats[STAT_OBJECTIVELEFT], right = ps->stats[STAT_OBJECTIVERIGHT];
 
         comp_mate.on = !(center == 1800 && left == 1730 && right == 1870);
         if (comp_mate.on) {
             const float half  = anglemod((right - left) / 10.0f) * 0.5f;
             const float units = half < 59.95f ? 300.0f / tanf(DEG2RAD(60.0f - half)) : 999.0f * 52.0f;
-            const float a     = DEG2RAD((center - 1800) / 10.0f + AngleSubtract(viewYaw, ps->viewangles[YAW]));
+            const float yaw   = DEG2RAD(ps->viewangles[YAW] - (center - 1800) / 10.0f);
             const int   obj   = (Comp_ConfigStrings(), cs.objCurrent);
 
-            comp_mate.right     = sinf(a) * units;
-            comp_mate.ahead     = cosf(a) * units;
+            comp_mate.at[0]     = ps->origin[0] + cosf(yaw) * units;
+            comp_mate.at[1]     = ps->origin[1] + sinf(yaw) * units;
+            comp_mate.units     = units;
+            comp_mate.close     = half < 7.05f;
             comp_mate.objective = com_target_game->integer >= TG_MOHTA
                                || (obj >= 0 && obj < MAX_OBJECTIVES && !VectorCompare(cs.objLoc[obj], vec3_origin));
         }
@@ -3294,26 +3316,30 @@ static qhandle_t Comp_ObjectiveShader(qboolean current, float k, float s, int *d
     return Comp_MarkKeep(&kept[current], k, s, *d, UI_BakeShape("comp_obj", layers, 2, *d, *d, s));
 }
 
-// a teammate's dot, its dark edge and (on the radar, not at its edge) its
-// pointer up, in a box of 2 x 2.6 radii, d pixels
-static qhandle_t Comp_DotShader(int axis, qboolean clamped, float k, float s, int *d)
-{
-    static compMark_t kept[2][2];
+// a teammate's dot, its dark edge and its pointer up, in a box of 2 x 2.6
+// radii, d pixels. DOT_RIM at the radar's edge: smaller, no pointer;
+// DOT_UNSEEN where the stock compass points (a teammate out of sight, where
+// they look not sent): no pointer
+enum { DOT_SEEN, DOT_RIM, DOT_UNSEEN };
 
-    if (Comp_MarkKept(&kept[axis][clamped], k, s, d)) {
-        return kept[axis][clamped].h;
+static qhandle_t Comp_DotShader(int axis, int kind, float k, float s, int *d)
+{
+    static compMark_t kept[2][3];
+
+    if (Comp_MarkKept(&kept[axis][kind], k, s, d)) {
+        return kept[axis][kind].h;
     }
     const char *color = axis ? "0.8 0.533 0.533 1" : "0.533 0.569 0.8 1";
-    const float rad = (clamped ? 3.9f : 5.5f) * k, rim = rad + 1.25f * k, half = Q_max(2.6f * rad, rim) + 1.0f;
+    const float rad = (kind == DOT_RIM ? 3.9f : 5.5f) * k, rim = rad + 1.25f * k, half = Q_max(2.6f * rad, rim) + 1.0f;
     char        lines[3][96];
     const char *layers[3] = {lines[0], lines[1], lines[2]};
 
-    Com_sprintf(lines[0], 96, clamped ? "fill 0 0 0 0" : "poly %s 0.5 %g %g %g %g %g", color, 0.5f - 2.6f * rad / half * 0.5f,
+    Com_sprintf(lines[0], 96, kind != DOT_SEEN ? "fill 0 0 0 0" : "poly %s 0.5 %g %g %g %g %g", color, 0.5f - 2.6f * rad / half * 0.5f,
                 0.5f + 0.85f * rim / half * 0.5f, 0.5f - 0.55f * rim / half * 0.5f, 0.5f - 0.85f * rim / half * 0.5f, 0.5f - 0.55f * rim / half * 0.5f);
     Com_sprintf(lines[1], 96, "circle 0.047 0.055 0.071 0.9 %g", rim / half);
     Com_sprintf(lines[2], 96, "circle %s %g", color, rad / half);
     *d = (int)(half * 2.0f * s + 0.5f);
-    return Comp_MarkKeep(&kept[axis][clamped], k, s, *d, UI_BakeShape("comp_dot", layers, 3, *d, *d, s));
+    return Comp_MarkKeep(&kept[axis][kind], k, s, *d, UI_BakeShape("comp_dot", layers, 3, *d, *d, s));
 }
 
 // the player, CS2's way: a dot in the HUD's accent with a white tip up (where
@@ -3409,8 +3435,9 @@ void UI_CompHud_PreBake(qboolean ahead)
     Comp_CardShaders(TEAM_ALLIES, icons[0], COMP_CARD_W, s, cards);
     Comp_CardShaders(TEAM_AXIS, icons[1], COMP_CARD_W, s, cards);
     for (int axis = 0; axis < 2; axis++) {
-        Comp_DotShader(axis, qfalse, k, s, &d);
-        Comp_DotShader(axis, qtrue, k, s, &d);
+        for (int kind = DOT_SEEN; kind <= DOT_UNSEEN; kind++) {
+            Comp_DotShader(axis, kind, k, s, &d);
+        }
     }
     Comp_PlayerShader(k, s, &d);
     Comp_ObjectiveShader(qtrue, k, s, &d);
@@ -3498,8 +3525,9 @@ UIHudRadar
 
 The radar: the map turned with the view (up is where the player looks),
 the objectives, the teammates the cgame tracks (the snapshot's and the
-server's radar's: never enemies), the player's dot (no N E S W: the
-user's choice, session 98). Its disc and ring are its URC shapes
+server's radar's: never enemies; on Allied Assault's servers the one the
+stock compass points at too), the player's dot (no N E S W: the user's
+choice, session 98). Its disc and ring are its URC shapes
 ================
 */
 class UIHudRadar : public UIWidget
@@ -3742,13 +3770,17 @@ void UIHudRadar::Draw(void)
     // the rim, its way, beyond the radar's reach or (zoomed out on Spearhead's
     // and Breakthrough's protocol) known only by its way: RM_SnapClients, read
     // once a frame at most, for the first one inside (at zoom 1 such a place,
-    // com_radar_range away, is beyond the reach)
+    // com_radar_range away, is beyond the reach). On Allied Assault's protocol
+    // (no radar: the snapshot's teammates alone, those in sight roughly) also
+    // the one the stock compass points at, the nearest living teammate
+    // wherever they are, where none of these is: its dot with no pointer
     if (g_radarClients && g_radarClientNum >= 0) {
         const int         axis  = cl.snap.ps.stats[STAT_TEAM] == TEAM_AXIS;
         const compMates_t mates = Comp_Mates();
         const qboolean    ways  = com_target_game->integer >= TG_MOHTA && range > RM_RANGE;
         uint64_t          sent  = 0;
         qboolean          read  = qfalse;
+        qboolean          needle = Comp_NeedleMate();
 
         for (int i = 0; i < MAX_CLIENTS; i++) {
             const radarClient_t *c = &g_radarClients[i];
@@ -3758,6 +3790,7 @@ void UIHudRadar::Draw(void)
             if (!Comp_MateShown(mates, i)) {
                 continue;
             }
+            needle = needle && !Comp_AtNeedle(c->origin[0], c->origin[1]);
             place(c->origin[0], c->origin[1], &x, &y);
             dist    = sqrtf(x * x + y * y);
             clamped = dist > r - 7.0f * k * s;
@@ -3774,13 +3807,29 @@ void UIHudRadar::Draw(void)
             }
             {
                 int             d;
-                const qhandle_t sh  = Comp_DotShader(axis, clamped, k, s, &d);
+                const qhandle_t sh  = Comp_DotShader(axis, clamped ? DOT_RIM : DOT_SEEN, k, s, &d);
                 const float     a   = DEG2RAD(AngleSubtract(angles[YAW], RAD2DEG(atan2f(c->axis[1], c->axis[0]))));
                 const vec4_t    white = {1, 1, 1, 1};
 
                 uii.Rend_SetColor(white);
                 uii.Rend_DrawPicStretched2(floorf(r + x - d * 0.5f), floorf(r + y - d * 0.5f), d, d, 0, 0, 1, 1, cosf(a), sinf(a), sh);
             }
+        }
+        if (needle) {
+            const vec4_t white = {1, 1, 1, 1};
+            float        x, y, dist;
+            int          d;
+            qhandle_t    sh;
+
+            place(comp_mate.at[0], comp_mate.at[1], &x, &y);
+            dist = sqrtf(x * x + y * y);
+            sh   = Comp_DotShader(axis, dist > r - 7.0f * k * s ? DOT_RIM : DOT_UNSEEN, k, s, &d);
+            if (dist > r - 7.0f * k * s) {
+                x *= (r - 7.0f * k * s) / dist;
+                y *= (r - 7.0f * k * s) / dist;
+            }
+            uii.Rend_SetColor(white);
+            uii.Rend_DrawPicStretched(floorf(r + x - d * 0.5f), floorf(r + y - d * 0.5f), d, d, 0, 0, 1, 1, sh);
         }
     }
 
@@ -3858,12 +3907,10 @@ void UIHudMates::Draw(void)
         uii.Rend_DrawPicStretched(floorf(r + right * f - d * 0.5f), floorf(r - ahead * f - d * 0.5f), d, d, 0, 0, 1, 1, sh);
     };
     const qhandle_t dot = Comp_MateShader(s, &d);
+    const float     sn = sinf(DEG2RAD(angles[YAW])), cn = cosf(DEG2RAD(angles[YAW]));
 
     uii.Rend_SetColor(white);
     if (g_radarClients && g_radarClientNum >= 0) {
-        const float sn = sinf(DEG2RAD(angles[YAW])), cn = cosf(DEG2RAD(angles[YAW]));
-        // (the compass says 4.3 m for any nearer: its teammate within 5 m or 30% of its place)
-        const float       near2 = Square(Q_max(260.0f, 0.3f * sqrtf(Square(comp_mate.right) + Square(comp_mate.ahead))));
         const compMates_t mates = Comp_Mates();
 
         for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -3871,16 +3918,16 @@ void UIHudMates::Draw(void)
                 continue;
             }
             const float dx = g_radarClients[i].origin[0] - eye[0], dy = g_radarClients[i].origin[1] - eye[1];
-            const float right = dx * sn - dy * cn, ahead = dx * cn + dy * sn;
 
-            shown |= comp_mate.on && !comp_mate.objective && Square(right - comp_mate.right) + Square(ahead - comp_mate.ahead) < near2;
-            mark(right, ahead, dot);
+            shown |= Comp_AtNeedle(g_radarClients[i].origin[0], g_radarClients[i].origin[1]);
+            mark(dx * sn - dy * cn, dx * cn + dy * sn, dot);
         }
     }
-    if (comp_mate.on && !shown) {
+    if (comp_mate.on && !shown && (comp_mate.objective || Comp_NeedleMate())) {
         const qhandle_t sh = comp_mate.objective ? Comp_ObjectiveShader(qtrue, 0.85f, s, &d) : dot;
+        const float     dx = comp_mate.at[0] - eye[0], dy = comp_mate.at[1] - eye[1];
 
-        mark(comp_mate.right, comp_mate.ahead, sh);
+        mark(dx * sn - dy * cn, dx * cn + dy * sn, sh);
     }
 }
 
