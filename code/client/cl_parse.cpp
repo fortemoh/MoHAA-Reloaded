@@ -615,7 +615,10 @@ void CL_ParseGamestate( msg_t *msg ) {
     if (!com_sv_running->integer)
     {
         const char *info = cl.gameState.stringData + cl.gameState.stringOffsets[CS_SERVERINFO];
-		const char *mapname = Info_ValueForKey(info, "mapname");
+		char mapname[MAX_QPATH];
+
+		// (copied: Info_ValueForKey's buffers are reused by the next lookups, UI_BeginLoad's among them)
+		Q_strncpyz(mapname, Info_ValueForKey(info, "mapname"), sizeof(mapname));
 		// Added in 2.0
 		Cvar_Set("mapname", mapname);
 

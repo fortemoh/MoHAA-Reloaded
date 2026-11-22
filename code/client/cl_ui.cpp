@@ -3284,9 +3284,16 @@ bool UI_ArchiveLoadMapinfo(const char *mapname)
 UI_BeginLoad
 ====================
 */
-void UI_BeginLoad(const char *pszMapName)
+void UI_BeginLoad(const char *pszMapNameIn)
 {
-    str mapfile;
+    str  mapfile;
+    char pszMapName[MAX_QPATH];
+
+    // Added: a copy, taken first. The caller's is often Info_ValueForKey's, whose two buffers take turns: the load
+    // screen's own lookups below (UI_Menus_Loading: the game type, then the server's name) wrote the server's name
+    // over it, and its loading bar's file was saved as maps/<the server's name>.min (on Windows a fatal error when
+    // that name had | or :, as "[FORTE] FFA Arena | Discord: dsc.gg/ForteFFA")
+    Q_strncpyz(pszMapName, pszMapNameIn, sizeof(pszMapName));
 
     if (cls.loading != LOAD_PROGRESS_FALSE) {
         if (cls.loading == LOAD_PROGRESS_SAVE) {
