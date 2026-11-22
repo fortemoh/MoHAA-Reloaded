@@ -37,12 +37,22 @@ Draw2DList draws it again by running the same exports with the same
 arguments in the same order, so the same pixels (a list drawn while another
 is made is copied into it). renderervk keeps a list as its render thread's
 commands; here the 2D draws run at once, so a list made again or freed is
-freed at once
+freed at once.
+
+A handle is its list's slot and a serial no other list ever had, the
+renderer's restarts too: a widget keeps its handle across a vid_restart,
+which frees every list, and one freed is taken by the next new list. A
+handle that no longer names its list (Begin2DList makes a new one, with a
+new handle) can't name another's: before, a widget given a new list after
+a vid_restart could take a slot another still held, both then drew from
+it, and one drew what the other had made (the Esc menu over the game after
+it closed, until the next vid_restart)
 
 ====================================================================
 */
 
-#define MAX_2D_LISTS	4096
+#define MAX_2D_LISTS	4096	// (a handle's low 12 bits its slot)
+#define R2D_SLOTBITS	12
 
 typedef enum {
 	R2D_SET_COLOR,
@@ -78,10 +88,23 @@ typedef struct {
 
 static struct {
 	r2dList_t	*lists[MAX_2D_LISTS];
+	int			serials[MAX_2D_LISTS];	// each list's serial (its handle's high bits)
 	r2dList_t	*recording;		// the list being made
-	int			handle;			// ... its handle
+	int			slot;			// ... its slot
 	r2dList_t	*spare;			// the last one freed, for the next made
 } r2dl;
+
+static int r2dlSerial;	// the last list's serial (kept by the shutdown: none is used twice)
+
+// the slot of the list a handle names, -1 none (0, a list freed, one from before a restart)
+static int R_2DListSlot( int handle ) {
+	const int slot = handle & ( MAX_2D_LISTS - 1 );
+
+	if ( handle <= 0 || !r2dl.lists[slot] || r2dl.serials[slot] != handle >> R2D_SLOTBITS ) {
+		return -1;
+	}
+	return slot;
+}
 
 static r2dList_t *R_New2DList( void ) {
 	r2dList_t *l = r2dl.spare;
@@ -216,32 +239,37 @@ void R_2DListString( fontheader_t *font, const char *text, float x, float y, int
 	( (char *)( c + 1 ) )[len] = 0;
 }
 
-// a list's handle (a new one for 0): the 2D exports go into it until End2DList
+// a list's handle (a new one for 0, or for a handle that names no list): the 2D exports go into it until End2DList
 int RE_Begin2DList( int handle ) {
-	int i;
+	int slot;
 
 	if ( r2dl.recording ) {
 		return 0;
 	}
-	if ( handle <= 0 || handle > MAX_2D_LISTS ) {
-		for ( i = 0; i < MAX_2D_LISTS && r2dl.lists[i]; i++ ) {
+	slot = R_2DListSlot( handle );
+	if ( slot < 0 ) {
+		for ( slot = 0; slot < MAX_2D_LISTS && r2dl.lists[slot]; slot++ ) {
 		}
-		if ( i == MAX_2D_LISTS ) {
+		if ( slot == MAX_2D_LISTS ) {
 			return 0;
 		}
-		handle = i + 1;
+		// (never 0: a handle is never 0)
+		r2dlSerial = r2dlSerial >= ( INT_MAX >> R2D_SLOTBITS ) ? 1 : r2dlSerial + 1;
+		r2dl.serials[slot] = r2dlSerial;
+		handle = ( r2dlSerial << R2D_SLOTBITS ) | slot;
 	}
 	r2dl.recording = R_New2DList();
-	r2dl.handle = handle;
+	r2dl.slot = slot;
 	// held while made, so no other Begin2DList takes it
-	if ( !r2dl.lists[handle - 1] ) {
-		r2dl.lists[handle - 1] = r2dl.recording;
+	if ( !r2dl.lists[slot] ) {
+		r2dl.lists[slot] = r2dl.recording;
 	}
 	return handle;
 }
 
 void RE_Draw2DList( int handle ) {
-	const r2dList_t *l = handle > 0 && handle <= MAX_2D_LISTS ? r2dl.lists[handle - 1] : NULL;
+	const int		slot = R_2DListSlot( handle );
+	const r2dList_t	*l = slot >= 0 ? r2dl.lists[slot] : NULL;
 
 	if ( !l || l == r2dl.recording ) {
 		return;
@@ -262,8 +290,8 @@ void RE_End2DList( void ) {
 		return;
 	}
 	r2dl.recording = NULL;
-	old = r2dl.lists[r2dl.handle - 1];
-	r2dl.lists[r2dl.handle - 1] = l;
+	old = r2dl.lists[r2dl.slot];
+	r2dl.lists[r2dl.slot] = l;
 	if ( old && old != l ) {
 		R_Free2DListData( old );
 	}
@@ -271,19 +299,21 @@ void RE_End2DList( void ) {
 }
 
 void RE_Free2DList( int handle ) {
-	if ( handle <= 0 || handle > MAX_2D_LISTS || !r2dl.lists[handle - 1] || r2dl.lists[handle - 1] == r2dl.recording ) {
+	const int slot = R_2DListSlot( handle );
+
+	if ( slot < 0 || r2dl.lists[slot] == r2dl.recording ) {
 		return;
 	}
-	R_Free2DListData( r2dl.lists[handle - 1] );
-	r2dl.lists[handle - 1] = NULL;
+	R_Free2DListData( r2dl.lists[slot] );
+	r2dl.lists[slot] = NULL;
 }
 
 // a list left unfinished (an error in the UI's drawing): dropped, so the next
 // frame's 2D draws again
 void R_2DListsBeginFrame( void ) {
 	if ( r2dl.recording ) {
-		if ( r2dl.lists[r2dl.handle - 1] == r2dl.recording ) {
-			r2dl.lists[r2dl.handle - 1] = NULL;
+		if ( r2dl.lists[r2dl.slot] == r2dl.recording ) {
+			r2dl.lists[r2dl.slot] = NULL;
 		}
 		R_Free2DListData( r2dl.recording );
 		r2dl.recording = NULL;
