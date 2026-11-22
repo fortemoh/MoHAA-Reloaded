@@ -148,6 +148,24 @@ int CL_GetServerStartTime( void ) {
 
 /*
 ====================
+CL_FollowEyesPlayerState
+
+Added in Reloaded
+The playerstate the view is drawn from while a followed player is watched through their eyes from a server
+sending the view from behind (the cgame's cg_followeyes.c rewrites the snapshots): what the client draws of the
+view itself (the red flash, the HUD's health and damage arrows) comes from it. NULL otherwise
+====================
+*/
+const playerState_t *CL_FollowEyesPlayerState( void ) {
+	if ( !cls.cgameStarted || !cge || !cge->CG_FollowEyesPlayerState ) {
+		return NULL;
+	}
+
+	return cge->CG_FollowEyesPlayerState();
+}
+
+/*
+====================
 CL_SetTime
 ====================
 */

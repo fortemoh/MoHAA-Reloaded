@@ -544,9 +544,17 @@ void View3D::DrawLetterbox(void)
 
 void View3D::DrawFades(void)
 {
-    if (cl.snap.ps.blend[3] > 0) {
-        re.SetColor(cl.snap.ps.blend);
-        if (cl.snap.ps.stats[STAT_ADDFADE]) {
+    // Changed in Reloaded
+    //  a followed player watched through their eyes: their red flash too (cg_followeyes.c)
+    const playerState_t *ps = CL_FollowEyesPlayerState();
+
+    if (!ps) {
+        ps = &cl.snap.ps;
+    }
+
+    if (ps->blend[3] > 0) {
+        re.SetColor(ps->blend);
+        if (ps->stats[STAT_ADDFADE]) {
             re.AddBox(0.0, 0.0, m_screenframe.size.width, m_screenframe.size.height);
         } else {
             re.DrawBox(0.0, 0.0, m_screenframe.size.width, m_screenframe.size.height);

@@ -690,6 +690,7 @@ extern "C" {
     void           CG_FollowEyes_Snapshot(snapshot_t *snap);
     void           CG_FollowEyes_Shot(const vec3_t start, const vec3_t end);
     void           CG_FollowEyes_Blast(const vec3_t origin);
+    const playerState_t *CG_FollowEyes_PlayerState(void);
 
     //
     // cg_draw.c

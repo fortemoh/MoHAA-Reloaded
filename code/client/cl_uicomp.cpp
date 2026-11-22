@@ -164,9 +164,9 @@ static struct {
     qboolean charging, chargeSecondary;
     int      chargeStart;
 
-    // the damage's arcs
+    // the damage's arcs, and whose view they are for (a followed player's through their eyes, -1 our own's)
     int arcStat[3], arcTime[3];
-    int lastDmg, lastHealth, flashTime;
+    int lastDmg, lastHealth, flashTime, dmgView;
 } comp;
 
 /*
@@ -624,6 +624,7 @@ void UI_CompHud_Clear(void)
     memset(&comp, 0, sizeof(comp));
     comp.sbScore[0] = comp.sbScore[1] = -1;
     comp.lastDmg                      = -999999;
+    comp.dmgView                      = -1;
 }
 
 /*
@@ -1166,6 +1167,9 @@ void UI_CompHud_Frame(void)
     float       viewYaw;
     int         health = ps->stats[STAT_HEALTH], maxHealth = Q_max(1, ps->stats[STAT_MAXHEALTH]);
     int         i;
+    // a followed player watched through their eyes from a server sending the view from behind: their health
+    // (none when dying) and their hits' arrows as the cgame works them out (cg_followeyes.c)
+    const playerState_t *eyes = CL_FollowEyesPlayerState();
 
     static int  lastSnap = -1, lastChange = -1, lastFull;
 
@@ -1242,7 +1246,10 @@ void UI_CompHud_Frame(void)
         Comp_Set("ui_hud_allies", icon && shown == TEAM_ALLIES ? "1" : "0");
         Comp_Set("ui_hud_axis", icon && shown == TEAM_AXIS ? "1" : "0");
     }
-    if (following && !(ps->stats[STAT_WEAPONS] & 0x3F) && ps->stats[STAT_INFOCLIENT_HEALTH] > 0) {
+    if (eyes) {
+        health    = eyes->stats[STAT_HEALTH];
+        maxHealth = 100;
+    } else if (following && !(ps->stats[STAT_WEAPONS] & 0x3F) && ps->stats[STAT_INFOCLIENT_HEALTH] > 0) {
         health    = ps->stats[STAT_INFOCLIENT_HEALTH];
         maxHealth = 100;
     }
@@ -1398,10 +1405,19 @@ void UI_CompHud_Frame(void)
     // wedge. cg_hud_damage 0 (Options' HUD tab): no crescents, in every
     // frame (the wedge stays)
     {
-        const int      dmg   = ps->stats[STAT_DAMAGEDIR];
-        const qboolean shown = Comp_Int("cg_hud_damage") != 0;
+        const playerState_t *hit   = eyes ? eyes : ps;
+        const int            dmg   = hit->stats[STAT_DAMAGEDIR];
+        const qboolean       shown = Comp_Int("cg_hud_damage") != 0;
+        const int            view  = eyes ? eyes->clientNum : -1;
 
-        if (dmg != comp.lastDmg || (dmg > 0 && ps->stats[STAT_HEALTH] < comp.lastHealth)) {
+        // another's view: no hit (its last direction is no news)
+        if (view != comp.dmgView) {
+            comp.dmgView    = view;
+            comp.lastDmg    = dmg;
+            comp.lastHealth = hit->stats[STAT_HEALTH];
+        }
+        // (through their eyes a hit always moves the direction; one from where isn't known shows none)
+        if (dmg != comp.lastDmg || (!eyes && dmg > 0 && ps->stats[STAT_HEALTH] < comp.lastHealth)) {
             int slot = 0;
 
             for (i = 0; i < 3; i++) {
@@ -1419,7 +1435,7 @@ void UI_CompHud_Frame(void)
             }
         }
         comp.lastDmg    = dmg;
-        comp.lastHealth = ps->stats[STAT_HEALTH];
+        comp.lastHealth = hit->stats[STAT_HEALTH];
         // (a world yaw's angle on screen, clockwise from up the view: the view's yaw less it)
         for (i = 0; i < 3; i++) {
             const int age = cls.realtime - comp.arcTime[i];

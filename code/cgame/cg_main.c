@@ -1182,6 +1182,8 @@ clientGameExport_t *GetCGameAPI(void)
     cge.CG_SaveStateToBuffer        = CG_SaveStateToBuffer;
     cge.CG_LoadStateToBuffer        = CG_LoadStateToBuffer;
     cge.CG_CleanUpTempModels        = CG_CleanUpTempModels;
+    // Added in Reloaded
+    cge.CG_FollowEyesPlayerState = CG_FollowEyes_PlayerState;
 
     // FIXME
     //cge.profStruct = NULL;
