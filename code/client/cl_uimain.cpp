@@ -2242,7 +2242,7 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Server Lag Icon", "Shown while the server stops answering.", "cg_drawsvlag", "1", 0),
     O_SEG("Lagometer", "The connection: ping, loss, updates.", "cg_lagometer", "0", rl_oLagometer, NULL, 0),
     O_TOGGLE("Remote Prediction", "Players drawn where your shots will find them.", "cg_remotePrediction", "1", 0),
-    O_TOGGLE("Smooth Lagging Players", "A new update's jump faded out, not snapped.", "cg_remotePredictionSmooth", "15", OF_RP),
+    O_TOGGLE("Smooth Lagging Players", "A player whose updates come late keeps moving, not freezing.", "cg_remotePredictionPush", "1", OF_RP),
     O_TOGGLE("Scoreboard Cursor", "Right-click while TAB is held: a cursor to sort the columns.", "cl_scoreboardcursor", "0", 0),
     // (by the Field of View, which turns the view faster as it widens: cl_mouseturn_logic.h)
     O_SECTION(OT_GAMEPLAY, "MOUSE", OF_RIGHT),
@@ -2749,7 +2749,7 @@ static void RL_OptFlip(int i)
     if (rl_opts[i].flags & OF_NEG) {
         RL_OptSet(i, va("%g", -atof(RL_OptValue(i))));
     } else {
-        // (on: the default when that is a level, cg_remotePredictionSmooth's ms, else 1)
+        // (on: the default when that is a level (ms, say), else 1)
         RL_OptSet(i, atoi(RL_OptValue(i)) ? "0" : atoi(rl_opts[i].def) > 1 ? rl_opts[i].def : "1");
     }
 }
