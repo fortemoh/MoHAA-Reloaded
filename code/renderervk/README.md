@@ -7151,7 +7151,11 @@ thread, both and neither, vsync, the temporal path, the early submission
 levelshot, a resampled shot, the overdraw). With `r_smp 0` and bindless textures (`r_vkBindless 1`) a map load
 reports 84 messages (a descriptor set updated while a command buffer that
 binds it records): the same before this plan and before the merge
-(783b7414), none with `r_vkBindless 0`; not fixed here.
+(783b7414), none with `r_vkBindless 0`; not fixed here. Fixed since
+(2026-11-21, see Implementation notes, Bindless textures): the frame's
+bindless set was written after a draw bound it when the UI baked a font
+page mid-frame; the map load and the team page are clean under validation
+with `r_smp` 0 and 1.
 
 ### Coordinate conventions
 
@@ -8066,14 +8070,23 @@ selects the sample count (see Implementation notes).
   twice (`generic_bindless_frag`, `-DBINDLESS`), the vertex shaders write
   the slots either way. A set is written at its frame's begin, when that
   frame is done, for the slots that changed since it was last written (a
-  pending frame's set can't be written); the frame being recorded has its
-  set written at once, so a texture made in a frame is drawn in it. A
-  free slot holds the default texture, the last slot (which the table
-  never hands out) is the default's, and a slot freed in the frame being
-  recorded isn't handed out again in it, since the frame's earlier draws
-  read it. Two edges: a texture respecified in a frame (the ghost textures)
-  shows its new contents to the frame's earlier draws too, and the
-  per-texture sets are still made (the fallback's path stays whole).
+  pending frame's set can't be written); the frame being recorded gets a
+  change at once, so a texture made in a frame is drawn in it. Its set is
+  written in place only until a draw of the command buffer binds it:
+  writing a bound set makes the command buffer invalid (validation: "was
+  destroyed or updated without UPDATE_AFTER_BIND"; the UI baking a font
+  page the first time it draws a size did that on the team page and the
+  connect screen). After that the change goes in the next of the frame
+  slot's `VK_TEXTURE_ARRAY_SETS` (4) sets, a copy of the current one with
+  the change, which the draws after bind and the frame keeps as its set;
+  the earlier draws keep theirs (`textureArrayCopies` in `vkinfo`, 5 or 6 in a
+  map load and the team page). With all four bound in the command buffer
+  the frame so far is submitted and waited for (`VK_FlushAndWait`), which
+  begins a command buffer with none bound. A free slot holds the default
+  texture, the last slot (which the table never hands out) is the
+  default's, and a slot freed in the frame being recorded isn't handed out
+  again in it. The per-texture sets are still made (the fallback's path
+  stays whole).
   Without the limits, dynamic indexing or stride 0 bindings (the
   per-instance fallback would read `firstInstance`), or with `r_vkBindless
   0`, the sets per texture as before.

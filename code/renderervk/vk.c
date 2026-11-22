@@ -545,6 +545,10 @@ static void VK_BeginMainCommandBuffer( void ) {
 	// nothing is bound in a new command buffer
 	Com_Memset( &vkb, 0, sizeof( vkb ) );
 	vk_dirty = VK_DIRTY_ALL;
+	// and the one before is done: of the bindless sets, only the current one
+	// is the new one's (VK_TextureArrayMark)
+	vk.frame->textureArrayCount = 1;
+	vk.frame->textureArrayBound = qfalse;
 }
 
 // what is bound in the main command buffer is no longer known (compute
@@ -2323,7 +2327,7 @@ static void VK_Info_f( void ) {
 
 #define VK_DELTA( field ) ( (unsigned long long)( s->field - r->field ) )
 	ri.Printf( PRINT_ALL, "vkinfo: frames=%llu renderPasses=%llu submits=%llu flushes=%llu draws=%llu staticDraws=%llu effectsDraws=%llu terrainDraws=%llu terrainSlots=%llu skinDraws=%llu pipelineBinds=%llu"
-		" descriptorBinds=%llu vertexBytes=%llu stagingBytes=%llu mainUploads=%llu textures=%llu pipelines=%llu allocations=%llu depthTargets=%llu"
+		" descriptorBinds=%llu textureArrayCopies=%llu vertexBytes=%llu stagingBytes=%llu mainUploads=%llu textures=%llu pipelines=%llu allocations=%llu depthTargets=%llu"
 		" swapchains=%llu vertexGrowth=%llu prebuiltPipelines=%llu skinUploads=%llu skinBytes=%llu"
 		" waitUs=%llu flushUs=%llu submitUs=%llu acquireUs=%llu acquireAheadUs=%llu frameToPresentUs=%llu presentUs=%llu pipelineUs=%llu prebuiltUs=%llu allocationUs=%llu textureUs=%llu"
 		" gpuFrames=%llu gpuMainUs=%llu gpuPresentUs=%llu gpuFrameUs=%llu"
@@ -2332,7 +2336,7 @@ static void VK_Info_f( void ) {
 		" vertexBinds=%llu indexBinds=%llu pushConstants=%llu dynamicStates=%llu\n",
 		VK_DELTA( frames ), VK_DELTA( renderPasses ), VK_DELTA( submits ), VK_DELTA( flushes ), VK_DELTA( draws ),
 		VK_DELTA( staticDraws ), VK_DELTA( effectsDraws ), (unsigned long long)( vk_terrain.draws - vk_terrain.reportedDraws ),
-		(unsigned long long)( vk_terrain.slots - vk_terrain.reportedSlots ), VK_DELTA( skinDraws ), VK_DELTA( pipelineBinds ), VK_DELTA( descriptorBinds ), VK_DELTA( vertexBytes ), VK_DELTA( stagingBytes ), VK_DELTA( mainUploads ),
+		(unsigned long long)( vk_terrain.slots - vk_terrain.reportedSlots ), VK_DELTA( skinDraws ), VK_DELTA( pipelineBinds ), VK_DELTA( descriptorBinds ), VK_DELTA( textureArrayCopies ), VK_DELTA( vertexBytes ), VK_DELTA( stagingBytes ), VK_DELTA( mainUploads ),
 		VK_DELTA( textures ), VK_DELTA( pipelines ), VK_DELTA( allocations ), VK_DELTA( depthTargets ), VK_DELTA( swapchains ), VK_DELTA( vertexGrowth ),
 		VK_DELTA( prebuiltPipelines ), VK_DELTA( skinUploads ), VK_DELTA( skinBytes ),
 		VK_DELTA( waitUs ), VK_DELTA( flushUs ), VK_DELTA( submitUs ),
@@ -3975,6 +3979,8 @@ void vk_draw( primType_t prim, const drawGeometry_t *geometry, int numIndexes, c
 			qvkCmdBindDescriptorSets( cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, vkt.active ? vkt.pipelineLayout : vk.pipelineLayout, 0, 1,
 				&vk.frame->textureArraySet, 0, NULL );
 			vkb.sets[0] = vk.frame->textureArraySet;
+			// (from now on a changed slot goes in a copy: vk_image.c)
+			vk.frame->textureArrayBound = qtrue;
 			vk.stats.descriptorBinds++;
 		}
 		slots = VK_TextureArraySlots( textures[0], textures[1] );

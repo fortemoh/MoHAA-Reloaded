@@ -55,6 +55,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define VK_PRESENT_FENCES			16		// presents whose fence may be pending (swapchain_maintenance1)
 #define VK_MAX_RETIRED_SWAPCHAINS	8		// replaced swapchains whose presents may be pending
 #define VK_MAX_TEXTURES				4096	// live texture handles
+#define VK_TEXTURE_ARRAY_SETS		4		// bindless textures: sets of every texture slot a frame slot has (see vk_image.c)
 #define VK_MAX_DEPTH_READS			256		// vk_queue_depth_reads per frame
 #define VK_DEPTH_READ_FRAMES		300		// the depth image stays readable this many frames after the last read
 
@@ -333,7 +334,14 @@ typedef struct {
 	VkDeviceSize	stagingOffset;
 	vkBuffer_t		dlightBuffer;	// lights of vk_add_dlights (vkDlightGPU_t), set 2 of the shaders
 	VkDescriptorSet	dlightSet;		// set 2: the dlight buffer, the skin data and this frame's skin data
-	VkDescriptorSet	textureArraySet;	// bindless textures: set 0, every texture slot as of this frame's begin
+	// bindless textures: set 0, every texture slot (vk_image.c). The draws
+	// bind textureArraySet, one of textureArraySets: a slot that changes
+	// after a draw bound it goes in the next one, a copy, for the draws after
+	VkDescriptorSet	textureArraySets[VK_TEXTURE_ARRAY_SETS];
+	VkDescriptorSet	textureArraySet;
+	int				textureArrayIndex;	// of textureArraySet in textureArraySets
+	int				textureArrayCount;	// of textureArraySets in the command buffer being recorded, textureArraySet's included
+	qboolean		textureArrayBound;	// textureArraySet bound in it
 	int				numDlights;
 	// the lists of more than 32 lights, at their place in the dlight buffer
 	// (which is write-combined memory): the draws whose lights span more
@@ -372,6 +380,7 @@ typedef struct {
 	uint64_t	skinDraws;			// skinned draws (drawGeometry_t::isSkinned)
 	uint64_t	pipelineBinds;
 	uint64_t	descriptorBinds;	// descriptor sets bound
+	uint64_t	textureArrayCopies;	// bindless textures: sets copied for a slot that changed after a draw bound the set
 	uint64_t	vertexBinds;		// vkCmdBindVertexBuffers calls (the streams, the normals)
 	uint64_t	indexBinds;			// vkCmdBindIndexBuffer calls
 	uint64_t	pushConstants;		// vkCmdPushConstants calls
