@@ -1,4 +1,4 @@
-// MoHAA Launcher for macOS: starts openmohaa.app (the metal branch's game) from the folder it shares with it.
+// MoHAA Launcher for macOS: starts mohreloaded.app (the metal branch's game) from the folder it shares with it.
 import AppKit
 import SwiftUI
 

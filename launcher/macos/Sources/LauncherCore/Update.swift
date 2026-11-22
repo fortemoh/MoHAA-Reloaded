@@ -18,7 +18,9 @@ public enum UpdateNames {
     public static let assetSuffix = "-macos-arm64.zip"
     /// Where an update downloads and unpacks, in the game folder: the same volume, so files move by being renamed
     public static let workFolder = ".mohlauncher-update"
-    public static let game = "openmohaa.app"
+    public static let game = "mohreloaded.app"
+    /// The game's program in it (Contents/MacOS)
+    public static let gameExecutable = "mohreloaded"
     public static let launcher = "mohlauncher.app"
     /// Where the old launcher waits on a volume without RENAME_SWAP: beside the game, under a name that can be opened.
     /// There's a moment with no mohlauncher.app there, and a player must still have a launcher to recover with.
@@ -289,7 +291,7 @@ public func githubFetch(_ url: URL) async throws -> (status: Int, data: Data) {
 
 /// The installed game's commit: nil if there's no game, or its file can't be read (evicted by iCloud, no network)
 public func installedCommit(folder: URL) -> String? {
-    let exe = folder.appendingPathComponent("\(UpdateNames.game)/Contents/MacOS/openmohaa")
+    let exe = folder.appendingPathComponent("\(UpdateNames.game)/Contents/MacOS/\(UpdateNames.gameExecutable)")
     return (try? Data(contentsOf: exe, options: .mappedIfSafe)).flatMap(buildCommit)
 }
 
@@ -1127,7 +1129,7 @@ public func gameIsRunning(folder: URL) -> Bool {
     guard let resolved = realpath(folder.path, nil) else { return false }
     defer { free(resolved) }
     let real = String(cString: resolved).lowercased()
-    let suffix = "/contents/macos/openmohaa"
+    let suffix = "/contents/macos/\(UpdateNames.gameExecutable)"
     let count = proc_listallpids(nil, 0)
     guard count > 0 else { return false }
     var pids = [pid_t](repeating: 0, count: Int(count) + 32)

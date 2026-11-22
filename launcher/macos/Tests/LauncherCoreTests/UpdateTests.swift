@@ -140,7 +140,7 @@ final class UpdateCheckTests: XCTestCase {
 
     func testZipPaths() {
         let top = "openmohaa-metal-1.0.0-macos-arm64"
-        let good = ["\(top)/", "\(top)/COPYING.txt", "\(top)/openmohaa.app/", "\(top)/openmohaa.app/Contents/MacOS/openmohaa",
+        let good = ["\(top)/", "\(top)/COPYING.txt", "\(top)/mohreloaded.app/", "\(top)/mohreloaded.app/Contents/MacOS/mohreloaded",
                     "\(top)/licenses/opus/COPYING"]
         XCTAssertTrue(zipPathsAreSafe(good, top: top))
         XCTAssertFalse(zipPathsAreSafe([], top: top))
@@ -229,7 +229,7 @@ private func makeApp(_ app: URL, id: String, exe: String, tag: String, binary: S
 private let gameID = "io.github.pstngh.openmohaa-metal", launcherID = "io.github.pstngh.mohlauncher"
 
 private func makeGameFolder(_ folder: URL, tag: String = "old") throws {
-    try makeApp(folder.appendingPathComponent(UpdateNames.game), id: gameID, exe: "openmohaa", tag: tag)
+    try makeApp(folder.appendingPathComponent(UpdateNames.game), id: gameID, exe: "mohreloaded", tag: tag)
     try makeApp(folder.appendingPathComponent(UpdateNames.launcher), id: launcherID, exe: "mohlauncher", tag: tag)
     try write(folder.appendingPathComponent("INSTALL.txt"), "\(tag) install")
     try write(folder.appendingPathComponent("licenses/opus/COPYING"), "\(tag) opus")
@@ -240,7 +240,7 @@ private func makeGameFolder(_ folder: URL, tag: String = "old") throws {
 /// A stage in the work folder, as unpackUpdate leaves it
 private func makeStage(_ folder: URL, replaceLauncher: Bool = true) throws -> StagedUpdate {
     let stage = folder.appendingPathComponent("\(UpdateNames.workFolder)/new/top")
-    try makeApp(stage.appendingPathComponent(UpdateNames.game), id: gameID, exe: "openmohaa", tag: "new")
+    try makeApp(stage.appendingPathComponent(UpdateNames.game), id: gameID, exe: "mohreloaded", tag: "new")
     try makeApp(stage.appendingPathComponent(UpdateNames.launcher), id: launcherID, exe: "mohlauncher", tag: "new")
     let files = ["COPYING.txt", "INSTALL.txt", "licenses/opus/COPYING", "licenses/zlib/LICENSE"]
     for file in files { try write(stage.appendingPathComponent(file), "new \(file)") }
@@ -489,7 +489,7 @@ final class UpdateSwapTests: XCTestCase {
         try run(step: "swap:\(UpdateNames.launcher)", forceRename: false, failure: UpdateCrash()) { folder, installer, _, _ in
             let game = folder.appendingPathComponent(UpdateNames.game)
             try fm.removeItem(at: game)
-            try makeApp(game, id: "some.other.game", exe: "openmohaa", tag: "someone else's")
+            try makeApp(game, id: "some.other.game", exe: "mohreloaded", tag: "someone else's")
             let there = try snapshot(folder)
             XCTAssertEqual(try installer.recover(), .stuck)
             XCTAssertEqual(try snapshot(folder), there)
@@ -505,7 +505,7 @@ final class UpdateSwapTests: XCTestCase {
         for forceRename in [false, true] {
             for step in [forceRename ? "place:\(UpdateNames.launcher)" : "swap:\(UpdateNames.launcher)", "file-aside:INSTALL.txt"] {
                 try run(step: step, forceRename: forceRename, failure: UpdateCrash()) { folder, installer, _, _ in
-                    for (name, id, exe) in [(UpdateNames.game, gameID, "openmohaa"), (UpdateNames.launcher, launcherID, "mohlauncher")] {
+                    for (name, id, exe) in [(UpdateNames.game, gameID, "mohreloaded"), (UpdateNames.launcher, launcherID, "mohlauncher")] {
                         let app = folder.appendingPathComponent(name)
                         try? fm.removeItem(at: app)
                         try makeApp(app, id: id, exe: exe, tag: "fresh")
@@ -569,11 +569,11 @@ final class UpdateSwapTests: XCTestCase {
         defer { try? fm.removeItem(at: folder) }
         try makeGameFolder(folder)
         let installer = UpdateInstaller(folder: folder)
-        try write(installer.work.appendingPathComponent("old/openmohaa.app/Contents/x"), "the old game")
+        try write(installer.work.appendingPathComponent("old/mohreloaded.app/Contents/x"), "the old game")
         XCTAssertEqual(try installer.recover(), .stuck)
-        XCTAssertTrue(fm.fileExists(atPath: installer.work.appendingPathComponent("old/openmohaa.app/Contents/x").path))
+        XCTAssertTrue(fm.fileExists(atPath: installer.work.appendingPathComponent("old/mohreloaded.app/Contents/x").path))
         // only folders there: what a finished undoing leaves
-        try fm.removeItem(at: installer.work.appendingPathComponent("old/openmohaa.app/Contents/x"))
+        try fm.removeItem(at: installer.work.appendingPathComponent("old/mohreloaded.app/Contents/x"))
         XCTAssertEqual(try installer.recover(), .cleaned)
     }
 
@@ -672,7 +672,7 @@ final class UpdateSwapTests: XCTestCase {
     func testFindsARunningGame() throws {
         let folder = try tempFolder("running")
         defer { try? fm.removeItem(at: folder) }
-        let exe = folder.appendingPathComponent("\(UpdateNames.game)/Contents/MacOS/openmohaa")
+        let exe = folder.appendingPathComponent("\(UpdateNames.game)/Contents/MacOS/mohreloaded")
         try makeStandInGame(exe)
         XCTAssertFalse(gameIsRunning(folder: folder))
         let process = Process()
@@ -688,7 +688,7 @@ final class UpdateSwapTests: XCTestCase {
         let folder = try tempFolder("quarantine")
         defer { try? fm.removeItem(at: folder) }
         try makeGameFolder(folder)
-        let exe = folder.appendingPathComponent("\(UpdateNames.game)/Contents/MacOS/openmohaa")
+        let exe = folder.appendingPathComponent("\(UpdateNames.game)/Contents/MacOS/mohreloaded")
         let pak = folder.appendingPathComponent("main/Pak0.pk3")
         for url in [exe, pak] {
             XCTAssertEqual(setxattr(url.path, "com.apple.quarantine", "0083;00000000;Safari;", 21, 0, 0), 0)
@@ -804,7 +804,7 @@ final class UpdateRunTests: XCTestCase {
     }
 
     private func makeZipTree(_ inner: URL, launcherSource: String? = nil) throws {
-        try makeApp(inner.appendingPathComponent(UpdateNames.game), id: gameID, exe: "openmohaa", tag: "new",
+        try makeApp(inner.appendingPathComponent(UpdateNames.game), id: gameID, exe: "mohreloaded", tag: "new",
                     binary: "\u{7f}OpenMoHAA 0.83.0-unstable+0.\(built) macosx-arm64\0")
         try makeApp(inner.appendingPathComponent(UpdateNames.launcher), id: launcherID, exe: "mohlauncher", tag: "new", source: launcherSource)
         for file in ["COPYING.txt", "INSTALL.txt", "licenses/opus/COPYING", "licenses/zlib/LICENSE"] {
@@ -914,7 +914,7 @@ final class UpdateRunTests: XCTestCase {
 
     func testOtherBundleIDs() async throws {
         let before = try snapshot(folder)
-        try makeApp(folder.appendingPathComponent(UpdateNames.game), id: "some.other.game", exe: "openmohaa", tag: "old")
+        try makeApp(folder.appendingPathComponent(UpdateNames.game), id: "some.other.game", exe: "mohreloaded", tag: "old")
         let changed = try snapshot(folder)
         XCTAssertNotEqual(before, changed)
         try assertFailed(await update(), .failed, changed)
@@ -986,7 +986,7 @@ final class UpdateRunTests: XCTestCase {
 
     /// The second look, after the download: the first found no game
     func testAGameStartedDuringTheDownloadStopsIt() async throws {
-        let exe = folder.appendingPathComponent("\(UpdateNames.game)/Contents/MacOS/openmohaa")
+        let exe = folder.appendingPathComponent("\(UpdateNames.game)/Contents/MacOS/mohreloaded")
         try fm.removeItem(at: exe)
         try makeStandInGame(exe)
         let process = Process()
@@ -1006,7 +1006,7 @@ final class UpdateRunTests: XCTestCase {
     }
 
     func testARunningGameStopsIt() async throws {
-        let exe = folder.appendingPathComponent("\(UpdateNames.game)/Contents/MacOS/openmohaa")
+        let exe = folder.appendingPathComponent("\(UpdateNames.game)/Contents/MacOS/mohreloaded")
         try fm.removeItem(at: exe)
         try makeStandInGame(exe)
         let process = Process()
@@ -1036,7 +1036,7 @@ final class UpdateLiveTests: XCTestCase {
         defer { try? fm.removeItem(at: folder) }
         try makeGameFolder(folder)
         // d4f7c7c8: an ancestor of what v1.0.0 has been on since 2026-11-06
-        try makeApp(folder.appendingPathComponent(UpdateNames.game), id: gameID, exe: "openmohaa", tag: "old",
+        try makeApp(folder.appendingPathComponent(UpdateNames.game), id: gameID, exe: "mohreloaded", tag: "old",
                     binary: "\u{7f}OpenMoHAA 0.83.0-unstable+0.d4f7c7c macosx-arm64 Nov 06 2026 UTC\0")
         let installed = installedCommit(folder: folder)
         XCTAssertEqual(installed, "d4f7c7c")

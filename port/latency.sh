@@ -99,6 +99,7 @@ cat "$OUT/$NAME-mouse.txt" 2>/dev/null
 grep -E '^Metal: [0-9]+ frames' "$LOG"
 grep -A8 '^cl_latencyStats, whole run' "$LOG" | grep -v '^RE_Shutdown'
 if [ "${TRACE:-0}" = 1 ]; then
-	/usr/bin/python3 -I "$OMM_PORT/display_trace.py" "$TRACE_FILE" "$LOG"
+	omm_game "$FLAVOR" || true
+	PROCESS="${PROCESS:-${OMM_EXE_NAME:-mohreloaded}}" /usr/bin/python3 -I "$OMM_PORT/display_trace.py" "$TRACE_FILE" "$LOG"
 fi
 grep -q '^cl_latencyStats, whole run' "$LOG" || { echo "latency.sh: no whole-run numbers (see $LOG)" >&2; exit 1; }

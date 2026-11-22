@@ -171,13 +171,13 @@ void Sys_CheckTranslocation( void )
 			// in single quotes for the shell, a quote in the path as '\''
 			line = [NSString stringWithFormat:@"xattr -dr com.apple.quarantine '%@'",
 				[folder stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"]];
-			how = @"Clear the quarantine once: open Terminal, run the line below, then start openmohaa.app again.";
+			how = @"Clear the quarantine once: open Terminal, run the line below, then start mohreloaded.app again.";
 		}
 		else
 		{
 			line = @"xattr -dr com.apple.quarantine ";
 			how = @"Clear the quarantine once: open Terminal, type the line below followed by a space, drag the folder "
-				@"that holds openmohaa.app onto the Terminal window, press Return, then start openmohaa.app again.";
+				@"that holds mohreloaded.app onto the Terminal window, press Return, then start mohreloaded.app again.";
 		}
 
 		fprintf( stderr, "Started from App Translocation's copy (%s): the download is still quarantined.\n%s\n",
@@ -189,7 +189,7 @@ void Sys_CheckTranslocation( void )
 		alert = [[NSAlert alloc] init];
 		alert.alertStyle = NSAlertStyleCritical;
 		alert.messageText = @"The download is still quarantined";
-		alert.informativeText = [NSString stringWithFormat:@"macOS started openmohaa.app from a temporary read-only copy, "
+		alert.informativeText = [NSString stringWithFormat:@"macOS started mohreloaded.app from a temporary read-only copy, "
 			@"because the downloaded files are still quarantined (\"Open Anyway\" isn't enough for this game). From there "
 			@"the game can't find your game data, and macOS refuses its game libraries.\n\n%@\n\n%@", how, line];
 		[alert addButtonWithTitle:@"Copy Line and Quit"];

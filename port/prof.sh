@@ -27,7 +27,7 @@ for _ in $(seq 1 90); do
 	grep -q '^timedemo work' "$OUT/$NAME-loop.log" 2>/dev/null && break
 	sleep 1
 done
-GAME="$(pgrep -x openmohaa || true)"
+GAME="$(pgrep -x mohreloaded || pgrep -x openmohaa || true)"   # the second: a flavor of a commit before the rename
 [ -n "$GAME" ] || { echo "prof.sh: the game is not running (see $OUT/$NAME-loop.log)" >&2; exit 1; }
 sample "$GAME" "$SECS" -file "$OUT/$NAME.txt" > /dev/null 2>&1 || true
 kill "$GAME" 2>/dev/null || true

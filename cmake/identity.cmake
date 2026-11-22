@@ -1,10 +1,12 @@
-set(PROJECT_NAME openmohaa)
+# The programs' names: the app mohreloaded.app, installed into <prefix>/lib/<PROJECT_NAME>; upstream's were openmohaa
+# and omohaaded
+set(PROJECT_NAME mohreloaded)
 # MoHAA Reloaded's version, which the game shows and sends (cmake/version.cmake adds the stage, the CI run and the
 # commit). A release's tag is v<this>: CI's tag builds check it (PRODUCT_RELEASE_TAG, below).
 set(PROJECT_VERSION 1.0.0)
 
-set(SERVER_NAME omohaaded)
-set(CLIENT_NAME openmohaa)
+set(SERVER_NAME mohreloaded-server)
+set(CLIENT_NAME mohreloaded)
 
 set(BASEGAME)
 

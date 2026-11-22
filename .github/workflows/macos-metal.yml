@@ -63,21 +63,21 @@ jobs:
     - name: Check the install
       run: |
         set -euo pipefail
-        D=install/lib/openmohaa
+        D=install/lib/mohreloaded
         # The prefix holds exactly the app (no dedicated server), with the game modules inside it
-        diff <(cd install && find . -mindepth 1 -not -path './lib/openmohaa/openmohaa.app/*' | sort) \
-             <(printf '%s\n' ./lib ./lib/openmohaa ./lib/openmohaa/openmohaa.app)
-        diff <(ls "$D/openmohaa.app/Contents/MacOS") <(printf '%s\n' cgame.dylib game.dylib openmohaa)
+        diff <(cd install && find . -mindepth 1 -not -path './lib/mohreloaded/mohreloaded.app/*' | sort) \
+             <(printf '%s\n' ./lib ./lib/mohreloaded ./lib/mohreloaded/mohreloaded.app)
+        diff <(ls "$D/mohreloaded.app/Contents/MacOS") <(printf '%s\n' cgame.dylib game.dylib mohreloaded)
         # The whole bundle: no openal-soft since Phase 9g (no Frameworks, no license folder in Resources)
-        diff <(cd "$D/openmohaa.app" && find . -type f | sort) \
+        diff <(cd "$D/mohreloaded.app" && find . -type f | sort) \
              <(printf '%s\n' ./Contents/Info.plist ./Contents/MacOS/cgame.dylib ./Contents/MacOS/game.dylib \
-                 ./Contents/MacOS/openmohaa ./Contents/Resources/openmohaa-metal.icns \
+                 ./Contents/MacOS/mohreloaded ./Contents/Resources/openmohaa-metal.icns \
                  ./Contents/_CodeSignature/CodeResources | sort)
-        codesign --verify --deep --strict --verbose=2 "$D/openmohaa.app"
-        codesign -dv "$D/openmohaa.app" 2>&1 | grep -E '^(Identifier|Format|Signature)='
-        /usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' -c 'Print CFBundleShortVersionString' "$D/openmohaa.app/Contents/Info.plist"
+        codesign --verify --deep --strict --verbose=2 "$D/mohreloaded.app"
+        codesign -dv "$D/mohreloaded.app" 2>&1 | grep -E '^(Identifier|Format|Signature)='
+        /usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' -c 'Print CFBundleShortVersionString' "$D/mohreloaded.app/Contents/Info.plist"
         # arm64 only, and nothing loaded from outside the system or the app (no Homebrew paths)
-        for f in "$D"/openmohaa.app/Contents/MacOS/*; do
+        for f in "$D"/mohreloaded.app/Contents/MacOS/*; do
           [ "$(lipo -archs "$f")" = arm64 ]
           if otool -L "$f" | tail -n +2 | awk '{print $1}' | grep -vE '^(/System/|/usr/lib/|@rpath/)'; then
             echo "$f loads a library from outside the system or the app" >&2; exit 1
@@ -93,7 +93,7 @@ jobs:
 
     - name: Package
       run: |
-        port/release.sh "$PWD/install/lib/openmohaa" "$PWD/dist"
+        port/release.sh "$PWD/install/lib/mohreloaded" "$PWD/dist"
         { echo '### Release zip (workflow artifact, not a release)'; echo; echo '```'; cat dist/*.zip.sha256; echo '```'; \
           echo; echo "Commit $GITHUB_SHA"; } >> "$GITHUB_STEP_SUMMARY"
 

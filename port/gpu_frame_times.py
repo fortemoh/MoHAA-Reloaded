@@ -36,7 +36,7 @@ def union_ns(intervals):
 
 def main():
     path = sys.argv[1]
-    proc_name = sys.argv[2] if len(sys.argv) > 2 else "openmohaa"
+    proc_name = sys.argv[2] if len(sys.argv) > 2 else "mohreloaded"
     ids = {}            # xctrace writes repeated values once (id=) and then refers to them (ref=)
     frames = {}         # frame number -> list of (start, end) in ns
     for _, elem in ET.iterparse(path, events=("end",)):

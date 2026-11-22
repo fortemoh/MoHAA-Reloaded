@@ -123,7 +123,7 @@ final class LauncherModel: ObservableObject {
     func findGame() -> Bool {
         let found = [chosen, LauncherModel.ownFolder].compactMap { $0 }.first(where: hasGameData)
         gameAppURL = [LauncherModel.ownFolder, found].compactMap { $0 }
-            .map { $0.appendingPathComponent("openmohaa.app", isDirectory: true) }
+            .map { $0.appendingPathComponent(UpdateNames.game, isDirectory: true) }
             .first { FileManager.default.fileExists(atPath: $0.path) }
         let changed = found?.standardizedFileURL != folder?.standardizedFileURL
         folder = found
@@ -155,7 +155,7 @@ final class LauncherModel: ObservableObject {
     var status: String {
         guard let folder else { return "No game found: choose your MOHAA folder." }
         let path = (folder.path as NSString).abbreviatingWithTildeInPath
-        if gameAppURL == nil { return "No openmohaa.app beside the launcher or in \(path)" }
+        if gameAppURL == nil { return "No \(UpdateNames.game) beside the launcher or in \(path)" }
         if unwritable { return "Can't write to the game folder: \(path)" }
         if updateStuck { return "An update didn't finish: download the game again from the release page." }
         if running { return "\(game.title) is running." }
@@ -420,7 +420,7 @@ final class LauncherModel: ObservableObject {
             return
         }
         guard let appURL = gameAppURL else {
-            alertMessage = "openmohaa.app isn't beside the launcher or in \(folder.path): keep MoHAA Launcher with the files of the download it came in."
+            alertMessage = "\(UpdateNames.game) isn't beside the launcher or in \(folder.path): keep MoHAA Launcher with the files of the download it came in."
             return
         }
         storeFields()

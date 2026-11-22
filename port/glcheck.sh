@@ -63,11 +63,11 @@ else
 	echo "glcheck: source clean (only documented exceptions)"
 fi
 
-BIN="$OMM_BUILD/$FLAVOR-install/lib/openmohaa/openmohaa.app/Contents/MacOS/openmohaa"
-if [ ! -x "$BIN" ]; then
+if ! omm_game "$FLAVOR"; then
 	echo "glcheck: no $FLAVOR install (port/build.sh $FLAVOR)" >&2
 	exit 1
 fi
+BIN="$OMM_EXE"
 if otool -L "$BIN" | grep -i opengl; then
 	echo "glcheck: the binary links OpenGL"
 	status=1
@@ -80,7 +80,7 @@ ls "$(dirname "$BIN")" | grep -i 'renderer_' && { echo "glcheck: a renderer dyli
 [ $status = 0 ] && echo "glcheck: binary clean (otool -L: no OpenGL; nm -u: no GL imports; no renderer dylibs)"
 
 # OpenAL (Phase 9g): the native sound engine is the only one
-APP="${BIN%/Contents/MacOS/openmohaa}"
+APP="${BIN%/Contents/MacOS/*}"
 al=0
 for f in "$APP"/Contents/MacOS/*; do
 	if otool -L "$f" | grep -iE 'openal'; then

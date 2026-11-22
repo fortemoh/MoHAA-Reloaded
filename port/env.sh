@@ -27,6 +27,22 @@ mkdir -p "$TMPDIR" "$CLANG_MODULE_CACHE_PATH" "$OMM_HOME"
 # disk image in the GTA V port's folder and mounted read-only on demand at /Volumes/MetalToolchainCryptex.
 # Never write into /Volumes/1TB BLUE/gtav. NEVER run `xcodebuild -downloadComponent` (installs a copy on the internal disk).
 export OMM_METAL_BIN="/Volumes/MetalToolchainCryptex/Metal.xctoolchain/usr/bin"
+# A flavor's installed game. Builds since the rename (2026-11-22) are <install>/lib/mohreloaded/mohreloaded.app;
+# flavors of older commits (gl, sdlref, sndref, an older metalref) keep upstream's lib/openmohaa/openmohaa.app.
+# Sets OMM_APP_DIR (the folder holding the .app: fs_basepath), OMM_EXE_NAME (the program's, and its process's, name)
+# and OMM_EXE; fails when the flavor isn't installed.
+omm_game() {
+	local name
+	for name in mohreloaded openmohaa; do
+		if [ -x "$OMM_BUILD/$1-install/lib/$name/$name.app/Contents/MacOS/$name" ]; then
+			OMM_APP_DIR="$OMM_BUILD/$1-install/lib/$name"
+			OMM_EXE_NAME="$name"
+			OMM_EXE="$OMM_APP_DIR/$name.app/Contents/MacOS/$name"
+			return 0
+		fi
+	done
+	return 1
+}
 omm_mount_metal() {
 	[ -x "$OMM_METAL_BIN/metal" ] && return 0
 	local dmg

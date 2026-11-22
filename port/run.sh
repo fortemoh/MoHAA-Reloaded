@@ -7,9 +7,8 @@ source "$(dirname "$0")/env.sh"
 FLAVOR="${1:-gl}"
 shift || true
 
-BASE="$OMM_BUILD/$FLAVOR-install/lib/openmohaa"   # fs_basepath (the folder holding the .app)
-APP="$BASE/openmohaa.app/Contents/MacOS"
-[ -x "$APP/openmohaa" ] || { echo "run.sh: build $FLAVOR first (port/build.sh $FLAVOR)" >&2; exit 1; }
+omm_game "$FLAVOR" || { echo "run.sh: build $FLAVOR first (port/build.sh $FLAVOR)" >&2; exit 1; }
+BASE="$OMM_APP_DIR"   # fs_basepath (the folder holding the .app)
 
 # Link only the retail paks (read-only) into the install's main/ (and mainta/, maintt/ for Spearhead and
 # Breakthrough, com_target_game 1/2), never the user's own dylibs, mods or configs.
@@ -23,7 +22,7 @@ done
 # Builds of commits before session 46 (gl, sdlref, ci, an older metalref) keep a PID file: one left by a killed run
 # makes them block on a modal "Abnormal Exit" dialog at startup. Remove it when no game is running (pgrep matches the
 # installed app binaries only).
-pgrep -f "build.noindex/.*/openmohaa.app/Contents/MacOS/openmohaa" >/dev/null || rm -f "$OMM_HOME"/main*/*.pid
+pgrep -f "build.noindex/.*/(mohreloaded|openmohaa)\.app/Contents/MacOS/(mohreloaded|openmohaa)" >/dev/null || rm -f "$OMM_HOME"/main*/*.pid
 
 # Builds since Phase 7c never load this link (until 9g they link the app's own openal-soft, in Contents/Frameworks;
 # since 9g there is no OpenAL). It stays for the flavors that still dlopen libopenal.1.dylib: the gl reference and
@@ -33,4 +32,4 @@ pgrep -f "build.noindex/.*/openmohaa.app/Contents/MacOS/openmohaa" >/dev/null ||
 # (and `codesign` refuses to sign a link pointing out of the bundle).
 ln -sfn /opt/homebrew/opt/openal-soft/lib/libopenal.1.dylib "$BASE/libopenal.1.dylib"
 
-exec "$APP/openmohaa" +set fs_homepath "$OMM_HOME" ${1+"$@"}
+exec "$OMM_EXE" +set fs_homepath "$OMM_HOME" ${1+"$@"}

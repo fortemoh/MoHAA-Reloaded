@@ -112,7 +112,8 @@ trace)
 	wait "$XCTRACE_PID" || true   # xctrace exits non-zero when it reaches the time limit
 	xcrun xctrace export --input "$TRACE" \
 		--xpath '/trace-toc/run[@number="1"]/data/table[@schema="metal-gpu-intervals"]' > "$LOGDIR/$FLAVOR-gpu.xml"
-	/usr/bin/python3 -I "$OMM_PORT/gpu_frame_times.py" "$LOGDIR/$FLAVOR-gpu.xml" openmohaa ${traced:+"$demo_secs" "$demo_frames"}
+	omm_game "$FLAVOR" || true
+	/usr/bin/python3 -I "$OMM_PORT/gpu_frame_times.py" "$LOGDIR/$FLAVOR-gpu.xml" "${OMM_EXE_NAME:-mohreloaded}" ${traced:+"$demo_secs" "$demo_frames"}
 	[ "${KEEP_TRACE:-0}" = 1 ] || rm -rf "$TRACE" "$LOGDIR/$FLAVOR-gpu.xml"
 	;;
 *)
