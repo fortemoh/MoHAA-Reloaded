@@ -1508,6 +1508,9 @@ extern	cvar_t	*r_metalStaticWorld;
 extern	cvar_t	*r_drawworld;			// disable/enable world rendering
 extern	cvar_t	*r_speeds;				// various levels of information display
 extern	cvar_t	*r_novis;				// disable/enable usage of PVS
+// Added: the PVS used to draw the world also takes in the clusters within this many units of the
+// view (R_MarkLeaves); 0: the view's cluster's alone
+extern	cvar_t	*r_fatpvs;
 extern	cvar_t	*r_nocull;
 extern	cvar_t	*r_showcull;
 extern	cvar_t	*r_facePlaneCull;		// enables culling of planar surfaces with back side test
