@@ -7,7 +7,7 @@
 # The install dir is the one that holds openmohaa.app: `cmake --install`'s <prefix>/lib/openmohaa (CI,
 # .github/workflows/macos-metal.yml), default build.noindex/metal-install/lib/openmohaa (port/build.sh metal). The
 # output dir (default build.noindex/release) gets the zip and its .sha256. The version is the app's
-# CFBundleShortVersionString (PORT_RELEASE_VERSION, cmake/identity.cmake). The build must be of HEAD in a clean tree.
+# CFBundleShortVersionString (PROJECT_VERSION, cmake/identity.cmake). The build must be of HEAD in a clean tree.
 # Needs no port/env.sh, so CI runs it as is.
 set -euo pipefail
 
