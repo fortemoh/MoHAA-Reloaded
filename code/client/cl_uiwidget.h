@@ -217,5 +217,21 @@ qhandle_t   RL_Blur(const char *name, const byte *pic, int pw, int ph, int rows,
 void        RL_ConnectError(const char *stock);
 // the server's last word (its "disconnect" command's reason)
 void        RL_ConnectDropped(const char *reason);
-// a map of the server's loads (its serverinfo): its name, for the connect screen should it drop the player
-void        RL_ConnectLoaded(const char *info);
+// a map of the server's loads (its serverinfo; the map "dm/mohdm6"): its name and map, for the connect screen should
+// it drop the player
+void        RL_ConnectLoaded(const char *info, const char *map);
+// the load screen's layout, one screen from a connect to the game (the load screen's, the connect screen's;
+// cl_uimenus.cpp): the card 4:3, 720 wide at most, in the middle (x y w h), the bar under it, the line under the bar
+typedef struct {
+    float x, y, w, h;
+    float bar, line;
+} rlLoadLayout_t;
+rlLoadLayout_t RL_LoadLayout(const rlView_t& v);
+// the load screen's look on it: map, the pictures of the map the load screen or RL_LoadMap made (its blurred copy
+// over the screen, its photo in the card), else the card empty over the caller's backdrop; framed; the title over the
+// card on the left (made smaller, then cut, to leave the word its room), the word on its right in wordColor; the bar
+// (frac how far, < 0 a dash sweeping)
+void        RL_LoadDraw(const rlView_t& v, const rlLoadLayout_t& l, bool map, const char *title, const char *word, rlColor_t wordColor,
+                        float frac);
+// the load screen's pictures made for a map ("dm/mohdm6") ahead of its load: the connect screen's, the browser's map
+void        RL_LoadMap(const char *map);

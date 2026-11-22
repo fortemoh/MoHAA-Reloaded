@@ -1529,7 +1529,10 @@ and obj maps' photo (a label of its own, its image in textures/mohmenu/
 dmloading/ or objloading/), read from its file in colour (its shader fades
 it to sepia over white with the alpha); without one (loading_default's
 painting, a custom map's own screen) the stock screen's pictures are drawn
-into the card, on black
+into the card, on black. The connect screen (cl_uimain.cpp) is its first
+stage, drawn in the same layout with the same pictures (RL_LoadLayout,
+RL_LoadDraw; RL_LoadMap makes a map's ahead of its load: the browser's),
+so a connect and the load after it are one screen
 
 ====================================================================
 */
@@ -1678,6 +1681,27 @@ static void RL_LoadPictures(void)
     uii.Rend_FreeRawImage(pic);
 }
 
+// the map whose pictures the load screen shows (its file's name) and its stock screen: made when either changed
+static void RL_LoadSet(const char *name, Menu *stock)
+{
+    if (stock != rl_ld.stock || Q_stricmp(name, rl_ld.map)) {
+        Q_strncpyz(rl_ld.map, name, sizeof(rl_ld.map));
+        rl_ld.stock = stock;
+        RL_LoadPictures();
+    }
+}
+
+void RL_LoadMap(const char *map)
+{
+    char  name[MAX_QPATH];
+    Menu *stock;
+
+    RL_MapFile(name, map);
+    // (as the game finds it: the menu of the map's name, else loading_default)
+    stock = menuManager.FindMenu(name);
+    RL_LoadSet(name, stock ? stock : menuManager.FindMenu("loading_default"));
+}
+
 // a multiplayer map: in maps/dm/, obj/ or lib/ (the host menu's folders)
 static bool RL_MultiplayerMap(const char *map)
 {
@@ -1704,14 +1728,10 @@ const char *UI_Menus_Loading(Menu *stock, const char *map)
         rl_ld.shot = rl_ld.blur = 0;
         return ours;
     }
-    if (stock != rl_ld.stock || Q_stricmp(name, rl_ld.map)) {
-        // (the same map's pictures kept)
-        Q_strncpyz(rl_ld.map, name, sizeof(rl_ld.map));
-        rl_ld.stock = stock;
-        RL_LoadPictures();
-    }
-    // (the server's name, should it drop the player)
-    RL_ConnectLoaded(info);
+    // (the same map's pictures kept: the connect screen's for the browser's map, made ahead)
+    RL_LoadSet(name, stock);
+    // (the server's name and its map, should it drop the player)
+    RL_ConnectLoaded(info, name);
     return ours;
 }
 
@@ -1792,60 +1812,84 @@ static void RL_DrawMission(const rlView_t& v, float frac, const char *what)
     RL_LoadBar(v, bx, by + bh - 4, bw, frac);
 }
 
-static void RL_DrawLoading(const rlView_t& v)
+rlLoadLayout_t RL_LoadLayout(const rlView_t& v)
 {
-    const char *what = "";
-    const float frac = UI_LoadProgress(&what);
-    const float cw = Q_min(720.0f, v.dw * 0.88f), ch = cw * 0.75f, head = 80, foot = 70;
-    const float x = (v.dw - cw) / 2, y = (v.dh - head - ch - foot) / 2 + head, by = y + ch + 22;
-    const int   x0 = RL_P(v, x), y0 = RL_P(v, y), x1 = RL_P(v, x + cw), y1 = RL_P(v, y + ch);
-    const rlColor_t white = RL_Rgb(255, 255, 255), line = RL_Rgb(255, 255, 255, 40);
+    const float    head = 80, foot = 70;
+    rlLoadLayout_t l;
 
-    // a mission: its letter as it loads
-    if (rl_ld.mission) {
-        RL_DrawMission(v, frac, what);
-        return;
-    }
-    // the renderer restarted since: made again; the map's load reset its shaders: looked up again
-    if (rl_ld.shot && rl_ld.refSeq != uii.GetRefSequence()) {
-        RL_LoadPictures();
-    } else if (rl_ld.shot && rl_ld.stamp != UI_BakeStamp()) {
-        rl_ld.shot  = re.RegisterShaderNoMip(RL_LOADSHOT);
-        rl_ld.blur  = re.RegisterShaderNoMip(RL_LOADBLUR);
-        rl_ld.stamp = UI_BakeStamp();
-    }
-    if (rl_ld.blur) {
-        RL_SetColor(white);
-        uii.Rend_DrawPicStretched(0, 0, uid.vidWidth, uid.vidHeight, 0, 0, 1, 1, rl_ld.blur);
+    l.w    = Q_min(720.0f, v.dw * 0.88f);
+    l.h    = l.w * 0.75f;
+    l.x    = (v.dw - l.w) / 2;
+    l.y    = (v.dh - head - l.h - foot) / 2 + head;
+    l.bar  = l.y + l.h + 22;
+    l.line = l.bar + 28;
+    return l;
+}
+
+void RL_LoadDraw(const rlView_t& v, const rlLoadLayout_t& l, bool map, const char *titleText, const char *wordText, rlColor_t wordColor,
+                 float frac)
+{
+    // (copied: the strings va gives are reused while it draws)
+    const std::string title(titleText), word(wordText);
+    const int         x0 = RL_P(v, l.x), y0 = RL_P(v, l.y), x1 = RL_P(v, l.x + l.w), y1 = RL_P(v, l.y + l.h);
+    const rlColor_t   white = RL_Rgb(255, 255, 255), line = RL_Rgb(255, 255, 255, 40);
+
+    if (map) {
+        // the renderer restarted since: made again; the map's load reset its shaders: looked up again
+        if (rl_ld.shot && rl_ld.refSeq != uii.GetRefSequence()) {
+            RL_LoadPictures();
+        } else if (rl_ld.shot && rl_ld.stamp != UI_BakeStamp()) {
+            rl_ld.shot  = re.RegisterShaderNoMip(RL_LOADSHOT);
+            rl_ld.blur  = re.RegisterShaderNoMip(RL_LOADBLUR);
+            rl_ld.stamp = UI_BakeStamp();
+        }
+        if (rl_ld.blur) {
+            RL_SetColor(white);
+            uii.Rend_DrawPicStretched(0, 0, uid.vidWidth, uid.vidHeight, 0, 0, 1, 1, rl_ld.blur);
+        } else {
+            RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(8, 9, 10));
+        }
+        if (rl_ld.shot) {
+            RL_SetColor(white);
+            uii.Rend_DrawPicStretched(x0, y0, x1 - x0, y1 - y0, 0, 0, 1, 1, rl_ld.shot);
+        } else {
+            RL_StockPictures(rl_ld.stock, x0, y0, x1, y1);
+        }
     } else {
-        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(8, 9, 10));
-    }
-    if (rl_ld.shot) {
-        RL_SetColor(white);
-        uii.Rend_DrawPicStretched(x0, y0, x1 - x0, y1 - y0, 0, 0, 1, 1, rl_ld.shot);
-    } else {
-        RL_StockPictures(rl_ld.stock, x0, y0, x1, y1);
+        RL_BoxPx(x0, y0, x1, y1, RL_Rgb(0, 0, 0, 70));
     }
     RL_BoxPx(x0, y0, x1, y0 + 1, line);
     RL_BoxPx(x0, y1 - 1, x1, y1, line);
     RL_BoxPx(x0, y0 + 1, x0 + 1, y1 - 1, line);
     RL_BoxPx(x1 - 1, y0 + 1, x1, y1 - 1, line);
     {
-        // the name in what the mode leaves: smaller (to H2 at least), then cut
-        const char *mode = RL_ModeName(rl_ld.gametype);
-        const char *name = RL_MapName(rl_ld.map);
-        const float room = cw - RL_TextW(v, mode, 16, true, 2.6f) - 32, w = RL_TextW(v, name, RL_H1, true);
+        // the title in what the word leaves: smaller (to H2 at least), then cut
+        const float room = l.w - RL_TextW(v, word.c_str(), 16, true, 2.6f) - 32, w = RL_TextW(v, title.c_str(), RL_H1, true);
         const float size = w > room ? Q_max(RL_H2, floorf(RL_H1 * room / w)) : RL_H1;
 
-        RL_Text(v, x, y - 26, RL_Ellipsize(v, name, size, true, room).c_str(), size, RL_TEXT, true, RL_LEFT, 0, RL_BASE);
-        RL_Text(v, x + cw, y - 26, mode, 16, RL_BRASS, true, RL_RIGHT, 2.6f, RL_BASE);
+        RL_Text(v, l.x, l.y - 26, RL_Ellipsize(v, title.c_str(), size, true, room).c_str(), size, RL_TEXT, true, RL_LEFT, 0, RL_BASE);
+        RL_Text(v, l.x + l.w, l.y - 26, word.c_str(), 16, wordColor, true, RL_RIGHT, 2.6f, RL_BASE);
     }
-    // the bar, and how far (the map's first load: not known, a dash sweeping across)
-    RL_LoadBar(v, x, by, cw, frac);
+    RL_LoadBar(v, l.x, l.bar, l.w, frac);
+}
+
+static void RL_DrawLoading(const rlView_t& v)
+{
+    const char          *what = "";
+    const float          frac = UI_LoadProgress(&what);
+    const rlLoadLayout_t l    = RL_LoadLayout(v);
+
+    // a mission: its letter as it loads
+    if (rl_ld.mission) {
+        RL_DrawMission(v, frac, what);
+        return;
+    }
+    // the map's pictures, its name and mode, the bar; under it what loads and how far (the map's first load: not known)
+    RL_LoadDraw(v, l, true, RL_MapName(rl_ld.map), RL_ModeName(rl_ld.gametype), RL_BRASS, frac);
     if (frac >= 0.0f) {
-        RL_Text(v, x + cw, by + 28, va("%d%%", (int)(Q_min(frac, 1.0f) * 100)), RL_S1, RL_TEXT, true, RL_RIGHT, 0, RL_TOP);
+        RL_Text(v, l.x + l.w, l.line, va("%d%%", (int)(Q_min(frac, 1.0f) * 100)), RL_S1, RL_TEXT, true, RL_RIGHT, 0, RL_TOP);
     }
-    RL_Text(v, x, by + 28, va("%s\x85", RL_LoadStage(what)), RL_S1, RL_MUTED, false, RL_LEFT, 0, RL_TOP);
+    RL_Text(v, l.x, l.line, va("%s\x85", RL_LoadStage(what)), RL_S1, RL_MUTED, false, RL_LEFT, 0, RL_TOP);
 }
 
 /*
