@@ -261,7 +261,8 @@ ZM_Layout
 What is drawn with a mask, worked out with it: the mask four times
 (mirrored right and down: an odd size's middle column and row once), the
 black round it, and the lines as boxes on whole pixels, the crosshair's
-way. The scope's a pixel at 1080 lines (85 % black): a cross, and the
+way. The scope's a pixel more than a 1080-line screen's share (85 %
+black; 2 pixels at 1080 and 1440 lines, 3 at 2160): a cross, and the
 Kar98's, the line open 0.047 of the height either side of the middle, a
 post twice as thick from below up to the middle. The binoculars' two
 (90 %): a line 0.5 of the unit across, ticks every 0.05 up from it (the
@@ -288,7 +289,7 @@ static void ZM_Layout(zoomMask_t *m, int kind, int w, int h)
     ZM_Box(m->black, &m->numBlack, m->xl, h - m->yt, w - 2 * m->xl, m->yt);
 
     if (kind == ZM_SCOPE) {
-        const int   t  = Q_max(1, (int)floorf(h / 1080.0f + 0.5f));
+        const int   t  = Q_max(1, (int)floorf(h / 1080.0f + 0.5f)) + 1;
         const float R  = 0.46f * h;
         const int   x0 = (int)floorf(w * 0.5f - R), x1 = (int)ceilf(w * 0.5f + R);
         const int   y0 = (int)floorf(h * 0.5f - R), y1 = (int)ceilf(h * 0.5f + R);
