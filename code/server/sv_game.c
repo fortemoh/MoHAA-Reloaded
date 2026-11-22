@@ -145,7 +145,7 @@ void SV_InitCGMessage (int iClient)
 		pCGM->data = Z_Malloc(CGM_DATA_SIZE);
 
 	if ( pCGM->datatypes == 0 )
-		pCGM->datatypes = Z_Malloc(CGM_DATA_SIZE);
+		pCGM->datatypes = Z_Malloc(CGM_DATATYPES_SIZE);
 
 	pCGM->cursize = 0;
 	pCGM->dtindex = 0;
