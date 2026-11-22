@@ -3561,6 +3561,10 @@ void CL_Init( void ) {
 		CL_ApplyOriginalConfigTweaks();
 	}
 
+	// Added in Reloaded
+	//  our own actions' keys, given once (Options' Controls)
+	RL_DefaultBinds();
+
 	Com_Printf( "----- Client Initialization Complete ----- %i ms\n", start - end );
 }
 

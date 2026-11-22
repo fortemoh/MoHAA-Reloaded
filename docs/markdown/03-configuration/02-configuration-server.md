@@ -111,6 +111,8 @@ How spectators view the player they follow, until they pick a view themselves:
 
 Each spectator can switch with the `spectatemode` console command: `spectatemode 1` for first person, `spectatemode 0` for third person, or `spectatemode` alone to toggle. It can be bound to a key, for example `bind v spectatemode`. This works with original game clients too, as it only changes what the server sends.
 
+MoHAA Reloaded clients have their own setting for this, Options > Gameplay > First-Person Spectating (`cg_spectatefirstperson`, switched with the Spectator View key, F by default). On any server they build the first-person view themselves from the view from behind; on a server with `g_spectatefollow_firstperson 1` they ask for their setting with `spectatemode` instead, which shows the followed player's ammo too.
+
 ### `g_spectatefollow_stockbob`
 
 Original game clients don't bob the view of a player they watch in first person, as they only know a player is walking from their own movement prediction. Set it to `1` to have the server add the view bob for them. It is worked out 20 times a second (`sv_fps`) instead of every frame, and the weapon moves with the view without swaying on its own. OpenMoHAA clients bob on their own and are left alone. Defaults to `0`.

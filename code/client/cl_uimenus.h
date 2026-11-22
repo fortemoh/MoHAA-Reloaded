@@ -72,3 +72,6 @@ const char *UI_Menus_Loading(class Menu *stock, const char *map);
 // a connect to server begins (CL_Connect, its address resolved): the connect screen's
 // state anew, the browser's row's name kept for it (cl_uimain.cpp)
 void        UI_Menus_Connect(const char *server);
+// at the client's start, the configs read: each of our own actions (Options' Controls: Spectator View) given its key
+// once, where neither is bound already (cl_reloadedbinds; cl_uimain.cpp)
+void        RL_DefaultBinds(void);

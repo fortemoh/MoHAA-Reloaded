@@ -2267,6 +2267,8 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Newest Key Wins", "Opposite keys: the one pressed last counts.", "cl_nullbinds", "0", 0),
     O_SECTION(OT_GAMEPLAY, "DEMOS", OF_RIGHT),
     O_TOGGLE("Record Every Match", "A demo of each match you play.", "cl_autoRecordDemo", "0", 0),
+    O_SECTION(OT_GAMEPLAY, "SPECTATING", OF_RIGHT),
+    O_TOGGLE("First-Person Spectating", "The player you follow, through their eyes. Any server.", "cg_spectatefirstperson", "0", 0),
     O_SECTION(OT_HUD, "HUD", 0),
     O_SEG("HUD Style", "Classic: the chat along the top, as the original.", "cg_hudstyle", "1", rl_oHudStyles, rl_oHudValues, 0),
     O_SEG("Classic Kills", "Classic only: in the chat, or beside or under the timer.", "cg_hud_classic_kills", "0", rl_oClassicKills, NULL, 0),
@@ -2416,6 +2418,39 @@ static void RL_EachLine(const char *file, F fn)
     FS_FreeFile(text);
 }
 
+// our own actions, after the stock list's (shown last, in its last section), and the key each gets: once in a
+// profile where both are free (RL_DefaultBinds), and from DEFAULTS
+static const struct {
+    const char *name, *cmd, *key;
+} rl_ourActs[] = {
+    {"Spectator View", "toggle cg_spectatefirstperson", "f"},
+};
+
+/*
+----------------
+RL_DefaultBinds
+
+At the client's start, the configs read: each of our actions not given its key yet (cl_reloadedbinds, how many
+have been) gets it if neither is bound already, so a player's own keys stay and one let go stays let go
+----------------
+*/
+void RL_DefaultBinds(void)
+{
+    const int given = Q_max(Cvar_Get("cl_reloadedbinds", "0", CVAR_ARCHIVE)->integer, 0);
+
+    for (int i = given; i < (int)ARRAY_LEN(rl_ourActs); i++) {
+        const int   key   = Key_StringToKeynum(rl_ourActs[i].key);
+        const char *bound = Key_GetBinding(key);
+
+        if (Key_GetKey(rl_ourActs[i].cmd) < 0 && (!bound || !*bound)) {
+            Key_SetBinding(key, rl_ourActs[i].cmd);
+        }
+    }
+    if (given < (int)ARRAY_LEN(rl_ourActs)) {
+        Cvar_SetValue("cl_reloadedbinds", ARRAY_LEN(rl_ourActs));
+    }
+}
+
 // the stock list read; an O_KEYS's actions: from its command's to the next O_KEYS's found (the first found from the list's start)
 static void RL_KeysRead(void)
 {
@@ -2429,6 +2464,9 @@ static void RL_KeysRead(void)
             acts.push_back({Q_stricmpn(name, "DM ", 3) ? name : name + 3, Cmd_Argv(2), {-1, -1}});
         }
     });
+    for (const auto& ours : rl_ourActs) {
+        acts.push_back({ours.name, ours.cmd, {-1, -1}});
+    }
     for (int i = 0; i < RL_OPTS; i++) {
         rl_keys.from[i] = -1;
         for (int a = 0; rl_opts[i].kind == OC_KEYS && a < (int)acts.size() && rl_keys.from[i] < 0; a++) {
@@ -2938,6 +2976,12 @@ static void RL_KeysDefaults(void)
             Key_SetBinding(Key_StringToKeynum(Cmd_Argv(1)), Cmd_ArgsFrom(2));
         }
     });
+    // ours, as default.cfg would
+    for (const auto& ours : rl_ourActs) {
+        if (is(ours.cmd)) {
+            Key_SetBinding(Key_StringToKeynum(ours.key), ours.cmd);
+        }
+    }
 }
 
 // DEFAULTS: the settings shown back to their defaults (and the cvars a choice stands for with them), the keys shown too
