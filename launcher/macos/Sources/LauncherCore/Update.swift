@@ -14,7 +14,7 @@ import Foundation
 public enum UpdateNames {
     public static let repository = "fortemoh/MoHAA-Reloaded"
     public static let tag = "v1.0.0"
-    public static let assetPrefix = "openmohaa-metal-"
+    public static let assetPrefix = "mohreloaded-"
     public static let assetSuffix = "-macos-arm64.zip"
     /// Where an update downloads and unpacks, in the game folder: the same volume, so files move by being renamed
     public static let workFolder = ".mohlauncher-update"

@@ -3,10 +3,13 @@
 # The Metal port: macOS 26 on Apple Silicon
 #
 # Builds with README.md's commands as written (Xcode's Metal Toolchain component, Homebrew's CMake, Ninja and Bison),
-# checks the install, and uploads the ad-hoc-signed release zip (port/release.sh) as a workflow artifact. A push that
-# changes code (not only docs/ or *.md files), or a run by hand on metal, then replaces the zip in MoHAA Reloaded's
-# v1.0.0 release, moves its tag to the commit and updates the zip's SHA-256 in the notes (job release-v1); the rest of
-# the notes is written by hand. No secrets: the job's own token.
+# checks the install, and uploads the ad-hoc-signed release zip (port/release.sh, mohreloaded-<version>-macos-arm64.zip)
+# as a workflow artifact. A push that changes code (not only docs/ or *.md files), or a run by hand on metal, then
+# replaces the zip in the release of cmake/identity.cmake's version (v1.0.0), moves its tag to the commit and updates
+# the zip's SHA-256 in the notes (job release); the rest of the notes is written by hand. A Mac zip of another name
+# there (upstream's openmohaa-metal-..., or an earlier version's) is replaced by this one, in the notes too. Without a
+# published release of the version (vulkan's tags-publish-release.yml makes its draft) it does nothing. No secrets: the
+# job's own token.
 ##########################
 name: "macOS Metal build"
 
@@ -101,21 +104,21 @@ jobs:
     - name: Upload the release zip
       uses: actions/upload-artifact@v7
       with:
-        path: dist/openmohaa-metal-*-macos-arm64.zip
+        path: dist/mohreloaded-*-macos-arm64.zip
         archive: false
         if-no-files-found: error
         retention-days: 30
 
-    # for release-v1, on Linux
+    # for the job release, on Linux
     - name: Hand the zip to the release job
       uses: actions/upload-artifact@v4
       with:
-        name: release-v1-zip
-        path: dist/openmohaa-metal-1.0.0-macos-arm64.zip
+        name: release-zip
+        path: dist/mohreloaded-*-macos-arm64.zip
         if-no-files-found: error
         retention-days: 1
 
-  release-v1-changes:
+  release-changes:
     if: github.ref == 'refs/heads/metal'
     runs-on: ubuntu-24.04
     outputs:
@@ -138,22 +141,22 @@ jobs:
         fi
         echo "release=$release" | tee -a "$GITHUB_OUTPUT"
 
-  release-v1:
-    name: "Replace the Mac download in v1.0.0"
-    needs: [build, release-v1-changes]
-    if: github.ref == 'refs/heads/metal' && needs.release-v1-changes.outputs.release == '1'
+  release:
+    name: "Replace the Mac download in the version's release"
+    needs: [build, release-changes]
+    if: github.ref == 'refs/heads/metal' && needs.release-changes.outputs.release == '1'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     # one release update at a time, with vulkan's
     concurrency:
-      group: release-v1.0.0
+      group: release-downloads
       cancel-in-progress: false
 
     steps:
     - uses: actions/download-artifact@v4
       with:
-        name: release-v1-zip
+        name: release-zip
         path: dist
 
     - name: Replace the zip, move the tag, update the SHA-256 in the notes
@@ -162,33 +165,60 @@ jobs:
         GH_REPO: ${{ github.repository }}
       run: |
         set -euo pipefail
-        zip=dist/openmohaa-metal-1.0.0-macos-arm64.zip
-        gh release view v1.0.0 --json assets --jq '.assets[].name' | grep -qxF "$(basename "$zip")" \
-          || { echo "v1.0.0 has no $(basename "$zip")" >&2; exit 1; }
+        # the zip's name holds the version (port/release.sh: the app's, cmake/identity.cmake's)
+        zip=$(ls dist/mohreloaded-*-macos-arm64.zip)
+        version=${zip#dist/mohreloaded-}
+        version=${version%-macos-arm64.zip}
+        [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "no version in $zip" >&2; exit 1; }
+        tag="v$version"
+        if ! draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2> view.err); then
+          cat view.err >&2
+          grep -qi 'not found' view.err || exit 1
+          echo "No release $tag: nothing replaced. vulkan's tags-publish-release.yml makes its draft; publish it." | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
+        if [ "$draft" = true ]; then
+          echo "$tag is still a draft: nothing replaced" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 0
+        fi
         sha=$(sha256sum "$zip" | cut -d' ' -f1)
         echo "$sha  $(basename "$zip")" | tee -a "$GITHUB_STEP_SUMMARY"
 
-        gh release view v1.0.0 --json body --jq .body > notes.md
-        python3 - notes.md "$(basename "$zip")" "$sha" <<'EOF'
+        gh release view "$tag" --json body --jq .body > notes.md
+        python3 - notes.md "$(basename "$zip")" "$sha" "$version" <<'EOF'
         import re, sys
-        notes, name, digest = sys.argv[1:]
+        notes, name, digest, version = sys.argv[1:]
         text = open(notes, encoding="utf-8").read()
+        # the zip's name wherever the notes give it: upstream's openmohaa-metal-..., or an earlier version's
+        text = re.sub(r"\b(?:openmohaa-metal|mohreloaded)-\d+\.\d+\.\d+-macos-arm64\b", "mohreloaded-" + version + "-macos-arm64", text)
         text, n = re.subn(r"(\| `" + re.escape(name) + r"` \| `)[0-9a-f]{64}(` \|)", r"\g<1>" + digest + r"\g<2>", text)
-        if n != 1:
+        if n == 0:
+            # a new version's release (vulkan's draft has the Linux and Windows rows): the Mac's row in its table
+            row = f"| `{name}` | `{digest}` |\n"
+            table = re.search(r"\| File \| SHA-256 \|\n\|---\|---\|\n", text)
+            text = text[:table.end()] + row + text[table.end():] if table else text.rstrip("\n") + "\n\n| File | SHA-256 |\n|---|---|\n" + row
+        elif n != 1:
             sys.exit(f"the notes have {n} SHA-256 rows for {name}, not one")
         # gh adds a newline to the body it reads: without this, each update would add one
         open(notes, "w", encoding="utf-8").write(text.rstrip("\n") + "\n")
         EOF
 
-        gh release upload v1.0.0 "$zip" --clobber
+        gh release upload "$tag" "$zip" --clobber
+        # a Mac zip of another name, now that this one replaces it (the Linux and Windows downloads stay)
+        gh release view "$tag" --json assets --jq '.assets[].name' | while read -r asset; do
+          case $asset in
+          "$(basename "$zip")") ;;
+          *-macos-arm64.zip) gh release delete-asset "$tag" "$asset" --yes;;
+          esac
+        done
 
         # the tag: annotated as before, with its message, on this commit
-        ref=$(gh api "repos/$GH_REPO/git/refs/tags/v1.0.0")
-        message="MoHAA Reloaded 1.0.0"
+        ref=$(gh api "repos/$GH_REPO/git/refs/tags/$tag")
+        message="MoHAA Reloaded $version"
         if [ "$(jq -r .object.type <<< "$ref")" = tag ]; then
           message=$(gh api "repos/$GH_REPO/git/tags/$(jq -r .object.sha <<< "$ref")" --jq .message)
         fi
-        tag=$(gh api "repos/$GH_REPO/git/tags" -f tag=v1.0.0 -f message="$message" -f object="$GITHUB_SHA" -f type=commit --jq .sha)
-        gh api -X PATCH "repos/$GH_REPO/git/refs/tags/v1.0.0" -f sha="$tag" -F force=true > /dev/null
+        tagobj=$(gh api "repos/$GH_REPO/git/tags" -f tag="$tag" -f message="$message" -f object="$GITHUB_SHA" -f type=commit --jq .sha)
+        gh api -X PATCH "repos/$GH_REPO/git/refs/tags/$tag" -f sha="$tagobj" -F force=true > /dev/null
 
-        gh release edit v1.0.0 --notes-file notes.md
+        gh release edit "$tag" --notes-file notes.md

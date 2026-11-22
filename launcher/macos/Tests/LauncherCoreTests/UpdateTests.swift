@@ -3,7 +3,7 @@ import XCTest
 @testable import LauncherCore
 
 private let commitA = "aed952ba92532bf8596dc880a9afaf8fbfa4487b"
-private let assetName = "openmohaa-metal-1.0.0-macos-arm64.zip"
+private let assetName = "mohreloaded-1.0.0-macos-arm64.zip"
 private let hashA = String(repeating: "ab", count: 32)
 
 private func releaseJSON(digest: String? = "sha256:\(hashA)", row: String? = hashA, state: String = "uploaded",
@@ -11,9 +11,9 @@ private func releaseJSON(digest: String? = "sha256:\(hashA)", row: String? = has
                          url: String = "https://github.com/fortemoh/MoHAA-Reloaded/releases/download/v1.0.0/\(assetName)") -> Data {
     var asset: [String: Any] = ["name": name, "size": size, "state": state, "browser_download_url": url]
     if let digest { asset["digest"] = digest }
-    let other: [String: Any] = ["name": "openmohaa-vulkan-1.0.0-windows-x64.zip", "size": 9, "digest": "sha256:00",
+    let other: [String: Any] = ["name": "mohreloaded-1.0.0-windows-x64.zip", "size": 9, "digest": "sha256:00",
                                 "state": "uploaded", "browser_download_url": "https://github.com/x"]
-    var body = "| File | SHA-256 |\n|---|---|\n| `openmohaa-vulkan-1.0.0-windows-x64.zip` | `\(String(repeating: "0", count: 64))` |\n"
+    var body = "| File | SHA-256 |\n|---|---|\n| `mohreloaded-1.0.0-windows-x64.zip` | `\(String(repeating: "0", count: 64))` |\n"
     if let row { body += "| `\(name)` | `\(row)` |\n" }
     return try! JSONSerialization.data(withJSONObject: ["body": body, "assets": [other, asset]])
 }
@@ -139,7 +139,7 @@ final class UpdateCheckTests: XCTestCase {
     }
 
     func testZipPaths() {
-        let top = "openmohaa-metal-1.0.0-macos-arm64"
+        let top = "mohreloaded-1.0.0-macos-arm64"
         let good = ["\(top)/", "\(top)/COPYING.txt", "\(top)/mohreloaded.app/", "\(top)/mohreloaded.app/Contents/MacOS/mohreloaded",
                     "\(top)/licenses/opus/COPYING"]
         XCTAssertTrue(zipPathsAreSafe(good, top: top))

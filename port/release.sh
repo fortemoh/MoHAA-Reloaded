@@ -1,5 +1,5 @@
 #!/bin/bash
-# The release zip, ad-hoc signed (no Developer ID, no notarization): openmohaa-metal-<version>-macos-arm64.zip from
+# The release zip, ad-hoc signed (no Developer ID, no notarization): mohreloaded-<version>-macos-arm64.zip from
 # an installed build, with the sealed mohreloaded.app (game.dylib and cgame.dylib inside it), MoHAA Launcher's
 # mohlauncher.app (launcher/macos, built here), COPYING.txt, the licenses of the libraries built into it, the install
 # text (port/release/INSTALL.txt) and the source commit. Never game data.
@@ -43,7 +43,7 @@ BUILT="${BUILT%%$'\n'*}"
 [ -n "$BUILT" ] && [ "${COMMIT#"$BUILT"}" != "$COMMIT" ] || die "mohreloaded.app was built from '${BUILT:-?}', not HEAD ($COMMIT): rebuild"
 
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
-NAME="openmohaa-metal-$VERSION-macos-arm64"
+NAME="mohreloaded-$VERSION-macos-arm64"
 STAGE="$OUT/$NAME"
 ZIP="$OUT/$NAME.zip"
 
