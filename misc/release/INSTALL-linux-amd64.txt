@@ -32,13 +32,13 @@ Install
 4. Start mohlauncher, MoHAA Launcher: it starts Allied Assault, Spearhead or Breakthrough, at the main
    menu (Single player) or onto a server (Connect), with your name, the server's passwords, and the
    resolution and display mode. Bookmark keeps a server in its list, four at most.
-   openmohaa starts the game directly too: Allied Assault, or Spearhead with +set com_target_game 1
+   mohreloaded starts the game directly too: Allied Assault, or Spearhead with +set com_target_game 1
    and Breakthrough with +set com_target_game 2. When a newer build is out, MoHAA Launcher offers
    to update: Update downloads it and replaces the files that changed.
 
 To leave the game folder as it is, start the game from this folder instead:
 
-  ./openmohaa +set fs_basepath /path/to/your/mohaa/folder
+  ./mohreloaded +set fs_basepath /path/to/your/mohaa/folder
 
 Started from MoHAA Launcher, configs, saves, screenshots, demos and logs go into the game folder, the
 launcher's mohlauncher.json (your servers and their passwords) too: it writes nowhere else, and a

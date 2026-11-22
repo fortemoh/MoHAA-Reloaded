@@ -22,11 +22,13 @@ Needs a GPU with a Vulkan 1.1 driver (on Linux Mesa's RADV, ANV or NVK, or NVIDI
 
 ## Install
 
-1. Download `openmohaa-vulkan-1.0.0-linux-amd64.tar.gz` (64-bit Linux) or `openmohaa-vulkan-1.0.0-windows-x64.zip` (64-bit Windows) from [Releases](https://github.com/fortemoh/MoHAA-Reloaded/releases/tag/v1.0.0) and extract it (`tar xf openmohaa-vulkan-1.0.0-linux-amd64.tar.gz`; on Windows, right-click and Extract All).
+1. Download `mohreloaded-1.0.0-linux-amd64.tar.gz` (64-bit Linux) or `mohreloaded-1.0.0-windows-x64.zip` (64-bit Windows) from [Releases](https://github.com/fortemoh/MoHAA-Reloaded/releases/tag/v1.0.0) and extract it (`tar xf mohreloaded-1.0.0-linux-amd64.tar.gz`; on Windows, right-click and Extract All).
 2. Find your MOHAA game folder: the folder with `main/` (`Pak0.pk3` to `Pak6.pk3`; `mainta/` and `maintt/` for the expansions). Upstream's [installation guide](docs/markdown/01-intro/01-installation.md#linux-and-macos-users) shows how to get it from the GOG installer.
-3. Copy everything in the extracted folder into the game folder, next to `main/` (its own `main/` only holds the headphone sound set: let it merge), and start `mohlauncher` (`mohlauncher.exe` on Windows): [MoHAA Launcher](#mohaa-launcher). `openmohaa` (`openmohaa.exe` on Windows) starts the game directly too: Allied Assault, or Spearhead with `+set com_target_game 1` and Breakthrough with `+set com_target_game 2`.
+3. Copy everything in the extracted folder into the game folder, next to `main/` (its own `main/` only holds the headphone sound set: let it merge), and start `mohlauncher` (`mohlauncher.exe` on Windows): [MoHAA Launcher](#mohaa-launcher). `mohreloaded` (`mohreloaded.exe` on Windows) starts the game directly too: Allied Assault, or Spearhead with `+set com_target_game 1` and Breakthrough with `+set com_target_game 2`.
 
-On Linux you can also leave the game folder as it is and start the game from the extracted folder: `./openmohaa +set fs_basepath /path/to/mohaa`. `INSTALL.txt` in the download has the same steps. Started from MoHAA Launcher, the game keeps everything in the game folder (below). Started otherwise, configs go to `~/.config/openmohaa/` and saves and screenshots to `~/.local/share/openmohaa/` on Linux, all of them to `%APPDATA%\openmohaa\` on Windows, as with upstream's OpenMoHAA. Without a Vulkan driver the game stops and says so.
+On Linux you can also leave the game folder as it is and start the game from the extracted folder: `./mohreloaded +set fs_basepath /path/to/mohaa`. `INSTALL.txt` in the download has the same steps. Started from MoHAA Launcher, the game keeps everything in the game folder (below). Started otherwise, configs go to `~/.config/openmohaa/` and saves and screenshots to `~/.local/share/openmohaa/` on Linux, all of them to `%APPDATA%\openmohaa\` on Windows, as with upstream's OpenMoHAA. Without a Vulkan driver the game stops and says so.
+
+Downloads before the rename were called `openmohaa-vulkan-1.0.0-…`, with the game as `openmohaa`: their launcher doesn't see the new downloads, so download this one by hand once and copy it over the old one (you can delete the old `openmohaa` program). Your settings stay where they were.
 
 ### MoHAA Launcher
 
@@ -133,7 +135,7 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVulkanHeaders_DIR="$PW
 cmake --build build
 ```
 
-Run it from `build/Release` with your game data: `./openmohaa +set fs_basepath /path/to/mohaa`, or install it into the game folder (`-DCMAKE_INSTALL_PREFIX=/path/to/mohaa`, then `cmake --install build`; the installed game looks for `libSDL3.so.0` in its own folder first, so with an SDL 3 built as above copy it there: `cp -L sdl3/lib/libSDL3.so.0 /path/to/mohaa/`). `glslc` is only needed to change the shaders, the Vulkan validation layers only for `r_vkValidation`. CI builds Linux and Windows on every push (`.github/workflows/branches-build.yml`). This branch has no macOS build (the `metal` branch is the macOS port).
+Run it from `build/Release` with your game data: `./mohreloaded +set fs_basepath /path/to/mohaa`, or install it into the game folder (`-DCMAKE_INSTALL_PREFIX=/path/to/mohaa`, then `cmake --install build`; the installed game looks for `libSDL3.so.0` in its own folder first, so with an SDL 3 built as above copy it there: `cp -L sdl3/lib/libSDL3.so.0 /path/to/mohaa/`). `glslc` is only needed to change the shaders, the Vulkan validation layers only for `r_vkValidation`. CI builds Linux and Windows on every push (`.github/workflows/branches-build.yml`). The version is set in `cmake/identity.cmake` (1.0.0); a build says `1.0.0-unstable+<CI run>.<commit>`. Pushing a version tag (`v1.0.1`, once the code says 1.0.1) builds a release without "unstable" and makes a draft of it on GitHub (`.github/workflows/tags-publish-release.yml`), to be published by hand. This branch has no macOS build (the `metal` branch is the macOS port).
 
 ## Looks and limits
 

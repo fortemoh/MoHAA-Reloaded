@@ -1080,7 +1080,7 @@ is needed for `r_vkValidation`.
 cmake -S . -B build-vk -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
 cmake --build build-vk
 cd build-vk/RelWithDebInfo
-./openmohaa +set fs_basepath ~/Documents/moh \
+./mohreloaded +set fs_basepath ~/Documents/moh \
     +set fs_homepath /tmp/moh-home +set r_fullscreen 0 +set r_mode 3
 ```
 
@@ -1339,8 +1339,8 @@ code/renderervk/tools/glcheck.sh
 - `compare.sh`: writes the cfg (`shots.py`), runs it with two builds,
   `A` (the reference, default `base`: `renderer_base.so`, a copy of the
   build before) and `B` (default `vulkan`), with the engine binaries
-  `A_BIN` and `B_BIN` of `MOH_BINDIR` (default `openmohaa`; a wrapper
-  script `exec <dir>/openmohaa "$@"` runs a build with its own cgame.so,
+  `A_BIN` and `B_BIN` of `MOH_BINDIR` (default `mohreloaded`; a wrapper
+  script `exec <dir>/mohreloaded "$@"` runs a build with its own cgame.so,
   which is loaded from the binary's directory), through `run.sh`, then
   prints per channel the max and mean absolute difference and the number of
   differing pixels for every view (`tgadiff.py`), and writes PNG copies
@@ -1411,7 +1411,7 @@ the frames of a deterministic view are then identical to the bit, run
 after run, but for the lists that differ between two runs of the same
 build (snow, smoke, AI and vehicles, some near-camera pixels; the checks
 below name them). For an engine
-change, copy the old `openmohaa` under another name (`MOH_BIN=<name>
+change, copy the old `mohreloaded` under another name (`MOH_BIN=<name>
 run.sh vulkan <list>`, or the binary field of `cmplists.sh`); for a
 cgame change, give the old build its own directory and a wrapper.
 
@@ -3397,7 +3397,7 @@ The frame log of the Vulkan renderer records every frame with what
 happened in it. Off by default; `r_vkFrameLog` is latched, so:
 
 ```sh
-./openmohaa +set r_vkFrameLog 1 ...        # or in the console: r_vkFrameLog 1; vid_restart
+./mohreloaded +set r_vkFrameLog 1 ...      # or in the console: r_vkFrameLog 1; vid_restart
 ```
 
 then, in the console, `vkframelog clear` before what should be measured
