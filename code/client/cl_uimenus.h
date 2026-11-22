@@ -35,7 +35,7 @@ const char *PM_FilenameToDisplayname(const char *fileName);
 // pages and the vote menus shown instead)
 qboolean    UI_Menus_Pushing(const char *name);
 // the menu pushed by that name takes the place of the menu up, not over it: the Esc menu's (the team page, the weapon
-// page, the main menu: TEAM & WEAPON, MAIN MENU, LOAD), the team page's (the weapon page, the player's own side picked);
+// page, the main menu: TEAM, WEAPON, MAIN MENU, LOAD), the team page's (the weapon page, the player's own side picked);
 // qfalse: pushed over the menu up as before
 qboolean    UI_Menus_Replacing(const char *name);
 // the keys to the menu up's front layer now (unless a floating window has them), not at its first Tick: the menu it

@@ -65,13 +65,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // the team page's, full length (ui/reloaded_team.urc's "allies" and "axis")
 #define RL_TFIGSCALE 1.1f
 #define RL_TFIGMID   52.0f
-// the in-game block (the weapon page's) drawn at this of the other menus'
-// size (its design's units, a smaller view; the weapon page's figure as large
-// as at their size); its captions never under RL_CAPTIONPX pixels; its
-// header's height
+// the in-game block (the weapon page's, the Esc menu's) drawn at this of the
+// other menus' size (its design's units, a smaller view; the weapon page's
+// figure as large as at their size); its captions never under RL_CAPTIONPX
+// pixels; its header's and its full-width bar's height
 #define RL_WSCALE     0.7f
 #define RL_CAPTIONPX  11.0f
 #define RL_BLOCKHEAD  104.0f
+#define RL_BLOCKBAR   80.0f
 // its panels' and tiles' padding: the emblem and the time in the header, a tile's label and dot
 #define RL_BLOCKPAD   18.0f
 // a tile's picture: its middle this far down the tile
@@ -2125,11 +2126,9 @@ void UIReloadedMenu::Tick(void)
         return;
     }
     if (!menuManager.CurrentMenu() || !getParent() || menuManager.CurrentMenu()->GetContainerWidget() != getParent()) {
-        // another menu over it (Options over the Esc menu: its rail still hot under the mouse, RL_EscClick)
-        if (m_screen != SCR_ESC || menuManager.CurrentMenu() != menuManager.FindMenu("reloaded_options")) {
-            m_focus = rl_hot[m_screen] = -1;
-            return;
-        }
+        // another menu over it (Options over the Esc menu)
+        m_focus = rl_hot[m_screen] = -1;
+        return;
     } else if (uWinMan.ActiveControl() != this && !RL_FloatingHasKeys()) {
         // the keys come here while the menu is up (a menu shown gives them
         // only to its widget of ordernumber 1, which only the loading screen
@@ -2251,7 +2250,7 @@ void UIReloadedMenu::Draw(void)
         break;
     case SCR_ESC:
         RL_Info(&in);
-        DrawEsc(v, in);
+        DrawEsc(RL_Scaled(v, RL_WSCALE), in);
         break;
     case SCR_END:
         RL_Info(&in);
@@ -2297,12 +2296,13 @@ static void RL_HeaderPanel(const rlView_t& v, float x, float y, float w, float h
 
 /*
 ================
-The in-game block (the weapon page's), drawn at RL_WSCALE of the other
-menus' size (notuern found the weapon menu large beside them). A header
-RL_BLOCKHEAD high (an emblem, the title over its caption, the time left
-alone at the right), tiles two a row as wide as the menus' grid (a label in
-the corner, a picture, a name under it; hot: lit and framed brass; off:
-dimmed); the grid's gap between them all
+The in-game block: the weapon page's and the Esc menu's, alike, drawn at
+RL_WSCALE of the other menus' size (notuern found the weapon menu large
+beside them). A header RL_BLOCKHEAD high (an emblem, the title over its
+caption, the time left alone at the right), tiles two a row as wide as the
+menus' grid (a label in the corner, a picture, a name under it; hot: lit and
+framed brass; off: dimmed), a bar RL_BLOCKBAR high as wide; the grid's gap
+between them all
 ================
 */
 
@@ -2366,7 +2366,7 @@ void UIReloadedMenu::Tile(const rlView_t& v, float x, float y, float w, float h,
     }
     if (t.outline) {
         // (as wide as in a tile two a row at most: a row's last tile alone takes the row)
-        RL_Outline(v, t.outline, x + w / 2, y + h * RL_TILEPIC, Q_min(w, h * 1.92f) * 0.8f, h * 0.38f, pic);
+        RL_Outline(v, t.outline, x + w / 2, y + h * RL_TILEPIC, t.picW > 0.0f ? t.picW : Q_min(w, h * 1.92f) * 0.8f, h * 0.38f, pic);
     }
     RL_Text(v, x + w / 2, y + h - 30, t.name, RL_S1, t.off ? RL_FAINT : RL_TEXT, true, RL_CENTER, 1.6f, RL_MID, w - 20);
     if (!t.off) {
@@ -2518,7 +2518,7 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
         const int         col = i % 2, row = i / 2;
         const float       x = x0 + col * (wtw + gap), y = gy + row * (th + gap), cw = i == n - 1 && !col ? gw : wtw;
         // (the class in the corner, a banned one's refusal in its place; the last pick marked)
-        const rlTile_t    t = {allowed ? w.cls : "OFF ON THIS SERVER", w.name, outline.c_str(), tab, !allowed, !allowed,
+        const rlTile_t    t = {allowed ? w.cls : "OFF ON THIS SERVER", w.name, outline.c_str(), 0.0f, tab, !allowed, !allowed,
                                !Q_stricmp(ui_dm_primary->string, rl_classCmd[i])};
 
         Tile(v, x, y, cw, th, i, t);
@@ -2722,70 +2722,149 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
 
 /*
 ================
-The Esc menu: the main menu's rail over the game, blurred (the renderer's
-"*frameblur", made where it is drawn: nothing while the menu is closed) and
-dimmed; under the lockup the map, the mode and players, the time left;
-RESUME, MAIN MENU, TEAM & WEAPON (the weapon menu picks the side too),
-OPTIONS (shown over it, lit while it is: ui/reloaded_options.urc),
-SPECTATE, in Spearhead and Breakthrough VOTE (its page shown over it as
-Options is); DISCONNECT and QUIT at its foot. In a mission (single player):
-the level's name, the mission and the difficulty; RESUME, MAIN MENU, SAVE,
-LOAD (Campaign's saved games), OPTIONS; LEAVE MISSION and QUIT
+The Esc menu: the in-game block over the game, blurred (the renderer's
+"*frameblur", made where it is drawn: nothing while the menu is closed)
+and dimmed. Its header the map, the mode and the players, the time left
+(a mission's: the level, the mission and the difficulty); six tiles two a
+row, RESUME its bar. Multiplayer: TEAM (the side now in its corner),
+WEAPON (the pick now: its name, its outline), CALL A VOTE (Spearhead's and
+Breakthrough's; a vote running in its corner; off where the server allows
+none), OPTIONS, SPECTATE (off while spectating), DISCONNECT; MAIN MENU and
+QUIT under the block, at its edges. A mission's: SAVE, LOAD (Campaign's
+saved games), OPTIONS, MAIN MENU, LEAVE MISSION, QUIT. OPTIONS and CALL A
+VOTE show their page over the game, the block hidden under it
+(ui/reloaded_options.urc; BACK and Esc back to it)
 ================
 */
 
-enum { ID_MAINMENU, ID_WEAPON, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_QUIT, ID_RESUME, ID_SAVE, ID_LOAD, ID_CONTINUE, ID_VOTE };
-
-// multiplayer's (VOTE Spearhead's and Breakthrough's), single player's
-static const rlRailItem_t rl_escItems[2][6] = {
-    {{ID_RESUME, "RESUME", NULL}, {ID_MAINMENU, "MAIN MENU", NULL}, {ID_WEAPON, "TEAM & WEAPON", NULL}, {ID_OPTIONS, "OPTIONS", NULL},
-     {ID_SPECTATOR, "SPECTATE", NULL}, {ID_VOTE, "VOTE", NULL}},
-    {{ID_RESUME, "RESUME", NULL}, {ID_MAINMENU, "MAIN MENU", NULL}, {ID_SAVE, "SAVE", NULL}, {ID_LOAD, "LOAD", NULL},
-     {ID_OPTIONS, "OPTIONS", NULL}},
-};
+enum { ID_MAINMENU, ID_WEAPON, ID_OPTIONS, ID_SPECTATOR, ID_DISCONNECT, ID_QUIT, ID_RESUME, ID_SAVE, ID_LOAD, ID_CONTINUE, ID_VOTE, ID_TEAM };
 
 void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
 {
-    const bool         sp      = in.gametype == GT_SINGLE_PLAYER;
-    const rlRailItem_t foot[2] = {{ID_DISCONNECT, sp ? "LEAVE MISSION" : "DISCONNECT", RL_OUTLINES "glyphs/disconnect.svg"},
-                                  {ID_QUIT, "QUIT", RL_OUTLINES "glyphs/quit.svg"}};
-    std::string        head[3];
+    const bool sp   = in.gametype == GT_SINGLE_PLAYER;
+    const int  team = cl.snap.valid ? cl.snap.ps.stats[STAT_TEAM] : TEAM_NONE;
+    const int  side = team == TEAM_ALLIES ? 0 : team == TEAM_AXIS ? 1 : -1;
+    float      tw, th, gap, gw;
 
     if (m_back) {
         return;
     }
     RL_BlurredGame(v, 120);
+    // (Options or CALL A VOTE's page over it: the game blurred alone)
+    if (RL_OverPage() >= 0) {
+        return;
+    }
+    // (the cvars it draws from: the cache draws again when one changes; cg_allowvote follows the serverinfo)
+    UI_DrawDep(ui_dm_primary);
+
+    RL_Grid(v, &tw, &th, &gap, &gw);
+    const float wtw = (gw - gap) / 2, links = sp ? 0.0f : gap + 24;
+    const float total = RL_BLOCKHEAD + 3 * (th + gap) + RL_BLOCKBAR + links;
+    const float x0 = (v.dw - gw) / 2, y0 = (v.dh - total) / 2, gy = y0 + RL_BLOCKHEAD + gap, by = gy + 3 * (th + gap);
+    // the tiles: an item, its tile (its outline's file kept here)
+    struct {
+        int         id;
+        rlTile_t    t;
+        std::string outline;
+    } tiles[6];
+    const auto set = [&](int i, int id, const char *label, const char *name, const std::string& outline, bool off, bool warn) {
+        tiles[i].id      = id;
+        tiles[i].t       = {label, name, NULL, 0.0f, -1, off, warn, false};
+        tiles[i].outline = outline;
+    };
+
     if (sp) {
-        // (the mission's line, its difficulty under it)
-        const char        *level = CL_ConfigString(CS_MESSAGE);
-        const std::string  line  = RL_MissionLine(in.map);
-        const size_t       cut   = line.rfind("  \xb7  ");
+        // (the mission's line, its difficulty in it)
+        const char              *level    = CL_ConfigString(CS_MESSAGE);
+        static const char *const games[3] = {"star", "spearhead", "breakthrough"};
+        const int                id[6]    = {ID_SAVE, ID_LOAD, ID_OPTIONS, ID_MAINMENU, ID_DISCONNECT, ID_QUIT};
+        const char *const        names[6] = {"SAVE", "LOAD", "OPTIONS", "MAIN MENU", "LEAVE MISSION", "QUIT"};
+        const char *const        glyph[6] = {"save", "load", "options", games[Q_max(0, Q_min(2, in.target))], "disconnect", "quit"};
 
-        head[0] = level[0] ? level : in.map;
-        head[1] = line.substr(0, cut);
-        head[2] = cut == std::string::npos ? "" : line.substr(cut + 5);
+        RL_BlockHeader(v, x0, y0, gw, -1, level[0] ? level : in.map, RL_MissionLine(in.map).c_str(), "");
+        for (int i = 0; i < 6; i++) {
+            set(i, id[i], "", names[i], std::string(RL_OUTLINES "glyphs/") + glyph[i] + ".svg", false, false);
+        }
     } else {
-        const char *left = RL_TimeLeft(in.gametype);
-
-        head[0] = RL_MapName(in.map);
-        head[1] = RL_ModeName(in.gametype);
         // (bots take slots past sv_maxclients, which the client isn't told: then no limit shown)
-        head[2] = in.connected <= in.maxClients ? va("%d / %d PLAYERS", in.connected, in.maxClients) : va("%d PLAYERS", in.connected);
-        if (left[0]) {
-            head[2] += va("  \xb7  %s LEFT", left);
-        }
-    }
-    {
-        const int n = !sp && in.target >= TG_MOHTA ? 6 : 5, over = RL_OverPage();
+        const std::string players = in.connected <= in.maxClients ? va("%d / %d PLAYERS", in.connected, in.maxClients)
+                                                                  : va("%d PLAYERS", in.connected);
+        // the weapon now: the class last picked, the nation of the side's model (a spectator's the last weapon page's)
+        const int         nation  = side >= 0 ? RL_ModelNation(side, RL_OwnModel(side).c_str(), in.target) : RL_Nation();
+        const bool        votes   = in.target >= TG_MOHTA, allowed = Cvar_VariableIntegerValue("cg_allowvote") != 0;
+        int               wc      = -1;
 
-        RL_Rail(this, v, rl_escItems[sp], n, over == RL_OVER_VOTE ? ID_VOTE : over == RL_OVER_OPTIONS ? ID_OPTIONS : -1, foot, 2, head);
-        // the keys: down the items, then the foot's
-        for (int i = 0; i < n; i++) {
-            m_order.push_back(rl_escItems[sp][i].id);
+        for (int i = 0; i < WC_NUM; i++) {
+            if (!Q_stricmp(ui_dm_primary->string, rl_classCmd[i])) {
+                wc = i;
+            }
+        }
+        const rlWeapon_t w = RL_WeaponFor(nation, wc >= 0 ? wc : WC_SMG, in.target, in.dmflags, RL_OwnModel(1).c_str());
+
+        RL_BlockHeader(v, x0, y0, gw, side, RL_MapName(in.map), (std::string(RL_ModeName(in.gametype)) + "  \xb7  " + players).c_str(),
+                       RL_TimeLeft(in.gametype));
+        set(0, ID_TEAM, side >= 0 ? rl_teams[side].name : "SPECTATOR", "TEAM", "", false, false);
+        set(1, ID_WEAPON, wc >= 0 ? w.name : "", "WEAPON", std::string(RL_OUTLINES "weapons/") + w.svg + ".svg", false, false);
+        // (an outline the glyphs' size: twice as wide as they are high)
+        tiles[1].t.picW = th * 0.38f * 2;
+        set(2, ID_VOTE,
+            !votes                                ? "NOT IN ALLIED ASSAULT"
+            : !allowed                            ? "OFF ON THIS SERVER"
+            : atoi(CL_ConfigString(CS_VOTE_TIME)) ? "VOTE RUNNING"
+                                                  : "",
+            "CALL A VOTE", RL_OUTLINES "glyphs/vote.svg", !votes || !allowed, !votes || !allowed);
+        set(3, ID_OPTIONS, "", "OPTIONS", RL_OUTLINES "glyphs/options.svg", false, false);
+        set(4, ID_SPECTATOR, team == TEAM_SPECTATOR ? "SPECTATING" : "", "SPECTATE", RL_OUTLINES "glyphs/spectate.svg", team == TEAM_SPECTATOR,
+            false);
+        set(5, ID_DISCONNECT, "", "DISCONNECT", RL_OUTLINES "glyphs/disconnect.svg", false, false);
+    }
+    // the tiles two a row (TEAM's picture both emblems, the side's over the other); the keys row by row
+    for (int i = 0; i < 6; i++) {
+        const float x = x0 + (i % 2) * (wtw + gap), y = gy + (i / 2) * (th + gap);
+
+        if (!tiles[i].outline.empty()) {
+            tiles[i].t.outline = tiles[i].outline.c_str();
+        }
+        Tile(v, x, y, wtw, th, tiles[i].id, tiles[i].t);
+        if (tiles[i].id == ID_TEAM) {
+            const float d = th * 0.3f;
+
+            for (int t = 0; t < 2; t++) {
+                const int e = side == 0 ? 1 - t : t; // (the side's last: over the other)
+
+                RL_TeamIcon(v, e, x + wtw / 2 + (e ? 0.36f : -0.36f) * d, y + th * RL_TILEPIC, d);
+            }
+        }
+        m_order.push_back(tiles[i].t.off ? -1 : tiles[i].id);
+    }
+    // RESUME, the block's bar
+    {
+        const bool hot = Hot(ID_RESUME);
+
+        RL_Round(v, x0, by, gw, RL_BLOCKBAR, 6, hot ? RL_Rgb(38, 40, 43, 236) : RL_Rgb(14, 16, 18, 226));
+        if (hot) {
+            RL_RoundFrame(v, x0, by, gw, RL_BLOCKBAR, 6, 2, RL_BRASS);
+        }
+        RL_Text(v, x0 + gw / 2, by + RL_BLOCKBAR / 2, "RESUME", RL_S1, RL_TEXT, true, RL_CENTER, 2.4f, RL_MID);
+        Hit(v, x0, by, gw, RL_BLOCKBAR, ID_RESUME);
+        m_order.push_back(ID_RESUME);
+        m_order.push_back(ID_RESUME);
+    }
+    // MAIN MENU and QUIT under it, at its edges
+    if (!sp) {
+        const float y = by + RL_BLOCKBAR + gap + 12, size = RL_CaptionSize(v);
+
+        for (int i = 0; i < 2; i++) {
+            const int   id = i ? ID_QUIT : ID_MAINMENU;
+            const char *label = i ? "QUIT GAME" : "MAIN MENU";
+            const float lw = RL_TextW(v, label, size, true, 2.4f), lx = i ? x0 + gw - lw : x0;
+
+            RL_Text(v, lx, y, label, size, Hot(id) ? RL_TEXT : RL_MUTED, true, RL_LEFT, 2.4f, RL_MID);
+            Hit(v, lx - 10, y - 16, lw + 20, 32, id);
+            m_order.push_back(id);
         }
     }
-    m_order.push_back(ID_DISCONNECT);
-    m_order.push_back(ID_QUIT);
+    m_cols = 2;
 }
 
 /*
@@ -3093,6 +3172,10 @@ void UIReloadedMenu::Choose(int id)
         break;
     case SCR_ESC:
         switch (id) {
+        case ID_TEAM:
+            // the team page in its place (UI_Menus_Replacing; the cgame's push: the game type's team menu)
+            cmd = "pushmenu_teamselect\n";
+            break;
         case ID_WEAPON:
             // the weapon page in its place (UI_Menus_Replacing), Spearhead's and Breakthrough's when the server sends it
             // (up till then)
@@ -3166,27 +3249,6 @@ void UIReloadedMenu::Choose(int id)
     if (cmd) {
         Cbuf_AddText(cmd);
     }
-}
-
-bool RL_EscClick(int x, int y)
-{
-    Menu *const     esc = menuManager.FindMenu("reloaded_esc");
-    UIWidget *const w   = esc && esc->GetContainerWidget() ? esc->GetContainerWidget()->FindWidget("front") : NULL;
-    const int       id  = w && w->isSubclassOf(UIReloadedMenu) ? static_cast<UIReloadedMenu *>(w)->HitAt(x, y) : -1;
-
-    if (id < 0) {
-        return false;
-    }
-    // (the page's item, lit: the page closed; the other page's: shown in its place; another: chosen, the page closed first)
-    const int lit = RL_OverPage() == RL_OVER_VOTE ? ID_VOTE : ID_OPTIONS;
-
-    if (id == lit || (id != ID_OPTIONS && id != ID_VOTE)) {
-        Cbuf_AddText("popmenu 0\n");
-    }
-    if (id != lit) {
-        static_cast<UIReloadedMenu *>(w)->Choose(id);
-    }
-    return true;
 }
 
 /*
