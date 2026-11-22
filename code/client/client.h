@@ -735,6 +735,7 @@ void CL_InitConsoleCommands( void );
 //
 void CL_CrosshairImport_f( void );
 void CL_CrosshairExport_f( void );
+const char *CL_CrosshairImportNote( const char *code );
 
 #ifdef USE_DISCORD
 //
