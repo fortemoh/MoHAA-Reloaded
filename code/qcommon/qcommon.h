@@ -1393,8 +1393,10 @@ void	Sys_Print( const char *msg );
 // Sys_Milliseconds should only be used for profiling purposes,
 // any game related timing information should come from event timestamps
 int		Sys_Milliseconds (void);
-// the same clock in microseconds: Sys_Milliseconds() == Sys_Microseconds() / 1000
-long long	Sys_Microseconds (void);
+// the same monotonic clock in microseconds (the frame limiter) and in nanoseconds:
+// Sys_Milliseconds() == Sys_Microseconds() / 1000 == Sys_Nanoseconds() / 1000000
+int64_t	Sys_Microseconds (void);
+int64_t	Sys_Nanoseconds (void);
 
 qboolean Sys_RandomBytes( byte *string, int len );
 
