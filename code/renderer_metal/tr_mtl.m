@@ -262,13 +262,22 @@ static int							mb_queryKeep;
 static qboolean						mb_encQueries;		// the current pass has the visibility buffer
 static id<MTLRenderPipelineState>	mb_queryPipeline;
 
-// the frame blurred (mbFrameBlur): its steps' targets, a 4th (the image the menus draw), a 16th, a 32nd and an 8th of
-// the scene target's size, made at the first blur for that size
-#define MB_BLUR_TARGETS		4
-static id<MTLRenderPipelineState>	mb_blurPipeline;
+// the frame blurred (mbFrameBlur): its targets, a quarter of the scene target's size (rgba8: the image the menus draw)
+// and the Gaussian's across pass's result (half-float, the same size), made at the first blur for that size
+#define MB_BLUR_TARGETS		2
+#define MB_BLUR_SIGMA		20.0f	// the Gaussian's sigma, pixels at 1080 lines (the Vulkan renderer's VK_BLUR_SIGMA)
+static id<MTLRenderPipelineState>	mb_blurPipeline;		// the scene target averaged down to a quarter
+static id<MTLRenderPipelineState>	mb_gaussPipelines[2];	// the Gaussian: across (into half-float), down (rgba8)
 static id<MTLTexture>				mb_blurTargets[MB_BLUR_TARGETS];
 static int							mb_blurWidth, mb_blurHeight;	// the scene target's size they were made for
 static uint64_t						mb_blurSerial;					// the frame last blurred
+
+// tr_mtl_blur.metal's MbGaussParams
+typedef struct {
+	int32_t		step[2];		// ( 1, 0 ) across, ( 0, 1 ) down
+	float		sigma;			// texels of the quarter
+	int32_t		radius;
+} mbGaussParams_t;
 
 // the Competitive HUD's radar picture (mbRadarImage): its texels made for a height on the GPU (tr_mtl_radar.metal)
 typedef struct {
@@ -1767,6 +1776,27 @@ static qboolean MB_CreatePipelines( void )
 		mb_blurPipeline = MB_NewRenderPipeline( desc, &error );
 		if ( !mb_blurPipeline ) {
 			ri.Printf( PRINT_WARNING, "Metal: frame blur pipeline failed: %s\n", error.localizedDescription.UTF8String );
+		}
+	}
+
+	if ( !mb_gaussPipelines[0] || !mb_gaussPipelines[1] ) {
+		// the blur's Gaussian, across into a half-float target and down back into the quarter (without both, no blur
+		// either)
+		static const MTLPixelFormat formats[2] = { MTLPixelFormatRGBA16Float, MTLPixelFormatRGBA8Unorm };
+		int j;
+
+		for ( j = 0; j < 2; j++ ) {
+			desc = [MTLRenderPipelineDescriptor new];
+			desc.label = j ? @"frame blur down" : @"frame blur across";
+			desc.vertexFunction = [mb_library newFunctionWithName:@"mb_blur_vs"];
+			desc.fragmentFunction = [mb_library newFunctionWithName:@"mb_gauss_fs"];
+			desc.colorAttachments[0].pixelFormat = formats[j];
+			mb_gaussPipelines[j] = MB_NewRenderPipeline( desc, &error );
+			if ( !mb_gaussPipelines[j] ) {
+				ri.Printf( PRINT_WARNING, "Metal: frame blur pipeline failed: %s\n", error.localizedDescription.UTF8String );
+				mb_gaussPipelines[0] = mb_gaussPipelines[1] = nil;
+				break;
+			}
 		}
 	}
 
@@ -5157,9 +5187,9 @@ FRAME BLUR
 /*
 ** MB_BlurTarget
 */
-static id<MTLTexture> MB_BlurTarget( int width, int height, MTLStorageMode storage )
+static id<MTLTexture> MB_BlurTarget( int width, int height, MTLPixelFormat format, MTLStorageMode storage )
 {
-	MTLTextureDescriptor *desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+	MTLTextureDescriptor *desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
 		width:width > 1 ? width : 1 height:height > 1 ? height : 1 mipmapped:NO];
 
 	desc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
@@ -5168,28 +5198,24 @@ static id<MTLTexture> MB_BlurTarget( int width, int height, MTLStorageMode stora
 }
 
 /*
-** MB_BlurStep
+** MB_BlurPass
 **
-** dst covered with src sampled bilinearly (tr_mtl_blur.metal): four taps spread texels of src either side of each
-** texel's place. 1 down to a quarter of src's size: the average of a 4x4 block; 0: one tap (a 2x2 block at half the
-** size); 0.5 up to twice src's size: a tent over 3x3 texels of src, a smooth curve with no crease where src's texels
-** meet (a single bilinear step that far up shows src's grid).
+** dst covered by pipeline's one triangle (tr_mtl_blur.metal) reading src, with params: mb_blur_fs's four bilinear
+** taps spread either side of each texel's place, or a pass of mb_gauss_fs's Gaussian.
 */
-static void MB_BlurStep( id<MTLTexture> src, id<MTLTexture> dst, float texels )
+static void MB_BlurPass( id<MTLRenderPipelineState> pipeline, id<MTLTexture> src, id<MTLTexture> dst, const void *params,
+	NSUInteger length )
 {
 	MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
 	id<MTLRenderCommandEncoder> enc;
-	float spread[2];
 
-	spread[0] = texels / src.width;
-	spread[1] = texels / src.height;
 	pass.colorAttachments[0].texture = dst;
 	pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
 	pass.colorAttachments[0].storeAction = MTLStoreActionStore;
 	enc = [mb_cmd renderCommandEncoderWithDescriptor:pass];
-	[enc setRenderPipelineState:mb_blurPipeline];
+	[enc setRenderPipelineState:pipeline];
 	[enc setFragmentTexture:src atIndex:0];
-	[enc setFragmentBytes:spread length:sizeof( spread ) atIndex:0];
+	[enc setFragmentBytes:params length:length atIndex:0];
 	[enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
 	[enc endEncoding];
 	mb_statPasses++;
@@ -5198,26 +5224,29 @@ static void MB_BlurStep( id<MTLTexture> src, id<MTLTexture> dst, float texels )
 /*
 ** mbFrameBlur
 **
-** The Reloaded menus' backdrop: down, the scene target averaged over blocks of 4x4 texels, those over 4x4 and those
-** over 2x2 (a box 32 texels wide, as the Vulkan renderer's five halvings), then up again to a quarter of the screen's
-** size, a tent at each doubling, into the texture the menus draw stretched over the screen. Up to a quarter, not
-** straight into a 16th: stretched 16 times, bilinear filtering showed its grid (squares and creases 16 pixels apart);
-** stretched 4 times from a smooth image it shows nothing. Six passes, the largest a 16th of the screen's texels, while
-** the image is drawn; nothing otherwise. The image is the first step's target, written again by the last: its memory
-** (with the 16th, the 32nd and the 8th, ~0.7 MB at 1920x1080, ~2.8 at 3840x2160) stays for the next time, at no cost
-** per frame while the menus are closed.
+** The Reloaded menus' backdrop, as the Vulkan renderer's (vk_blur.c): the scene target averaged over blocks of 4x4
+** texels into a quarter of its size (the Vulkan renderer's two halvings), a Gaussian there (MB_BLUR_SIGMA pixels at
+** 1080 lines, in proportion to the target's height; three sigmas each side), across into a half-float target and down
+** back into the quarter, the texture the menus draw stretched over the screen. (Before, a box 32 texels wide stepped
+** back up with tents; the Vulkan renderer's box pyramid showed its grid as steps on bright edges, and both now blur
+** alike.) Three passes, each over a 16th of the screen's texels, while the image is drawn; nothing otherwise. The
+** image is the first pass's target, written again by the last: its memory (with the half-float target, ~1.6 MB at
+** 1920x1080, ~6.2 at 3840x2160) stays for the next time, at no cost per frame while the menus are closed.
 **
 ** The scene pass ends without storing depth and stencil: a 3D view drawn after this clears them first, and a 2D
 ** draw passes the depth test against a cleared depth buffer as against any.
 */
 void mbFrameBlur( unsigned int texture )
 {
-	static const int shifts[MB_BLUR_TARGETS] = { 2, 4, 5, 3 };
+	static const MTLPixelFormat formats[MB_BLUR_TARGETS] = { MTLPixelFormatRGBA8Unorm, MTLPixelFormatRGBA16Float };
 	mbTexture_t *t = MB_TextureForName( texture );
 	id<MTLTexture> image;
+	mbGaussParams_t gauss;
+	float spread[2];
 	int i;
 
-	if ( !t || !t->texture || !mb_blurPipeline || !mb_sceneColor || mb_blurSerial == mb_frameSerial
+	if ( !t || !t->texture || !mb_blurPipeline || !mb_gaussPipelines[0] || !mb_gaussPipelines[1] || !mb_sceneColor
+		|| mb_blurSerial == mb_frameSerial
 		|| ( !mb_sceneColorValid && !mb_pendingClear ) ) {
 		return;
 	}
@@ -5226,7 +5255,7 @@ void mbFrameBlur( unsigned int texture )
 		if ( mb_blurWidth != mb_width || mb_blurHeight != mb_height ) {
 			for ( i = 0; i < MB_BLUR_TARGETS; i++ ) {
 				// (the image shared, as uploads are: one more would write it as any)
-				mb_blurTargets[i] = MB_BlurTarget( mb_width >> shifts[i], mb_height >> shifts[i],
+				mb_blurTargets[i] = MB_BlurTarget( mb_width >> 2, mb_height >> 2, formats[i],
 					i ? MTLStorageModePrivate : MTLStorageModeShared );
 				if ( !mb_blurTargets[i] ) {
 					mb_blurWidth = mb_blurHeight = 0;
@@ -5256,12 +5285,20 @@ void mbFrameBlur( unsigned int texture )
 		MB_EndPass( qfalse );
 		MB_BeginCommandBuffer();
 
-		MB_BlurStep( mb_sceneColor, image, 1.0f );					// a 4th
-		MB_BlurStep( image, mb_blurTargets[1], 1.0f );				// a 16th
-		MB_BlurStep( mb_blurTargets[1], mb_blurTargets[2], 0.0f );	// a 32nd
-		MB_BlurStep( mb_blurTargets[2], mb_blurTargets[1], 0.5f );	// up: a 16th
-		MB_BlurStep( mb_blurTargets[1], mb_blurTargets[3], 0.5f );	// an 8th
-		MB_BlurStep( mb_blurTargets[3], image, 0.5f );				// a 4th, the image
+		// a quarter: four bilinear taps a texel of the scene target either side, the average of each 4x4 block
+		spread[0] = 1.0f / mb_sceneColor.width;
+		spread[1] = 1.0f / mb_sceneColor.height;
+		MB_BlurPass( mb_blurPipeline, mb_sceneColor, image, spread, sizeof( spread ) );
+
+		// the Gaussian: across into the half-float target, down back into the image
+		gauss.sigma = MB_BLUR_SIGMA / 4.0f * mb_height / 1080.0f;
+		gauss.radius = (int32_t)ceilf( 3.0f * gauss.sigma );
+		gauss.step[0] = 1;
+		gauss.step[1] = 0;
+		MB_BlurPass( mb_gaussPipelines[0], image, mb_blurTargets[1], &gauss, sizeof( gauss ) );
+		gauss.step[0] = 0;
+		gauss.step[1] = 1;
+		MB_BlurPass( mb_gaussPipelines[1], mb_blurTargets[1], image, &gauss, sizeof( gauss ) );
 	}
 	mb_blurSerial = mb_frameSerial;
 }
