@@ -66,7 +66,6 @@ static void S_OMAHA_SaveData(soundsystemsavegame_t *pSave);
 static void S_OMAHA_ReLoad(soundsystemsavegame_t *pSave);
 static void S_OMAHA_LoadData(soundsystemsavegame_t *pSave);
 static qboolean S_OMAHA_MUSIC_LoadSoundtrackFile(const char *filename);
-static qboolean S_OMAHA_MUSIC_SongValid(const char *mood);
 static qboolean S_OMAHA_MUSIC_Loaded(void);
 static void S_OMAHA_Music_Update(void);
 static void S_OMAHA_MUSIC_SongEnded(void);
@@ -4434,6 +4433,21 @@ void MUSIC_FlushCaches()
 
 /*
 ==============
+S_OMAHA_MUSIC_SongOff
+
+Added in MoHAA Reloaded: the song isn't played or read. s_ambientvolume 0: no
+song; Cinematic (s_cinematic 1): none of the soundtrack's ambiences, the songs
+not in sound/music/ (the maps' background loops of sound/amb_stereo), what the
+stock "cinematic" command was typed to stop; its music (the win music) plays on.
+==============
+*/
+static qboolean S_OMAHA_MUSIC_SongOff(const song_t *song)
+{
+    return s_ambientVolume->value <= 0 || (s_cinematic->integer && Q_stricmpn(song->path, "sound/music/", 12));
+}
+
+/*
+==============
 S_OMAHA_MUSIC_LoadSoundtrackFile
 ==============
 */
@@ -4582,9 +4596,9 @@ qboolean S_OMAHA_MUSIC_LoadSoundtrackFile(const char *filename)
             music_songs[music_numsongs].mood_num    = MusicMood_NameToNum(alias);
             music_numsongs++;
 
-            // read into memory and scanned (s_soundtrackCache); with
-            // s_ambientvolume 0 no song is opened (S_OMAHA_MUSIC_AmbientOff)
-            if (s_ambientVolume->value > 0) {
+            // read into memory and scanned (s_soundtrackCache); a song off
+            // isn't opened (S_OMAHA_MUSIC_SongOff, S_OMAHA_MUSIC_AmbientOff)
+            if (!S_OMAHA_MUSIC_SongOff(psong)) {
                 S_StreamMemory_Prefetch(psong->path);
             }
         }
@@ -4606,16 +4620,6 @@ qboolean S_OMAHA_MUSIC_LoadSoundtrackFile(const char *filename)
     }
 
     return true;
-}
-
-/*
-==============
-S_OMAHA_MUSIC_SongValid
-==============
-*/
-qboolean S_OMAHA_MUSIC_SongValid(const char *mood)
-{
-    return S_OMAHA_MUSIC_FindSong(mood) != -1;
 }
 
 /*
@@ -4642,7 +4646,8 @@ none is opened, decoded or mixed. The songs playing, fading or paused stop and
 free their streams, and the files read into memory at the load
 (s_soundtrackCache) are dropped. Raised again, the mood's song starts
 (music_currentsong -1: not playing) where it stopped; the triggered music
-(s_musicvolume) isn't the soundtrack and plays on.
+(s_musicvolume) isn't the soundtrack and plays on. Cinematic on, the
+ambiences playing stop the same way (S_OMAHA_MUSIC_SongOff), the music plays.
 ==============
 */
 static qboolean S_OMAHA_MUSIC_AmbientOff(void)
@@ -4651,6 +4656,17 @@ static qboolean S_OMAHA_MUSIC_AmbientOff(void)
 
     if (s_ambientVolume->value > 0) {
         music_ambientOff = qfalse;
+        if (s_cinematic->integer) {
+            for (i = 0; i < MAX_SOUNDSYSTEM_SONGS; i++) {
+                if ((omaha.chan_song[i].is_playing() || omaha.chan_song[i].is_paused())
+                    && S_OMAHA_MUSIC_SongOff(&music_songs[omaha.chan_song[i].song_number])) {
+                    S_OMAHA_MUSIC_StopChannel(i);
+                }
+            }
+            if (music_currentsong >= 0 && S_OMAHA_MUSIC_SongOff(&music_songs[music_currentsong])) {
+                music_currentsong = -1;
+            }
+        }
         return qfalse;
     }
 
@@ -4731,8 +4747,12 @@ static void S_OMAHA_MUSIC_UpdateSongs(void)
             S_OMAHA_MUSIC_StopAllSongs();
         }
     } else if (music_current_mood != currentsong) {
-        const char *mood = MusicMood_NumToName(music_current_mood);
-        if (S_OMAHA_MUSIC_SongValid(mood) && S_OMAHA_MUSIC_Loaded() && strlen(current_soundtrack)) {
+        const char *mood    = MusicMood_NumToName(music_current_mood);
+        const int   songnum = S_OMAHA_MUSIC_FindSong(mood);
+
+        // (a song off isn't tried: S_OMAHA_MUSIC_SongOff)
+        if (songnum != -1 && !S_OMAHA_MUSIC_SongOff(&music_songs[songnum]) && S_OMAHA_MUSIC_Loaded()
+            && strlen(current_soundtrack)) {
             Com_DebugPrintf("Playing %s.\n", mood);
             S_OMAHA_MUSIC_PlaySong(mood);
         }
@@ -5086,9 +5106,9 @@ qboolean S_OMAHA_MUSIC_PlaySong(const char *alias)
 
     song = &music_songs[songnum];
 
-    // Added in MoHAA Reloaded: s_ambientvolume 0, no song, and not taken as
-    // the current one (S_OMAHA_MUSIC_AmbientOff)
-    if (s_ambientVolume->value <= 0) {
+    // Added in MoHAA Reloaded: a song off (s_ambientvolume 0, Cinematic's
+    // ambiences) isn't played or taken as the current one (S_OMAHA_MUSIC_SongOff)
+    if (S_OMAHA_MUSIC_SongOff(song)) {
         return true;
     }
 
