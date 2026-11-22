@@ -175,9 +175,17 @@ std::string RL_MissionLine(const char *map);
 // a Spearhead or Breakthrough level's painting (its load screen's, else its mission's; the missions' crop),
 // registered, the shape its aspect; 0 none (Allied Assault's: the end screen's own)
 qhandle_t   RL_LevelPainting(const char *map, float *aspect);
-// the main menu's button (primary: brass; off: dimmed; lit while m's hot item); its hit (id) added to m
+// Omaha's slant (the tabs' slashes', about 19 degrees): an edge leaning forward, its top this much right of its foot for
+// each unit of its height; a box's edges slanted: none, its left, its right, both
+#define RL_SLANT 0.34f
+enum { RL_SL_NONE, RL_SL_LEFT, RL_SL_RIGHT, RL_SL_BOTH };
+// a box with its left and/or right edge slanted (edges: RL_SL_*), the slant's middle on the box's edge (boxes side by
+// side tile, the gaps between them as wide at every height); a straight edge as RL_Box's
+void        RL_SlantBox(const rlView_t& v, float x, float y, float w, float h, int edges, rlColor_t c);
+// the main menu's button (primary: brass; off: dimmed; lit while m's hot item; edges: RL_SL_*, those slanted); its hit
+// (id) added to m
 void        RL_Button(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, int id,
-                      bool off = false);
+                      bool off = false, int edges = RL_SL_BOTH);
 
 // the player models a side can pick, in the order of their names (PM_FilenameToDisplayname)
 typedef struct {
