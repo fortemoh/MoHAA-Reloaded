@@ -3926,10 +3926,11 @@ across the screen, dark, a line under it; on the screens' edges (x, x +
 w) the game's lockup (RL_BARLOGO high: its icon, a fifth of its height,
 its wordmark) and QUIT (DISCONNECT before it while in a game, LEAVE
 MISSION in single player, red), its icon 18 before its label, 32 between
-the two; the pages 48 after the lockup, each the bar's height, its label
-28 in from its sides, the one shown filled brass. Where they don't all fit
-(4:3 in a game) the pages' sides narrow to 12, then the foot's labels go
-(their icons stay)
+the two; the pages in the screens' middle (moved over to stay 48 from the
+lockup and 32 from the foot), each the bar's height, its label 28 in from
+its sides, the one shown filled brass. Where they don't all fit (4:3 in a
+game) the pages' sides narrow to 12, then the foot's labels go (their
+icons stay)
 ================
 */
 static void RL_TopBar(UIReloadedMenu *m, const rlView_t& v, float x, float w, int on, const rlRailItem_t *foot, int nf)
@@ -3969,7 +3970,9 @@ static void RL_TopBar(UIReloadedMenu *m, const rlView_t& v, float x, float w, in
         RL_Outline(v, marks[g], x + RL_BARLOGO * 1.2f + ww / 2, mid, ww, RL_BARLOGO, RL_Rgb(255, 255, 255));
     }
     {
-        float px = x + lw + 48;
+        // (in the screens' middle; moved over where they would come within 48 of the lockup or 32 of the foot)
+        const float all = labels + 2 * n * pad;
+        float       px  = Q_max(x + lw + 48, Q_min(floorf(x + (w - all) / 2), x + w - tail - 32 - all));
 
         for (int i = 0; i < n; i++) {
             const rlRailItem_t& it  = rl_pages[i];
