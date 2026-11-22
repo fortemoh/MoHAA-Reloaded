@@ -114,12 +114,20 @@ static dispatch_semaphore_t			mb_acquireRequest;	// signaled when mb_readyDrawab
 static os_unfair_lock				mb_readyLock = OS_UNFAIR_LOCK_INIT;
 static id<CAMetalDrawable>			mb_readyDrawable;	// guarded by mb_readyLock
 
+// what the final pass reads (tr_mtl_final.metal's MbFinal, the same layout): the gamma ramp, .rgb per input value, and
+// the picture's grade, r_contrast and r_vibrance (1 none), set as each frame ends
+typedef struct {
+	uint8_t	ramp[256][4];
+	float	contrast;
+	float	vibrance;
+} mbFinal_t;
+
 // late presents (vsync off): a frame that found no drawable ready leaves its final pass to the drawable thread, which
 // encodes and presents it as soon as a drawable comes back, unless the next frame ends first (guarded by mb_readyLock)
 static qboolean						mb_latePresent;		// r_metalLatePresent
 static id<MTLCommandBuffer>			mb_lateCmd;			// enqueued right after the frame's command buffer; nil = none
 static id<MTLTexture>				mb_lateScene;
-static uint8_t						mb_lateRamp[256][4];
+static mbFinal_t					mb_lateFinal;
 static uint64_t						mb_lateLatency;		// the frame's cl_latencyStats record
 static uint64_t						mb_lateDeadline;	// mach time: commit it by then, or leave the drawable to the next frame
 static uint64_t						mb_frameEnd, mb_frameInterval;	// mach time: the last frame's end, the smoothed frame interval
@@ -134,6 +142,8 @@ static cvar_t	*r_metalPresentStats;
 static cvar_t	*r_metalLatePresent;
 static cvar_t	*r_metalPipelineCache;
 static cvar_t	*r_metalWakeGPU;
+static cvar_t	*r_contrast;
+static cvar_t	*r_vibrance;
 
 // r_metalPresentStats: drawables actually shown on screen (presentedTime > 0) vs. presented
 static _Atomic int	mb_statPresented, mb_statShown;
@@ -179,7 +189,7 @@ static int		mb_framesInFlight;
 static int		mb_width, mb_height;
 static char		mb_rendererString[MAX_STRING_CHARS];
 
-static uint8_t	mb_gammaRamp[256][4];					// .rgb per input value, see tr_mtl_final.metal
+static mbFinal_t	mb_final;						// the final pass's gamma ramp and grade
 
 /*
 =============================================================
@@ -2065,11 +2075,11 @@ static void MB_LatencyNotPresented( uint64_t seq );
 /*
 ** MB_EncodeFinal
 **
-** The final pass: the scene through the gamma ramp into the drawable, with the presented handlers. Encoded into the
-** frame's command buffer, or into a late present's on the drawable thread.
+** The final pass: the scene through the gamma ramp and the grade into the drawable, with the presented handlers.
+** Encoded into the frame's command buffer, or into a late present's on the drawable thread.
 */
 static void MB_EncodeFinal( id<MTLCommandBuffer> cmd, id<CAMetalDrawable> drawable, id<MTLTexture> scene,
-	const void *ramp, uint64_t latency )
+	const mbFinal_t *fin, uint64_t latency )
 {
 	MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
 	id<MTLRenderCommandEncoder> enc;
@@ -2080,7 +2090,7 @@ static void MB_EncodeFinal( id<MTLCommandBuffer> cmd, id<CAMetalDrawable> drawab
 	enc = [cmd renderCommandEncoderWithDescriptor:pass];
 	[enc setRenderPipelineState:mb_finalPipeline];
 	[enc setFragmentTexture:scene atIndex:0];
-	[enc setFragmentBytes:ramp length:sizeof( mb_gammaRamp ) atIndex:0];
+	[enc setFragmentBytes:fin length:sizeof( *fin ) atIndex:0];
 	[enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
 	[enc endEncoding];
 	if ( r_metalPresentStats->integer ) {
@@ -2105,9 +2115,9 @@ static void MB_EncodeFinal( id<MTLCommandBuffer> cmd, id<CAMetalDrawable> drawab
 ** the frame's own, before anything the next frame commits).
 */
 static void MB_PresentLate( id<MTLCommandBuffer> cmd, id<CAMetalDrawable> drawable, id<MTLTexture> scene,
-	const void *ramp, uint64_t latency )
+	const mbFinal_t *fin, uint64_t latency )
 {
-	MB_EncodeFinal( cmd, drawable, scene, ramp, latency );
+	MB_EncodeFinal( cmd, drawable, scene, fin, latency );
 	[cmd presentDrawable:drawable];
 	[cmd commit];
 	mb_statLate++;
@@ -2141,7 +2151,7 @@ static qboolean MB_PostLatePresent( uint64_t latency )
 	if ( !drawable ) {
 		mb_lateCmd = cmd;
 		mb_lateScene = mb_sceneColor;
-		memcpy( mb_lateRamp, mb_gammaRamp, sizeof( mb_lateRamp ) );
+		mb_lateFinal = mb_final;
 		mb_lateLatency = latency;
 		mb_lateDeadline = mb_frameEnd + mb_frameInterval - mb_lateMargin;
 	}
@@ -2150,7 +2160,7 @@ static qboolean MB_PostLatePresent( uint64_t latency )
 	if ( drawable ) {
 		// it came while the frame was being committed
 		dispatch_semaphore_signal( mb_acquireRequest );
-		MB_PresentLate( cmd, drawable, mb_sceneColor, mb_gammaRamp, latency );
+		MB_PresentLate( cmd, drawable, mb_sceneColor, &mb_final, latency );
 	}
 	return qtrue;
 }
@@ -2216,7 +2226,7 @@ static void *MB_AcquireThread( void *arg )
 
 			id<MTLCommandBuffer> lateCmd;
 			id<MTLTexture> lateScene = nil;
-			uint8_t lateRamp[256][4];
+			mbFinal_t lateFinal;
 			uint64_t lateLatency = 0;
 
 			os_unfair_lock_lock( &mb_readyLock );
@@ -2226,7 +2236,7 @@ static void *MB_AcquireThread( void *arg )
 			}
 			if ( lateCmd ) {
 				lateScene = mb_lateScene;
-				memcpy( lateRamp, mb_lateRamp, sizeof( lateRamp ) );
+				lateFinal = mb_lateFinal;
 				lateLatency = mb_lateLatency;
 				mb_lateCmd = nil;
 				mb_lateScene = nil;
@@ -2236,7 +2246,7 @@ static void *MB_AcquireThread( void *arg )
 			os_unfair_lock_unlock( &mb_readyLock );
 
 			if ( lateCmd ) {
-				MB_PresentLate( lateCmd, drawable, lateScene, lateRamp, lateLatency );
+				MB_PresentLate( lateCmd, drawable, lateScene, &lateFinal, lateLatency );
 				fetch = qtrue;
 			}
 		}
@@ -2369,6 +2379,14 @@ qboolean mbInit( void *metalLayer )
 	r_metalLatePresent = ri.Cvar_Get( "r_metalLatePresent", "1", CVAR_LATCH );
 	r_metalPipelineCache = ri.Cvar_Get( "r_metalPipelineCache", "1", CVAR_ARCHIVE | CVAR_LATCH );
 	r_metalWakeGPU = ri.Cvar_Get( "r_metalWakeGPU", "1", 0 );
+	// vulkan-reloaded's (its vk_output.c): the whole picture's grade (the 3D view, the HUD and the menus), live, in the
+	// final pass every frame has anyway
+	r_contrast = ri.Cvar_Get( "r_contrast", "1", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_contrast, "contrast of the whole picture around mid gray, 1 none, 0.5 to 2" );
+	ri.Cvar_CheckRange( r_contrast, 0.5f, 2.0f, qfalse );
+	r_vibrance = ri.Cvar_Get( "r_vibrance", "1", CVAR_ARCHIVE );
+	ri.Cvar_SetDescription( r_vibrance, "colour saturation of the whole picture (the 3D view, the HUD and the menus), as a graphics driver's Digital Vibrance or Saturation: 1 none, 0 grey, up to 2" );
+	ri.Cvar_CheckRange( r_vibrance, 0.0f, 2.0f, qfalse );
 
 	if ( !mb_device ) {
 		mb_device = MTLCreateSystemDefaultDevice();
@@ -2396,9 +2414,10 @@ qboolean mbInit( void *metalLayer )
 	MB_PrewarmPipelines();
 
 	for ( i = 0; i < 256; i++ ) {
-		mb_gammaRamp[i][0] = mb_gammaRamp[i][1] = mb_gammaRamp[i][2] = i;
-		mb_gammaRamp[i][3] = 255;
+		mb_final.ramp[i][0] = mb_final.ramp[i][1] = mb_final.ramp[i][2] = i;
+		mb_final.ramp[i][3] = 255;
 	}
+	mb_final.contrast = mb_final.vibrance = 1.0f;
 
 	// Frames in flight: mbEndFrame waits, right after committing a frame, until the GPU has finished the frame
 	// whose ring slot the next one reuses (never between input sampling and encoding).
@@ -2570,9 +2589,9 @@ void mbSetGamma( const unsigned char red[256], const unsigned char green[256], c
 	int i;
 
 	for ( i = 0; i < 256; i++ ) {
-		mb_gammaRamp[i][0] = red[i];
-		mb_gammaRamp[i][1] = green[i];
-		mb_gammaRamp[i][2] = blue[i];
+		mb_final.ramp[i][0] = red[i];
+		mb_final.ramp[i][1] = green[i];
+		mb_final.ramp[i][2] = blue[i];
 	}
 }
 
@@ -2747,7 +2766,9 @@ void mbEndFrame( void )
 			MB_TemporalTransformChanged();
 		}
 
-		// final pass into the drawable, if one is ready
+		// final pass into the drawable, if one is ready; the grade as it is now (a late present keeps a copy)
+		mb_final.contrast = Com_Clamp( 0.5f, 2.0f, r_contrast->value );
+		mb_final.vibrance = Com_Clamp( 0.0f, 2.0f, r_vibrance->value );
 		mb_statFrames++;
 		drawable = MB_TakeDrawable();
 		if ( mb_latePresent ) {
@@ -2762,7 +2783,7 @@ void mbEndFrame( void )
 			mb_frameEnd = now;
 		}
 		if ( drawable ) {
-			MB_EncodeFinal( mb_cmd, drawable, mb_sceneColor, mb_gammaRamp, latency );
+			MB_EncodeFinal( mb_cmd, drawable, mb_sceneColor, &mb_final, latency );
 		}
 
 		// Frame completion is read from this event, not from a completed handler: handlers arrived ~1.3 ms after
