@@ -202,6 +202,13 @@ static struct {
     int         serial; // changes with all of the above
 } rl_mm = {PAGE_PLAY, F_NONE, "", "", TAB_ALL, COL_PING, true, "", 0, 1, -1, 0, "", ID_QUIT, 0, 0};
 
+// the confirmation's asker: esc, the Esc menu (RL_EscConfirm: the box as wide as its block; DISCONNECT's answer shows
+// the main menu on the page show after leaving), else the main menu
+static struct {
+    bool esc;
+    int  show;
+} rl_ask = {false, RL_SHOW_PLAY};
+
 static std::set<std::string> rl_favs;
 static cvar_t               *ui_favoriteservers;
 
@@ -215,6 +222,18 @@ static struct {
 static void RL_Changed(void)
 {
     rl_mm.serial++;
+}
+
+// the confirmation shown over the menu up, asking what (ID_QUIT, ID_DISCONNECT, ID_CDELETE, ID_KEYMOVE; rl_ask's
+// esc and show: the Esc menu's)
+static void RL_Ask(int what, bool esc = false, int show = RL_SHOW_PLAY)
+{
+    rl_mm.confirm = what;
+    rl_ask.esc    = esc;
+    rl_ask.show   = show;
+    // (its words drawn again: the last confirmation's are cached)
+    RL_Changed();
+    menuManager.ShowMenu("reloaded_confirm");
 }
 
 static const char *RL_SvString(GServer s, const char *key)
@@ -1319,13 +1338,13 @@ void RL_SlantBox(const rlView_t& v, float x, float y, float w, float h, int edge
 
 // a button: primary the accent, else Omaha's dark one, its label softer (off: faint); edges slanted: RL_SL_*
 void RL_Button(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, int id, bool off,
-               int edges)
+               int edges, float size)
 {
     const bool      hot  = m->Hot(id);
     const rlColor_t fill = primary ? (hot ? RL_BRASS_HOT : RL_BRASS) : hot ? RL_DARK_HOT : RL_DARK;
 
     RL_SlantBox(v, x, y, w, h, edges, off ? RL_Rgb(255, 255, 255, 14) : fill);
-    RL_Text(v, x + w / 2, y + h / 2, label, 18, off ? RL_FG_FAINT : primary ? RL_INK : hot ? RL_FG : RL_FG_SOFT, true, RL_CENTER, 2.4f, RL_MID);
+    RL_Text(v, x + w / 2, y + h / 2, label, size, off ? RL_FG_FAINT : primary ? RL_INK : hot ? RL_FG : RL_FG_SOFT, true, RL_CENTER, 2.4f, RL_MID);
     m->Hit(v, x, y, w, h, id);
 }
 
@@ -2935,8 +2954,7 @@ static void RL_KeyPressed(int key)
     } else if (on && *on && Q_stricmp(on, a.cmd.c_str())) {
         rl_keys.ask[0] = box;
         rl_keys.ask[1] = key;
-        rl_mm.confirm  = ID_KEYMOVE;
-        menuManager.ShowMenu("reloaded_confirm");
+        RL_Ask(ID_KEYMOVE);
     } else {
         RL_KeyBind(box, key);
     }
@@ -4005,12 +4023,20 @@ void UIReloadedMenu::DrawOptions(const rlView_t& v)
 ================
 DrawConfirm: Omaha's confirmation, over the main menu: Quit's,
 Disconnect's in a game (Leave mission's in single player), Campaign's
-Delete, KEYS' move of a key another command has
+Delete, KEYS' move of a key another command has; over the Esc menu: its
+QUIT GAME's and DISCONNECT's (LEAVE MISSION's)
 ================
 */
+
+void RL_EscConfirm(bool quit, int show)
+{
+    RL_Ask(quit ? ID_QUIT : ID_DISCONNECT, true, show);
+}
+
 void UIReloadedMenu::DrawConfirm(const rlView_t& v)
 {
-    const float w = 560, h = 230, x = (v.dw - w) / 2, y = (v.dh - h) / 2, by = y + h - 24 - 48;
+    // (over the Esc menu as wide as its block, its edges on the block's)
+    const float w = rl_ask.esc ? RL_BlockWidth(v) : 560.0f, h = 230, x = (v.dw - w) / 2, y = (v.dh - h) / 2, by = y + h - 24 - 48;
     // (the title, the question, the button)
     const char *const says[5][3] = {
         {"QUIT",          "Close the game?",         "QUIT"      },
@@ -4399,10 +4425,16 @@ void UIReloadedMenu::ChooseMain(int id)
             } else if (rl_mm.confirm == ID_KEYMOVE) {
                 RL_KeyBind(rl_keys.ask[0], rl_keys.ask[1]);
             }
-            // (the confirmation closed first: the main menu stays, out of the game)
-            Cbuf_AddText(rl_mm.confirm == ID_QUIT                                        ? "quit\n"
-                         : rl_mm.confirm == ID_CDELETE || rl_mm.confirm == ID_KEYMOVE ? "popmenu 0\n"
-                                                                                       : "popmenu 0\ndisconnect\n");
+            if (rl_mm.confirm == ID_DISCONNECT && rl_ask.esc) {
+                // (asked from the Esc menu: the confirmation and the Esc menu closed, the main menu on its page)
+                RL_MainShow(rl_ask.show);
+                Cbuf_AddText("popmenu 0\ndisconnect;wait 5;popmenu 0;pushmenu main\n");
+            } else {
+                // (the confirmation closed first: the main menu stays, out of the game)
+                Cbuf_AddText(rl_mm.confirm == ID_QUIT                                        ? "quit\n"
+                             : rl_mm.confirm == ID_CDELETE || rl_mm.confirm == ID_KEYMOVE ? "popmenu 0\n"
+                                                                                           : "popmenu 0\ndisconnect\n");
+            }
         } else if (id == ID_CANCEL) {
             Cbuf_AddText("popmenu 0\n");
         }
@@ -4578,8 +4610,7 @@ void UIReloadedMenu::ChooseMain(int id)
         // fall through
     case ID_QUIT:
     case ID_DISCONNECT:
-        rl_mm.confirm = id;
-        menuManager.ShowMenu("reloaded_confirm");
+        RL_Ask(id);
         break;
     case ID_REFRESH:
         RL_SvRefresh();
@@ -4626,8 +4657,7 @@ static qboolean RL_CampKey(int key)
         return qfalse;
     }
     if (key == K_DEL) {
-        rl_mm.confirm = ID_CDELETE;
-        menuManager.ShowMenu("reloaded_confirm");
+        RL_Ask(ID_CDELETE);
         return qtrue;
     }
     if (key == K_UPARROW || key == K_DOWNARROW) {
