@@ -35,6 +35,7 @@ extern cvar_t *s_loadas8bit;
 extern cvar_t *s_separation;
 extern cvar_t *s_musicVolume;
 extern cvar_t *s_ambientVolume;
+extern cvar_t *s_cinematic;
 
 #define MAX_SOUNDSYSTEM_CHANNELS_3D        32
 #define MAX_SOUNDSYSTEM_CHANNELS_2D        32
@@ -172,6 +173,10 @@ enum sfx_flags_t {
     SFX_FLAG_NULL          = 16,
     // Added in the Metal port
     SFX_FLAG_STREAM_FAILED = 32, // the stream couldn't be opened; not searched for again until the next registration
+    // Added in MoHAA Reloaded: one of the maps' cinematic sounds (S_IsCinematicSound), set with the name
+    SFX_FLAG_CINEMATIC = 64,
+    // Added in MoHAA Reloaded: registered silent, the file not read yet (S_ReadUnread)
+    SFX_FLAG_UNREAD = 128,
 };
 
 enum loopsound_flags_t {
