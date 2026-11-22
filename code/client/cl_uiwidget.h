@@ -32,15 +32,26 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <vector>
 
 /*
-ReloadedMenu: "screen weapon|esc|scoreboard|loading|main|confirm|end|connect|options", "layer
+ReloadedMenu: "screen weapon|team|esc|scoreboard|loading|main|confirm|end|connect|options", "layer
 back|front". The back layer draws what is under the 3D model views and
 places them (labels the menu names); the front layer draws what is over
 them and takes the mouse and the keys. Both lay the screen out alike from
 the same data
 */
 
-enum { SCR_WEAPON, SCR_ESC, SCR_SCOREBOARD, SCR_LOADING, SCR_MAIN, SCR_CONFIRM, SCR_END, SCR_CONNECT, SCR_OPTIONS, SCR_NUM };
-
+enum {
+    SCR_WEAPON,
+    SCR_TEAM,
+    SCR_ESC,
+    SCR_SCOREBOARD,
+    SCR_LOADING,
+    SCR_MAIN,
+    SCR_CONFIRM,
+    SCR_END,
+    SCR_CONNECT,
+    SCR_OPTIONS,
+    SCR_NUM
+};
 
 typedef struct {
     int x, y, w, h; // pixels
@@ -89,11 +100,17 @@ public:
     int  HitAt(int x, int y);
     bool Hot(int id) const { return m_focus == id; }
     void Choose(int id);
-    void PlaceFigure(const rlView_t& v, float cx, float headY, float width);
+    // a figure's view (a label of the menu's, its modelscale scale, mid model units up from his feet in its middle)
+    // placed with his head's top at headY, k units a model unit, width wide about cx
+    void PlaceFigure(const rlView_t& v, const char *name, float scale, float mid, float cx, float headY, float k, float width);
     // a view (a label of the menu's) placed over x y w h, in units (none across: hidden)
     void PlaceView(const rlView_t& v, const char *name, float x, float y, float w, float h);
+    // a side's model cycler, its middle at cx cy, w across h high: the chevrons at its ends (idPrev, idPrev + 2), the
+    // model previewed between, its place in the list after it; false: no other model to cycle to (the chevrons off)
+    bool ModelCycler(const rlView_t& v, float cx, float cy, float w, float h, int side, int idPrev, float nameSize, float countSize);
 
     void DrawWeapon(const rlView_t& v, const rlInfo_t& in);
+    void DrawTeam(const rlView_t& v, const rlInfo_t& in);
     void DrawEsc(const rlView_t& v, const rlInfo_t& in);
     void DrawScoreboard(const rlView_t& v, const rlInfo_t& in);
     void DrawEnd(const rlView_t& v, const rlInfo_t& in);
