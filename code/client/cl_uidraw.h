@@ -46,7 +46,8 @@ static const rlColor_t RL_INK   = {8 / 255.0f, 9 / 255.0f, 10 / 255.0f, 1}; // o
 
 // icon: the badge (the star or cross on its disc); mark: the star or cross
 // alone (the team page's medallions, where the badge's disc drawn faint in
-// the medallion's showed as a ring)
+// the medallion's showed as a ring), each as wide as CS:GO's in its disc
+// (the star 0.95 of its viewBox, the cross's viewBox cropped to the cross)
 typedef struct {
     int         deep[3], base[3], mid[3], light[3], pale[3];
     const char *name, *icon, *mark;
