@@ -4,7 +4,7 @@
 # mohlauncher.app (launcher/macos, built here), COPYING.txt, the licenses of the libraries built into it, the install
 # text (port/release/INSTALL.txt) and the source commit. The dedicated server's, mohreloaded-server-<version>-mac.zip,
 # when the install has it (CI configures with -DBUILD_SERVER=ON; port/build.sh doesn't): mohreloaded-server and the
-# app's game.dylib, each signed ad hoc, COPYING.txt and port/release/INSTALL-server.txt (zlib and Recast & Detour,
+# game.dylib installed beside it (cmake/basegame.cmake), each signed ad hoc, COPYING.txt and port/release/INSTALL-server.txt (zlib and Recast & Detour,
 # the libraries in those two, ask for no notice there). Never game data.
 #   port/release.sh [install dir] [output dir]
 # The install dir is the one that holds mohreloaded.app: `cmake --install`'s <prefix>/lib/mohreloaded (CI,
@@ -106,7 +106,8 @@ ZIP="$OUT/$NAME.zip"
 rm -rf "$STAGE" "$ZIP" "$ZIP.sha256"
 mkdir -p "$STAGE"
 ditto "$SERVER" "$STAGE/mohreloaded-server"
-ditto "$APP/Contents/MacOS/game.dylib" "$STAGE/game.dylib"
+[ -e "$INSTALL/game.dylib" ] || die "no game.dylib beside mohreloaded-server in $INSTALL"
+ditto "$INSTALL/game.dylib" "$STAGE/game.dylib"
 # outside the app's seal: each its own ad-hoc signature (arm64 runs nothing unsigned)
 codesign --force --sign - "$STAGE/mohreloaded-server" "$STAGE/game.dylib"
 cp "$ROOT/COPYING.txt" "$STAGE/"

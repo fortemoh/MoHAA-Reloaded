@@ -69,9 +69,11 @@ jobs:
       run: |
         set -euo pipefail
         D=install/lib/mohreloaded
-        # The prefix holds exactly the app, with the game modules inside it, and the dedicated server
+        # The prefix holds exactly the app, with the game modules inside it, and the dedicated server with its own
+        # game.dylib beside it (cmake/basegame.cmake)
         diff <(cd install && find . -mindepth 1 -not -path './lib/mohreloaded/mohreloaded.app/*' | sort) \
-             <(printf '%s\n' ./lib ./lib/mohreloaded ./lib/mohreloaded/mohreloaded-server ./lib/mohreloaded/mohreloaded.app)
+             <(printf '%s\n' ./lib ./lib/mohreloaded ./lib/mohreloaded/game.dylib ./lib/mohreloaded/mohreloaded-server \
+                 ./lib/mohreloaded/mohreloaded.app)
         diff <(ls "$D/mohreloaded.app/Contents/MacOS") <(printf '%s\n' cgame.dylib game.dylib mohreloaded)
         # The whole bundle: no openal-soft since Phase 9g (no Frameworks, no license folder in Resources)
         diff <(cd "$D/mohreloaded.app" && find . -type f | sort) \
@@ -82,7 +84,7 @@ jobs:
         codesign -dv "$D/mohreloaded.app" 2>&1 | grep -E '^(Identifier|Format|Signature)='
         /usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' -c 'Print CFBundleShortVersionString' "$D/mohreloaded.app/Contents/Info.plist"
         # arm64 only, and nothing loaded from outside the system or the app (no Homebrew paths)
-        for f in "$D"/mohreloaded.app/Contents/MacOS/* "$D/mohreloaded-server"; do
+        for f in "$D"/mohreloaded.app/Contents/MacOS/* "$D/mohreloaded-server" "$D/game.dylib"; do
           [ "$(lipo -archs "$f")" = arm64 ]
           if otool -L "$f" | tail -n +2 | awk '{print $1}' | grep -vE '^(/System/|/usr/lib/|@rpath/)'; then
             echo "$f loads a library from outside the system or the app" >&2; exit 1
