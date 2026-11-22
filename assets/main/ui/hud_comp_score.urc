@@ -2,7 +2,8 @@
 // dark, the timer over the scores in two rows as high, Allies | Axis (self |
 // the leader in free-for-all), lines right across between the three; either
 // side in round modes, the players' cards or each team's count of the alive
-// (cg_hud_alivecount); in Liberation, the jail. Classic's (cg_hudstyle 3)
+// (CS:GO's cg_hud_csgo_alivecount, on by default; CS2's cg_hud_alivecount);
+// in Liberation, the jail. Classic's (cg_hudstyle 3)
 // the timer and the scores alone, in the top right corner, 25 down
 // (cl_uicomp.cpp, Comp_ClassicPlace, moves every widget there: the menu tall
 // enough)
@@ -94,7 +95,7 @@ team axis
 icons iconallies iconaxis
 }
 
-// or how many of each team are alive (cg_hud_alivecount, CS2's): the number
+// or how many of each team are alive (ui_hud_count_on): the number
 // on the team's colour, the team's icon faint behind it
 
 resource

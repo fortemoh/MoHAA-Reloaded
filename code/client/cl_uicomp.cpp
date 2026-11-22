@@ -760,6 +760,14 @@ static void Comp_Accent(void)
     comp_accentStamp++;
 }
 
+// the switch for each team's count of the alive in place of the players'
+// cards: CS:GO's own (on by default), else CS2's (Classic's top bar has
+// neither)
+static const char *Comp_AliveCount(void)
+{
+    return cg_hudstyle->integer == 2 || cg_hudstyle->integer == 3 ? "cg_hud_alivecount" : "cg_hud_csgo_alivecount";
+}
+
 // cg_hudstyle's menus shown (2 CS2's, 3 Classic's, else CS:GO's); the chat
 // above the health in CS:GO's corners (ui_hud_corners), Classic's along the
 // top (ui_hud_classic: the bottom's hidden, ui_hud_chat_low)
@@ -1281,10 +1289,11 @@ void UI_CompHud_Frame(void)
         Comp_Set("ui_hud_score_r", known[1] ? va("%d", score[1]) : "-");
         Comp_Set("ui_hud_score_lc", teams ? "0.588 0.729 0.871 1" : "0.922 0.933 0.949 1");
         Comp_Set("ui_hud_score_rc", teams ? "0.902 0.478 0.408 1" : "0.922 0.933 0.949 1");
-        // the players' cards, or (cg_hud_alivecount, CS2's) how many of each
-        // team are alive in their place: no cards then (ui_hud_cards_on
-        // says whether either shows; Classic's top bar has neither)
-        const qboolean count = rounds && Comp_Int("cg_hud_alivecount");
+        // the players' cards, or how many of each team are alive in their
+        // place (Comp_AliveCount: CS:GO's on by default, CS2's off): no
+        // cards then (ui_hud_cards_on says whether either shows; Classic's
+        // top bar has neither)
+        const qboolean count = rounds && Comp_Int(Comp_AliveCount());
 
         Comp_Set("ui_hud_cards_allies", rounds && !count ? comp.cards[0] : "");
         Comp_Set("ui_hud_cards_axis", rounds && !count ? comp.cards[1] : "");
@@ -1455,7 +1464,7 @@ void UI_CompHud_Frame(void)
         // cg_hud_scale): the cards' box ends 382 right of the middle, the feed's is the last 445
         flag(
             "ui_hud_feed_under",
-            rounds && Comp_Int("cg_hud_alive") && !Comp_Int("cg_hud_alivecount") && !classic
+            rounds && Comp_Int("cg_hud_alive") && !Comp_Int(Comp_AliveCount()) && !classic
                 && uid.vidWidth / UI_DesignScale(1920.0f, 1080.0f) < 2 * (382.0f + 445.0f)
         );
         flag("ui_hud_health_on", strip && Comp_Int("cg_hud_health"));
@@ -1709,7 +1718,9 @@ void UI_CompHud_Init(void)
     Cvar_Get("cg_hud_radar_centered", "1", CVAR_ARCHIVE);
     // the accent: "f6f67a", "#f6f67a" or "R G B" (0 to 1)
     Cvar_Get("cg_hud_accent", "f6f67a", CVAR_ARCHIVE);
-    // the top's teams, beside the score: 0 a card per player, 1 how many are alive (CS2's)
+    // the top's teams, beside the score: 0 a card per player, 1 how many are alive (CS:GO's and CS2's own count of
+    // the alive in place of the players' pictures); CS:GO's on by default, CS2's off (Comp_AliveCount)
+    Cvar_Get("cg_hud_csgo_alivecount", "1", CVAR_ARCHIVE);
     Cvar_Get("cg_hud_alivecount", "0", CVAR_ARCHIVE);
     // Classic's kills (cg_hudstyle 3): 0 lines in the chat as the stock HUD's, 1 the kill feed beside the top bar,
     // 2 under it
