@@ -1,8 +1,9 @@
 ##########################
 # A version's release, from its tag: pushing v1.0.1 on a commit of vulkan whose cmake/identity.cmake says 1.0.1
 # builds Linux and Windows as a release (-DPRODUCT_RELEASE_TAG: the version without "unstable", 1.0.1+61.c2f07c2;
-# the build stops if the tag isn't the code's version), packs the downloads (misc/release/package.sh,
-# mohreloaded-1.0.1-linux-amd64.tar.gz and mohreloaded-1.0.1-windows-x64.zip) and makes a draft release with them:
+# the build stops if the tag isn't the code's version), packs the downloads (misc/release/package.sh: the game's
+# mohreloaded-1.0.1-linux.tar.gz and mohreloaded-1.0.1-windows.zip, the dedicated server's
+# mohreloaded-server-1.0.1-linux.tar.gz and mohreloaded-server-1.0.1-windows.zip) and makes a draft release with them:
 # its notes hold the commit sentence the launcher reads and the SHA-256 table branches-build.yml keeps up to date.
 # Nothing is public until the draft is published by hand, with the rest of its notes. Once it is, each push to vulkan
 # replaces its downloads (branches-build.yml, job release), and metal's .github/workflows/macos-metal.yml adds the Mac's.
@@ -39,12 +40,12 @@ jobs:
     - uses: actions/download-artifact@v4
       with:
         name: out-linux-amd64
-        path: ${{github.workspace}}/artifacts/linux-amd64
+        path: ${{github.workspace}}/artifacts/linux
 
     - uses: actions/download-artifact@v4
       with:
         name: out-windows-x64
-        path: ${{github.workspace}}/artifacts/windows-x64
+        path: ${{github.workspace}}/artifacts/windows
 
     - name: Package the downloads
       run: |
@@ -52,10 +53,12 @@ jobs:
         version=$(sed -n 's/^set(PROJECT_VERSION \([0-9][0-9.]*\))$/\1/p' cmake/identity.cmake)
         [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "The tag $GITHUB_REF_NAME isn't the code's version, v$version (cmake/identity.cmake)" >&2; exit 1; }
         echo "VERSION=$version" >> "$GITHUB_ENV"
-        for p in linux-amd64 windows-x64; do
-          misc/release/package.sh "$p" "artifacts/$p" dist "$GITHUB_SHA"
+        for p in linux windows; do
+          for k in client server; do
+            misc/release/package.sh "$p" "$k" "artifacts/$p" dist "$GITHUB_SHA"
+          done
         done
-        (cd dist && sha256sum "mohreloaded-$version-linux-amd64.tar.gz" "mohreloaded-$version-windows-x64.zip") | tee -a "$GITHUB_STEP_SUMMARY"
+        (cd dist && sha256sum *.tar.gz *.zip) | tee -a "$GITHUB_STEP_SUMMARY"
 
     - name: The draft release, with the downloads
       env:
@@ -63,7 +66,8 @@ jobs:
         GH_REPO: ${{ github.repository }}
       run: |
         set -euo pipefail
-        files="dist/mohreloaded-$VERSION-linux-amd64.tar.gz dist/mohreloaded-$VERSION-windows-x64.zip"
+        files="dist/mohreloaded-$VERSION-linux.tar.gz dist/mohreloaded-$VERSION-windows.zip"
+        files="$files dist/mohreloaded-server-$VERSION-linux.tar.gz dist/mohreloaded-server-$VERSION-windows.zip"
         {
           echo "MoHAA Reloaded $VERSION for Linux and Windows."
           echo

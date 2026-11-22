@@ -18,7 +18,7 @@ later), fontconfig, and X11 or Wayland, as any desktop has.
 Install
 -------
 
-1. Extract the download: tar xf mohreloaded-@VERSION@-linux-amd64.tar.gz
+1. Extract the download: tar xf mohreloaded-@VERSION@-linux.tar.gz
    You get the folder this file is in.
 
 2. Find your MOHAA game folder: the folder that holds main/ (Pak0.pk3 to Pak6.pk3), plus mainta/ for
@@ -58,7 +58,7 @@ Licenses and source
 OpenMoHAA is free software under the GNU General Public License, version 2 (COPYING.txt). The
 libraries built into it or shipped with it keep their own licenses, in licenses/ (SDL 3, libmad,
 the IJG JPEG library, libogg, libvorbis, opus, opusfile, zlib, Recast & Detour) and in
-OMAHA-SOUND-LICENSES.txt (miniaudio, libmysofa, PFFFT); the headphone sound set's license is in
+licenses/omaha-sound/ (miniaudio, libmysofa, PFFFT); the headphone sound set's license is in
 main/sound/prom/hrtf/. This software is based in part on the work of the Independent JPEG Group.
 MoHAA Launcher (mohlauncher, built with Slint) is free software under the GNU General Public License,
 version 3 or later (licenses/mohlauncher/COPYING); its source is launcher/desktop.

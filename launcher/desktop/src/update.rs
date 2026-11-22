@@ -16,16 +16,26 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 /// The repository whose latest release has the downloads
 pub const REPO: &str = "fortemoh/MoHAA-Reloaded";
 
-/// This system's download on the release (its name's start and end): there are x86-64 builds only
+/// This system's download on the release (its name's start and end, a version between them): there are x86-64
+/// builds only
 const ASSET: Option<(&str, &str)> = if cfg!(not(target_arch = "x86_64")) {
     None
 } else if cfg!(windows) {
-    Some(("mohreloaded-", "-windows-x64.zip"))
+    Some(("mohreloaded-", "-windows.zip"))
 } else if cfg!(target_os = "linux") {
-    Some(("mohreloaded-", "-linux-amd64.tar.gz"))
+    Some(("mohreloaded-", "-linux.tar.gz"))
 } else {
     None
 };
+
+/// The game's download, `prefix`, a version ("1.0.0") and `suffix`: not the dedicated server's
+/// (mohreloaded-server-1.0.0-linux.tar.gz), which starts and ends the same
+fn is_game_download(name: &str, prefix: &str, suffix: &str) -> bool {
+    name.strip_prefix(prefix).and_then(|rest| rest.strip_suffix(suffix)).is_some_and(|version| {
+        let parts: Vec<&str> = version.split('.').collect();
+        parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+    })
+}
 
 /// Where an update downloads and unpacks, in the game's folder (the same disk, so the files move into place by being
 /// renamed); the files it replaced wait there too. Removed when the update is done, and what's left at the next check.
@@ -159,7 +169,7 @@ pub fn notes_sha256(notes: &str, name: &str) -> Option<String> {
     })
 }
 
-/// A path in the download below its top folder `top` ("mohreloaded-1.0.0-linux-amd64", the download's name
+/// A path in the download below its top folder `top` ("mohreloaded-1.0.0-linux", the download's name
 /// without .tar.gz or .zip): None for the top folder itself, and for a path outside it, with "..", or from the root
 fn inner_path(path: &Path, top: &str) -> Option<PathBuf> {
     let mut parts = path.components().filter(|c| *c != Component::CurDir);
@@ -234,7 +244,7 @@ pub fn check(exe: &Path) -> Result<Option<Update>, String> {
     let agent = agent(Some(Duration::from_secs(20)), None);
     let release: Release = get_json(&agent, &format!("https://api.github.com/repos/{REPO}/releases/latest"))?;
     let notes = release.body.unwrap_or_default();
-    let Some(asset) = release.assets.into_iter().find(|a| a.name.starts_with(prefix) && a.name.ends_with(suffix))
+    let Some(asset) = release.assets.into_iter().find(|a| is_game_download(&a.name, prefix, suffix))
     else {
         return Ok(None);
     };
@@ -587,43 +597,58 @@ mod tests {
     }
 
     #[test]
+    fn takes_the_games_download_only() {
+        let (p, s) = ("mohreloaded-", "-linux.tar.gz");
+        assert!(is_game_download("mohreloaded-1.0.0-linux.tar.gz", p, s));
+        assert!(is_game_download("mohreloaded-12.3.45-linux.tar.gz", p, s));
+        // the dedicated server's, another system's, upstream's and the names before 2026-11-22's split
+        assert!(!is_game_download("mohreloaded-server-1.0.0-linux.tar.gz", p, s));
+        assert!(!is_game_download("mohreloaded-1.0.0-windows.zip", p, s));
+        assert!(!is_game_download("mohreloaded-1.0.0-linux-amd64.tar.gz", p, s));
+        assert!(!is_game_download("openmohaa-vulkan-1.0.0-linux-amd64.tar.gz", p, s));
+        assert!(!is_game_download("mohreloaded-1.0-linux.tar.gz", p, s));
+        assert!(!is_game_download("mohreloaded--linux.tar.gz", p, s));
+        assert!(!is_game_download("mohreloaded-1.0.0-unstable-linux.tar.gz", p, s));
+    }
+
+    #[test]
     fn reads_the_notes() {
         let commit = "c2f07c2b122a9b0f9836f9af9c61723d04e69a40";
         let notes = format!(
             "Built from the `metal` branch at the tagged commit.\n\
              Built by this repository's CI from commit [`aaaaaaaa`](https://github.com/x/y/commit/{}) of the `metal` branch\n\
-             | `mohreloaded-1.0.0-linux-amd64.tar.gz` | 64-bit Linux |\n\
+             | `mohreloaded-1.0.0-linux.tar.gz` | 64-bit Linux |\n\
              Built by this repository's CI from commit [`c2f07c2b`](https://github.com/fortemoh/MoHAA-Reloaded/commit/{commit}) \
              of the `vulkan` branch, with OpenMoHAA 0.83.0 (upstream `a2f34019`) as its base.\n\
              | File | SHA-256 |\n\
-             | `mohreloaded-1.0.0-linux-amd64.tar.gz` | `EA8E48375fd9d4b1545e4a3f359c754213fa48ea60b8f87bae657a2478671876` |\n\
-             | `mohreloaded-1.0.0-windows-x64.zip` | `34251e03` |\n",
+             | `mohreloaded-1.0.0-linux.tar.gz` | `EA8E48375fd9d4b1545e4a3f359c754213fa48ea60b8f87bae657a2478671876` |\n\
+             | `mohreloaded-1.0.0-windows.zip` | `34251e03` |\n",
             "a".repeat(40)
         );
         assert_eq!(notes_commit(&notes).as_deref(), Some(commit));
         assert_eq!(notes_commit("Built by this repository's CI from commit [`c2f07c2b`] of the `vulkan` branch"), None);
         assert_eq!(
-            notes_sha256(&notes, "mohreloaded-1.0.0-linux-amd64.tar.gz").as_deref(),
+            notes_sha256(&notes, "mohreloaded-1.0.0-linux.tar.gz").as_deref(),
             Some("ea8e48375fd9d4b1545e4a3f359c754213fa48ea60b8f87bae657a2478671876")
         );
-        assert_eq!(notes_sha256(&notes, "mohreloaded-1.0.0-windows-x64.zip"), None);
+        assert_eq!(notes_sha256(&notes, "mohreloaded-1.0.0-windows.zip"), None);
         assert_eq!(notes_sha256(&notes, "other.zip"), None);
     }
 
     #[test]
     fn keeps_paths_inside_the_top_folder() {
-        let top = "mohreloaded-1.0.0-linux-amd64";
+        let top = "mohreloaded-1.0.0-linux";
         let inner = |p: &str| inner_path(Path::new(p), top);
-        assert_eq!(inner("mohreloaded-1.0.0-linux-amd64/mohreloaded"), Some(PathBuf::from("mohreloaded")));
+        assert_eq!(inner("mohreloaded-1.0.0-linux/mohreloaded"), Some(PathBuf::from("mohreloaded")));
         assert_eq!(
-            inner("./mohreloaded-1.0.0-linux-amd64/main/sound/x.sofa"),
+            inner("./mohreloaded-1.0.0-linux/main/sound/x.sofa"),
             Some(PathBuf::from("main/sound/x.sofa"))
         );
-        assert_eq!(inner("mohreloaded-1.0.0-linux-amd64/"), None);
+        assert_eq!(inner("mohreloaded-1.0.0-linux/"), None);
         assert_eq!(inner("mohreloaded"), None);
         assert_eq!(inner("other/mohreloaded"), None);
-        assert_eq!(inner("mohreloaded-1.0.0-linux-amd64/../x"), None);
-        assert_eq!(inner("/mohreloaded-1.0.0-linux-amd64/x"), None);
+        assert_eq!(inner("mohreloaded-1.0.0-linux/../x"), None);
+        assert_eq!(inner("/mohreloaded-1.0.0-linux/x"), None);
     }
 
     /// The same files in a tarball and a zip, as misc/release/package.sh makes them
@@ -636,7 +661,7 @@ mod tests {
             ("main/sound/prom/hrtf/README.txt", b"hrtf", 0o644),
         ];
 
-        let top = "mohreloaded-1.0.0-linux-amd64";
+        let top = "mohreloaded-1.0.0-linux";
         let tarball = dir.join(format!("{top}.tar.gz"));
         {
             let gz = flate2::write::GzEncoder::new(File::create(&tarball).unwrap(), flate2::Compression::default());
@@ -670,7 +695,7 @@ mod tests {
             assert_eq!((mode("mohreloaded"), mode("cgame.so")), (0o755, 0o644));
         }
 
-        let top = "mohreloaded-1.0.0-windows-x64";
+        let top = "mohreloaded-1.0.0-windows";
         let zipped = dir.join(format!("{top}.zip"));
         {
             let mut zip = zip::ZipWriter::new(File::create(&zipped).unwrap());
@@ -769,7 +794,7 @@ mod tests {
         let root = File::create(dir.join("probe")).is_ok(); // writes anyway
         let update = Update {
             commit: "c".repeat(40),
-            asset: "mohreloaded-1.0.0-linux-amd64.tar.gz".into(),
+            asset: "mohreloaded-1.0.0-linux.tar.gz".into(),
             url: "http://127.0.0.1:9/".into(),
             size: 1,
             sha256: None,

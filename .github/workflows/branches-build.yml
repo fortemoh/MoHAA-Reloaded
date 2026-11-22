@@ -70,10 +70,12 @@ jobs:
 
   ##########################
   # The release of cmake/identity.cmake's version (v1.0.0, then v1.0.1 once the code says 1.0.1 and its release is
-  # published, tags-publish-release.yml): each push to vulkan that changes code replaces its Linux and Windows
-  # downloads, mohreloaded-<version>-<platform> (misc/release/package.sh), and updates their SHA-256s and commit in the
-  # release notes; the rest of the notes is written by hand. A download of another name in the release (upstream's
-  # openmohaa-vulkan-..., or an earlier version's) is replaced by this one, in the notes too. Pushes that change only
+  # published, tags-publish-release.yml): each push to vulkan that changes code replaces its four Linux and Windows
+  # downloads, the game's mohreloaded-<version>-<linux|windows> and the dedicated server's
+  # mohreloaded-server-<version>-<linux|windows> (misc/release/package.sh), and updates their SHA-256s (a missing row is
+  # added under the one before it) and commit in the release notes; the rest of the notes is written by hand. A
+  # Linux or Windows download of another name in the release (upstream's openmohaa-vulkan-..., -linux-amd64 and
+  # -windows-x64 of before, or an earlier version's) is replaced by these, in the notes too. Pushes that change only
   # docs (docs/, *.md) don't. Run by hand (workflow_dispatch) on vulkan, it replaces them whatever changed. Without a
   # published release of the version (not made yet, or still a draft) it does nothing. metal's
   # .github/workflows/macos-metal.yml does the same for the Mac download.
@@ -120,22 +122,24 @@ jobs:
     - uses: actions/download-artifact@v4
       with:
         name: out-linux-amd64
-        path: ${{github.workspace}}/artifacts/linux-amd64
+        path: ${{github.workspace}}/artifacts/linux
 
     - uses: actions/download-artifact@v4
       with:
         name: out-windows-x64
-        path: ${{github.workspace}}/artifacts/windows-x64
+        path: ${{github.workspace}}/artifacts/windows
 
     - name: Package the downloads
       run: |
         set -euo pipefail
         version=$(sed -n 's/^set(PROJECT_VERSION \([0-9][0-9.]*\))$/\1/p' cmake/identity.cmake)
         echo "VERSION=$version" >> "$GITHUB_ENV"
-        for p in linux-amd64 windows-x64; do
-          misc/release/package.sh "$p" "artifacts/$p" dist "$GITHUB_SHA"
+        for p in linux windows; do
+          for k in client server; do
+            misc/release/package.sh "$p" "$k" "artifacts/$p" dist "$GITHUB_SHA"
+          done
         done
-        (cd dist && sha256sum "mohreloaded-$version-linux-amd64.tar.gz" "mohreloaded-$version-windows-x64.zip") | tee -a "$GITHUB_STEP_SUMMARY"
+        (cd dist && sha256sum *.tar.gz *.zip) | tee -a "$GITHUB_STEP_SUMMARY"
 
     - name: Replace them in the version's release, with their SHA-256s and commit in the notes
       env:
@@ -144,7 +148,9 @@ jobs:
       run: |
         set -euo pipefail
         tag="v$VERSION"
-        files="dist/mohreloaded-$VERSION-linux-amd64.tar.gz dist/mohreloaded-$VERSION-windows-x64.zip"
+        # in the notes' order: a missing SHA-256 row goes under the one before it
+        files="dist/mohreloaded-$VERSION-linux.tar.gz dist/mohreloaded-$VERSION-windows.zip"
+        files="$files dist/mohreloaded-server-$VERSION-linux.tar.gz dist/mohreloaded-server-$VERSION-windows.zip"
         if ! draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2> view.err); then
           cat view.err >&2
           grep -qi 'not found' view.err || exit 1
@@ -165,13 +171,24 @@ jobs:
             text, n = re.subn(pattern, repl, text)
             if n != 1:
                 sys.exit(f"the notes match {pattern!r} {n} times, not once")
-        # the downloads' names wherever the notes give them: upstream's openmohaa-vulkan-..., or an earlier version's
-        text = re.sub(r"\b(?:openmohaa-vulkan|mohreloaded)-\d+\.\d+\.\d+-(linux-amd64|windows-x64)\b",
+        # the downloads' names wherever the notes give them: upstream's openmohaa-vulkan-..., -linux-amd64 and
+        # -windows-x64 of before, or an earlier version's
+        text = re.sub(r"\b(?:openmohaa-vulkan|mohreloaded)-\d+\.\d+\.\d+-(linux|windows)(?:-amd64|-x64)?\b",
                       "mohreloaded-" + version + r"-\1", text)
+        text = re.sub(r"\bmohreloaded-server-\d+\.\d+\.\d+-(linux|windows)\b", "mohreloaded-server-" + version + r"-\1", text)
+        row = lambda name: r"\| `" + re.escape(name) + r"` \| `[0-9a-f]{64}` \|\n"
+        before = None
         for f in files:
             name = os.path.basename(f)
             digest = hashlib.sha256(open(f, "rb").read()).hexdigest()
+            if not re.search(row(name), text):
+                # a new download (the server's): its row under the one before it
+                at = re.search(row(before), text) if before else None
+                if not at:
+                    sys.exit(f"the notes have no SHA-256 row for {name}, nor one to put it under")
+                text = text[:at.end()] + f"| `{name}` | `{'0' * 64}` |\n" + text[at.end():]
             sub(r"(\| `" + re.escape(name) + r"` \| `)[0-9a-f]{64}(` \|)", r"\g<1>" + digest + r"\g<2>")
+            before = name
         sub(r"(Built by this repository's CI from commit )\[`[0-9a-f]{8}`\]\(https://github\.com/[^/]+/[^/]+/commit/[0-9a-f]{40}\)( of the `vulkan` branch)",
             r"\g<1>[`" + commit[:8] + "`](https://github.com/" + repo + "/commit/" + commit + r")\g<2>")
         # gh adds a newline to the body it reads: without this, each update would add one
@@ -179,10 +196,10 @@ jobs:
         EOF
         gh release upload "$tag" $files --clobber
         gh release edit "$tag" --notes-file notes.md
-        # the Linux and Windows downloads of other names, now that these replace them (the Mac's stays)
+        # the Linux and Windows downloads of other names, now that these replace them (the Mac's stay)
         gh release view "$tag" --json assets --jq '.assets[].name' | while read -r asset; do
+          case " $files " in *"/$asset "*) continue;; esac
           case $asset in
-          "mohreloaded-$VERSION-linux-amd64.tar.gz" | "mohreloaded-$VERSION-windows-x64.zip") ;;
-          *-linux-amd64.tar.gz | *-windows-x64.zip) gh release delete-asset "$tag" "$asset" --yes;;
+          *-linux*.tar.gz | *-windows*.zip) gh release delete-asset "$tag" "$asset" --yes;;
           esac
         done

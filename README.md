@@ -22,13 +22,15 @@ Needs a GPU with a Vulkan 1.1 driver (on Linux Mesa's RADV, ANV or NVK, or NVIDI
 
 ## Install
 
-1. Download `mohreloaded-1.0.0-linux-amd64.tar.gz` (64-bit Linux) or `mohreloaded-1.0.0-windows-x64.zip` (64-bit Windows) from [Releases](https://github.com/fortemoh/MoHAA-Reloaded/releases/tag/v1.0.0) and extract it (`tar xf mohreloaded-1.0.0-linux-amd64.tar.gz`; on Windows, right-click and Extract All).
+1. Download `mohreloaded-1.0.0-linux.tar.gz` (64-bit Linux) or `mohreloaded-1.0.0-windows.zip` (64-bit Windows) from [Releases](https://github.com/fortemoh/MoHAA-Reloaded/releases/tag/v1.0.0) and extract it (`tar xf mohreloaded-1.0.0-linux.tar.gz`; on Windows, right-click and Extract All).
 2. Find your MOHAA game folder: the folder with `main/` (`Pak0.pk3` to `Pak6.pk3`; `mainta/` and `maintt/` for the expansions). Upstream's [installation guide](docs/markdown/01-intro/01-installation.md#linux-and-macos-users) shows how to get it from the GOG installer.
 3. Copy everything in the extracted folder into the game folder, next to `main/` (its own `main/` only holds the headphone sound set: let it merge), and start `mohlauncher` (`mohlauncher.exe` on Windows): [MoHAA Launcher](#mohaa-launcher). `mohreloaded` (`mohreloaded.exe` on Windows) starts the game directly too: Allied Assault, or Spearhead with `+set com_target_game 1` and Breakthrough with `+set com_target_game 2`.
 
 On Linux you can also leave the game folder as it is and start the game from the extracted folder: `./mohreloaded +set fs_basepath /path/to/mohaa`. `INSTALL.txt` in the download has the same steps. Started from MoHAA Launcher, the game keeps everything in the game folder (below). Started otherwise, configs go to `~/.config/openmohaa/` and saves and screenshots to `~/.local/share/openmohaa/` on Linux, all of them to `%APPDATA%\openmohaa\` on Windows, as with upstream's OpenMoHAA. Without a Vulkan driver the game stops and says so.
 
-Downloads before the rename were called `openmohaa-vulkan-1.0.0-…`, with the game as `openmohaa`: their launcher doesn't see the new downloads, so download this one by hand once and copy it over the old one (you can delete the old `openmohaa` program). Your settings stay where they were.
+Downloads before the rename were called `openmohaa-vulkan-1.0.0-…`, with the game as `openmohaa`, and for a few hours on 2026-11-22 `mohreloaded-1.0.0-linux-amd64…` and `-windows-x64…`: their launcher doesn't see the new downloads, so download this one by hand once and copy it over the old one (you can delete an old `openmohaa` program). Your settings stay where they were.
+
+**A dedicated server** comes as its own download, `mohreloaded-server-1.0.0-linux.tar.gz` or `mohreloaded-server-1.0.0-windows.zip`: `mohreloaded-server` and `game.so` (`game.dll`), to copy into the game folder next to `main/`. Its `INSTALL.txt` has the commands; the settings are in upstream's [server guide](docs/markdown/02-running/02-running-server.md).
 
 ### MoHAA Launcher
 

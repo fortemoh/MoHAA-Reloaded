@@ -1,6 +1,5 @@
 COPYING.txt
 INSTALL.txt
-OMAHA-SOUND-LICENSES.txt
 cgame.so
 game.so
 libSDL3.so.0
@@ -29,6 +28,8 @@ licenses/libvorbis
 licenses/libvorbis/COPYING
 licenses/mohlauncher
 licenses/mohlauncher/COPYING
+licenses/omaha-sound
+licenses/omaha-sound/OMAHA-SOUND-LICENSES.txt
 licenses/opus
 licenses/opus/COPYING
 licenses/opusfile
