@@ -2645,7 +2645,7 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
     const int      team    = cl.snap.valid ? cl.snap.ps.stats[STAT_TEAM] : TEAM_NONE;
     const float    ky = v.dh / 1080.0f, mid = v.dw / 2;
     const float    d    = Q_min(RL_TMED * ky, mid - RL_TINNER - 24);
-    const float    medY = 603 * ky, headY = 317 * ky, feetY = 905 * ky, lineY = 985 * ky;
+    const float    medY = 603 * ky, headY = 296 * ky, feetY = 910 * ky, lineY = 985 * ky;
     const float    cx[2] = {mid - RL_TINNER - d / 2, mid + RL_TINNER + d / 2};
 
     // (the cvars it draws from: the cache draws again when one changes)
