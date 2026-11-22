@@ -2270,6 +2270,9 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Remote Prediction", "Players drawn where your shots will find them.", "cg_remotePrediction", "1", 0),
     O_TOGGLE("Smooth Lagging Players", "A player whose updates come late keeps moving, not freezing.", "cg_remotePredictionPush", "1", OF_RP),
     O_TOGGLE("Scoreboard Cursor", "Right-click while TAB is held: a cursor to sort the columns.", "cl_scoreboardcursor", "0", 0),
+    // (the models: MULTIPLAYER's profile's, dm_playermodel and dm_playergermanmodel; cg_modelanim.c)
+    O_SECTION(OT_GAMEPLAY, "PLAYERS", 0),
+    O_TOGGLE("Force Models", "Everyone else in the Allied and Axis models you picked.", "cg_forceModel", "0", 0),
     // (by the Field of View, which turns the view faster as it widens: cl_mouseturn_logic.h)
     O_SECTION(OT_GAMEPLAY, "MOUSE", OF_RIGHT),
     O_SLIDER("Sensitivity", "How far the view turns.", "sensitivity", "5", 0.1f, 20, 0.05f, OF_NOTCS),
