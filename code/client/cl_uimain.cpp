@@ -2477,11 +2477,25 @@ void RL_DefaultBinds(void)
     }
 }
 
-// the stock list read; an O_KEYS's actions: from its command's to the next O_KEYS's found (the first found from the list's start)
+// an action's place in the list, -1 not in it
+static int RL_ActIndex(const std::vector<rlAct_t>& acts, const char *cmd)
+{
+    for (int a = 0; a < (int)acts.size(); a++) {
+        if (!Q_stricmp(acts[a].cmd.c_str(), cmd)) {
+            return a;
+        }
+    }
+    return -1;
+}
+
+// the stock list read, Lean Left and Right moved under Strafe Right (Allied Assault's list has them last, in
+// MULTIPLAYER; Spearhead's under Move Backward); an O_KEYS's actions: from its command's to the next O_KEYS's found
+// (the first found from the list's start)
 static void RL_KeysRead(void)
 {
     std::vector<rlAct_t>& acts  = rl_keys.acts;
     int                   first = INT_MAX;
+    const char           *after = "+moveright";
 
     RL_EachLine("ui/bind.scr", [&acts] {
         const char *name = Cmd_Argv(1);
@@ -2490,6 +2504,17 @@ static void RL_KeysRead(void)
             acts.push_back({Q_stricmpn(name, "DM ", 3) ? name : name + 3, Cmd_Argv(2), {-1, -1}});
         }
     });
+    for (const char *cmd : {"+leanleft", "+leanright"}) {
+        const int from = RL_ActIndex(acts, cmd);
+
+        if (from >= 0 && RL_ActIndex(acts, after) >= 0) {
+            const rlAct_t act = acts[from];
+
+            acts.erase(acts.begin() + from);
+            acts.insert(acts.begin() + RL_ActIndex(acts, after) + 1, act);
+            after = cmd;
+        }
+    }
     for (const auto& ours : rl_ourActs) {
         acts.push_back({ours.name, ours.cmd, {-1, -1}});
     }
