@@ -481,7 +481,9 @@ How far an eye height worked out is from the nearest of the player's own (no pro
 */
 static float FE_EyeHeightOff(float vh, float *nearest)
 {
-    static const float heights[] = {
+    // not static: the four are static const variables (bg_public.h), which C doesn't count as constants (MSVC's
+    // C2099)
+    const float heights[] = {
         DEFAULT_VIEWHEIGHT, CROUCH_RUN_VIEWHEIGHT, JUMP_START_VIEWHEIGHT, CROUCH_VIEWHEIGHT
     };
     float best = 1000;
