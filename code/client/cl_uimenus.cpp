@@ -1289,32 +1289,6 @@ qboolean UI_Menus_Scoreboard(const char *name)
     return UI_Menus_Alias(name) && menuManager.FindMenuNamed("reloaded_scoreboard") ? qtrue : qfalse;
 }
 
-const char *UI_Menus_State(void)
-{
-    static const char *const shown[] = {"reloaded_team", "reloaded_weapon", "reloaded_esc"};
-    static char              buf[512];
-    const int                page = RL_OverPage();
-    Menu *const              up   = menuManager.CurrentMenu();
-    size_t                   len;
-
-    Com_sprintf(buf, sizeof(buf), "the team page's models %d and %d, the weapon page's side %s, the Esc menu's page %s", rl_wp.pick[0],
-                rl_wp.pick[1], rl_wp.tab ? "axis" : "allies", page == RL_OVER_OPTIONS ? "Options" : page == RL_OVER_VOTE ? "the vote" : "none");
-    // (what each of them shown takes itself for: Tick's "another menu over it" lights nothing and takes no keys)
-    for (size_t i = 0; i < ARRAY_LEN(shown); i++) {
-        Menu *const     m = menuManager.FindMenu(shown[i]);
-        UIWidget *const w = m && m->isVisible() && m->GetContainerWidget() ? m->GetContainerWidget()->FindWidget("front") : NULL;
-
-        if (w && w->isSubclassOf(UIReloadedMenu)) {
-            const UIReloadedMenu *const r = static_cast<UIReloadedMenu *>(w);
-
-            len = strlen(buf);
-            Com_sprintf(buf + len, sizeof(buf) - len, "; %s %s, hot item %d of %d", shown[i], m == up ? "the current menu" : "under another",
-                        r->m_focus, (int)r->m_hits.size());
-        }
-    }
-    return buf;
-}
-
 qboolean UI_Menus_Covering(void)
 {
     static const char *const covering[] = {"reloaded_team", "reloaded_weapon", "reloaded_esc", "reloaded_options"};
