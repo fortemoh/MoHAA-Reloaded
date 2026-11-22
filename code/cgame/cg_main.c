@@ -255,6 +255,8 @@ void CG_RegisterCvars(void)
     CG_RP_RegisterCvars();
     // Added: the hitmarker's (cg_hitmarker, cg_hitmarker_sound)
     CG_Hitmarker_RegisterCvars();
+    // Added: a followed player watched through their eyes (cg_spectatefirstperson)
+    CG_FollowEyes_Init();
 }
 /*
 ===============

@@ -675,6 +675,13 @@ extern "C" {
     void     CG_Hitmarker_Draw(void);
 
     //
+    // cg_followeyes.c (Added in Reloaded)
+    //
+    extern cvar_t *cg_spectatefirstperson;
+    void           CG_FollowEyes_Init(void);
+    void           CG_FollowEyes_Snapshot(snapshot_t *snap);
+
+    //
     // cg_draw.c
     //
     void CG_CenterPrint(const char *str, int y, int charWidth);
