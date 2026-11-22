@@ -1545,61 +1545,6 @@ void UI_ListMenus_f()
     menuManager.ListMenus();
 }
 
-// a widget for menustate: its class, its name, the menu it is in
-static const char *UI_WidgetDesc(UIWidget *w, char *buf, size_t size)
-{
-    Menu *const m = w ? menuManager.MenuOf(w) : NULL;
-
-    if (!w) {
-        return "nothing";
-    }
-    Com_sprintf(buf, size, "%s%s%s%s%s", w->getClassname(), w->getName()[0] ? " " : "", w->getName(), m ? " of " : "",
-                m ? m->m_name.c_str() : "");
-    return buf;
-}
-
-/*
-====================
-UI_MenuState_f
-
-Added: menustate, what the menus and the keys and mouse are doing, printed and added to menustate.txt in the home's
-game folder: typed in the console over a menu that takes no click or Esc
-====================
-*/
-void UI_MenuState_f(void)
-{
-    static const char *const teams[] = {"none", "spectator", "free-for-all", "allies", "axis"};
-    UIPoint2D                pos((float)uid.mouseX, (float)uid.mouseY);
-    const int                catcher = Key_GetCatcher();
-    const int                team    = cl.snap.valid ? cl.snap.ps.stats[STAT_TEAM] : -1;
-    char                     a[128], b[128], c[128];
-    qtime_t                  t;
-    str                      text;
-    fileHandle_t             f;
-
-    Com_RealTime(&t);
-    text = va("menustate %04d-%02d-%02d %02d:%02d:%02d\n", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
-    text += "  menus: ";
-    text += menuManager.DescribeState();
-    text += va("\n  keys: %s, key capture %s, catcher%s%s%s%s%s\n", UI_WidgetDesc(uWinMan.ActiveControl(), a, sizeof(a)),
-               uWinMan.BindActive() ? UI_WidgetDesc(uWinMan.BindActive(), b, sizeof(b)) : "none", catcher ? "" : " none",
-               catcher & KEYCATCH_CONSOLE ? " console" : "", catcher & KEYCATCH_UI ? " UI" : "", catcher & KEYCATCH_MESSAGE ? " message" : "",
-               catcher & KEYCATCH_CGAME ? " cgame" : "");
-    text += va("  mouse: %s, %s, at %d %d, buttons %u, a click goes to %s\n",
-               in_guimouse ? (scoreboard_cursor ? "the scoreboard's cursor" : "the UI's") : "the game's",
-               IN_IsCursorActive() ? "captured" : "free", uid.mouseX, uid.mouseY, cl.mouseButtons, UI_WidgetDesc(uWinMan.ClickTarget(pos), c, sizeof(c)));
-    text += va("  game: state %d, team %s, loading %s; %s\n", clc.state, team >= 0 && team < (int)ARRAY_LEN(teams) ? teams[team] : "unknown",
-               server_loading ? "yes" : "no", UI_Menus_State());
-    Com_Printf("%s", text.c_str());
-
-    f = FS_FOpenFileAppend_HomeData("menustate.txt");
-    if (f) {
-        FS_Write(text.c_str(), text.length(), f);
-        FS_FCloseFile(f);
-        Com_Printf("(added to menustate.txt)\n");
-    }
-}
-
 /*
 ====================
 UI_BindActive
@@ -2761,7 +2706,6 @@ void CL_ShutdownUI(void)
     Cmd_RemoveCommand("showmenu");
     Cmd_RemoveCommand("widgetcommand");
     Cmd_RemoveCommand("listmenus");
-    Cmd_RemoveCommand("menustate");
     Cmd_RemoveCommand("togglemenu");
     Cmd_RemoveCommand("loadmenu");
     Cmd_RemoveCommand("ui_startdmmap");
@@ -2958,7 +2902,6 @@ void CL_InitializeUI(void)
     Cmd_AddCommand("widgetcommand", UI_WidgetCommand_f);
     Cmd_AddCommand("globalwidgetcommand", UI_GlobalWidgetCommand_f);
     Cmd_AddCommand("listmenus", UI_ListMenus_f);
-    Cmd_AddCommand("menustate", UI_MenuState_f);
     Cmd_AddCommand("togglemenu", UI_ToggleMenu_f);
     Cmd_AddCommand("loadmenu", UI_LoadMenu_f);
     Cmd_AddCommand("ui_startdmmap", UI_StartDMMap_f);
