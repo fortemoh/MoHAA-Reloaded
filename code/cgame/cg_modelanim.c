@@ -70,15 +70,20 @@ The team tag
 Added in Reloaded: the player aimed at (the server's STAT_INFOCLIENT: a team
 mate, or anyone while spectating free; kept 1.5 s after looking away) shown
 CS2's way in place of their head icon: their name, their health under it and
-an arrow down to their head, drawn by the client in the HUD's look
-(cgi.UI_DrawTeamTag). Not while following a player (the HUD names them),
+an arrow down to them, drawn by the client in the HUD's look
+(cgi.UI_DrawTeamTag); over their feet at their box's height (eased as they
+crouch or stand), not their head, which sways even standing still. Not
+while following a player (the HUD names them),
 under the Reloaded menus, with the HUD hidden or cg_hud_targetinfo 0; not
 behind the world
 ===============
 */
 static int      cg_tagClient = -1; // the player tagged this frame, -1 none
 static qboolean cg_tagEyesSet;     // their eyes found this frame (their model added)
-static vec3_t   cg_tagEyes;
+static vec3_t   cg_tagEyes;        // (seen from the view: the tag drawn)
+static vec3_t   cg_tagPoint;       // the arrow's tip: over their feet, cg_tagHeight up
+static int      cg_tagHeightOf = -1; // whose height cg_tagHeight is, -1 nobody's
+static float    cg_tagHeight;        // their box's top over their feet, eased
 
 /*
 ===============
@@ -117,12 +122,17 @@ void CG_TeamTagFrame(void)
 ===============
 CG_TeamTagEyes
 
-The tagged player's eyes, as their model is added (their head icon's point)
+The tagged player's eyes, as their model is added (seen or not), and the
+tag's point: over their feet, at their box's top (94 standing, 54 or 60
+crouching) eased in a fifth of a second; the eyes' height and 12 when the
+box isn't sent
 ===============
 */
 static void CG_TeamTagEyes(refEntity_t *pModel, entityState_t *pPlayerState)
 {
-    int i, iTag;
+    vec3_t mins, maxs;
+    float  h;
+    int    i, iTag;
 
     if (pPlayerState->number != cg_tagClient) {
         return;
@@ -139,6 +149,17 @@ static void CG_TeamTagEyes(refEntity_t *pModel, entityState_t *pPlayerState)
         }
     }
     cg_tagEyesSet = qtrue;
+
+    IntegerToBoundingBox(pPlayerState->solid, mins, maxs);
+    h = maxs[2] >= 8.0f ? maxs[2] : cg_tagEyes[2] - pModel->origin[2] + 12.0f;
+    if (cg_tagHeightOf != cg_tagClient) {
+        cg_tagHeightOf = cg_tagClient;
+        cg_tagHeight   = h;
+    } else {
+        cg_tagHeight += (h - cg_tagHeight) * Q_min(1.0f, cg.frametime * 0.006f);
+    }
+    VectorCopy(pModel->origin, cg_tagPoint);
+    cg_tagPoint[2] += cg_tagHeight + 4.0f;
 }
 
 /*
@@ -151,12 +172,13 @@ seen (nothing of the world between)
 */
 void CG_DrawTeamTag(void)
 {
-    vec3_t  top, d;
+    vec3_t  d;
     trace_t tr;
     float   z, tx, ty;
     int     health;
 
     if (cg_tagClient < 0 || !cg_tagEyesSet) {
+        cg_tagHeightOf = -1;
         return;
     }
     CG_Trace(
@@ -166,9 +188,7 @@ void CG_DrawTeamTag(void)
     if (tr.fraction < 1.0f) {
         return;
     }
-    VectorCopy(cg_tagEyes, top);
-    top[2] += 16.0f;
-    VectorSubtract(top, cg.refdef.vieworg, d);
+    VectorSubtract(cg_tagPoint, cg.refdef.vieworg, d);
     z = DotProduct(d, cg.refdef.viewaxis[0]);
     if (z < 1.0f) {
         return;
