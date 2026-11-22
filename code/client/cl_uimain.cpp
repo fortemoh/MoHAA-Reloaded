@@ -3993,7 +3993,8 @@ void UIReloadedMenu::DrawConfirm(const rlView_t& v)
     RL_Head(v, x, y, w, 56);
     RL_Text(v, x + 24, y + 28, says[k][0], 22, RL_FG, true, RL_LEFT, 2, RL_MID);
     RL_Text(v, x + 24, y + 100, k == 4 ? RL_KeyQuestion().c_str() : says[k][1], 22, RL_FG_SOFT, false, RL_LEFT, 0, RL_MID, w - 48);
-    RL_Button(this, v, x + w - 24 - 328, by, 150, 48, "CANCEL", false, ID_CANCEL);
+    // (CANCEL on the left edge, the answer on the right: back left, go right, as the screens' foot rows)
+    RL_Button(this, v, x + 24, by, 150, 48, "CANCEL", false, ID_CANCEL, false, RL_SL_RIGHT);
     RL_Button(this, v, x + w - 24 - 170, by, 170, 48, says[k][2], true, ID_CONFIRM, false, RL_SL_LEFT);
 }
 
@@ -4185,7 +4186,7 @@ void UIReloadedMenu::DrawConnect(const rlView_t& v)
     if (password) {
         RL_Field(v, x + pad, sy + 96, w - 2 * pad, 44, std::string(rl_cn.typed.size(), '\x95'), "Password", true, false);
     }
-    RL_Button(this, v, x + w - pad - 328, by, 150, 48, "BACK", false, ID_CANCEL);
+    RL_Button(this, v, x + pad, by, 150, 48, "BACK", false, ID_CANCEL, false, RL_SL_RIGHT);
     RL_Button(this, v, x + w - pad - 170, by, 170, 48, password ? "JOIN" : "RETRY", true, ID_CONFIRM, false, RL_SL_LEFT);
 }
 
