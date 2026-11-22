@@ -156,6 +156,11 @@ void        RL_VoteRead(int part, const char *text);
 // KEYS: Options' KEYS tab (in a game the Options over the Esc menu's, the main menu's page kept unless it is up)
 enum { RL_SHOW_PLAY, RL_SHOW_MISSIONS, RL_SHOW_SAVES, RL_SHOW_KEYS };
 void        RL_MainShow(int what);
+// the Esc menu's QUIT GAME (quit) or DISCONNECT (LEAVE MISSION in a mission) asked first: the main menu's confirmation
+// over it; DISCONNECT's answer shows the main menu on its page show (RL_SHOW_*) after leaving
+void        RL_EscConfirm(bool quit, int show);
+// the in-game block's width (the Esc menu's, the weapon page's) in v's units (a view at the menus' size)
+float       RL_BlockWidth(const rlView_t& v);
 // an item of the main menu's top bar (its pages, its foot's: a glyph before each; cl_uimain.cpp)
 typedef struct {
     int         id;
@@ -173,10 +178,10 @@ enum { RL_SL_NONE, RL_SL_LEFT, RL_SL_RIGHT, RL_SL_BOTH };
 // a box with its left and/or right edge slanted (edges: RL_SL_*), the slant's middle on the box's edge (boxes side by
 // side tile, the gaps between them as wide at every height); a straight edge as RL_Box's
 void        RL_SlantBox(const rlView_t& v, float x, float y, float w, float h, int edges, rlColor_t c);
-// the main menu's button (primary: brass; off: dimmed; lit while m's hot item; edges: RL_SL_*, those slanted); its hit
-// (id) added to m
+// the main menu's button (primary: brass; off: dimmed; lit while m's hot item; edges: RL_SL_*, those slanted; its label
+// size high, the in-game block's its names' size); its hit (id) added to m
 void        RL_Button(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, int id,
-                      bool off = false, int edges = RL_SL_BOTH);
+                      bool off = false, int edges = RL_SL_BOTH, float size = 18.0f);
 
 // the player models a side can pick, in the order of their names (PM_FilenameToDisplayname)
 typedef struct {
