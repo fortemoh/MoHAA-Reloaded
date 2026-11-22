@@ -56,7 +56,7 @@ In round and objective matches, this is the maximum time at which a player can j
 
 ### `g_door_reopen_blocked`
 
-Automatically reopens the door from the opposite side when blocked. Defaults to `1`.
+Automatically reopens the door from the opposite side when blocked. Defaults to `0` (`1` in OpenMoHAA).
 
 ### `g_forceteamspectate`
 
@@ -100,7 +100,7 @@ This prevents some tricks such as `ghost walking` where a player rapidly switch 
 
 ### `g_playerStacking`
 
-If enabled, a player can stand on another player's head without being pushed off. Defaults to `0`.
+If enabled, a player can stand on another player's head without being pushed off. Defaults to `1` (`0` in OpenMoHAA).
 
 ### `g_spectatefollow_firstperson`
 
