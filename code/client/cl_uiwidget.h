@@ -61,6 +61,15 @@ typedef struct {
     int id;
 } rlHit_t;
 
+// a tile of the in-game block (the weapon page's): its label in the corner (a state, a class; warn: a refusal, red), its
+// picture (an outline; NULL: the caller draws it), its name under it, in the colours of team (-1 none); off: dimmed, not
+// chosen; marked: the last pick's dot
+typedef struct {
+    const char *label, *name, *outline;
+    int         team;
+    bool        off, warn, marked;
+} rlTile_t;
+
 struct rlInfo_t;
 
 class UIReloadedMenu : public UIWidget
@@ -107,6 +116,9 @@ public:
     void PlaceFigure(const rlView_t& v, const char *name, float scale, float mid, float cx, float headY, float k, float width);
     // a view (a label of the menu's) placed over x y w h, in units (none across: hidden)
     void PlaceView(const rlView_t& v, const char *name, float x, float y, float w, float h);
+    // the in-game block's tile at x y w h (its hit id), drawn; the picture's middle (the caller's to draw when
+    // t.outline is NULL) is x + w / 2, y + h * RL_TILEPIC
+    void Tile(const rlView_t& v, float x, float y, float w, float h, int id, const rlTile_t& t);
     // a side's model cycler, its middle at cx cy, w across h high: the chevrons at its ends (idPrev, idPrev + 2), the
     // model previewed between, its place in the list after it; false: no other model to cycle to (the chevrons off)
     bool ModelCycler(const rlView_t& v, float cx, float cy, float w, float h, int side, int idPrev, float nameSize, float countSize);
