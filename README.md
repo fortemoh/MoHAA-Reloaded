@@ -22,16 +22,18 @@ Needs an Apple Silicon Mac (M1 or later) with macOS 26 or later. Developed and m
 
 ## Install
 
-1. Download `openmohaa-metal-<version>-macos-arm64.zip` from [Releases](https://github.com/fortemoh/MoHAA-Reloaded/releases) and unzip it.
+1. Download `mohreloaded-<version>-macos-arm64.zip` from [Releases](https://github.com/fortemoh/MoHAA-Reloaded/releases) and unzip it.
 2. **Clear the quarantine, once.** The app is signed ad hoc, not notarized by Apple, so macOS refuses to run the download until you do. In Terminal, type `xattr -dr com.apple.quarantine ` (with the trailing space), drag the unzipped folder onto the window and press Return:
    ```bash
-   xattr -dr com.apple.quarantine ~/Downloads/openmohaa-metal-1.0.0-macos-arm64
+   xattr -dr com.apple.quarantine ~/Downloads/mohreloaded-1.0.0-macos-arm64
    ```
    Open Anyway on `mohlauncher.app` works too: it then clears the quarantine itself and restarts. On the game itself "Open Anyway" in System Settings isn't enough: macOS then runs a read-only copy that can't find your game data, and the game stops and shows this line for your folder.
-3. Copy `openmohaa.app` and `mohlauncher.app` into your MOHAA folder, next to `main/` (`Pak0.pk3` to `Pak6.pk3`; `mainta/` and `maintt/` for the expansions). Upstream's [installation guide](docs/markdown/01-intro/01-installation.md#linux-and-macos-users) shows how to get the data from the GOG installer.
-4. Start `mohlauncher.app`: [MoHAA Launcher](#mohaa-launcher). If the game folder is on an external drive or in Documents or Desktop, allow the access prompts (they come back after each update). `openmohaa.app` starts directly too: Spearhead and Breakthrough with `open openmohaa.app --args +set com_target_game 1` (or `2`) in Terminal, in the game folder.
+3. Copy `mohreloaded.app` and `mohlauncher.app` into your MOHAA folder, next to `main/` (`Pak0.pk3` to `Pak6.pk3`; `mainta/` and `maintt/` for the expansions). Upstream's [installation guide](docs/markdown/01-intro/01-installation.md#linux-and-macos-users) shows how to get the data from the GOG installer.
+4. Start `mohlauncher.app`: [MoHAA Launcher](#mohaa-launcher). If the game folder is on an external drive or in Documents or Desktop, allow the access prompts (they come back after each update). `mohreloaded.app` starts directly too: Spearhead and Breakthrough with `open mohreloaded.app --args +set com_target_game 1` (or `2`) in Terminal, in the game folder.
 
 Configs, saves, screenshots, demos and logs go into the game folder (`main/configs/omconfig.cfg`, `main/screenshots/`, …), as in the original game, or into `~/Library/Application Support/openmohaa/` if the game folder isn't writable. An older `main/configs/omconfig.cfg` in the game folder wins over the settings in Application Support: delete it to keep those. Started from MoHAA Launcher, everything goes into the game folder (below).
+
+Downloads before the rename were called `openmohaa-metal-1.0.0-…`, with the game as `openmohaa.app`: their launcher doesn't see the new download, so download this one by hand once, copy its two apps into the game folder and delete the old `openmohaa.app`. Your settings stay where they were.
 
 ### MoHAA Launcher
 
@@ -118,7 +120,7 @@ In exclusive fullscreen, anything animating on another display costs frames (abo
 - Fire delays are rounded as MOHAA 1.11 does it, on a server this build hosts: a gun whose delay is a whole number of server frames is ready on the earlier frame as often as in stock (at `sv_fps 20` the Garand about 54% of shots, upstream OpenMoHAA 20%), and in Allied Assault a pistol whip right after a shot waits the 0.1 s delay, as in stock. It isn't a setting. On other servers the timing is theirs.
 - With `cl_movefps` on, a server receives one command per step, each exactly one step long: the steps a stock client at that rate sends on average. A shot or jump with `cl_movesubgrid` splits one step in two (4 + 4 ms at 125, as a stock client at 250 frames a second sends all the time).
 - No GUID: this client sends no `cl_guid`, as the original game's clients don't. Servers that track players by GUID see you without one.
-- No dedicated server is shipped (`-DBUILD_SERVER=ON` builds `omohaaded` for local tests). For servers, use upstream's builds.
+- No dedicated server is shipped (`-DBUILD_SERVER=ON` builds `mohreloaded-server` for local tests). For servers, use upstream's builds.
 
 ## Building
 
@@ -140,7 +142,7 @@ cmake --build build
 cmake --install build
 ```
 
-The install signs `install/lib/openmohaa/openmohaa.app` ad hoc (the game libraries are inside it); don't change files inside the app afterwards. If CMake doesn't find Homebrew's Bison, add `-DBISON_EXECUTABLE="$(brew --prefix bison)/bin/bison"`; if the build says "Metal shader compiler not found", add `-DMETAL_TOOLCHAIN_BIN="$(dirname "$(xcrun -f metallib)")"`. CI builds exactly this on every push (`.github/workflows/macos-metal.yml`). The scripts in `port/` are the developer's benchmark, screenshot and latency tools for one machine.
+The install signs `install/lib/mohreloaded/mohreloaded.app` ad hoc (the game libraries are inside it); don't change files inside the app afterwards. If CMake doesn't find Homebrew's Bison, add `-DBISON_EXECUTABLE="$(brew --prefix bison)/bin/bison"`; if the build says "Metal shader compiler not found", add `-DMETAL_TOOLCHAIN_BIN="$(dirname "$(xcrun -f metallib)")"`. CI builds exactly this on every push (`.github/workflows/macos-metal.yml`). The version is set in `cmake/identity.cmake` (1.0.0, shared with the `vulkan` branch); a build says `1.0.0-unstable+0.<commit>`. The scripts in `port/` are the developer's benchmark, screenshot and latency tools for one machine.
 
 ## Looks and limits
 

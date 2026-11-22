@@ -20,11 +20,11 @@ Install
 
      xattr -dr com.apple.quarantine
 
-   For example: xattr -dr com.apple.quarantine ~/Downloads/openmohaa-metal-@VERSION@-macos-arm64
+   For example: xattr -dr com.apple.quarantine ~/Downloads/mohreloaded-@VERSION@-macos-arm64
 
    Or, instead of Terminal: open mohlauncher.app from the folder you copied it to in step 4, and allow it
    with "Open Anyway" in System Settings > Privacy & Security. MoHAA Launcher then clears the quarantine
-   on the download's files itself and restarts. Open Anyway on openmohaa.app itself is not enough: macOS
+   on the download's files itself and restarts. Open Anyway on mohreloaded.app itself is not enough: macOS
    runs the game from a temporary read-only copy, where it can't find your game data, and the game stops
    and shows the line to run, with your folder's path.
 
@@ -32,7 +32,7 @@ Install
    Spearhead and maintt/ for Breakthrough. From the GOG installer you can get it with innoextract:
    https://github.com/fortemoh/MoHAA-Reloaded/blob/metal/docs/markdown/01-intro/01-installation.md#linux-and-macos-users
 
-4. Copy openmohaa.app and mohlauncher.app into the game folder, next to main/. The game reads its data
+4. Copy mohreloaded.app and mohlauncher.app into the game folder, next to main/. The game reads its data
    from the folder that holds the app; game.dylib and cgame.dylib are inside the app (any left beside it
    by an earlier version aren't used: you can delete them). (If you copied them before step 2, run the
    step 2 command on the game folder instead.)
@@ -45,11 +45,11 @@ Install
    exact build). MoHAA Launcher offers new versions itself when it starts, and replaces the apps safely: if
    anything goes wrong, your files stay as they were. By hand, a new download needs step 2 again.
 
-   openmohaa.app starts directly too: Allied Assault by default. For Spearhead or Breakthrough, open
+   mohreloaded.app starts directly too: Allied Assault by default. For Spearhead or Breakthrough, open
    Terminal in the game folder and run one of:
 
-     open openmohaa.app --args +set com_target_game 1
-     open openmohaa.app --args +set com_target_game 2
+     open mohreloaded.app --args +set com_target_game 1
+     open mohreloaded.app --args +set com_target_game 2
 
 Configs, saves, screenshots, demos and logs go into the game folder, as in the original game
 (main/configs/omconfig.cfg and main/screenshots/ for Allied Assault). Started from MoHAA Launcher,
