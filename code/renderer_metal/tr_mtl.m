@@ -296,6 +296,51 @@ static struct {
 	float			z;				// the height its texels are for
 } mb_radar;
 
+// The temporal path (mbTemporal*, tr_temporal.c, tr_mtl_temporal.metal; the idea from JayRewd's Vulkan renderer). Off,
+// none of this exists: no target, no pipeline, no pass, and the scene pass and its pipelines are as without it. On, a
+// scene (the frame's views of the world) is drawn in passes with a second attachment, the motion vectors, by pipelines
+// of their own (MB_PIPE_TEMPORAL) and with the projection jittered; when it ends (mbTemporalEndScene, before the 2D)
+// the anti-aliasing blends it with the last frame's result into a history target, and the frame goes on in the scene
+// target's other copy, its first draw the result sharpened (the composite), the 2D drawn over it. The two copies
+// trade places each scene, so the frame always ends in mb_sceneColor.
+typedef struct {
+	float		prevMvp[16];						// MbTemporalVSUniforms
+	float		jitter[4];
+} mbTemporalVSUniforms_t;
+
+typedef struct {
+	int32_t		rect[4];							// MbTaaUniforms / MbCompositeUniforms
+	float		params[4];
+	float		weights[12];
+} mbTaaUniforms_t;
+
+static qboolean						mb_temporalOn;			// its targets exist (mbTemporalEnable)
+static qboolean						mb_temporalPass;		// a scene is being drawn: its passes get the motion vectors
+static qboolean						mb_temporalEnded;		// this frame's scene ended (one a frame)
+static qboolean						mb_velocityValid;		// the motion vectors were stored by an interrupted pass
+static qboolean						mb_sceneColorDiscard;	// the next pass's first draw covers the target (the composite)
+static id<MTLTexture>				mb_sceneColorOther;		// the scene target's other copy
+static id<MTLTexture>				mb_velocity;			// RG16Float
+static id<MTLTexture>				mb_taaHistory[2];		// RGB10A2Unorm, the anti-aliased scene of this and the last scene
+static int							mb_taaCurrent;			// the history the last scene wrote
+static uint64_t						mb_taaSerial;			// the frame it was written in
+static id<MTLFunction>				mb_stageTemporalVS, mb_skinTemporalVS;
+static id<MTLFunction>				mb_stageTemporalFS[8];
+static id<MTLComputePipelineState>	mb_taaPipeline;
+static id<MTLRenderPipelineState>	mb_compositePipeline, mb_queryTemporalPipeline;
+static mbTemporalView_t				mb_temporalView;		// the scene's current view
+static int							mb_temporalRect[4];		// the main view, target pixels from the top left
+static float						mb_temporalJitterPixels[2];
+static qboolean						mb_temporalHistory;		// the main view's camera has a last frame
+static float						mb_temporalJitterClip[2];	// the current view's jitter in clip space per w
+static float						mb_temporalPrevProj[16];
+static float						mb_temporalObjectDelta[16];
+static qboolean						mb_temporalObjectOn;
+static mbTemporalVSUniforms_t		mb_tvsu;
+static qboolean						mb_tvsuDirty;			// mb_tvsu changed since the encoder got it
+static void MB_TemporalFreeTargets( void );
+static void MB_TemporalTransformChanged( void );
+
 static void MB_HarvestQueries( uint64_t completed );
 static void MB_ProcessReadbacks( uint64_t completed );
 static void *MB_Pipeline( uint32_t key );
@@ -817,6 +862,7 @@ static void MB_InvalidateEncoderState( void )
 	mb_encFSUValid = qfalse;
 	mb_encRing = nil;
 	mb_encSkin = nil;
+	mb_tvsuDirty = qtrue;
 	for ( i = 0; i < MB_MAX_UNITS; i++ ) {
 		mb_encTexture[i] = NULL;
 		mb_encSampler[i] = NULL;
@@ -848,7 +894,10 @@ static qboolean MB_BeginPass( void )
 
 		pass.colorAttachments[0].texture = mb_sceneColor;
 		pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-		if ( mb_pendingClear & MB_COLOR_BUFFER_BIT ) {
+		if ( mb_sceneColorDiscard ) {
+			// the temporal path's composite covers the target first (MB_TemporalComposite)
+			pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+		} else if ( mb_pendingClear & MB_COLOR_BUFFER_BIT ) {
 			// alpha stays 1: the target behaves like GL1's 24-bit color buffer (destination alpha = 1)
 			pass.colorAttachments[0].loadAction = MTLLoadActionClear;
 			pass.colorAttachments[0].clearColor = MTLClearColorMake( mb_pendingClearColor[0], mb_pendingClearColor[1], mb_pendingClearColor[2], 1.0 );
@@ -857,6 +906,15 @@ static qboolean MB_BeginPass( void )
 			pass.colorAttachments[0].clearColor = MTLClearColorMake( 0.0, 0.0, 0.0, 1.0 );
 		} else {
 			pass.colorAttachments[0].loadAction = MTLLoadActionLoad;
+		}
+
+		// the temporal path's motion vectors: none where nothing that writes them is drawn
+		if ( mb_temporalPass ) {
+			pass.colorAttachments[1].texture = mb_velocity;
+			pass.colorAttachments[1].storeAction = MTLStoreActionStore;
+			pass.colorAttachments[1].loadAction = mb_velocityValid ? MTLLoadActionLoad : MTLLoadActionClear;
+			pass.colorAttachments[1].clearColor = MTLClearColorMake( 0.0, 0.0, 0.0, 0.0 );
+			mb_velocityValid = qtrue;
 		}
 
 		// depth/stencil: a new frame starts cleared (the front end always clears depth before 3D); stored only
@@ -888,10 +946,14 @@ static qboolean MB_BeginPass( void )
 		}
 
 		mb_enc = [mb_cmd renderCommandEncoderWithDescriptor:pass];
+		if ( mb_temporalPass ) {
+			mb_enc.label = @"temporal scene";
+		}
 	}
 
 	mb_pendingClear = 0;
 	mb_sceneColorValid = qtrue;
+	mb_sceneColorDiscard = qfalse;
 	mb_statPasses++;
 
 	[mb_enc setFrontFacingWinding:MTLWindingCounterClockwise];
@@ -1232,11 +1294,12 @@ PIPELINES, DEPTH/STENCIL STATES, SAMPLERS
 =============================================================
 */
 
-static id<MTLFunction> MB_StageFragmentFunction( uint32_t texMask, qboolean alphaTest )
+static id<MTLFunction> MB_StageFragmentFunction( uint32_t texMask, qboolean alphaTest, qboolean temporal )
 {
 	int index = texMask | ( alphaTest ? 4 : 0 );
+	__strong id<MTLFunction> *functions = temporal ? mb_stageTemporalFS : mb_stageFS;
 
-	if ( !mb_stageFS[index] ) {
+	if ( !functions[index] ) {
 		MTLFunctionConstantValues *values = [MTLFunctionConstantValues new];
 		uint32_t mask = texMask;
 		bool discard = alphaTest ? true : false;
@@ -1244,18 +1307,28 @@ static id<MTLFunction> MB_StageFragmentFunction( uint32_t texMask, qboolean alph
 
 		[values setConstantValue:&mask type:MTLDataTypeUInt atIndex:0];
 		[values setConstantValue:&discard type:MTLDataTypeBool atIndex:1];
-		mb_stageFS[index] = [mb_library newFunctionWithName:@"mb_stage_fs" constantValues:values error:&error];
-		if ( !mb_stageFS[index] ) {
-			ri.Printf( PRINT_WARNING, "Metal: stage shader variant %d failed: %s\n", index, error.localizedDescription.UTF8String );
+		functions[index] = [mb_library newFunctionWithName:temporal ? @"mb_stage_temporal_fs" : @"mb_stage_fs"
+			constantValues:values error:&error];
+		if ( !functions[index] ) {
+			ri.Printf( PRINT_WARNING, "Metal: stage shader variant %d%s failed: %s\n", index, temporal ? " (temporal)" : "",
+				error.localizedDescription.UTF8String );
 		}
 	}
-	return mb_stageFS[index];
+	return functions[index];
 }
 
 // key bits: 0-1 texture units, 2 alpha test, 3 blend, 4-7 src factor, 8-11 dst factor, 12-15 color write
-// mask (MTLColorWriteMask >> 0, alpha never set), 16 clear pipeline, 17 skinning vertex shader
+// mask (MTLColorWriteMask >> 0, alpha never set), 16 clear pipeline, 17 skinning vertex shader, 18 the temporal
+// path's scene pass (its second attachment, the motion vectors: written by the draws that write color without
+// blending, with the temporal shaders)
 #define MB_PIPE_CLEAR		( 1u << 16 )
 #define MB_PIPE_SKIN		( 1u << 17 )
+#define MB_PIPE_TEMPORAL	( 1u << 18 )
+
+static qboolean MB_PipelineWritesVelocity( uint32_t key )
+{
+	return ( key & MB_PIPE_TEMPORAL ) && !( key & ( MB_PIPE_CLEAR | ( 1u << 3 ) ) ) && ( ( key >> 12 ) & 15 );
+}
 
 static uint32_t MB_PipelineKey( void )
 {
@@ -1270,6 +1343,9 @@ static uint32_t MB_PipelineKey( void )
 	key |= mb_colorMask << 12;
 	if ( mb_skinDraw ) {
 		key |= MB_PIPE_SKIN;
+	}
+	if ( mb_temporalPass ) {
+		key |= MB_PIPE_TEMPORAL;
 	}
 	return key;
 }
@@ -1288,13 +1364,25 @@ static MTLRenderPipelineDescriptor *MB_PipelineDescriptor( uint32_t key )
 		desc.label = @"clear";
 		desc.vertexFunction = mb_clearVS;
 		desc.fragmentFunction = mb_clearFS;
+	} else if ( MB_PipelineWritesVelocity( key ) ) {
+		desc.label = ( key & MB_PIPE_SKIN ) ? @"skin (temporal)" : @"stage (temporal)";
+		desc.vertexFunction = ( key & MB_PIPE_SKIN ) ? mb_skinTemporalVS : mb_stageTemporalVS;
+		desc.fragmentFunction = MB_StageFragmentFunction( key & 3, ( key >> 2 ) & 1, qtrue );
+		if ( !desc.vertexFunction || !desc.fragmentFunction ) {
+			return nil;
+		}
 	} else {
 		desc.label = ( key & MB_PIPE_SKIN ) ? @"skin" : @"stage";
 		desc.vertexFunction = ( key & MB_PIPE_SKIN ) ? mb_skinVS : mb_stageVS;
-		desc.fragmentFunction = MB_StageFragmentFunction( key & 3, ( key >> 2 ) & 1 );
+		desc.fragmentFunction = MB_StageFragmentFunction( key & 3, ( key >> 2 ) & 1, qfalse );
 		if ( !desc.fragmentFunction ) {
 			return nil;
 		}
+	}
+	if ( key & MB_PIPE_TEMPORAL ) {
+		desc.colorAttachments[1].pixelFormat = MTLPixelFormatRG16Float;
+		desc.colorAttachments[1].writeMask = MB_PipelineWritesVelocity( key )
+			? MTLColorWriteMaskRed | MTLColorWriteMaskGreen : MTLColorWriteMaskNone;
 	}
 
 	color.pixelFormat = MTLPixelFormatRGBA8Unorm;
@@ -1485,6 +1573,9 @@ void mbPrecachePipeline( int numUnits, qboolean alphaTest, qboolean blend, int s
 		key |= MB_PIPE_SKIN;
 	}
 	MB_PrecacheKey( key );
+	if ( mb_temporalOn ) {
+		MB_PrecacheKey( key | MB_PIPE_TEMPORAL );	// its scene's variant
+	}
 }
 
 /*
@@ -2309,6 +2400,8 @@ void mbShutdown( void )
 				(double)mb_statCompletion / 1e6 / mb_statGPUFrames, (int)mb_statGPUFrames );
 		}
 		ri.Printf( PRINT_ALL, "Metal: %d GPU wake-ups before a frame (r_metalWakeGPU)\n", mb_statWakes );
+		ri.Printf( PRINT_ALL, "Metal: %.1f MB allocated on the device, the temporal path %s\n",
+			(double)mb_device.currentAllocatedSize / ( 1024.0 * 1024.0 ), mb_temporalOn ? "on" : "off" );
 	}
 	mb_statFrames = mb_statSkipped = 0;
 	mb_statLate = 0;
@@ -2355,6 +2448,10 @@ void mbShutdown( void )
 
 	mb_sceneColor = nil;
 	mb_sceneDepth = nil;
+	MB_TemporalFreeTargets();
+	MB_ReleaseRetired( UINT64_MAX );
+	mb_temporalOn = mb_temporalPass = mb_temporalEnded = qfalse;
+	mb_temporalObjectOn = qfalse;
 	for ( i = 0; i < MB_BLUR_TARGETS; i++ ) {
 		mb_blurTargets[i] = nil;
 	}
@@ -2550,6 +2647,13 @@ void mbEndFrame( void )
 		}
 		MB_EndPass( qfalse );
 		MB_BeginCommandBuffer();
+		if ( mb_temporalPass || mb_temporalEnded ) {
+			// the next frame's scene (one the front end didn't end is shown without its effects)
+			mb_temporalPass = mb_temporalEnded = qfalse;
+			mb_temporalObjectOn = qfalse;
+			mb_dirty |= MB_DIRTY_PIPELINE;
+			MB_TemporalTransformChanged();
+		}
 
 		// final pass into the drawable, if one is ready
 		mb_statFrames++;
@@ -3074,6 +3178,29 @@ void mbPopMatrix( void )
 }
 
 /*
+** MB_TemporalTransform
+**
+** In a temporal scene: the draw's last frame's transform (the last frame's projection times the object's or the
+** camera's motion times this modelview) for its motion vectors, and the jitter added to this frame's (clip x and y
+** move by the jitter times w: the same sub-pixel offset whatever the depth).
+*/
+static void MB_TemporalTransform( const float *mv )
+{
+	float prevModelview[16];
+	int c;
+
+	MB_MultiplyMatrix( mb_temporalObjectOn ? mb_temporalObjectDelta : mb_temporalView.cameraDelta, mv, prevModelview );
+	MB_MultiplyMatrix( mb_temporalPrevProj, prevModelview, mb_tvsu.prevMvp );
+	for ( c = 0; c < 4; c++ ) {
+		mb_vsu.mvp[c * 4 + 0] += mb_temporalJitterClip[0] * mb_vsu.mvp[c * 4 + 3];
+		mb_vsu.mvp[c * 4 + 1] += mb_temporalJitterClip[1] * mb_vsu.mvp[c * 4 + 3];
+	}
+	mb_tvsu.jitter[0] = mb_temporalJitterClip[0];
+	mb_tvsu.jitter[1] = mb_temporalJitterClip[1];
+	mb_tvsuDirty = qtrue;
+}
+
+/*
 ** MB_UpdateTransform
 **
 ** mvp = projection * modelview; the shader takes GL clip z [-w, w] to Metal's [0, w] after the multiply.
@@ -3100,6 +3227,9 @@ static void MB_UpdateTransform( void )
 	mb_vsuTransformValid = qtrue;
 
 	MB_MultiplyMatrix( mb_projection[mb_projectionDepth], mv, mb_vsu.mvp );
+	if ( mb_temporalPass ) {
+		MB_TemporalTransform( mv );
+	}
 
 	mb_vsu.eyeZ[0] = mv[2];
 	mb_vsu.eyeZ[1] = mv[6];
@@ -3326,6 +3456,10 @@ static void MB_BindVertices( id<MTLBuffer> streams )
 		mb_encSkin = mb_skinBuffer;
 	}
 	[mb_enc setVertexBytes:&mb_vsu length:sizeof( mb_vsu ) atIndex:1];
+	if ( mb_temporalPass && mb_tvsuDirty ) {
+		[mb_enc setVertexBytes:&mb_tvsu length:sizeof( mb_tvsu ) atIndex:3];
+		mb_tvsuDirty = qfalse;
+	}
 	mb_statDraws++;
 }
 
@@ -3392,7 +3526,7 @@ static void MB_ClearQuad( unsigned int mask )
 		return;
 	}
 
-	key = MB_PIPE_CLEAR | ( ( mask & MB_COLOR_BUFFER_BIT ) ? mb_colorMask << 12 : 0 );
+	key = MB_PIPE_CLEAR | ( ( mask & MB_COLOR_BUFFER_BIT ) ? mb_colorMask << 12 : 0 ) | ( mb_temporalPass ? MB_PIPE_TEMPORAL : 0 );
 	pipeline = MB_Pipeline( key );
 	if ( !pipeline ) {
 		return;
@@ -5087,7 +5221,8 @@ int mbDepthQuery( int x, int y, float depth )
 	int index;
 	float position[4];
 
-	if ( !mb_queryPipeline || !mb_sceneColor || x < 0 || y < 0 || x >= mb_width || y >= mb_height ) {
+	if ( !mb_queryPipeline || !mb_sceneColor || x < 0 || y < 0 || x >= mb_width || y >= mb_height
+		|| ( mb_temporalPass && !mb_queryTemporalPipeline ) ) {
 		return 0;
 	}
 
@@ -5125,7 +5260,7 @@ int mbDepthQuery( int x, int y, float depth )
 	position[2] = mb_depthFloor + ( 1.0f - mb_depthFloor ) * position[2];	// the scene's full range (mbDepthFloor)
 	position[3] = 1.0f;
 
-	[mb_enc setRenderPipelineState:mb_queryPipeline];
+	[mb_enc setRenderPipelineState:mb_temporalPass ? mb_queryTemporalPipeline : mb_queryPipeline];
 	[mb_enc setDepthStencilState:MB_OBJ( MB_DepthStencilState( 1 | ( (uint64_t)MTLCompareFunctionLess << 1 ) ) )];
 	[mb_enc setViewport:(MTLViewport){ 0.0, 0.0, mb_width, mb_height, 0.0, 1.0 }];
 	[mb_enc setScissorRect:(MTLScissorRect){ 0, 0, (NSUInteger)mb_width, (NSUInteger)mb_height }];
@@ -5175,6 +5310,360 @@ int mbDepthQueryResult( int handle )
 // RE_DrawBackground_DrawPixels only, and GL1 leaves the DrawBackground export NULL
 void mbDrawPixels( int width, int height, int format, int type, const void *pixels ) {}
 void mbPixelZoom( float xfactor, float yfactor ) {}
+
+/*
+=============================================================
+
+THE TEMPORAL PATH
+
+=============================================================
+*/
+
+#define MB_TAA_GROUP	16		// the anti-aliasing's workgroups: 16x16 pixels (tr_mtl_temporal.metal)
+
+// written: by a compute pass (the histories), else drawn into
+static id<MTLTexture> MB_TemporalTarget( MTLPixelFormat format, NSString *label, qboolean written )
+{
+	MTLTextureDescriptor *desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+		width:mb_width height:mb_height mipmapped:NO];
+	id<MTLTexture> t;
+
+	desc.usage = MTLTextureUsageShaderRead | ( written ? MTLTextureUsageShaderWrite : MTLTextureUsageRenderTarget );
+	desc.storageMode = MTLStorageModePrivate;
+	t = [mb_device newTextureWithDescriptor:desc];
+	t.label = label;
+	return t;
+}
+
+/*
+** MB_TemporalDepthTarget
+**
+** The depth target made again, readable by the effects (the temporal path on) or not (as without it): the old one
+** goes once the frames that use it are done. A new frame clears depth first anyway.
+*/
+static qboolean MB_TemporalDepthTarget( qboolean readable )
+{
+	MTLTextureDescriptor *desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth32Float_Stencil8
+		width:mb_width height:mb_height mipmapped:NO];
+	id<MTLTexture> t;
+
+	desc.usage = MTLTextureUsageRenderTarget | ( readable ? MTLTextureUsageShaderRead : 0 );
+	desc.storageMode = MTLStorageModePrivate;
+	t = [mb_device newTextureWithDescriptor:desc];
+	if ( !t ) {
+		return qfalse;
+	}
+	t.label = @"scene depth";
+	MB_Retire( mb_sceneDepth );
+	mb_sceneDepth = t;
+	mb_depthValid = qfalse;
+	return qtrue;
+}
+
+/*
+** MB_TemporalPipelines
+**
+** The temporal path's shaders and pipelines, made at its first use (none while it was never on).
+*/
+static qboolean MB_TemporalPipelines( void )
+{
+	MTLRenderPipelineDescriptor *desc;
+	NSError *error = nil;
+
+	if ( !mb_stageTemporalVS ) {
+		mb_stageTemporalVS = [mb_library newFunctionWithName:@"mb_stage_temporal_vs"];
+	}
+	if ( !mb_skinTemporalVS && mb_skinVS ) {
+		mb_skinTemporalVS = [mb_library newFunctionWithName:@"mb_skin_temporal_vs"];
+	}
+	if ( !mb_stageTemporalVS || ( mb_skinVS && !mb_skinTemporalVS ) ) {
+		ri.Printf( PRINT_WARNING, "Metal: the embedded metallib lacks the temporal stage shaders\n" );
+		return qfalse;
+	}
+
+	if ( !mb_queryTemporalPipeline ) {
+		// the depth queries in a scene pass with the motion vectors (as mb_queryPipeline)
+		desc = [MTLRenderPipelineDescriptor new];
+		desc.label = @"depth query (temporal)";
+		desc.vertexFunction = [mb_library newFunctionWithName:@"mb_query_vs"];
+		desc.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA8Unorm;
+		desc.colorAttachments[0].writeMask = MTLColorWriteMaskNone;
+		desc.colorAttachments[1].pixelFormat = MTLPixelFormatRG16Float;
+		desc.colorAttachments[1].writeMask = MTLColorWriteMaskNone;
+		desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+		desc.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+		desc.inputPrimitiveTopology = MTLPrimitiveTopologyClassPoint;
+		mb_queryTemporalPipeline = MB_NewRenderPipeline( desc, &error );
+	}
+	if ( !mb_taaPipeline ) {
+		id<MTLFunction> taa = [mb_library newFunctionWithName:@"mb_taa_cs"];
+
+		mb_taaPipeline = taa ? [mb_device newComputePipelineStateWithFunction:taa error:&error] : nil;
+		if ( mb_taaPipeline && mb_taaPipeline.maxTotalThreadsPerThreadgroup < MB_TAA_GROUP * MB_TAA_GROUP ) {
+			mb_taaPipeline = nil;
+		}
+	}
+	if ( !mb_compositePipeline ) {
+		// the first draw of a scene pass after the temporal one (MB_TemporalResolve)
+		desc = [MTLRenderPipelineDescriptor new];
+		desc.label = @"temporal composite";
+		desc.vertexFunction = [mb_library newFunctionWithName:@"mb_temporal_vs"];
+		desc.fragmentFunction = [mb_library newFunctionWithName:@"mb_composite_fs"];
+		desc.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA8Unorm;
+		desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+		desc.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+		mb_compositePipeline = MB_NewRenderPipeline( desc, &error );
+	}
+	if ( !mb_queryTemporalPipeline || !mb_taaPipeline || !mb_compositePipeline ) {
+		ri.Printf( PRINT_WARNING, "Metal: the temporal path's pipelines failed: %s\n", error.localizedDescription.UTF8String );
+		return qfalse;
+	}
+	return qtrue;
+}
+
+static void MB_TemporalFreeTargets( void )
+{
+	MB_Retire( mb_sceneColorOther );
+	MB_Retire( mb_velocity );
+	MB_Retire( mb_taaHistory[0] );
+	MB_Retire( mb_taaHistory[1] );
+	mb_sceneColorOther = nil;
+	mb_velocity = nil;
+	mb_taaHistory[0] = mb_taaHistory[1] = nil;
+}
+
+/*
+** mbTemporalEnable
+**
+** Between frames: on makes the targets (the scene target's other copy, the motion vectors, the two histories: at
+** 1920x1080 8 + 8 + 2 x 8 MB) and the depth target readable; off frees them and makes the depth target as it is
+** without the path. Returns whether the path is on.
+*/
+qboolean mbTemporalEnable( qboolean on )
+{
+	if ( !on == !mb_temporalOn || mb_enc || mb_temporalPass || !mb_sceneColor ) {
+		return mb_temporalOn;
+	}
+
+	@autoreleasepool {
+		if ( on ) {
+			if ( !MB_TemporalPipelines() ) {
+				return qfalse;
+			}
+			mb_sceneColorOther = MB_TemporalTarget( MTLPixelFormatRGBA8Unorm, @"scene color (other)", qfalse );
+			mb_velocity = MB_TemporalTarget( MTLPixelFormatRG16Float, @"motion vectors", qfalse );
+			mb_taaHistory[0] = MB_TemporalTarget( MTLPixelFormatRGB10A2Unorm, @"taa history 0", qtrue );
+			mb_taaHistory[1] = MB_TemporalTarget( MTLPixelFormatRGB10A2Unorm, @"taa history 1", qtrue );
+			if ( !mb_sceneColorOther || !mb_velocity || !mb_taaHistory[0] || !mb_taaHistory[1] || !MB_TemporalDepthTarget( qtrue ) ) {
+				MB_TemporalFreeTargets();
+				ri.Printf( PRINT_WARNING, "Metal: no memory for the temporal path's targets\n" );
+				return qfalse;
+			}
+			mb_taaSerial = 0;
+			mb_temporalOn = qtrue;
+		} else {
+			MB_TemporalDepthTarget( qfalse );	// (if that fails the readable one stays, at no cost)
+			MB_TemporalFreeTargets();
+			mb_temporalOn = qfalse;
+		}
+	}
+	ri.Printf( PRINT_DEVELOPER, "Metal: the temporal path %s\n", mb_temporalOn ? "on" : "off" );
+	return mb_temporalOn;
+}
+
+// the transform must be computed again (MB_TemporalTransform)
+static void MB_TemporalTransformChanged( void )
+{
+	mb_vsuTransformValid = qfalse;
+	mb_dirty |= MB_DIRTY_TRANSFORM;
+}
+
+/*
+** mbTemporalBeginView
+*/
+void mbTemporalBeginView( const mbTemporalView_t *view )
+{
+	if ( !mb_temporalOn || mb_temporalEnded || view->viewport[2] <= 0 || view->viewport[3] <= 0 ) {
+		return;
+	}
+	if ( !mb_temporalPass ) {
+		// the scene's passes have the motion vectors: a pass begun without them ends here
+		if ( mb_enc ) {
+			MB_EndPass( qtrue );
+		}
+		mb_temporalPass = qtrue;
+		mb_velocityValid = qfalse;
+		mb_dirty |= MB_DIRTY_PIPELINE;
+	}
+	mb_temporalView = *view;
+	mb_temporalJitterClip[0] = 2.0f * view->jitter[0] / view->viewport[2];
+	mb_temporalJitterClip[1] = -2.0f * view->jitter[1] / view->viewport[3];
+	if ( view->primary ) {
+		int x0 = Com_Clamp( 0, mb_width, view->viewport[0] );
+		int y0 = Com_Clamp( 0, mb_height, mb_height - ( view->viewport[1] + view->viewport[3] ) );
+		int x1 = Com_Clamp( 0, mb_width, view->viewport[0] + view->viewport[2] );
+		int y1 = Com_Clamp( 0, mb_height, mb_height - view->viewport[1] );
+
+		mb_temporalRect[0] = x0;
+		mb_temporalRect[1] = y0;
+		mb_temporalRect[2] = x1 - x0;
+		mb_temporalRect[3] = y1 - y0;
+		mb_temporalJitterPixels[0] = view->jitter[0];
+		mb_temporalJitterPixels[1] = view->jitter[1];
+		mb_temporalHistory = view->history;
+	}
+	memcpy( mb_temporalPrevProj, mb_projection[mb_projectionDepth], sizeof( mb_temporalPrevProj ) );
+	mb_temporalObjectOn = qfalse;
+	MB_TemporalTransformChanged();
+}
+
+void mbTemporalPrevProjection( const float *m )
+{
+	if ( !mb_temporalPass ) {
+		return;
+	}
+	memcpy( mb_temporalPrevProj, m, sizeof( mb_temporalPrevProj ) );
+	MB_TemporalTransformChanged();
+}
+
+void mbTemporalObject( const float *m )
+{
+	if ( !mb_temporalPass || ( !m && !mb_temporalObjectOn ) ) {
+		return;
+	}
+	mb_temporalObjectOn = m != NULL;
+	if ( m ) {
+		memcpy( mb_temporalObjectDelta, m, sizeof( mb_temporalObjectDelta ) );
+	}
+	MB_TemporalTransformChanged();
+}
+
+/*
+** MB_TemporalResolve
+**
+** The anti-aliasing (tr_mtl_temporal.metal mb_taa_cs) from the scene target into this scene's history, then the
+** pass the frame goes on in, in the scene target's other copy, its first draw the composite.
+*/
+static void MB_TemporalResolve( const mbTemporalEffects_t *effects )
+{
+	id<MTLTexture> scene = mb_sceneColor;
+	int cur = mb_taaCurrent ^ 1;
+	mbTaaUniforms_t u;
+	float sum;
+	int x, y;
+
+	if ( mb_temporalRect[2] <= 0 || mb_temporalRect[3] <= 0 ) {
+		return;
+	}
+	MB_BeginCommandBuffer();
+
+	memset( &u, 0, sizeof( u ) );
+	memcpy( u.rect, mb_temporalRect, sizeof( u.rect ) );
+	u.params[0] = effects->taaFeedback;
+	u.params[1] = mb_temporalHistory && mb_taaSerial && mb_taaSerial + 1 == mb_frameSerial ? 1.0f : 0.0f;
+	u.params[2] = 1.0f / mb_width;
+	u.params[3] = 1.0f / mb_height;
+	// this frame's color at a pixel's center: each pixel of the 3x3 sampled the scene at its center minus the
+	// jitter; weighted by that sample's distance to the center (a Gaussian), the same weights for every pixel
+	for ( y = 0, sum = 0.0f; y < 3; y++ ) {
+		for ( x = 0; x < 3; x++ ) {
+			float ox = x - 1 - mb_temporalJitterPixels[0];
+			float oy = y - 1 - mb_temporalJitterPixels[1];
+
+			u.weights[y * 3 + x] = expf( -2.29f * ( ox * ox + oy * oy ) );
+			sum += u.weights[y * 3 + x];
+		}
+	}
+	for ( x = 0; x < 9; x++ ) {
+		u.weights[x] /= sum;
+	}
+
+	@autoreleasepool {
+		id<MTLComputeCommandEncoder> enc = [mb_cmd computeCommandEncoder];
+
+		enc.label = @"taa";
+		[enc setComputePipelineState:mb_taaPipeline];
+		[enc setTexture:scene atIndex:0];
+		[enc setTexture:mb_velocity atIndex:1];
+		[enc setTexture:mb_sceneDepth atIndex:2];
+		[enc setTexture:mb_taaHistory[cur ^ 1] atIndex:3];
+		[enc setTexture:mb_taaHistory[cur] atIndex:4];
+		[enc setBytes:&u length:sizeof( u ) atIndex:0];
+		[enc dispatchThreadgroups:MTLSizeMake( ( u.rect[2] + MB_TAA_GROUP - 1 ) / MB_TAA_GROUP, ( u.rect[3] + MB_TAA_GROUP - 1 ) / MB_TAA_GROUP, 1 )
+			threadsPerThreadgroup:MTLSizeMake( MB_TAA_GROUP, MB_TAA_GROUP, 1 )];
+		[enc endEncoding];
+		mb_statPasses++;
+	}
+	mb_taaCurrent = cur;
+	mb_taaSerial = mb_frameSerial;
+
+	// the frame goes on in the other copy (the copies trade places), the composite covering it first
+	mb_sceneColor = mb_sceneColorOther;
+	mb_sceneColorOther = scene;
+	mb_sceneColorDiscard = qtrue;
+	mb_depthValid = qfalse;
+	if ( !MB_BeginPass() ) {
+		return;
+	}
+
+	mb_enc.label = @"temporal composite, then 2D";
+	u.params[0] = effects->taaSharpen;
+	u.params[1] = (float)effects->show;
+	u.params[2] = effects->showScale;
+	u.params[3] = 0.0f;
+	[mb_enc setRenderPipelineState:mb_compositePipeline];
+	[mb_enc setDepthStencilState:MB_OBJ( MB_DepthStencilState( 0 ) )];
+	[mb_enc setViewport:(MTLViewport){ 0.0, 0.0, mb_width, mb_height, 0.0, 1.0 }];
+	[mb_enc setScissorRect:(MTLScissorRect){ 0, 0, (NSUInteger)mb_width, (NSUInteger)mb_height }];
+	[mb_enc setCullMode:MTLCullModeNone];
+	[mb_enc setTriangleFillMode:MTLTriangleFillModeFill];
+	[mb_enc setDepthBias:0.0f slopeScale:0.0f clamp:0.0f];
+	[mb_enc setFragmentTexture:mb_taaHistory[cur] atIndex:0];
+	[mb_enc setFragmentTexture:scene atIndex:1];
+	[mb_enc setFragmentTexture:mb_velocity atIndex:2];
+	[mb_enc setFragmentBytes:&u length:32 atIndex:0];	// MbCompositeUniforms: rect, params
+	[mb_enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+	mb_statDraws++;
+
+	// the draw state must be set again
+	MB_InvalidateEncoderState();
+}
+
+/*
+** mbTemporalEndScene
+**
+** The scene pass ends with depth and the motion vectors stored (stencil not: nothing reads it after), the effects
+** run, and the frame goes on in a new pass with depth and stencil cleared (as after mbFrameBlur: a 3D view drawn after
+** this clears them first, and a 2D draw passes the depth test against a cleared depth buffer as against any).
+*/
+void mbTemporalEndScene( const mbTemporalEffects_t *effects )
+{
+	qboolean drawn;
+
+	if ( !mb_temporalPass ) {
+		return;
+	}
+	if ( mb_pendingClear ) {
+		MB_BeginPass();		// the scene's clears
+	}
+	drawn = mb_velocityValid;
+	if ( mb_enc ) {
+		[mb_enc setDepthStoreAction:MTLStoreActionStore];
+		[mb_enc setStencilStoreAction:MTLStoreActionDontCare];
+		[mb_enc endEncoding];
+		mb_enc = nil;
+	}
+	mb_depthValid = qfalse;
+	mb_temporalPass = qfalse;
+	mb_temporalEnded = qtrue;
+	mb_temporalObjectOn = qfalse;
+	mb_dirty |= MB_DIRTY_PIPELINE;
+	MB_TemporalTransformChanged();
+
+	if ( drawn && effects && effects->taa ) {
+		MB_TemporalResolve( effects );
+	}
+}
 
 /*
 =============================================================

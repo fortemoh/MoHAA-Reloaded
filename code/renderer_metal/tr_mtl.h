@@ -416,6 +416,37 @@ qboolean	mbRadarImage( int cw, int ch, int texels, void *memory, int bytes, void
 	int floorsOffset, int changingOffset, int numChanging, float z );
 void		mbRadarHeight( unsigned int texture, float z );
 
+// The temporal path (r_temporal, tr_temporal.c; the idea from JayRewd's Vulkan renderer): the 3D view's scene drawn
+// with motion vectors and a jittered projection, then its effects (r_taa) before the 2D. While it is off nothing of it
+// exists or runs: mbTemporalEnable makes its targets (and the depth target readable) and frees them again, between
+// frames. Without it (qfalse) the calls below do nothing.
+typedef struct {
+	float		cameraDelta[16];	// the last frame's view times this frame's view's inverse; identity: no motion
+	float		jitter[2];			// the projection's offset this frame, in pixels (x right, y down)
+	int			viewport[4];		// the view, GL window coordinates
+	qboolean	primary;			// the frame's main view: its viewport is where the effects apply
+	qboolean	history;			// the main view's camera has a last frame (no cut)
+} mbTemporalView_t;
+
+typedef struct {
+	qboolean	taa;
+	float		taaFeedback;		// r_taaFeedback
+	float		taaSharpen;			// r_taaSharpen
+	int			show;				// r_temporalShow
+	float		showScale;			// r_temporalShowScale
+} mbTemporalEffects_t;
+
+qboolean	mbTemporalEnable( qboolean on );
+// a view of the world: the first begins the scene (before the view's clear), the later ones (the main view after the
+// sky portal's) continue it with their cameras; one scene a frame
+void		mbTemporalBeginView( const mbTemporalView_t *view );
+// the last frame's projection matching the projection just loaded (the view's, the view weapon's own)
+void		mbTemporalPrevProjection( const float *m );
+// what moves the current object: m times its modelview is its last frame's; NULL: the camera's motion only
+void		mbTemporalObject( const float *m );
+// before the 2D (or at the frame's end): the effects, then the frame goes on in a new pass, depth and stencil cleared
+void		mbTemporalEndScene( const mbTemporalEffects_t *effects );
+
 static ID_INLINE int mbGetError( void ) { return MB_NO_ERROR; }
 
 #ifdef __cplusplus

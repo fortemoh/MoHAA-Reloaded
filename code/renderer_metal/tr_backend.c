@@ -605,6 +605,9 @@ static void RB_DepthHackProjection( qboolean depthHack ) {
 	mbMatrixMode( MB_PROJECTION );
 	mbLoadMatrixf( depthHack ? backEnd.viewParms.vmProjectionMatrix : backEnd.viewParms.projectionMatrix );
 	mbMatrixMode( MB_MODELVIEW );
+	if ( backEnd.temporalScene ) {
+		RB_TemporalProjection( depthHack );
+	}
 }
 
 /*
@@ -630,6 +633,9 @@ static void SetViewportAndScissor( void ) {
 	mbMatrixMode(MB_PROJECTION);
 	mbLoadMatrixf( backEnd.viewParms.projectionMatrix );
 	mbMatrixMode(MB_MODELVIEW);
+	if ( backEnd.temporalScene ) {
+		RB_TemporalProjection( qfalse );
+	}
 
 	// set the window clipping
 	mbViewport( backEnd.viewParms.viewportX, backEnd.viewParms.viewportY, 
@@ -883,6 +889,9 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 			}
 
 			mbLoadMatrixf( backEnd.ori.modelMatrix );
+			if ( backEnd.temporalScene ) {
+				RB_TemporalModelview();
+			}
 
 			//
 			// change depthrange if needed
@@ -972,6 +981,9 @@ void RB_RenderDrawSurfList( drawSurf_t *drawSurfs, int numDrawSurfs ) {
 
 	// go back to the world modelview matrix
 	mbLoadMatrixf( backEnd.viewParms.world.modelMatrix );
+	if ( backEnd.temporalScene ) {
+		mbTemporalObject( NULL );
+	}
 	if ( depthRange ) {
 		mbDepthRange (0, 1.0);
 		RB_DepthHackProjection( qfalse );
@@ -1326,6 +1338,7 @@ const void	*RB_DrawSurfs( const void *data ) {
 	backEnd.refdef = cmd->refdef;
 	backEnd.viewParms = cmd->viewParms;
 
+	RB_TemporalBeginView();
 	RB_SetupFog();
 	RB_RenderDrawSurfList( cmd->drawSurfs, cmd->numDrawSurfs );
 
@@ -1352,6 +1365,7 @@ const void* RB_SpriteSurfs(const void* data) {
     backEnd.refdef = cmd->refdef;
     backEnd.viewParms = cmd->viewParms;
 	
+	RB_TemporalBeginView();
 	RB_SetupFog();
     RB_RenderSpriteSurfList(cmd->drawSurfs, cmd->numDrawSurfs);
 
@@ -1534,7 +1548,9 @@ const void	*RB_SwapBuffers( const void *data ) {
 
 	MTLimp_LogComment( "***************** RB_SwapBuffers *****************\n\n\n" );
 
+	RB_TemporalEndScene();
 	MTLimp_EndFrame();
+	RB_TemporalFrame();
 
 	backEnd.in2D = qfalse;
 

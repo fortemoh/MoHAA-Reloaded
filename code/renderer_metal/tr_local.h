@@ -1321,6 +1321,10 @@ typedef struct {
 	// the current entity is a first-person one with a mirrored axis (the
 	// left-handed view weapon, cg_righthand 0): its culling is turned around (R_Cull)
 	qboolean entityMirrored;
+	// the temporal path (tr_temporal.c): a scene is being drawn, and the
+	// camera of its current view (0 the main view's, 1 the sky portal's, -1 none)
+	qboolean temporalScene;
+	int temporalCamera;
 } backEndState_t;
 
 /*
@@ -1990,6 +1994,14 @@ extern	shaderCommands_t	tess;
 void RB_BeginSurface(shader_t *shader );
 void RB_EndSurface(void);
 qboolean RB_DepthClampBatch( void );
+
+// tr_temporal.c: the temporal path (r_temporal, r_taa)
+void R_TemporalInit( void );
+void RB_TemporalFrame( void );
+void RB_TemporalBeginView( void );
+void RB_TemporalProjection( qboolean depthHack );
+void RB_TemporalModelview( void );
+void RB_TemporalEndScene( void );
 void RB_CheckOverflow( int verts, int indexes );
 #define RB_CHECKOVERFLOW(v,i) if (tess.numVertexes + (v) >= SHADER_MAX_VERTEXES || tess.numIndexes + (i) >= SHADER_MAX_INDEXES ) {RB_CheckOverflow(v,i);}
 

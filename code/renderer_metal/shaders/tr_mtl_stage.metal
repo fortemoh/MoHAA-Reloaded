@@ -532,3 +532,161 @@ vertex MbQueryOut mb_query_vs( constant float4 &position [[buffer(1)]] )
 	out.size = 1.0f;
 	return out;
 }
+
+//
+// The temporal path (r_temporal; tr_temporal.c, mbTemporal* in tr_mtl.m; the idea from JayRewd's Vulkan renderer,
+// renderervk's temporal path): the scene pass has a second attachment, the motion vectors (RG16Float: each pixel's
+// surface's move since the last frame, in the view's texture coordinates, x right and y down, this frame's place
+// minus the last). The draws that write color without blending write them with these copies of mb_stage_vs,
+// mb_skin_vs and mb_stage_fs; the blended draws, the clears and the depth queries keep the shaders above, that
+// attachment's writes masked. The last frame's place comes from the draw's last frame's transform (buffer 3: the
+// camera's motion for what doesn't move, the entity's own for what does), this frame's from the draw's transform
+// without the projection's jitter. A skinned model moves as its entity does: its animation's own motion is not in
+// the vectors. The position is computed as above (invariant), so a later stage with depth func equal matches.
+// Keep the copies in sync with the shaders above.
+//
+struct MbTemporalVSUniforms
+{
+	float4x4	prevMvp;		// the last frame's projection * modelview of the draw (GL clip space)
+	float4		jitter;			// xy: this frame's projection offset in clip space per w, taken out of the vectors
+};
+
+struct MbStageTemporalOut
+{
+	float4	position [[position, invariant]];
+	float4	color;
+	float2	tc0;
+	float2	tc1;
+	float	eyeZ;
+	float3	curClip;		// this frame's place without the jitter: clip x, y, w
+	float3	prevClip;		// the last frame's
+	float	clip [[clip_distance]] [1];
+};
+
+struct MbStageTemporalIn
+{
+	float4	position [[position]];
+	float4	color;
+	float2	tc0;
+	float2	tc1;
+	float	eyeZ;
+	float3	curClip;
+	float3	prevClip;
+};
+
+struct MbStageTemporalFragment
+{
+	float4	color [[color(0)]];
+	float2	velocity [[color(1)]];
+};
+
+static void MB_TemporalPlaces( thread MbStageTemporalOut &out, float4 pos, constant MbTemporalVSUniforms &t )
+{
+	float4 prev = t.prevMvp * pos;
+
+	out.curClip = float3( out.position.xy - t.jitter.xy * out.position.w, out.position.w );
+	out.prevClip = prev.xyw;
+}
+
+vertex MbStageTemporalOut mb_stage_temporal_vs( uint vid [[vertex_id]],
+	device const uchar *ring [[buffer(0)]],
+	constant MbVSUniforms &u [[buffer(1)]],
+	constant MbTemporalVSUniforms &t [[buffer(3)]] )
+{
+	MbStageTemporalOut out;
+	device const float *p = (device const float *)( ring + u.offset.x + vid * u.stride.x );
+	float4 pos = float4( p[0], p[1], 0.0f, 1.0f );
+
+	if ( u.posSize > 2u ) {
+		pos.z = p[2];
+		if ( u.posSize > 3u ) {
+			pos.w = p[3];
+		}
+	}
+
+	if ( u.stride.y == 0u ) {
+		out.color = u.color;
+	} else if ( u.colorFloat ) {
+		out.color = float4( *(device const packed_float4 *)( ring + u.offset.y + vid * u.stride.y ) );
+	} else {
+		out.color = float4( *(device const uchar4 *)( ring + u.offset.y + vid * u.stride.y ) ) * ( 1.0f / 255.0f );
+	}
+
+	out.tc0 = u.stride.z ? float2( *(device const packed_float2 *)( ring + u.offset.z + vid * u.stride.z ) ) : u.texCoord.xy;
+	out.tc1 = u.stride.w ? float2( *(device const packed_float2 *)( ring + u.offset.w + vid * u.stride.w ) ) : u.texCoord.zw;
+
+	out.position = u.mvp * pos;
+	MB_TemporalPlaces( out, pos, t );
+	out.position.z = ( out.position.z + out.position.w ) * 0.5f;	// GL clip z [-w, w] -> Metal [0, w]
+	out.eyeZ = dot( u.eyeZ, pos );
+	out.clip[0] = dot( u.clipPlane, pos );
+	return out;
+}
+
+vertex MbStageTemporalOut mb_skin_temporal_vs( uint vid [[vertex_id]],
+	device const uchar *ring [[buffer(0)]],
+	constant MbVSUniforms &u [[buffer(1)]],
+	device const uint *skin [[buffer(2)]],
+	constant MbTemporalVSUniforms &t [[buffer(3)]] )
+{
+	MbStageTemporalOut out;
+	MbSkinVertex v = MB_Skin( vid, ring, skin, u.skin );
+	float4 pos = float4( v.xyz, 1.0f );
+
+	if ( u.stride.y == 0u ) {
+		out.color = float4( v.color ) * ( 1.0f / 255.0f );
+	} else if ( u.colorFloat ) {
+		out.color = float4( *(device const packed_float4 *)( ring + u.offset.y + vid * u.stride.y ) );
+	} else {
+		out.color = float4( *(device const uchar4 *)( ring + u.offset.y + vid * u.stride.y ) ) * ( 1.0f / 255.0f );
+	}
+
+	out.tc0 = v.tc;
+	out.tc1 = u.stride.w ? float2( *(device const packed_float2 *)( ring + u.offset.w + vid * u.stride.w ) ) : u.texCoord.zw;
+
+	out.position = u.mvp * pos;
+	MB_TemporalPlaces( out, pos, t );
+	out.position.z = ( out.position.z + out.position.w ) * 0.5f;	// GL clip z [-w, w] -> Metal [0, w]
+	out.eyeZ = dot( u.eyeZ, pos );
+	out.clip[0] = dot( u.clipPlane, pos );
+	return out;
+}
+
+fragment MbStageTemporalFragment mb_stage_temporal_fs( MbStageTemporalIn in [[stage_in]],
+	constant MbFSUniforms &u [[buffer(0)]],
+	texture2d<float> tex0 [[texture(0), function_constant(mb_tex0)]],
+	texture2d<float> tex1 [[texture(1), function_constant(mb_tex1)]],
+	sampler smp0 [[sampler(0), function_constant(mb_tex0)]],
+	sampler smp1 [[sampler(1), function_constant(mb_tex1)]] )
+{
+	MbStageTemporalFragment out;
+	float4 primary = saturate( in.color );
+	float4 c = primary;
+	float2 cur, prev;
+
+	if ( mb_tex0 ) {
+		c = MB_TexEnv( u.env0, tex0.sample( smp0, in.tc0 ), c, primary, ( u.flags & MB_FS_RGB0 ) != 0u );
+	}
+	if ( mb_tex1 ) {
+		c = MB_TexEnv( u.env1, tex1.sample( smp1, in.tc1 ), c, primary, ( u.flags & MB_FS_RGB1 ) != 0u );
+	}
+
+	if ( u.flags & MB_FS_FOG ) {
+		// GL linear fog on the eye-space depth, applied before the alpha test and blending
+		float f = saturate( ( u.fogEnd - abs( in.eyeZ ) ) * u.fogScale );
+		c.rgb = mix( u.fogColor.rgb, c.rgb, f );
+	}
+
+	if ( mb_alphaTest ) {
+		if ( !MB_AlphaPasses( u.alphaFunc, c.a, u.alphaRef ) ) {
+			discard_fragment();
+		}
+	}
+
+	// behind the last frame's eye: no motion of its own (the effects then see only this frame there)
+	cur = in.curClip.xy / in.curClip.z;
+	prev = in.prevClip.z > 1e-4f ? in.prevClip.xy / in.prevClip.z : cur;
+	out.color = c;
+	out.velocity = ( cur - prev ) * float2( 0.5f, -0.5f );
+	return out;
+}

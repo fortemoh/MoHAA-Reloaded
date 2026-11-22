@@ -996,6 +996,7 @@ void Set2DWindow(int x, int y, int w, int h, float left, float right, float bott
 	}
 
 	R_IssuePendingRenderCommands();
+	RB_TemporalEndScene();
 	r2dHalfPixel = w > 0 ? 0.5f * fabsf(right - left) / w : 0.5f;
 	mbViewport(x, y, w, h);
 	mbScissor(x, y, w, h);

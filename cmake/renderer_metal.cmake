@@ -48,6 +48,7 @@ set(RENDERER_METAL_SOURCES
     ${RENDERER_METAL_DIR}/tr_sun_flare.cpp
     ${RENDERER_METAL_DIR}/tr_surface.c
     ${RENDERER_METAL_DIR}/tr_swipe.cpp
+    ${RENDERER_METAL_DIR}/tr_temporal.c
     ${RENDERER_METAL_DIR}/tr_terrain.c
     ${RENDERER_METAL_DIR}/tr_util.cpp
     ${RENDERER_METAL_DIR}/tr_vis.cpp
@@ -60,6 +61,7 @@ set(RENDERER_METAL_SHADERS
     ${RENDERER_METAL_DIR}/shaders/tr_mtl_final.metal
     ${RENDERER_METAL_DIR}/shaders/tr_mtl_radar.metal
     ${RENDERER_METAL_DIR}/shaders/tr_mtl_stage.metal
+    ${RENDERER_METAL_DIR}/shaders/tr_mtl_temporal.metal
 )
 
 # Offline shader compilation with the Metal Toolchain, embedded in the binary as a C array. Its folder, unless
