@@ -1532,25 +1532,26 @@ void UI_CompHud_Frame(void)
 
 THE TEAM TAG
 
-The player aimed at, over their head (the cgame's, in place of their head
-icon), CS2's way: their name, their health under it and an arrow down to
-their head, in their team's color (the health red under cg_hud_lowhealth),
-with the HUD's drop shadow, the same size whatever the distance
+The player aimed at, over them (the cgame's, in place of their head icon:
+over their feet at their box's height, eased, not their swaying head),
+CS2's way: their name, their health under it as large and an arrow down to
+them, in the HUD's accent (cg_hud_accent: the health's and the ammo's; the
+health red under cg_hud_lowhealth), with the HUD's drop shadow, the same
+size whatever the distance
 
 ====================================================================
 */
 
 #define TTAG_NAME    22.0f  // the name's size (bold)
-#define TTAG_HEALTH  18.0f  // the health's (bold)
+#define TTAG_HEALTH  22.0f  // the health's (bold)
 #define TTAG_ARROW_W 14.0f  // the arrow's width and height
 #define TTAG_ARROW_H 9.0f
 #define TTAG_GAP     4.0f   // between the arrow and the health, the health and the name (over their capitals)
 #define TTAG_MAXW    220.0f // a longer name cut with "…"
 
 static const char *const ttag_arrow = "poly 1 1 1 1 0 0 1 0 0.5 1";
-// the teams' colors (the HUD's names'), the health's under cg_hud_lowhealth
-static const rlColor_t ttag_allies = {0.533f, 0.569f, 0.8f, 1.0f}, ttag_axis = {0.8f, 0.533f, 0.533f, 1.0f};
-static const rlColor_t ttag_low    = {0.753f, 0.188f, 0.129f, 1.0f};
+// the health's under cg_hud_lowhealth
+static const rlColor_t ttag_low = {0.753f, 0.188f, 0.129f, 1.0f};
 
 // the HUD's units (cg_hud_scale)
 static rlView_t Comp_HudView(void)
@@ -1577,8 +1578,7 @@ static void TTag_ArrowBox(const rlView_t& v, float cx, float tip, int *x, int *y
 void UI_DrawTeamTag(int client, float x, float y, int health)
 {
     const rlView_t    v     = Comp_HudView();
-    const int         team  = Comp_Team(client);
-    const rlColor_t   c     = team == TEAM_AXIS ? ttag_axis : team == TEAM_ALLIES ? ttag_allies : rlColor_t{1, 1, 1, 1};
+    const rlColor_t   c     = {comp_accent[ACC_MAIN][0], comp_accent[ACC_MAIN][1], comp_accent[ACC_MAIN][2], 1.0f};
     const rlColor_t   hc    = health < Comp_Cvar("cg_hud_lowhealth")->value * 100.0f ? ttag_low : c;
     const std::string name  = RL_Ellipsize(v, Comp_Name(client), TTAG_NAME, true, TTAG_MAXW);
     const float       capN  = TTAG_NAME * 0.81f, capH = TTAG_HEALTH * 0.81f; // (Oswald's capitals)
@@ -2315,15 +2315,14 @@ UIHudFollow
 
 The player followed (ui_hud_follow, their team's color ui_hud_follow_col,
 their team ui_hud_follow_team: allies or axis), CS2's way: a plate at the
-bottom's middle, SPECTATING over their name, their team's icon at its left
-(CS:GO's corners, ui_hud_corners: CS2's strip has it in its badge under the
-plate), a line of their team's color under it; as wide as the name. Over
+bottom's middle, their name alone (no SPECTATING over it since 2026-11-22),
+their team's icon at its left (CS:GO's corners, ui_hud_corners: CS2's strip
+has it in its badge under the plate), a line of their team's color under
+it; as wide as the name. Over
 the strip, else the HUD's margin, from the widget's bottom (the screen's)
 ================
 */
 #define FP_NAME    26.0f  // the name's size (bold)
-#define FP_CAPTION 14.0f  // SPECTATING's
-#define FP_TRACK   1.0f   // SPECTATING's spacing
 #define FP_ICON    38.0f  // the team's icon
 #define FP_LINE    3.0f   // the line under it
 #define FP_PAD     18.0f  // the plate's padding left and right
@@ -2349,7 +2348,7 @@ void UIHudFollow::Draw(void)
     static cvar_t *const col     = Cvar_Get("ui_hud_follow_col", "", 0);
     static cvar_t *const team    = Cvar_Get("ui_hud_follow_team", "", 0);
     static cvar_t *const corners = Cvar_Get("ui_hud_corners", "", 0);
-    static const rlColor_t fill = {0.047f, 0.055f, 0.071f, 0.78f}, caption = {1.0f, 1.0f, 1.0f, 0.612f};
+    static const rlColor_t fill = {0.047f, 0.055f, 0.071f, 0.78f};
     // (the HUD's: its faces those baked ahead, its small text in the HUD's font)
     rlView_t               v = Comp_HudView();
     rlColor_t              c = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -2370,8 +2369,7 @@ void UIHudFollow::Draw(void)
         const bool        icon  = corners->integer && t >= 0;
         const std::string shown = RL_Ellipsize(v, name->string, FP_NAME, true, FP_MAXW);
         const float       nw    = RL_TextW(v, shown.c_str(), FP_NAME, true);
-        const float       tw    = Q_max(nw, RL_TextW(v, "SPECTATING", FP_CAPTION, false, FP_TRACK));
-        const float       w     = FP_PAD + (icon ? FP_ICON + FP_GAP : 0.0f) + tw + FP_PAD;
+        const float       w     = FP_PAD + (icon ? FP_ICON + FP_GAP : 0.0f) + nw + FP_PAD;
         const float       h     = COMP_FOLLOW_H - FP_LINE;
         const float       x     = floorf((v.dw - w) * 0.5f);
         const float       y     = v.dh - (corners->integer ? 24.0f : 88.0f) - COMP_FOLLOW_H;
@@ -2382,8 +2380,7 @@ void UIHudFollow::Draw(void)
         if (icon) {
             RL_TeamIcon(v, t, x + FP_PAD + FP_ICON * 0.5f, y + h * 0.5f, FP_ICON);
         }
-        RL_Text(v, tx, y + 9.0f, "SPECTATING", FP_CAPTION, caption, false, RL_LEFT, FP_TRACK, RL_TOP);
-        RL_Text(v, tx, y + h - 10.0f, shown.c_str(), FP_NAME, c, true, RL_LEFT, 0.0f, RL_BASE);
+        RL_Text(v, tx, y + h * 0.5f, shown.c_str(), FP_NAME, c, true, RL_LEFT, 0.0f, RL_MID);
     }
 }
 
@@ -3427,7 +3424,6 @@ void UI_CompHud_PreBake(qboolean ahead)
         RL_Face(v, TTAG_HEALTH, true, true);
         // (and the followed player's plate's, HudFollow)
         RL_Face(v, FP_NAME, true);
-        RL_Face(v, FP_CAPTION, false);
         TTag_ArrowBox(v, 0.0f, 0.0f, &ax, &ay, &aw, &ah);
         rl_bakeOnly = true;
         RL_Shape(ax, ay, aw, ah, ttag_arrow, {1.0f, 1.0f, 1.0f, 1.0f}, v.s);
