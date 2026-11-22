@@ -61,12 +61,18 @@ cvar_t *cg_spectatefirstperson;
 // the player's model's animation slots: the legs in 0 and 1, the upper body in 2 and 3
 #define FE_TORSO_SLOT 2
 
+// a stock server's frame (ms; they run 20 a second)
+#define FE_SERVER_FRAME 50
+
 // the hit's view kick, as the server's Player::DamageFeedback (g_viewkick_pitch, _yaw, _roll defaults),
-// worked once a server frame (stock servers run 20 a second)
+// worked once a server frame
 #define FE_KICK_PITCH 0.3f
 #define FE_KICK_YAW   0.3f
 #define FE_KICK_ROLL  0.15f
-#define FE_KICK_FRAME 50
+
+// the number the turret's view model of a followed player on a turret takes in the snapshots (see FE_Turret): one
+// below the world's, which the servers leave to the last
+#define FE_TURRET_VIEWMODEL (ENTITYNUM_WORLD - 1)
 
 // the bullets and explosions the server sent lately, to tell where a hit came from
 #define FE_MAX_SHOTS 32
@@ -108,6 +114,11 @@ static struct {
     int      damageDir;
     qboolean airborne; // off the ground in the snapshot read (see FE_Airborne), and the last one they were in
     int      airTime;
+    // the turret they are on: its animation and the slot it is in, and the shake its shots give their view
+    // (see FE_Turret)
+    feAnim_t turretAnim;
+    int      turretSlot;
+    float    turretJitter;
     // the entity the cgame draws as its first-person model, and for each player
     // what is added to their usageIndex (see FE_Salt)
     int      viewEnt;
@@ -404,7 +415,8 @@ sets the first-person animation as it enters a state, and the state's upper body
 "smg_stand_fire" fire (each shot), "grenade_crouch_charge" charge, "kar98_stand_rechamber" rechamber,
 "rifle_reload" / "springfield_reload_start" reload, "shotgun_reload_loop" reload_single (each shell),
 "shotgun_reload_end" reload_end, "pistol_butt" fire_secondary, "smg_crouch_lower" putaway, "pistol_stand_raise"
-pullout. With none it is back to idle (see CG_FollowEyes_Snapshot).
+pullout. With none it is back to idle (see CG_FollowEyes_Snapshot); a ladder's steps come from the animations'
+own frame commands (FE_FrameVMAnim).
 ===============
 */
 static int FE_TorsoVMAnim(const char *anim)
@@ -436,11 +448,93 @@ static int FE_TorsoVMAnim(const char *anim)
     if (FE_EndsWith(anim, "_raise")) {
         return VM_ANIM_PULLOUT;
     }
-    if (strstr(anim, "ladder")) {
-        return VM_ANIM_LADDERSTEP;
+
+    return -1;
+}
+
+/*
+===============
+FE_VMAnimForName
+
+The first-person animation a "viewmodelanim" names (Player::ViewModelAnim), -1 for none
+===============
+*/
+static int FE_VMAnimForName(const char *name)
+{
+    static const struct {
+        const char *name;
+        int         anim;
+    } anims[] = {
+        {"charge",         VM_ANIM_CHARGE        },
+        {"fire",           VM_ANIM_FIRE          },
+        {"fire_secondary", VM_ANIM_FIRE_SECONDARY},
+        {"rechamber",      VM_ANIM_RECHAMBER     },
+        {"reload",         VM_ANIM_RELOAD        },
+        {"reload_single",  VM_ANIM_RELOAD_SINGLE },
+        {"reload_end",     VM_ANIM_RELOAD_END    },
+        {"pullout",        VM_ANIM_PULLOUT       },
+        {"putaway",        VM_ANIM_PUTAWAY       },
+        {"ladderstep",     VM_ANIM_LADDERSTEP    },
+        {"idle",           VM_ANIM_IDLE          },
+    };
+    int i;
+
+    for (i = 0; i < (int)ARRAY_LEN(anims); i++) {
+        if (!Q_stricmp(name, anims[i].name)) {
+            return anims[i].anim;
+        }
     }
 
     return -1;
+}
+
+/*
+===============
+FE_FrameVMAnim
+
+The first-person animation an animation's own frame commands set after its time from and up to to (its server
+commands "viewmodelanim ladderstep" at a frame or its last: the ladders' in models/player/base/anims_misc.txt),
+-1 for none
+===============
+*/
+static int FE_FrameVMAnim(dtiki_t *tiki, int anim, float from, float to)
+{
+    const dtikianimdef_t *def;
+    float                 frameTime, t;
+    int                   i, frames, vm = -1;
+
+    if (!tiki || !tiki->a || anim < 0 || anim >= tiki->a->num_anims) {
+        return -1;
+    }
+
+    def       = tiki->a->animdefs[anim];
+    frameTime = cgi.Anim_Frametime(tiki, anim);
+    frames    = cgi.Anim_NumFrames(tiki, anim);
+
+    for (i = 0; def && i < def->num_server_cmds; i++) {
+        const dtikicmd_t *cmd = &def->server_cmds[i];
+
+        if (cmd->num_args < 2 || Q_stricmp(cmd->args[0], "viewmodelanim")) {
+            continue;
+        }
+
+        if (cmd->frame_num >= 0) {
+            t = cmd->frame_num * frameTime;
+        } else if (cmd->frame_num == TIKI_FRAME_LAST || cmd->frame_num == TIKI_FRAME_END) {
+            t = (frames - 1) * frameTime;
+        } else {
+            continue;
+        }
+        // the server runs it that long after the animation began (Animate::NewAnim posts it), and the time
+        // snapshots show is a frame further on (the first shows a frame's)
+        t += FE_SERVER_FRAME / 1000.0f;
+
+        if (t > from && t <= to && FE_VMAnimForName(cmd->args[1]) != -1) {
+            vm = FE_VMAnimForName(cmd->args[1]);
+        }
+    }
+
+    return vm;
 }
 
 /*
@@ -979,7 +1073,7 @@ static void FE_HitFeedback(playerState_t *ps, const snapshot_t *snap, const enti
     int    frames, health, damage;
 
     health = ps->stats[STAT_INFOCLIENT_HEALTH];
-    frames = lastServerTime ? (snap->serverTime - lastServerTime + FE_KICK_FRAME / 2) / FE_KICK_FRAME : 1;
+    frames = lastServerTime ? (snap->serverTime - lastServerTime + FE_SERVER_FRAME / 2) / FE_SERVER_FRAME : 1;
     frames = Com_Clamp(1, 40, frames);
 
     // the server frames before this snapshot's
@@ -1031,6 +1125,178 @@ static void FE_HitFeedback(playerState_t *ps, const snapshot_t *snap, const enti
 
     FE_AddBlend(ps->blend, 1, 0, 0, fe.flash);
     ps->stats[STAT_DAMAGEDIR] = fe.damageDir;
+}
+
+/*
+===============
+FE_OnTurret
+
+A followed player on a turret: the flag servers set from Spearhead's code on (EF_PLAYER_ARTILLERY), or for
+Allied Assault's the upper body's newest animation, the turret's (global/mike_torso.st, TURRET_IDLE: it starts
+as they take the turret, and the next as they leave it)
+===============
+*/
+static qboolean FE_OnTurret(const entityState_t *pl)
+{
+    const frameInfo_t *fi = NULL;
+    const char        *name;
+    int                i;
+
+    if (pl->eFlags & EF_PLAYER_ARTILLERY) {
+        return qtrue;
+    }
+
+    for (i = FE_TORSO_SLOT; i < FE_TORSO_SLOT + 2; i++) {
+        if (pl->frameInfo[i].weight > 0 && (!fi || pl->frameInfo[i].time < fi->time)) {
+            fi = &pl->frameInfo[i];
+        }
+    }
+    name = fi ? cgi.Anim_NameForNum(cgi.R_Model_GetHandle(cgs.model_draw[pl->modelindex]), fi->index) : NULL;
+
+    return name && !Q_stricmpn(name, "turret_", 7);
+}
+
+/*
+===============
+FE_Turret
+
+A followed player on a turret (see FE_OnTurret): the server shows them the turret's view model on their eyes
+instead of the turret (TurretGun::P_CreateViewModel: "<its model>_viewmodel.tik", playing the turret's
+animation, sent to them only, the turret left out of their snapshots), with the turret their item and a
+crosshair (Player::UpdateStats), and their view the turret's camera. The same made here from the turret in the
+snapshot: its view model taken from the models the server registered for it; with none (not registered) the
+turret stays as it is.
+===============
+*/
+static void FE_Turret(snapshot_t *snap, playerState_t *ps, int follow, int playerModel, const vec3_t eye)
+{
+    const entityState_t *turret = NULL;
+    const frameInfo_t   *fi     = NULL;
+    entityState_t        vm;
+    dtiki_t             *tiki, *vmTiki, *ptiki;
+    char                 name[MAX_QPATH];
+    const char          *arg, *anim;
+    float                best = Square(96);
+    vec3_t               ofs;
+    qboolean             shot;
+    int                  i, item, vmIndex = 0, slot, fiSlot = -1, idle;
+
+    for (i = 0; i < snap->numEntities; i++) {
+        const entityState_t *es = &snap->entities[i];
+
+        if (!es->modelindex || es->number == FE_TURRET_VIEWMODEL) {
+            continue;
+        }
+        tiki = cgi.R_Model_GetHandle(cgs.model_draw[es->modelindex]);
+        arg  = FE_ServerInitArg(tiki, "classname");
+        if (arg && !Q_stricmp(arg, "TurretGun") && DistanceSquared(es->origin, eye) < best) {
+            best   = DistanceSquared(es->origin, eye);
+            turret = es;
+        }
+    }
+    if (!turret) {
+        return;
+    }
+
+    tiki = cgi.R_Model_GetHandle(cgs.model_draw[turret->modelindex]);
+    item = FE_ItemIndex(FE_ServerInitArg(tiki, "name"));
+    if (item > 0) {
+        ps->activeItems[1] = item;
+    }
+    ps->stats[STAT_EQUIPPED_WEAPON] = 0;
+    ps->stats[STAT_CROSSHAIR]       = 1;
+
+    // the turret's animation, its heaviest: each shot starts "fire" again, in the next slot
+    // (Weapon::SetWeaponAnim)
+    for (slot = 0; slot < MAX_FRAMEINFOS; slot++) {
+        if (turret->frameInfo[slot].weight > 0 && (!fi || turret->frameInfo[slot].weight > fi->weight)) {
+            fi     = &turret->frameInfo[slot];
+            fiSlot = slot;
+        }
+    }
+    anim = fi ? cgi.Anim_NameForNum(tiki, fi->index) : NULL;
+    shot = FE_AnimChanged(&fe.turretAnim, fi ? fi->index : -1, fi ? fi->time : 0) || fiSlot != fe.turretSlot;
+    shot = shot && anim && !Q_stricmp(anim, "fire");
+    fe.turretSlot = fiSlot;
+
+    // their view: the turret's camera (TurretGun::P_ThinkActive, with g_turretcameras 1, the default) at the
+    // turret, its view offset turned with their aim, shaken for a moment by each shot (P_ApplyFiringViewJitter),
+    // as wide as the server zoomed them (ToggleZoom(80))
+    arg = FE_ServerInitArg(tiki, "viewOffset");
+    if (arg && sscanf(arg, "%f %f %f", &ofs[0], &ofs[1], &ofs[2]) == 3) {
+        if (shot) {
+            arg             = FE_ServerInitArg(tiki, "viewjitter");
+            fe.turretJitter = arg ? atof(arg) : 0;
+        }
+        ps->pm_flags |= PMF_CAMERA_VIEW | PMF_TURRET;
+        ps->camera_flags |= CF_CAMERA_ANGLES_TURRETMODE;
+        VectorCopy(turret->origin, ps->camera_origin);
+        ps->camera_angles[PITCH] = ps->viewangles[PITCH] + crandom() * fe.turretJitter;
+        ps->camera_angles[YAW]   = ps->viewangles[YAW] + crandom() * fe.turretJitter;
+        ps->camera_angles[ROLL]  = ps->viewangles[ROLL] + crandom() * fe.turretJitter * 0.8f;
+        VectorCopy(ofs, ps->camera_posofs);
+        ps->stats[STAT_INZOOM] = ps->fov;
+        fe.turretJitter        = Q_max(0, fe.turretJitter - 6 * FE_SERVER_FRAME / 1000.0f);
+    }
+
+    COM_StripExtension(CG_ConfigString(CS_MODELS + turret->modelindex), name, sizeof(name));
+    Q_strcat(name, sizeof(name), "_viewmodel.tik");
+    for (i = 1; i < MAX_MODELS && CS_MODELS + i < CS_SOUNDS; i++) {
+        if (!Q_stricmp(CG_ConfigString(CS_MODELS + i), name)) {
+            vmIndex = i;
+            break;
+        }
+    }
+    vmTiki = vmIndex ? cgi.R_Model_GetHandle(cgs.model_draw[vmIndex]) : NULL;
+    ptiki  = cgi.R_Model_GetHandle(cgs.model_draw[playerModel]);
+    if (!vmTiki || !ptiki || snap->numEntities >= MAX_ENTITIES_IN_SNAPSHOT) {
+        return;
+    }
+    for (i = 0; i < snap->numEntities; i++) {
+        if (snap->entities[i].number == FE_TURRET_VIEWMODEL) {
+            return;
+        }
+    }
+
+    // a new entity's state as the server makes it (Level::AllocEdict), the view model's (P_CreateViewModel)
+    memset(&vm, 0, sizeof(vm));
+    vm.number            = FE_TURRET_VIEWMODEL;
+    vm.eType             = ET_MODELANIM;
+    vm.modelindex        = vmIndex;
+    vm.parent            = follow;
+    vm.tag_num           = cgi.Tag_NumForName(ptiki, "eyes bone");
+    vm.attach_use_angles = qtrue;
+    vm.beam_entnum       = ENTITYNUM_NONE;
+    vm.groundEntityNum   = ENTITYNUM_NONE;
+    vm.scale             = turret->scale;
+    vm.alpha             = 1;
+    vm.constantLight     = 0xffffff;
+    vm.renderfx          = RF_FRAMELERP | RF_ALWAYSDRAW;
+    vm.usageIndex        = turret->usageIndex;
+    vm.actionWeight      = 1;
+    vm.quat[3]           = 1;
+    for (i = 0; i < NUM_BONE_CONTROLLERS; i++) {
+        vm.bone_tag[i]     = -1;
+        vm.bone_quat[i][3] = 1;
+    }
+    // its animations: the turret's, slot by slot (TurretGun::P_SetWeaponAnim starts each on both; a new slot
+    // each shot is what plays its sound and flash again)
+    idle = cgi.Anim_NumForName(vmTiki, "idle");
+    for (slot = 0; slot < MAX_FRAMEINFOS; slot++) {
+        const char *slotAnim = cgi.Anim_NameForNum(tiki, turret->frameInfo[slot].index);
+        const int   index    = slotAnim ? cgi.Anim_NumForName(vmTiki, slotAnim) : -1;
+
+        vm.frameInfo[slot]       = turret->frameInfo[slot];
+        vm.frameInfo[slot].index = index >= 0 ? index : idle;
+    }
+    if (vm.tag_num < 0 || idle < 0) {
+        return;
+    }
+
+    // the turret out of the snapshot (as from theirs), the view model at its end (the numbers go up)
+    i = turret - snap->entities;
+    memmove(&snap->entities[i], &snap->entities[i + 1], (snap->numEntities - i - 1) * sizeof(entityState_t));
+    snap->entities[snap->numEntities - 1] = vm;
 }
 
 /*
@@ -1171,6 +1437,9 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         fe.flash            = 0;
         fe.damageDir        = ps->stats[STAT_DAMAGEDIR];
         fe.airTime          = 0;
+        fe.turretAnim.index = -1;
+        fe.turretSlot       = -1;
+        fe.turretJitter     = 0;
         VectorClear(fe.kick);
         // their eye height at once (the first-person view eases changes of it in)
         cg.fCurrentViewHeight = 0;
@@ -1300,14 +1569,28 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         }
 
         if (ptiki && fi) {
+            const int   lastIndex = fe.torsoAnim.index;
+            const float lastTime  = fe.torsoAnim.time;
+            int         frame;
+
             if (FE_AnimChanged(&fe.torsoAnim, fi->index, fi->time)) {
                 int torso = FE_TorsoVMAnim(cgi.Anim_NameForNum(ptiki, fi->index));
+
+                // the frame commands the last one had left as it ended, and the new one's since it started
+                frame = FE_FrameVMAnim(ptiki, fi->index, -1, fi->time);
+                if (frame == -1 && lastIndex >= 0) {
+                    frame = FE_FrameVMAnim(ptiki, lastIndex, lastTime, 1e9f);
+                }
 
                 if (torso != -1) {
                     vmAnim        = torso;
                     fe.torsoKnown = qtrue;
+                } else if (frame != -1) {
+                    vmAnim = frame;
                 }
                 fe.torsoWeight = 0;
+            } else if ((frame = FE_FrameVMAnim(ptiki, fi->index, lastTime, fi->time)) != -1) {
+                vmAnim = frame;
             }
 
             active         = fi->weight + 0.01f >= fe.torsoWeight;
@@ -1328,6 +1611,19 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
     }
     ps->iViewModelAnim        = fe.vmAnim;
     ps->iViewModelAnimChanged = fe.vmAnimChanged;
+
+    // on a turret (last: it changes the snapshot's entities, pl among them)
+    if (FE_OnTurret(pl)) {
+        vec3_t eye;
+
+        VectorCopy(pl->origin, eye);
+        eye[2] += ps->viewheight;
+        FE_Turret(snap, ps, follow, pl->modelindex, eye);
+    } else {
+        fe.turretAnim.index = -1;
+        fe.turretSlot       = -1;
+        fe.turretJitter     = 0;
+    }
 
     FE_Salt(snap, follow);
 }
