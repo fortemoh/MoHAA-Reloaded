@@ -14,8 +14,8 @@ set(CGAME_MODULE cgame)
 set(GAME_MODULE game)
 set(UI_MODULE ui)
 
-# The Metal port's icon (misc/macos/openmohaa-metal.svg, built with port/makeicon.swift)
-set(MACOS_ICON_PATH ${CMAKE_SOURCE_DIR}/misc/macos/openmohaa-metal.icns)
+# The Metal port's icon (misc/macos/mohreloaded.svg, built with port/makeicon.swift)
+set(MACOS_ICON_PATH ${CMAKE_SOURCE_DIR}/misc/macos/mohreloaded.icns)
 # The Metal port's own app identity (its first release, 2026-10-20): the bundle ID, kept through the rename (macOS
 # keys the game's permissions and settings by it). The Info.plist's version and the release zip's are PROJECT_VERSION.
 set(MACOS_BUNDLE_ID io.github.pstngh.openmohaa-metal)

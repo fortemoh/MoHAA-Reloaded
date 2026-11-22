@@ -1,0 +1,25 @@
+MoHAA Reloaded's dedicated server for macOS, version @VERSION@
+==========================================================
+
+The server for Medal of Honor: Allied Assault, Spearhead and Breakthrough, for Apple Silicon Macs
+(M1 or later) with macOS 26 or later. The game data is not included: the server needs a retail copy's
+main/ (Pak0.pk3 to Pak6.pk3), and mainta/ or maintt/ for Spearhead or Breakthrough.
+
+1. Clear the download's quarantine, once (the server is signed ad hoc, not notarized by Apple):
+     xattr -dr com.apple.quarantine ~/Downloads/mohreloaded-server-@VERSION@-mac
+
+2. Copy mohreloaded-server and game.dylib into the game folder, next to main/.
+
+3. Start it there, in Terminal, with your server's config in main/ (server.cfg here):
+     ./mohreloaded-server +set com_target_game 0 +exec server.cfg    Allied Assault
+     ./mohreloaded-server +set com_target_game 1 +exec server.cfg    Spearhead
+     ./mohreloaded-server +set com_target_game 2 +exec server.cfg    Breakthrough
+
+4. Let UDP port 12203 through the firewall (+set net_port changes it).
+
+The settings, with an example config:
+https://github.com/fortemoh/MoHAA-Reloaded/blob/metal/docs/markdown/02-running/02-running-server.md
+
+MoHAA Reloaded is free software under the GNU General Public License, version 2 (COPYING.txt).
+Built from commit @COMMIT@ of https://github.com/fortemoh/MoHAA-Reloaded (the full source code of
+this build) by its CI.

@@ -1,12 +1,15 @@
 #!/bin/bash
-# The release zip, ad-hoc signed (no Developer ID, no notarization): mohreloaded-<version>-macos-arm64.zip from
+# The release zips, ad-hoc signed (no Developer ID, no notarization). The game's, mohreloaded-<version>-mac.zip, from
 # an installed build, with the sealed mohreloaded.app (game.dylib and cgame.dylib inside it), MoHAA Launcher's
 # mohlauncher.app (launcher/macos, built here), COPYING.txt, the licenses of the libraries built into it, the install
-# text (port/release/INSTALL.txt) and the source commit. Never game data.
+# text (port/release/INSTALL.txt) and the source commit. The dedicated server's, mohreloaded-server-<version>-mac.zip,
+# when the install has it (CI configures with -DBUILD_SERVER=ON; port/build.sh doesn't): mohreloaded-server and the
+# app's game.dylib, each signed ad hoc, COPYING.txt and port/release/INSTALL-server.txt (zlib and Recast & Detour,
+# the libraries in those two, ask for no notice there). Never game data.
 #   port/release.sh [install dir] [output dir]
 # The install dir is the one that holds mohreloaded.app: `cmake --install`'s <prefix>/lib/mohreloaded (CI,
 # .github/workflows/macos-metal.yml), default build.noindex/metal-install/lib/mohreloaded (port/build.sh metal). The
-# output dir (default build.noindex/release) gets the zip and its .sha256. The version is the app's
+# output dir (default build.noindex/release) gets the zips and their .sha256. The version is the app's
 # CFBundleShortVersionString (PROJECT_VERSION, cmake/identity.cmake). The build must be of HEAD in a clean tree.
 # Needs no port/env.sh, so CI runs it as is.
 set -euo pipefail
@@ -43,7 +46,7 @@ BUILT="${BUILT%%$'\n'*}"
 [ -n "$BUILT" ] && [ "${COMMIT#"$BUILT"}" != "$COMMIT" ] || die "mohreloaded.app was built from '${BUILT:-?}', not HEAD ($COMMIT): rebuild"
 
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
-NAME="mohreloaded-$VERSION-macos-arm64"
+NAME="mohreloaded-$VERSION-mac"
 STAGE="$OUT/$NAME"
 ZIP="$OUT/$NAME.zip"
 
@@ -91,3 +94,37 @@ rm -rf "$CHECK" "$STAGE"
 
 echo "release.sh: $ZIP"
 echo "release.sh: $(cut -d' ' -f1 "$ZIP.sha256")  version $VERSION, commit $COMMIT"
+
+SERVER="$INSTALL/mohreloaded-server"
+[ -e "$SERVER" ] || { echo "release.sh: no mohreloaded-server in $INSTALL: no server zip"; exit 0; }
+BUILT="$(strings "$SERVER" | sed -n 's/^MoHAA Reloaded [^ ]*+[0-9]*\.\([0-9a-f]*\) .*/\1/p')"
+BUILT="${BUILT%%$'\n'*}"
+[ -n "$BUILT" ] && [ "${COMMIT#"$BUILT"}" != "$COMMIT" ] || die "mohreloaded-server was built from '${BUILT:-?}', not HEAD ($COMMIT): rebuild"
+NAME="mohreloaded-server-$VERSION-mac"
+STAGE="$OUT/$NAME"
+ZIP="$OUT/$NAME.zip"
+rm -rf "$STAGE" "$ZIP" "$ZIP.sha256"
+mkdir -p "$STAGE"
+ditto "$SERVER" "$STAGE/mohreloaded-server"
+ditto "$APP/Contents/MacOS/game.dylib" "$STAGE/game.dylib"
+# outside the app's seal: each its own ad-hoc signature (arm64 runs nothing unsigned)
+codesign --force --sign - "$STAGE/mohreloaded-server" "$STAGE/game.dylib"
+cp "$ROOT/COPYING.txt" "$STAGE/"
+sed -e "s/@VERSION@/$VERSION/g" -e "s/@COMMIT@/$COMMIT/g" "$ROOT/port/release/INSTALL-server.txt" > "$STAGE/INSTALL.txt"
+! grep -q '@[A-Z]*@' "$STAGE/INSTALL.txt" || die "the server's INSTALL.txt has an unfilled placeholder"
+ditto -c -k --norsrc --keepParent "$STAGE" "$ZIP"
+! zipinfo -1 "$ZIP" | grep '/\._' || die "the server zip holds AppleDouble ._ files"
+(cd "$OUT" && shasum -a 256 "$NAME.zip" > "$NAME.zip.sha256")
+
+CHECK="$OUT/check-$NAME"
+rm -rf "$CHECK"
+mkdir -p "$CHECK"
+ditto -x -k "$ZIP" "$CHECK"
+codesign --verify --strict "$CHECK/$NAME/mohreloaded-server" || die "mohreloaded-server unzipped: its signature doesn't verify"
+codesign --verify --strict "$CHECK/$NAME/game.dylib" || die "the server's game.dylib unzipped: its signature doesn't verify"
+diff <(cd "$STAGE" && find . | sort) <(cd "$CHECK/$NAME" && find . | sort) || die "the server unzipped: the files differ"
+[ -x "$CHECK/$NAME/mohreloaded-server" ] || die "the server unzipped: not executable"
+rm -rf "$CHECK" "$STAGE"
+
+echo "release.sh: $ZIP"
+echo "release.sh: $(cut -d' ' -f1 "$ZIP.sha256")  the dedicated server, version $VERSION, commit $COMMIT"

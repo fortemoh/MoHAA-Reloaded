@@ -20,7 +20,7 @@ Install
 
      xattr -dr com.apple.quarantine
 
-   For example: xattr -dr com.apple.quarantine ~/Downloads/mohreloaded-@VERSION@-macos-arm64
+   For example: xattr -dr com.apple.quarantine ~/Downloads/mohreloaded-@VERSION@-mac
 
    Or, instead of Terminal: open mohlauncher.app from the folder you copied it to in step 4, and allow it
    with "Open Anyway" in System Settings > Privacy & Security. MoHAA Launcher then clears the quarantine

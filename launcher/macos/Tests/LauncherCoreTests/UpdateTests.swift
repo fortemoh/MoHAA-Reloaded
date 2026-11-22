@@ -3,7 +3,7 @@ import XCTest
 @testable import LauncherCore
 
 private let commitA = "aed952ba92532bf8596dc880a9afaf8fbfa4487b"
-private let assetName = "mohreloaded-1.0.0-macos-arm64.zip"
+private let assetName = "mohreloaded-1.0.0-mac.zip"
 private let hashA = String(repeating: "ab", count: 32)
 
 private func releaseJSON(digest: String? = "sha256:\(hashA)", row: String? = hashA, state: String = "uploaded",
@@ -11,11 +11,15 @@ private func releaseJSON(digest: String? = "sha256:\(hashA)", row: String? = has
                          url: String = "https://github.com/fortemoh/MoHAA-Reloaded/releases/download/v1.0.0/\(assetName)") -> Data {
     var asset: [String: Any] = ["name": name, "size": size, "state": state, "browser_download_url": url]
     if let digest { asset["digest"] = digest }
-    let other: [String: Any] = ["name": "mohreloaded-1.0.0-windows-x64.zip", "size": 9, "digest": "sha256:00",
+    let other: [String: Any] = ["name": "mohreloaded-1.0.0-windows.zip", "size": 9, "digest": "sha256:00",
                                 "state": "uploaded", "browser_download_url": "https://github.com/x"]
-    var body = "| File | SHA-256 |\n|---|---|\n| `mohreloaded-1.0.0-windows-x64.zip` | `\(String(repeating: "0", count: 64))` |\n"
+    // the dedicated server's zip starts and ends as the game's: never taken
+    let server: [String: Any] = ["name": "mohreloaded-server-1.0.0-mac.zip", "size": 9, "digest": "sha256:\(hashA)",
+                                 "state": "uploaded", "browser_download_url": "https://github.com/y"]
+    var body = "| File | SHA-256 |\n|---|---|\n| `mohreloaded-1.0.0-windows.zip` | `\(String(repeating: "0", count: 64))` |\n"
     if let row { body += "| `\(name)` | `\(row)` |\n" }
-    return try! JSONSerialization.data(withJSONObject: ["body": body, "assets": [other, asset]])
+    body += "| `mohreloaded-server-1.0.0-mac.zip` | `\(hashA)` |\n"
+    return try! JSONSerialization.data(withJSONObject: ["body": body, "assets": [other, server, asset]])
 }
 
 private func json(_ object: Any) -> Data { try! JSONSerialization.data(withJSONObject: object) }
@@ -45,6 +49,19 @@ private func fakeGitHub(release: Data = releaseJSON(), compare: String = "ahead"
 }
 
 final class UpdateCheckTests: XCTestCase {
+    func testTakesTheGameDownloadOnly() {
+        XCTAssertTrue(UpdateNames.isGameDownload("mohreloaded-1.0.0-mac.zip"))
+        XCTAssertTrue(UpdateNames.isGameDownload("mohreloaded-12.3.45-mac.zip"))
+        // the dedicated server's, another system's, upstream's and the names before 2026-11-22's split
+        XCTAssertFalse(UpdateNames.isGameDownload("mohreloaded-server-1.0.0-mac.zip"))
+        XCTAssertFalse(UpdateNames.isGameDownload("mohreloaded-1.0.0-windows.zip"))
+        XCTAssertFalse(UpdateNames.isGameDownload("mohreloaded-1.0.0-macos-arm64.zip"))
+        XCTAssertFalse(UpdateNames.isGameDownload("openmohaa-metal-1.0.0-macos-arm64.zip"))
+        XCTAssertFalse(UpdateNames.isGameDownload("mohreloaded-1.0-mac.zip"))
+        XCTAssertFalse(UpdateNames.isGameDownload("mohreloaded--mac.zip"))
+        XCTAssertFalse(UpdateNames.isGameDownload("mohreloaded-1.0.0-unstable-mac.zip"))
+    }
+
     func testReadsTheVersion() {
         func commit(_ text: String) -> String? { buildCommit(Data(text.utf8)) }
         XCTAssertEqual(commit("\0x+1.abcdef0\0OpenMoHAA 0.83.0-unstable+0.aed952b macosx-arm64 Nov 06 2026 UTC\0"), "aed952b")
@@ -139,7 +156,7 @@ final class UpdateCheckTests: XCTestCase {
     }
 
     func testZipPaths() {
-        let top = "mohreloaded-1.0.0-macos-arm64"
+        let top = "mohreloaded-1.0.0-mac"
         let good = ["\(top)/", "\(top)/COPYING.txt", "\(top)/mohreloaded.app/", "\(top)/mohreloaded.app/Contents/MacOS/mohreloaded",
                     "\(top)/licenses/opus/COPYING"]
         XCTAssertTrue(zipPathsAreSafe(good, top: top))

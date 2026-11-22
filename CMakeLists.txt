@@ -11,7 +11,7 @@ include(identity)
 
 project(${PROJECT_NAME} VERSION ${PROJECT_VERSION} LANGUAGES C CXX)
 
-# The Metal port ships no dedicated server (mohreloaded-server); -DBUILD_SERVER=ON builds it for local tests
+# The dedicated server (mohreloaded-server): CI builds it (-DBUILD_SERVER=ON) for its own download, port/build.sh doesn't
 option(BUILD_SERVER "Build dedicated server" OFF)
 option(BUILD_CLIENT "Build client" ON)
 option(BUILD_GAME_LIBRARIES "Build game module libraries" ON)

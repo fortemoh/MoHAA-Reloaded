@@ -1,7 +1,7 @@
 // The app icon: an SVG's artwork over the whole canvas, every size of an .iconset, for iconutil.
 //   xcrun swiftc -O -o build.noindex/makeicon port/makeicon.swift
-//   build.noindex/makeicon misc/macos/openmohaa-metal.svg build.noindex/icon.iconset
-//   iconutil -c icns -o misc/macos/openmohaa-metal.icns build.noindex/icon.iconset
+//   build.noindex/makeicon misc/macos/mohreloaded.svg build.noindex/icon.iconset
+//   iconutil -c icns -o misc/macos/mohreloaded.icns build.noindex/icon.iconset
 // The artwork is the user's (pstngh/moh-icons, mohaa-transparent.svg, byte for byte: its content credentials
 // sign the file): the gold star with no background, which macOS 26 scales down onto a plate of its own. So it
 // fills the canvas, as moh-launcher's icon does, and not Apple's 824/1024 rounded square, which would shrink the

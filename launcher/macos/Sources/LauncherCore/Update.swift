@@ -15,7 +15,7 @@ public enum UpdateNames {
     public static let repository = "fortemoh/MoHAA-Reloaded"
     public static let tag = "v1.0.0"
     public static let assetPrefix = "mohreloaded-"
-    public static let assetSuffix = "-macos-arm64.zip"
+    public static let assetSuffix = "-mac.zip"
     /// Where an update downloads and unpacks, in the game folder: the same volume, so files move by being renamed
     public static let workFolder = ".mohlauncher-update"
     public static let game = "mohreloaded.app"
@@ -30,6 +30,16 @@ public enum UpdateNames {
     public static let sourceKey = "MOHLauncherSource"
     public static let releasePage = URL(string: "https://github.com/\(repository)/releases/tag/\(tag)")!
     static let quarantine = "com.apple.quarantine"
+
+    /// The game's zip: assetPrefix, a version ("1.0.0") and assetSuffix. Not the dedicated server's
+    /// (mohreloaded-server-1.0.0-mac.zip), which starts and ends the same.
+    public static func isGameDownload(_ name: String) -> Bool {
+        guard name.hasPrefix(assetPrefix), name.hasSuffix(assetSuffix),
+              name.count > assetPrefix.count + assetSuffix.count else { return false }
+        let version = name.dropFirst(assetPrefix.count).dropLast(assetSuffix.count)
+        let parts = version.split(separator: ".", omittingEmptySubsequences: false)
+        return parts.count == 3 && parts.allSatisfy { part in !part.isEmpty && part.allSatisfy { $0.isASCII && $0.isNumber } }
+    }
     /// Never overwritten by a download's files: the player's data
     static let reserved: Set<String> = ["main", "mainta", "maintt", "mohlauncher.json", workFolder]
 }
@@ -206,7 +216,7 @@ private func isFullCommit(_ s: String) -> Bool {
 func releaseAsset(_ json: Data) -> (asset: String, url: URL, size: Int64, sha256: String)? {
     guard let release = try? JSONDecoder().decode(ReleaseJSON.self, from: json) else { return nil }
     let matching = (release.assets ?? []).filter {
-        $0.name.hasPrefix(UpdateNames.assetPrefix) && $0.name.hasSuffix(UpdateNames.assetSuffix)
+        UpdateNames.isGameDownload($0.name)
     }
     guard matching.count == 1, let asset = matching.first, asset.state == nil || asset.state == "uploaded",
           asset.size > 0, let digest = asset.digest, digest.hasPrefix("sha256:"),

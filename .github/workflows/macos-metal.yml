@@ -3,13 +3,14 @@
 # The Metal port: macOS 26 on Apple Silicon
 #
 # Builds with README.md's commands as written (Xcode's Metal Toolchain component, Homebrew's CMake, Ninja and Bison),
-# checks the install, and uploads the ad-hoc-signed release zip (port/release.sh, mohreloaded-<version>-macos-arm64.zip)
-# as a workflow artifact. A push that changes code (not only docs/ or *.md files), or a run by hand on metal, then
-# replaces the zip in the release of cmake/identity.cmake's version (v1.0.0), moves its tag to the commit and updates
-# the zip's SHA-256 in the notes (job release); the rest of the notes is written by hand. A Mac zip of another name
-# there (upstream's openmohaa-metal-..., or an earlier version's) is replaced by this one, in the notes too. Without a
-# published release of the version (vulkan's tags-publish-release.yml makes its draft) it does nothing. No secrets: the
-# job's own token.
+# plus the dedicated server (-DBUILD_SERVER=ON), checks the install, and uploads the ad-hoc-signed release zips
+# (port/release.sh: the game's mohreloaded-<version>-mac.zip, the server's mohreloaded-server-<version>-mac.zip) as
+# workflow artifacts. A push that changes code (not only docs/ or *.md files), or a run by hand on metal, then
+# replaces the two in the release of cmake/identity.cmake's version (v1.0.0), moves its tag to the commit and updates
+# their SHA-256s in the notes (job release; a missing row is added); the rest of the notes is written by hand. A Mac
+# zip of another name there (upstream's openmohaa-metal-..., -macos-arm64 of before, or an earlier version's) is
+# replaced by these, in the notes too. Without a published release of the version (vulkan's tags-publish-release.yml
+# makes its draft) it does nothing. No secrets: the job's own token.
 ##########################
 name: "macOS Metal build"
 
@@ -53,9 +54,10 @@ jobs:
         HOMEBREW_NO_INSTALL_CLEANUP: 1
       run: brew install cmake ninja bison
 
-    # README.md's three commands, as written (no -DMETAL_TOOLCHAIN_BIN: CMake finds the compiler by itself)
+    # README.md's three commands, as written (no -DMETAL_TOOLCHAIN_BIN: CMake finds the compiler by itself), and the
+    # dedicated server for its own download
     - name: Configure
-      run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/install"
+      run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/install" -DBUILD_SERVER=ON
 
     - name: Build
       run: cmake --build build
@@ -67,20 +69,20 @@ jobs:
       run: |
         set -euo pipefail
         D=install/lib/mohreloaded
-        # The prefix holds exactly the app (no dedicated server), with the game modules inside it
+        # The prefix holds exactly the app, with the game modules inside it, and the dedicated server
         diff <(cd install && find . -mindepth 1 -not -path './lib/mohreloaded/mohreloaded.app/*' | sort) \
-             <(printf '%s\n' ./lib ./lib/mohreloaded ./lib/mohreloaded/mohreloaded.app)
+             <(printf '%s\n' ./lib ./lib/mohreloaded ./lib/mohreloaded/mohreloaded-server ./lib/mohreloaded/mohreloaded.app)
         diff <(ls "$D/mohreloaded.app/Contents/MacOS") <(printf '%s\n' cgame.dylib game.dylib mohreloaded)
         # The whole bundle: no openal-soft since Phase 9g (no Frameworks, no license folder in Resources)
         diff <(cd "$D/mohreloaded.app" && find . -type f | sort) \
              <(printf '%s\n' ./Contents/Info.plist ./Contents/MacOS/cgame.dylib ./Contents/MacOS/game.dylib \
-                 ./Contents/MacOS/mohreloaded ./Contents/Resources/openmohaa-metal.icns \
+                 ./Contents/MacOS/mohreloaded ./Contents/Resources/mohreloaded.icns \
                  ./Contents/_CodeSignature/CodeResources | sort)
         codesign --verify --deep --strict --verbose=2 "$D/mohreloaded.app"
         codesign -dv "$D/mohreloaded.app" 2>&1 | grep -E '^(Identifier|Format|Signature)='
         /usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' -c 'Print CFBundleShortVersionString' "$D/mohreloaded.app/Contents/Info.plist"
         # arm64 only, and nothing loaded from outside the system or the app (no Homebrew paths)
-        for f in "$D"/mohreloaded.app/Contents/MacOS/*; do
+        for f in "$D"/mohreloaded.app/Contents/MacOS/* "$D/mohreloaded-server"; do
           [ "$(lipo -archs "$f")" = arm64 ]
           if otool -L "$f" | tail -n +2 | awk '{print $1}' | grep -vE '^(/System/|/usr/lib/|@rpath/)'; then
             echo "$f loads a library from outside the system or the app" >&2; exit 1
@@ -97,24 +99,32 @@ jobs:
     - name: Package
       run: |
         port/release.sh "$PWD/install/lib/mohreloaded" "$PWD/dist"
-        { echo '### Release zip (workflow artifact, not a release)'; echo; echo '```'; cat dist/*.zip.sha256; echo '```'; \
+        { echo '### Release zips (workflow artifacts, not a release)'; echo; echo '```'; cat dist/*.zip.sha256; echo '```'; \
           echo; echo "Commit $GITHUB_SHA"; } >> "$GITHUB_STEP_SUMMARY"
 
     # archive: false uploads the zip itself (one file), not wrapped in another zip
-    - name: Upload the release zip
+    - name: Upload the game's zip
       uses: actions/upload-artifact@v7
       with:
-        path: dist/mohreloaded-*-macos-arm64.zip
+        path: dist/mohreloaded-[0-9]*-mac.zip
+        archive: false
+        if-no-files-found: error
+        retention-days: 30
+
+    - name: Upload the server's zip
+      uses: actions/upload-artifact@v7
+      with:
+        path: dist/mohreloaded-server-*-mac.zip
         archive: false
         if-no-files-found: error
         retention-days: 30
 
     # for the job release, on Linux
-    - name: Hand the zip to the release job
+    - name: Hand the zips to the release job
       uses: actions/upload-artifact@v4
       with:
         name: release-zip
-        path: dist/mohreloaded-*-macos-arm64.zip
+        path: dist/mohreloaded-*-mac.zip
         if-no-files-found: error
         retention-days: 1
 
@@ -159,17 +169,21 @@ jobs:
         name: release-zip
         path: dist
 
-    - name: Replace the zip, move the tag, update the SHA-256 in the notes
+    - name: Replace the zips, move the tag, update the SHA-256s in the notes
       env:
         GH_TOKEN: ${{ github.token }}
         GH_REPO: ${{ github.repository }}
       run: |
         set -euo pipefail
-        # the zip's name holds the version (port/release.sh: the app's, cmake/identity.cmake's)
-        zip=$(ls dist/mohreloaded-*-macos-arm64.zip)
+        # the game zip's name holds the version (port/release.sh: the app's, cmake/identity.cmake's)
+        zip=$(ls dist/mohreloaded-[0-9]*-mac.zip)
         version=${zip#dist/mohreloaded-}
-        version=${version%-macos-arm64.zip}
+        version=${version%-mac.zip}
         [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "no version in $zip" >&2; exit 1; }
+        server="dist/mohreloaded-server-$version-mac.zip"
+        [ -f "$server" ] || { echo "no $server" >&2; exit 1; }
+        # in the notes' order: a missing SHA-256 row goes under the one before it
+        files="$zip $server"
         tag="v$version"
         if ! draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2> view.err); then
           cat view.err >&2
@@ -181,34 +195,47 @@ jobs:
           echo "$tag is still a draft: nothing replaced" | tee -a "$GITHUB_STEP_SUMMARY"
           exit 0
         fi
-        sha=$(sha256sum "$zip" | cut -d' ' -f1)
-        echo "$sha  $(basename "$zip")" | tee -a "$GITHUB_STEP_SUMMARY"
+        (cd dist && sha256sum *.zip) | tee -a "$GITHUB_STEP_SUMMARY"
 
         gh release view "$tag" --json body --jq .body > notes.md
-        python3 - notes.md "$(basename "$zip")" "$sha" "$version" <<'EOF'
-        import re, sys
-        notes, name, digest, version = sys.argv[1:]
+        python3 - notes.md "$version" $files <<'EOF'
+        import hashlib, os, re, sys
+        notes, version, files = sys.argv[1], sys.argv[2], sys.argv[3:]
         text = open(notes, encoding="utf-8").read()
-        # the zip's name wherever the notes give it: upstream's openmohaa-metal-..., or an earlier version's
-        text = re.sub(r"\b(?:openmohaa-metal|mohreloaded)-\d+\.\d+\.\d+-macos-arm64\b", "mohreloaded-" + version + "-macos-arm64", text)
-        text, n = re.subn(r"(\| `" + re.escape(name) + r"` \| `)[0-9a-f]{64}(` \|)", r"\g<1>" + digest + r"\g<2>", text)
-        if n == 0:
-            # a new version's release (vulkan's draft has the Linux and Windows rows): the Mac's row in its table
-            row = f"| `{name}` | `{digest}` |\n"
-            table = re.search(r"\| File \| SHA-256 \|\n\|---\|---\|\n", text)
-            text = text[:table.end()] + row + text[table.end():] if table else text.rstrip("\n") + "\n\n| File | SHA-256 |\n|---|---|\n" + row
-        elif n != 1:
-            sys.exit(f"the notes have {n} SHA-256 rows for {name}, not one")
+        # the zips' names wherever the notes give them: upstream's openmohaa-metal-..., -macos-arm64 of before, or an
+        # earlier version's
+        text = re.sub(r"\b(?:openmohaa-metal|mohreloaded)-\d+\.\d+\.\d+-mac(?:os-arm64)?\b", "mohreloaded-" + version + "-mac", text)
+        text = re.sub(r"\bmohreloaded-server-\d+\.\d+\.\d+-mac\b", "mohreloaded-server-" + version + "-mac", text)
+        row = lambda name: r"\| `" + re.escape(name) + r"` \| `[0-9a-f]{64}` \|\n"
+        before = None
+        for f in files:
+            name = os.path.basename(f)
+            digest = hashlib.sha256(open(f, "rb").read()).hexdigest()
+            line = f"| `{name}` | `{digest}` |\n"
+            found = re.findall(row(name), text)
+            if len(found) > 1:
+                sys.exit(f"the notes have {len(found)} SHA-256 rows for {name}, not one")
+            if found:
+                text = re.sub(row(name), lambda m: line, text)
+            elif before:
+                # the server's: under the game's row
+                at = re.search(row(before), text)
+                text = text[:at.end()] + line + text[at.end():]
+            else:
+                # a new version's release (vulkan's draft has the Linux and Windows rows): the Mac's row in its table
+                table = re.search(r"\| File \| SHA-256 \|\n\|---\|---\|\n", text)
+                text = text[:table.end()] + line + text[table.end():] if table else text.rstrip("\n") + "\n\n| File | SHA-256 |\n|---|---|\n" + line
+            before = name
         # gh adds a newline to the body it reads: without this, each update would add one
         open(notes, "w", encoding="utf-8").write(text.rstrip("\n") + "\n")
         EOF
 
-        gh release upload "$tag" "$zip" --clobber
-        # a Mac zip of another name, now that this one replaces it (the Linux and Windows downloads stay)
+        gh release upload "$tag" $files --clobber
+        # the Mac zips of other names, now that these replace them (the Linux and Windows downloads stay)
         gh release view "$tag" --json assets --jq '.assets[].name' | while read -r asset; do
+          case " $files " in *"/$asset "*) continue;; esac
           case $asset in
-          "$(basename "$zip")") ;;
-          *-macos-arm64.zip) gh release delete-asset "$tag" "$asset" --yes;;
+          *-mac.zip | *-macos-arm64.zip) gh release delete-asset "$tag" "$asset" --yes;;
           esac
         done
 

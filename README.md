@@ -22,10 +22,10 @@ Needs an Apple Silicon Mac (M1 or later) with macOS 26 or later. Developed and m
 
 ## Install
 
-1. Download `mohreloaded-<version>-macos-arm64.zip` from [Releases](https://github.com/fortemoh/MoHAA-Reloaded/releases) and unzip it.
+1. Download `mohreloaded-<version>-mac.zip` from [Releases](https://github.com/fortemoh/MoHAA-Reloaded/releases) and unzip it.
 2. **Clear the quarantine, once.** The app is signed ad hoc, not notarized by Apple, so macOS refuses to run the download until you do. In Terminal, type `xattr -dr com.apple.quarantine ` (with the trailing space), drag the unzipped folder onto the window and press Return:
    ```bash
-   xattr -dr com.apple.quarantine ~/Downloads/mohreloaded-1.0.0-macos-arm64
+   xattr -dr com.apple.quarantine ~/Downloads/mohreloaded-1.0.0-mac
    ```
    Open Anyway on `mohlauncher.app` works too: it then clears the quarantine itself and restarts. On the game itself "Open Anyway" in System Settings isn't enough: macOS then runs a read-only copy that can't find your game data, and the game stops and shows this line for your folder.
 3. Copy `mohreloaded.app` and `mohlauncher.app` into your MOHAA folder, next to `main/` (`Pak0.pk3` to `Pak6.pk3`; `mainta/` and `maintt/` for the expansions). Upstream's [installation guide](docs/markdown/01-intro/01-installation.md#linux-and-macos-users) shows how to get the data from the GOG installer.
@@ -33,7 +33,7 @@ Needs an Apple Silicon Mac (M1 or later) with macOS 26 or later. Developed and m
 
 Configs, saves, screenshots, demos and logs go into the game folder (`main/configs/omconfig.cfg`, `main/screenshots/`, …), as in the original game, or into `~/Library/Application Support/openmohaa/` if the game folder isn't writable. An older `main/configs/omconfig.cfg` in the game folder wins over the settings in Application Support: delete it to keep those. Started from MoHAA Launcher, everything goes into the game folder (below).
 
-Downloads before the rename were called `openmohaa-metal-1.0.0-…`, with the game as `openmohaa.app`: their launcher doesn't see the new download, so download this one by hand once, copy its two apps into the game folder and delete the old `openmohaa.app`. Your settings stay where they were.
+Downloads before the rename were called `openmohaa-metal-1.0.0-…`, with the game as `openmohaa.app`, and for a few hours on 2026-11-22 `mohreloaded-1.0.0-macos-arm64.zip`: their launcher doesn't see the new download, so download this one by hand once, copy its two apps into the game folder and delete the old `openmohaa.app`. Your settings stay where they were.
 
 ### MoHAA Launcher
 
@@ -121,7 +121,7 @@ In exclusive fullscreen, anything animating on another display costs frames (abo
 - Fire delays are rounded as MOHAA 1.11 does it, on a server this build hosts: a gun whose delay is a whole number of server frames is ready on the earlier frame as often as in stock (at `sv_fps 20` the Garand about 54% of shots, upstream OpenMoHAA 20%), and in Allied Assault a pistol whip right after a shot waits the 0.1 s delay, as in stock. It isn't a setting. On other servers the timing is theirs.
 - With `cl_movefps` on, a server receives one command per step, each exactly one step long: the steps a stock client at that rate sends on average. A shot or jump with `cl_movesubgrid` splits one step in two (4 + 4 ms at 125, as a stock client at 250 frames a second sends all the time).
 - No GUID: this client sends no `cl_guid`, as the original game's clients don't. Servers that track players by GUID see you without one.
-- No dedicated server is shipped (`-DBUILD_SERVER=ON` builds `mohreloaded-server` for local tests). For servers, use upstream's builds.
+- **A dedicated server** comes as its own download, `mohreloaded-server-<version>-mac.zip`: `mohreloaded-server` and `game.dylib`, to copy into the game folder next to `main/` (clear the download's quarantine first, as in step 2). Its `INSTALL.txt` has the commands; the settings are in upstream's [server guide](docs/markdown/02-running/02-running-server.md). CI builds it (`-DBUILD_SERVER=ON`); it hasn't been played on a Mac yet.
 
 ## Building
 
