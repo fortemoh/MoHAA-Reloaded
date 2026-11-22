@@ -297,14 +297,16 @@ static struct {
 } mb_radar;
 
 // The temporal path (mbTemporal*, tr_temporal.c, tr_mtl_temporal.metal; the idea from JayRewd's Vulkan renderer). Off,
-// none of this exists: no target, no pipeline, no pass, and the scene pass and its pipelines are as without it. On, a
-// scene (the frame's views of the world) is drawn in passes with a second attachment, the motion vectors, by pipelines
-// of their own (MB_PIPE_TEMPORAL) and with the projection jittered; when it ends (mbTemporalEndScene, before the 2D)
-// the anti-aliasing blends it with the last frame's result into a history target, and the frame goes on in the scene
-// target's other copy, its first draw the result sharpened (the composite), the 2D drawn over it. The two copies
-// trade places each scene, so the frame always ends in mb_sceneColor. The ambient occlusion (mbTemporalAo,
-// tr_mtl_ao.metal) has targets of its own and needs neither the motion vectors nor the jitter: alone, the scene is
-// drawn as without the path, its pass broken once in the main view for the occlusion.
+// none of this exists: no target, no pipeline, no pass, and the scene pass and its pipelines are as without it. With
+// the anti-aliasing or the motion blur (MB_TEMPORAL_VECTORS) a scene (the frame's views of the world) is drawn in
+// passes with a second attachment, the motion vectors, by pipelines of their own (MB_PIPE_TEMPORAL), the projection
+// jittered for the anti-aliasing only; when it ends (mbTemporalEndScene, before the 2D) the anti-aliasing blends it
+// with the last frame's result into a history target, the motion blur makes each pixel's blur and its tiles' longest,
+// and the frame goes on in the scene target's other copy, its first draw the composite (the result sharpened, blurred
+// along the motion), the 2D drawn over it. The two copies trade places each scene, so the frame always ends in
+// mb_sceneColor. The ambient occlusion (mbTemporalAo, tr_mtl_ao.metal) has targets of its own and needs neither the
+// motion vectors nor the jitter: alone, the scene is drawn as without the path, its pass broken once in the main view
+// for the occlusion.
 typedef struct {
 	float		prevMvp[16];						// MbTemporalVSUniforms
 	float		jitter[4];
@@ -373,8 +375,30 @@ static int							mb_aoCurrent;			// the grid and history the last occlusion wrot
 static uint64_t						mb_aoSerial;			// the frame it ran in
 static id<MTLComputePipelineState>	mb_aoPrefilterPipeline, mb_aoMainPipelines[4], mb_aoTemporalPipeline, mb_aoDenoisePipeline;
 static id<MTLRenderPipelineState>	mb_aoApplyPipelines[2];	// without, with the motion vectors' attachment
+
+// The motion blur's (MB_TEMPORAL_MB): each pixel's blur (its half vector in pixels) and, apart, what the gather's samples
+// read (its length and its view distance: half the bytes), the longest blur of each tile and of the 3x3 tiles around it
+typedef struct {
+	int32_t		rect[4];							// MbMotionUniforms (tr_mtl_temporal.metal)
+	int32_t		tiles[4];
+	float		proj[4];
+	float		depth[4];
+	float		params[4];
+	float		reproject[16];
+} mbMotionUniforms_t;
+
+static id<MTLTexture>				mb_motionPixel;			// RG16F
+static id<MTLTexture>				mb_motionSample;		// RG16F
+static id<MTLTexture>				mb_motionTiles;			// RG16F, a texel a tile
+static id<MTLTexture>				mb_motionNeighbor;		// RG16F
+static int							mb_motionTile;			// a tile's side in pixels, the longest half blur
+static int							mb_motionTilesX, mb_motionTilesY;
+static id<MTLComputePipelineState>	mb_motionTilesPipeline, mb_motionNeighborPipeline;
+static id<MTLRenderPipelineState>	mb_compositeMotionPipeline;
 static void MB_TemporalFreeTargets( void );
+static void MB_TaaFreeTargets( void );
 static void MB_AoFreeTargets( void );
+static void MB_MotionFreeTargets( void );
 static void MB_TemporalTransformChanged( void );
 
 static void MB_HarvestQueries( uint64_t completed );
@@ -1609,7 +1633,7 @@ void mbPrecachePipeline( int numUnits, qboolean alphaTest, qboolean blend, int s
 		key |= MB_PIPE_SKIN;
 	}
 	MB_PrecacheKey( key );
-	if ( mb_temporalEffects & MB_TEMPORAL_TAA ) {
+	if ( mb_temporalEffects & MB_TEMPORAL_VECTORS ) {
 		MB_PrecacheKey( key | MB_PIPE_TEMPORAL );	// its scene's variant
 	}
 }
@@ -2436,9 +2460,10 @@ void mbShutdown( void )
 				(double)mb_statCompletion / 1e6 / mb_statGPUFrames, (int)mb_statGPUFrames );
 		}
 		ri.Printf( PRINT_ALL, "Metal: %d GPU wake-ups before a frame (r_metalWakeGPU)\n", mb_statWakes );
-		ri.Printf( PRINT_ALL, "Metal: %.1f MB allocated on the device, the temporal path %s%s%s\n",
+		ri.Printf( PRINT_ALL, "Metal: %.1f MB allocated on the device, the temporal path %s%s%s%s\n",
 			(double)mb_device.currentAllocatedSize / ( 1024.0 * 1024.0 ), mb_temporalOn ? "on:" : "off",
-			( mb_temporalEffects & MB_TEMPORAL_TAA ) ? " taa" : "", ( mb_temporalEffects & MB_TEMPORAL_AO ) ? " ao" : "" );
+			( mb_temporalEffects & MB_TEMPORAL_TAA ) ? " taa" : "", ( mb_temporalEffects & MB_TEMPORAL_AO ) ? " ao" : "",
+			( mb_temporalEffects & MB_TEMPORAL_MB ) ? " motion blur" : "" );
 	}
 	mb_statFrames = mb_statSkipped = 0;
 	mb_statLate = 0;
@@ -2486,7 +2511,9 @@ void mbShutdown( void )
 	mb_sceneColor = nil;
 	mb_sceneDepth = nil;
 	MB_TemporalFreeTargets();
+	MB_TaaFreeTargets();
 	MB_AoFreeTargets();
+	MB_MotionFreeTargets();
 	MB_ReleaseRetired( UINT64_MAX );
 	mb_temporalOn = mb_temporalPass = mb_temporalEnded = qfalse;
 	mb_temporalEffects = 0;
@@ -5358,7 +5385,9 @@ THE TEMPORAL PATH
 =============================================================
 */
 
-#define MB_TAA_GROUP	16		// the anti-aliasing's workgroups: 16x16 pixels (tr_mtl_temporal.metal)
+#define MB_TAA_GROUP				16		// the anti-aliasing's workgroups: 16x16 pixels (tr_mtl_temporal.metal)
+#define MB_MOTION_GROUP				16		// the motion blur's tiles pass's: 16x16 threads a tile
+#define MB_MOTION_NEIGHBOR_GROUP	8		// its neighbour pass's: 8x8 tiles
 
 // written: by a compute pass (the histories), else drawn into
 static id<MTLTexture> MB_TemporalTarget( MTLPixelFormat format, NSString *label, qboolean written )
@@ -5402,7 +5431,8 @@ static qboolean MB_TemporalDepthTarget( qboolean readable )
 /*
 ** MB_TemporalPipelines
 **
-** The anti-aliasing's shaders and pipelines, made at its first use (none while it was never on).
+** The motion vectors' scene's shaders and pipelines (the anti-aliasing's and the motion blur's: the temporal stage
+** shaders, the depth queries, the composite), made at their first use (none while neither was ever on).
 */
 static qboolean MB_TemporalPipelines( void )
 {
@@ -5434,14 +5464,6 @@ static qboolean MB_TemporalPipelines( void )
 		desc.inputPrimitiveTopology = MTLPrimitiveTopologyClassPoint;
 		mb_queryTemporalPipeline = MB_NewRenderPipeline( desc, &error );
 	}
-	if ( !mb_taaPipeline ) {
-		id<MTLFunction> taa = [mb_library newFunctionWithName:@"mb_taa_cs"];
-
-		mb_taaPipeline = taa ? [mb_device newComputePipelineStateWithFunction:taa error:&error] : nil;
-		if ( mb_taaPipeline && mb_taaPipeline.maxTotalThreadsPerThreadgroup < MB_TAA_GROUP * MB_TAA_GROUP ) {
-			mb_taaPipeline = nil;
-		}
-	}
 	if ( !mb_compositePipeline ) {
 		// the first draw of a scene pass after the temporal one (MB_TemporalResolve)
 		desc = [MTLRenderPipelineDescriptor new];
@@ -5453,21 +5475,47 @@ static qboolean MB_TemporalPipelines( void )
 		desc.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
 		mb_compositePipeline = MB_NewRenderPipeline( desc, &error );
 	}
-	if ( !mb_queryTemporalPipeline || !mb_taaPipeline || !mb_compositePipeline ) {
+	if ( !mb_queryTemporalPipeline || !mb_compositePipeline ) {
 		ri.Printf( PRINT_WARNING, "Metal: the temporal path's pipelines failed: %s\n", error.localizedDescription.UTF8String );
 		return qfalse;
 	}
 	return qtrue;
 }
 
+// the anti-aliasing's pipeline (tr_mtl_temporal.metal mb_taa_cs), made at its first use
+static qboolean MB_TaaPipeline( void )
+{
+	NSError *error = nil;
+
+	if ( !mb_taaPipeline ) {
+		id<MTLFunction> taa = [mb_library newFunctionWithName:@"mb_taa_cs"];
+
+		mb_taaPipeline = taa ? [mb_device newComputePipelineStateWithFunction:taa error:&error] : nil;
+		if ( mb_taaPipeline && mb_taaPipeline.maxTotalThreadsPerThreadgroup < MB_TAA_GROUP * MB_TAA_GROUP ) {
+			mb_taaPipeline = nil;
+		}
+		if ( !mb_taaPipeline ) {
+			ri.Printf( PRINT_WARNING, "Metal: the anti-aliasing's pipeline failed: %s\n",
+				error ? error.localizedDescription.UTF8String : "not in the metallib, or its threadgroups too large" );
+			return qfalse;
+		}
+	}
+	return qtrue;
+}
+
+// the motion vectors' scene's targets: the scene target's other copy, the motion vectors
 static void MB_TemporalFreeTargets( void )
 {
 	MB_Retire( mb_sceneColorOther );
 	MB_Retire( mb_velocity );
-	MB_Retire( mb_taaHistory[0] );
-	MB_Retire( mb_taaHistory[1] );
 	mb_sceneColorOther = nil;
 	mb_velocity = nil;
+}
+
+static void MB_TaaFreeTargets( void )
+{
+	MB_Retire( mb_taaHistory[0] );
+	MB_Retire( mb_taaHistory[1] );
 	mb_taaHistory[0] = mb_taaHistory[1] = nil;
 }
 
@@ -5626,18 +5674,102 @@ static qboolean MB_AoTargets( void )
 }
 
 /*
+** MB_MotionPipelines
+**
+** The motion blur's pipelines (tr_mtl_temporal.metal), made at its first use: its two compute passes and the composite
+** that gathers along the blur.
+*/
+static qboolean MB_MotionPipelines( void )
+{
+	static NSString *const kernels[2] = { @"mb_motion_tiles_cs", @"mb_motion_neighbor_cs" };
+	__strong id<MTLComputePipelineState> *pipelines[2] = { &mb_motionTilesPipeline, &mb_motionNeighborPipeline };
+	NSError *error = nil;
+	int i;
+
+	for ( i = 0; i < 2; i++ ) {
+		if ( !*pipelines[i] ) {
+			id<MTLFunction> f = [mb_library newFunctionWithName:kernels[i]];
+
+			*pipelines[i] = f ? [mb_device newComputePipelineStateWithFunction:f error:&error] : nil;
+			if ( !*pipelines[i] ) {
+				ri.Printf( PRINT_WARNING, "Metal: the motion blur's %s failed: %s\n", kernels[i].UTF8String,
+					error ? error.localizedDescription.UTF8String : "not in the metallib" );
+				return qfalse;
+			}
+		}
+	}
+	// its threadgroups must be whole (16x16, the neighbour pass 8x8)
+	if ( mb_motionTilesPipeline.maxTotalThreadsPerThreadgroup < MB_MOTION_GROUP * MB_MOTION_GROUP
+		|| mb_motionNeighborPipeline.maxTotalThreadsPerThreadgroup < MB_MOTION_NEIGHBOR_GROUP * MB_MOTION_NEIGHBOR_GROUP ) {
+		ri.Printf( PRINT_WARNING, "Metal: the motion blur's threadgroups are too large for this GPU\n" );
+		return qfalse;
+	}
+	if ( !mb_compositeMotionPipeline ) {
+		// the composite (MB_TemporalResolve) blurred along the motion
+		MTLRenderPipelineDescriptor *desc = [MTLRenderPipelineDescriptor new];
+
+		desc.label = @"temporal composite (motion blur)";
+		desc.vertexFunction = [mb_library newFunctionWithName:@"mb_temporal_vs"];
+		desc.fragmentFunction = [mb_library newFunctionWithName:@"mb_composite_motion_fs"];
+		desc.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA8Unorm;
+		desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+		desc.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+		mb_compositeMotionPipeline = desc.fragmentFunction ? MB_NewRenderPipeline( desc, &error ) : nil;
+		if ( !mb_compositeMotionPipeline ) {
+			ri.Printf( PRINT_WARNING, "Metal: the motion blur's composite failed: %s\n",
+				error ? error.localizedDescription.UTF8String : "not in the metallib" );
+			return qfalse;
+		}
+	}
+	return qtrue;
+}
+
+static void MB_MotionFreeTargets( void )
+{
+	MB_Retire( mb_motionPixel );
+	MB_Retire( mb_motionSample );
+	MB_Retire( mb_motionTiles );
+	MB_Retire( mb_motionNeighbor );
+	mb_motionPixel = mb_motionSample = mb_motionTiles = mb_motionNeighbor = nil;
+}
+
+/*
+** MB_MotionTargets
+**
+** A tile's side is the longest half blur, a share of the height, so that the blur looks the same at any resolution (27
+** pixels at 1080, 36 at 1440, 54 at 2160; the Vulkan renderer's). At 1920x1080: each pixel's blur 8.3 MB, what the
+** samples read 8.3, the tiles 2 x 11 KB: ~17 MB.
+*/
+static qboolean MB_MotionTargets( void )
+{
+	mb_motionTile = ( mb_height + 20 ) / 40 > 16 ? ( mb_height + 20 ) / 40 : 16;
+	mb_motionTilesX = ( mb_width + mb_motionTile - 1 ) / mb_motionTile;
+	mb_motionTilesY = ( mb_height + mb_motionTile - 1 ) / mb_motionTile;
+	mb_motionPixel = MB_AoTarget( MTLPixelFormatRG16Float, mb_width, mb_height, 1, @"motion blur pixels" );
+	mb_motionSample = MB_AoTarget( MTLPixelFormatRG16Float, mb_width, mb_height, 1, @"motion blur samples" );
+	mb_motionTiles = MB_AoTarget( MTLPixelFormatRG16Float, mb_motionTilesX, mb_motionTilesY, 1, @"motion blur tiles" );
+	mb_motionNeighbor = MB_AoTarget( MTLPixelFormatRG16Float, mb_motionTilesX, mb_motionTilesY, 1, @"motion blur neighbours" );
+	if ( !mb_motionPixel || !mb_motionSample || !mb_motionTiles || !mb_motionNeighbor ) {
+		MB_MotionFreeTargets();
+		return qfalse;
+	}
+	return qtrue;
+}
+
+/*
 ** mbTemporalEnable
 **
-** Between frames: the effects asked for get their targets, the others' are freed. The anti-aliasing's: the scene
-** target's other copy, the motion vectors, the two histories (at 1920x1080 8 + 8 + 2 x 8 MB); the ambient
-** occlusion's (MB_AoTargets, ~22 MB); with any, the depth target made readable, without, as it is without the path.
+** Between frames: the effects asked for get their targets, the others' are freed. The motion vectors' scene's (with
+** the anti-aliasing or the motion blur): the scene target's other copy and the motion vectors (at 1920x1080 8 + 8 MB);
+** the anti-aliasing's: the two histories (2 x 8 MB); the ambient occlusion's (MB_AoTargets, ~17 MB); the motion
+** blur's (MB_MotionTargets, ~17 MB); with any, the depth target made readable, without, as it is without the path.
 ** Returns the effects on.
 */
 int mbTemporalEnable( int effects )
 {
 	int add, drop;
 
-	effects &= MB_TEMPORAL_TAA | MB_TEMPORAL_AO;
+	effects &= MB_TEMPORAL_TAA | MB_TEMPORAL_AO | MB_TEMPORAL_MB;
 	if ( effects == mb_temporalEffects || mb_enc || mb_temporalPass || !mb_sceneColor ) {
 		return mb_temporalEffects;
 	}
@@ -5646,10 +5778,13 @@ int mbTemporalEnable( int effects )
 
 	@autoreleasepool {
 		if ( drop & MB_TEMPORAL_TAA ) {
-			MB_TemporalFreeTargets();
+			MB_TaaFreeTargets();
 		}
 		if ( drop & MB_TEMPORAL_AO ) {
 			MB_AoFreeTargets();
+		}
+		if ( drop & MB_TEMPORAL_MB ) {
+			MB_MotionFreeTargets();
 		}
 		mb_temporalEffects &= ~drop;
 		if ( add && !mb_temporalOn ) {
@@ -5660,17 +5795,31 @@ int mbTemporalEnable( int effects )
 				mb_temporalOn = qtrue;
 			}
 		}
-		if ( add & MB_TEMPORAL_TAA ) {
+		if ( ( add & MB_TEMPORAL_VECTORS ) && !mb_velocity ) {
 			mb_sceneColorOther = MB_TemporalTarget( MTLPixelFormatRGBA8Unorm, @"scene color (other)", qfalse );
 			mb_velocity = MB_TemporalTarget( MTLPixelFormatRG16Float, @"motion vectors", qfalse );
+			if ( !MB_TemporalPipelines() || !mb_sceneColorOther || !mb_velocity ) {
+				MB_TemporalFreeTargets();
+				ri.Printf( PRINT_WARNING, "Metal: no memory or pipelines for the motion vectors\n" );
+				add &= ~MB_TEMPORAL_VECTORS;
+			}
+		}
+		if ( add & MB_TEMPORAL_TAA ) {
 			mb_taaHistory[0] = MB_TemporalTarget( MTLPixelFormatRGB10A2Unorm, @"taa history 0", qtrue );
 			mb_taaHistory[1] = MB_TemporalTarget( MTLPixelFormatRGB10A2Unorm, @"taa history 1", qtrue );
-			if ( !MB_TemporalPipelines() || !mb_sceneColorOther || !mb_velocity || !mb_taaHistory[0] || !mb_taaHistory[1] ) {
-				MB_TemporalFreeTargets();
+			if ( !MB_TaaPipeline() || !mb_taaHistory[0] || !mb_taaHistory[1] ) {
+				MB_TaaFreeTargets();
 				ri.Printf( PRINT_WARNING, "Metal: no memory or pipelines for the anti-aliasing\n" );
 			} else {
 				mb_taaSerial = 0;
 				mb_temporalEffects |= MB_TEMPORAL_TAA;
+			}
+		}
+		if ( add & MB_TEMPORAL_MB ) {
+			if ( !MB_MotionPipelines() || !MB_MotionTargets() ) {
+				ri.Printf( PRINT_WARNING, "Metal: no memory or pipelines for the motion blur\n" );
+			} else {
+				mb_temporalEffects |= MB_TEMPORAL_MB;
 			}
 		}
 		if ( add & MB_TEMPORAL_AO ) {
@@ -5680,13 +5829,17 @@ int mbTemporalEnable( int effects )
 				mb_temporalEffects |= MB_TEMPORAL_AO;
 			}
 		}
+		if ( !( mb_temporalEffects & MB_TEMPORAL_VECTORS ) && mb_velocity ) {
+			MB_TemporalFreeTargets();	// no effect left (or made) that draws the scene with the motion vectors
+		}
 		if ( !mb_temporalEffects && mb_temporalOn ) {
 			MB_TemporalDepthTarget( qfalse );	// (if that fails the readable one stays, at no cost)
 			mb_temporalOn = qfalse;
 		}
 	}
-	ri.Printf( PRINT_DEVELOPER, "Metal: the temporal path %s%s%s\n", mb_temporalOn ? "on:" : "off",
-		( mb_temporalEffects & MB_TEMPORAL_TAA ) ? " taa" : "", ( mb_temporalEffects & MB_TEMPORAL_AO ) ? " ao" : "" );
+	ri.Printf( PRINT_DEVELOPER, "Metal: the temporal path %s%s%s%s\n", mb_temporalOn ? "on:" : "off",
+		( mb_temporalEffects & MB_TEMPORAL_TAA ) ? " taa" : "", ( mb_temporalEffects & MB_TEMPORAL_AO ) ? " ao" : "",
+		( mb_temporalEffects & MB_TEMPORAL_MB ) ? " motion blur" : "" );
 	return mb_temporalEffects;
 }
 
@@ -5722,7 +5875,7 @@ void mbTemporalBeginView( const mbTemporalView_t *view )
 	if ( !mb_temporalOn || mb_temporalEnded || view->viewport[2] <= 0 || view->viewport[3] <= 0 ) {
 		return;
 	}
-	if ( !( mb_temporalEffects & MB_TEMPORAL_TAA ) ) {
+	if ( !( mb_temporalEffects & MB_TEMPORAL_VECTORS ) ) {
 		// the occlusion alone: the main view's rectangle (mbTemporalAo)
 		if ( view->primary ) {
 			MB_TemporalViewRect( view );
@@ -5771,16 +5924,53 @@ void mbTemporalObject( const float *m )
 }
 
 /*
+** MB_MotionUniforms
+**
+** The motion blur's passes' and its composite's uniforms (MbMotionUniforms): the main view, the tiles, its projection
+** and depth ranges (the view distances), the exposure and the camera's motion (r_motionBlurCamera's share of it).
+*/
+static void MB_MotionUniforms( const mbTemporalEffects_t *effects, mbMotionUniforms_t *m )
+{
+	const int *rect = mb_temporalRect;
+
+	memset( m, 0, sizeof( *m ) );
+	memcpy( m->rect, rect, sizeof( m->rect ) );
+	m->tiles[0] = mb_motionTilesX;
+	m->tiles[1] = mb_motionTilesY;
+	m->tiles[2] = mb_motionTile;
+	m->tiles[3] = effects->blurPairs > 0 ? effects->blurPairs : 1;
+	m->proj[0] = effects->projection[0];
+	m->proj[1] = effects->projection[5];
+	m->proj[2] = effects->projection[8];
+	m->proj[3] = effects->projection[9];
+	m->depth[0] = effects->projection[10];
+	m->depth[1] = effects->projection[14];
+	m->depth[2] = mb_depthFloor;
+	m->depth[3] = effects->zFar > 1.0f && effects->zFar < 60000.0f ? effects->zFar : 60000.0f;
+	m->params[0] = effects->halfExposure;
+	m->params[1] = effects->cameraShare;
+	m->params[2] = 2.0f * mb_temporalJitterPixels[0] / rect[2];
+	m->params[3] = -2.0f * mb_temporalJitterPixels[1] / rect[3];
+	memcpy( m->reproject, effects->reproject, sizeof( m->reproject ) );
+}
+
+/*
 ** MB_TemporalResolve
 **
-** The anti-aliasing (tr_mtl_temporal.metal mb_taa_cs) from the scene target into this scene's history, then the
-** pass the frame goes on in, in the scene target's other copy, its first draw the composite.
+** The anti-aliasing (tr_mtl_temporal.metal mb_taa_cs) from the scene target into this scene's history, the motion
+** blur's passes (each pixel's blur and the tiles' longest, mb_motion_tiles_cs and mb_motion_neighbor_cs: at 1920x1080
+** 2,880 threadgroups of 16x16 threads, a tile of 27x27 pixels each), then the pass the frame goes on in, in the scene
+** target's other copy, its first draw the composite (the anti-aliased result sharpened, or the scene as drawn; with
+** the motion blur gathered along its tiles).
 */
 static void MB_TemporalResolve( const mbTemporalEffects_t *effects )
 {
 	id<MTLTexture> scene = mb_sceneColor;
+	qboolean taa = effects->taa && ( mb_temporalEffects & MB_TEMPORAL_TAA );
+	qboolean blur = effects->motionBlur && ( mb_temporalEffects & MB_TEMPORAL_MB ) && effects->halfExposure > 0.0f;
 	int cur = mb_taaCurrent ^ 1;
 	mbTaaUniforms_t u;
+	mbMotionUniforms_t m;
 	float sum;
 	int x, y;
 
@@ -5810,24 +6000,53 @@ static void MB_TemporalResolve( const mbTemporalEffects_t *effects )
 		u.weights[x] /= sum;
 	}
 
-	@autoreleasepool {
-		id<MTLComputeCommandEncoder> enc = [mb_cmd computeCommandEncoder];
-
-		enc.label = @"taa";
-		[enc setComputePipelineState:mb_taaPipeline];
-		[enc setTexture:scene atIndex:0];
-		[enc setTexture:mb_velocity atIndex:1];
-		[enc setTexture:mb_sceneDepth atIndex:2];
-		[enc setTexture:mb_taaHistory[cur ^ 1] atIndex:3];
-		[enc setTexture:mb_taaHistory[cur] atIndex:4];
-		[enc setBytes:&u length:sizeof( u ) atIndex:0];
-		[enc dispatchThreadgroups:MTLSizeMake( ( u.rect[2] + MB_TAA_GROUP - 1 ) / MB_TAA_GROUP, ( u.rect[3] + MB_TAA_GROUP - 1 ) / MB_TAA_GROUP, 1 )
-			threadsPerThreadgroup:MTLSizeMake( MB_TAA_GROUP, MB_TAA_GROUP, 1 )];
-		[enc endEncoding];
-		mb_statPasses++;
+	if ( blur ) {
+		MB_MotionUniforms( effects, &m );
 	}
-	mb_taaCurrent = cur;
-	mb_taaSerial = mb_frameSerial;
+
+	if ( taa || blur ) {
+		@autoreleasepool {
+			id<MTLComputeCommandEncoder> enc = [mb_cmd computeCommandEncoder];
+
+			enc.label = taa && blur ? @"taa, motion blur" : taa ? @"taa" : @"motion blur";
+			if ( taa ) {
+				[enc setComputePipelineState:mb_taaPipeline];
+				[enc setTexture:scene atIndex:0];
+				[enc setTexture:mb_velocity atIndex:1];
+				[enc setTexture:mb_sceneDepth atIndex:2];
+				[enc setTexture:mb_taaHistory[cur ^ 1] atIndex:3];
+				[enc setTexture:mb_taaHistory[cur] atIndex:4];
+				[enc setBytes:&u length:sizeof( u ) atIndex:0];
+				[enc dispatchThreadgroups:MTLSizeMake( ( u.rect[2] + MB_TAA_GROUP - 1 ) / MB_TAA_GROUP, ( u.rect[3] + MB_TAA_GROUP - 1 ) / MB_TAA_GROUP, 1 )
+					threadsPerThreadgroup:MTLSizeMake( MB_TAA_GROUP, MB_TAA_GROUP, 1 )];
+			}
+			if ( blur ) {
+				// a threadgroup a tile over the target (the tiles start at its corner; outside the main view no blur),
+				// then a thread a tile (the encoder's dispatches run in order)
+				[enc setComputePipelineState:mb_motionTilesPipeline];
+				[enc setTexture:mb_sceneDepth atIndex:0];
+				[enc setTexture:mb_velocity atIndex:1];
+				[enc setTexture:mb_motionPixel atIndex:2];
+				[enc setTexture:mb_motionSample atIndex:3];
+				[enc setTexture:mb_motionTiles atIndex:4];
+				[enc setBytes:&m length:sizeof( m ) atIndex:0];
+				[enc dispatchThreadgroups:MTLSizeMake( mb_motionTilesX, mb_motionTilesY, 1 )
+					threadsPerThreadgroup:MTLSizeMake( MB_MOTION_GROUP, MB_MOTION_GROUP, 1 )];
+				[enc setComputePipelineState:mb_motionNeighborPipeline];
+				[enc setTexture:mb_motionTiles atIndex:0];
+				[enc setTexture:mb_motionNeighbor atIndex:1];
+				[enc dispatchThreadgroups:MTLSizeMake( ( mb_motionTilesX + MB_MOTION_NEIGHBOR_GROUP - 1 ) / MB_MOTION_NEIGHBOR_GROUP,
+					( mb_motionTilesY + MB_MOTION_NEIGHBOR_GROUP - 1 ) / MB_MOTION_NEIGHBOR_GROUP, 1 )
+					threadsPerThreadgroup:MTLSizeMake( MB_MOTION_NEIGHBOR_GROUP, MB_MOTION_NEIGHBOR_GROUP, 1 )];
+			}
+			[enc endEncoding];
+			mb_statPasses++;
+		}
+	}
+	if ( taa ) {
+		mb_taaCurrent = cur;
+		mb_taaSerial = mb_frameSerial;
+	}
 
 	// the frame goes on in the other copy (the copies trade places), the composite covering it first
 	mb_sceneColor = mb_sceneColorOther;
@@ -5839,21 +6058,27 @@ static void MB_TemporalResolve( const mbTemporalEffects_t *effects )
 	}
 
 	mb_enc.label = @"temporal composite, then 2D";
-	u.params[0] = effects->taaSharpen;
+	u.params[0] = taa ? effects->taaSharpen : 0.0f;
 	u.params[1] = (float)effects->show;
 	u.params[2] = effects->showScale;
 	u.params[3] = 0.0f;
-	[mb_enc setRenderPipelineState:mb_compositePipeline];
+	[mb_enc setRenderPipelineState:blur ? mb_compositeMotionPipeline : mb_compositePipeline];
 	[mb_enc setDepthStencilState:MB_OBJ( MB_DepthStencilState( 0 ) )];
 	[mb_enc setViewport:(MTLViewport){ 0.0, 0.0, mb_width, mb_height, 0.0, 1.0 }];
 	[mb_enc setScissorRect:(MTLScissorRect){ 0, 0, (NSUInteger)mb_width, (NSUInteger)mb_height }];
 	[mb_enc setCullMode:MTLCullModeNone];
 	[mb_enc setTriangleFillMode:MTLTriangleFillModeFill];
 	[mb_enc setDepthBias:0.0f slopeScale:0.0f clamp:0.0f];
-	[mb_enc setFragmentTexture:mb_taaHistory[cur] atIndex:0];
+	[mb_enc setFragmentTexture:taa ? mb_taaHistory[cur] : scene atIndex:0];
 	[mb_enc setFragmentTexture:scene atIndex:1];
 	[mb_enc setFragmentTexture:mb_velocity atIndex:2];
 	[mb_enc setFragmentBytes:&u length:32 atIndex:0];	// MbCompositeUniforms: rect, params
+	if ( blur ) {
+		[mb_enc setFragmentTexture:mb_motionPixel atIndex:3];
+		[mb_enc setFragmentTexture:mb_motionNeighbor atIndex:4];
+		[mb_enc setFragmentTexture:mb_motionSample atIndex:5];
+		[mb_enc setFragmentBytes:&m length:sizeof( m ) atIndex:1];
+	}
 	[mb_enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
 	mb_statDraws++;
 
@@ -5892,7 +6117,7 @@ void mbTemporalEndScene( const mbTemporalEffects_t *effects )
 	mb_dirty |= MB_DIRTY_PIPELINE;
 	MB_TemporalTransformChanged();
 
-	if ( drawn && effects && effects->taa ) {
+	if ( drawn && effects && ( effects->taa || ( mb_temporalEffects & MB_TEMPORAL_MB ) ) ) {
 		MB_TemporalResolve( effects );
 	}
 }

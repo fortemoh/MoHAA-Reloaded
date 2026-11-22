@@ -1,7 +1,7 @@
 // tr_mtl_temporal.metal -- the temporal path's effects (r_temporal; tr_temporal.c, mbTemporalEndScene in tr_mtl.m),
 // drawn when the 3D view's scene ends, before the 2D. Ideas from JayRewd's Vulkan renderer (renderervk's
-// taa_resolve.comp and temporal_composite.frag), written for Metal: the scene's targets stay render targets, never
-// shader-written (only the history is).
+// taa_resolve.comp, motion_blur.comp and temporal_composite.frag), written for Metal: the scene's targets stay render
+// targets, never shader-written (only the history and the motion blur's targets are).
 //
 // mb_taa_cs (r_taa): a compute pass over the 3D view into the history's target. The scene was drawn with its projection
 // moved by a different sub-pixel offset each frame (the jitter, tr_temporal.c); each pixel blends this frame's color
@@ -21,7 +21,29 @@
 // mb_composite_fs: the first draw of the pass the frame continues in (the 2D follows): the result into the scene's
 // other target, sharpened (r_taaSharpen: the result less a quarter of its four neighbours, held within their range;
 // the history itself stays unsharpened), and outside the 3D view the scene as it was. r_temporalShow 1 shows the
-// motion vectors instead, 2 the scene without the anti-aliasing.
+// motion vectors instead, 2 the scene without the anti-aliasing. Without the anti-aliasing (the motion blur alone) the
+// result is the scene itself, unsharpened.
+//
+// The motion blur (r_motionBlur; McGuire, Hennessy, Bukowski, Osman, "A Reconstruction Filter for Plausible Motion
+// Blur", 2012, as Jimenez refined it for Call of Duty: Advanced Warfare, "Next Generation Post Processing in Call of
+// Duty", 2014; JayRewd's Vulkan renderer's passes):
+//  - mb_motion_tiles_cs: a threadgroup a tile of K x K pixels (K the longest half blur, a share of the target's
+//    height): each pixel's blur, the motion of the exposure (half of it: the blur reaches as far on each side of the
+//    pixel) in pixels, no longer than K, and apart its length and its view distance (what the gather's samples read:
+//    half the bytes); the longest of the tile. The motion: the pixel's motion vector (the scene's draws write the
+//    whole motion, the camera's and their own), less the camera's part that r_motionBlurCamera leaves out (the
+//    camera's motion from the depth); the view weapon only its own (recoil, bob: its vectors are relative to the
+//    view), its distance scaled far down, so that it is in front of everything and keeps its own order
+//  - mb_motion_neighbor_cs: a thread a tile, the longest of the 3x3 tiles around it, which reaches every pixel a blur
+//    of K or less can cover
+//  - mb_composite_motion_fs: the composite (as mb_composite_fs) and then, where the longest blur around the pixel's
+//    tile is half a pixel or more, pairs of samples on both sides of the pixel along it (every other pair along the
+//    pixel's own blur when that goes another way), at offsets moved by a noise fixed per pixel; a sample adds its
+//    color where it is behind the pixel and the pixel's blur reaches it (what the motion uncovers), or in front of it
+//    and its own blur reaches the pixel (what moves over it), the depths compared softly; the mirror of Jimenez's for
+//    a pair. What the samples don't cover is the pixel's own color. Summed in near-linear light (squared: the game's
+//    colors are gamma 2.2, a square the cheap stand-in). The anti-aliasing's history stays unblurred. r_temporalShow
+//    4 shows each pixel's blur, 5 the longest around its tile (a tile's side the brightest).
 //
 // Keep the structs in sync with tr_mtl.m.
 
@@ -53,6 +75,16 @@ struct MbCompositeUniforms
 {
 	int4	rect;			// as MbTaaUniforms.rect
 	float4	params;			// x: r_taaSharpen, y: r_temporalShow, z: the motion vectors' scale (r_temporalShow 1, r_temporalShowScale)
+};
+
+struct MbMotionUniforms
+{
+	int4		rect;		// the main view in target pixels: x, y (from the top left), width, height
+	int4		tiles;		// xy: the tiles across and down (from the target's top left), z: a tile's side K, w: the gather's pairs
+	float4		proj;		// the main view's projection's [0], [5], [8], [9] (GL's, without the jitter)
+	float4		depth;		// [10], [14], the depth floor (below it the view weapon's range; 0: none), the far distance
+	float4		params;		// x: half the exposure in frames of motion, y: the camera's share (r_motionBlurCamera), zw: the jitter in NDC
+	float4x4	reproject;	// this frame's eye space (GL's: x right, y up, looking down -z) to the last frame's clip space
 };
 
 static float3 MB_ToYCoCg( float3 c )
@@ -203,6 +235,32 @@ kernel void mb_taa_cs( texture2d<float, access::read> scene [[texture(0)]],
 	result.write( float4( max( ( cur * wc + h * wh ) / ( wc + wh ), 0.0f ), 1.0f ), uint2( p ) );
 }
 
+// the motion in pixels times the scale, 32 pixels a frame the most shown at 1: right red, down green, none grey
+static float4 MB_ShowVelocity( texture2d<float, access::read> velocity, int2 p, constant MbCompositeUniforms &u )
+{
+	float2 v = velocity.read( uint2( p ) ).xy * float2( u.rect.zw ) * ( u.params.z / 64.0f );
+
+	return float4( saturate( 0.5f + v.x ), saturate( 0.5f + v.y ), 0.5f, 1.0f );
+}
+
+// the result at p, sharpened by sharpen (0: as it is)
+static float3 MB_CompositeColor( texture2d<float, access::read> result, int2 p, int2 lo, int2 hi, float sharpen )
+{
+	float3 c = result.read( uint2( p ) ).rgb;
+
+	if ( sharpen > 0.0f ) {
+		float3 l = result.read( uint2( max( p.x - 1, lo.x ), p.y ) ).rgb;
+		float3 r = result.read( uint2( min( p.x + 1, hi.x ), p.y ) ).rgb;
+		float3 t = result.read( uint2( p.x, max( p.y - 1, lo.y ) ) ).rgb;
+		float3 b = result.read( uint2( p.x, min( p.y + 1, hi.y ) ) ).rgb;
+		float3 nmin = min( min( min( l, r ), min( t, b ) ), c );
+		float3 nmax = max( max( max( l, r ), max( t, b ) ), c );
+
+		c = clamp( c + ( c - 0.25f * ( l + r + t + b ) ) * sharpen, nmin, nmax );
+	}
+	return c;
+}
+
 fragment float4 mb_composite_fs( MbTemporalVertexOut in [[stage_in]],
 	texture2d<float, access::read> result [[texture(0)]],		// the anti-aliased scene (the history just written)
 	texture2d<float, access::read> scene [[texture(1)]],		// the scene as drawn
@@ -216,23 +274,244 @@ fragment float4 mb_composite_fs( MbTemporalVertexOut in [[stage_in]],
 		return float4( scene.read( uint2( p ) ).rgb, 1.0f );
 	}
 	if ( u.params.y == 1.0f ) {
-		// the motion in pixels times the scale, 32 pixels a frame the most shown at 1: right red, down green, none grey
-		float2 v = velocity.read( uint2( p ) ).xy * float2( u.rect.zw ) * ( u.params.z / 64.0f );
+		return MB_ShowVelocity( velocity, p, u );
+	}
+	return float4( MB_CompositeColor( result, p, lo, hi, u.params.x ), 1.0f );
+}
 
-		return float4( saturate( 0.5f + v.x ), saturate( 0.5f + v.y ), 0.5f, 1.0f );
+// THE MOTION BLUR
+
+#define MB_MOTION_GROUP				16		// the tiles pass's threadgroups (MB_MOTION_GROUP in tr_mtl.m)
+#define MB_MOTION_NEIGHBOR_GROUP	8		// the neighbour pass's (MB_MOTION_NEIGHBOR_GROUP in tr_mtl.m)
+
+// the view weapon's view distances are scaled by this: in front of the world
+constant float MB_MOTION_WEAPON_SCALE = 1.0f / 1024.0f;
+// the depths a comparison fades over: this share of the nearer one, plus 1 unit
+constant float MB_MOTION_SOFT_DEPTH = 0.05f;
+
+// the view distance of a window depth whose range [lo, hi] stands for GL's [-1, 1], at most the far distance
+static float MB_MotionRangeDistance( constant MbMotionUniforms &u, float wz, float lo, float hi )
+{
+	float ndc = ( wz - lo ) / ( hi - lo ) * 2.0f - 1.0f;
+	float denom = ndc + u.depth.x;
+
+	return abs( denom ) < 1e-9f ? u.depth.w : clamp( u.depth.y / denom, 0.0f, u.depth.w );
+}
+
+// the camera's motion of what is at view distance d at a target position (pixel centers at .5), in the view's
+// texture coordinates as the motion vectors (this frame's place minus the last, x right, y down)
+static float2 MB_MotionCamera( constant MbMotionUniforms &u, float2 pixel, float d )
+{
+	float2 ndc = ( pixel - float2( u.rect.xy ) ) / float2( u.rect.zw ) * 2.0f - 1.0f;
+
+	ndc.y = -ndc.y;			// the target's y goes down
+	ndc -= u.params.zw;		// where the surface is in the unjittered projection
+	float4 prev = u.reproject * float4( ( ndc.x + u.proj.z ) * d / u.proj.x, ( ndc.y + u.proj.w ) * d / u.proj.y, -d, 1.0f );
+	float2 prevNdc = prev.w > 1e-4f ? prev.xy / prev.w : ndc;
+
+	return ( ndc - prevNdc ) * float2( 0.5f, -0.5f );
+}
+
+kernel void mb_motion_tiles_cs( depth2d<float, access::read> depth [[texture(0)]],
+	texture2d<float, access::read> velocity [[texture(1)]],
+	texture2d<float, access::write> pixelBlur [[texture(2)]],		// the half vector in pixels
+	texture2d<float, access::write> samples [[texture(3)]],		// its length, the view distance
+	texture2d<float, access::write> tiles [[texture(4)]],			// the longest half vector of each tile
+	constant MbMotionUniforms &u [[buffer(0)]],
+	uint2 group [[threadgroup_position_in_grid]],
+	uint2 local [[thread_position_in_threadgroup]],
+	uint index [[thread_index_in_threadgroup]],
+	uint lane [[thread_index_in_simdgroup]],
+	uint simd [[simdgroup_index_in_threadgroup]],
+	uint simds [[simdgroups_per_threadgroup]] )
+{
+	threadgroup float2 simdBest[32];		// a SIMD group's longest (32 groups: at least 8 threads each)
+	int k = u.tiles.z;
+	int2 origin = int2( group ) * k;
+	int2 size = int2( pixelBlur.get_width(), pixelBlur.get_height() );
+	int2 lo = u.rect.xy, hi = u.rect.xy + u.rect.zw - 1;
+	float far = min( u.depth.w, 65000.0f );		// the far distance can be more than a half float holds
+	float2 best = float2( 0.0f );
+	float bestLen = 0.0f;
+
+	for ( int y = int( local.y ); y < k; y += MB_MOTION_GROUP ) {
+		for ( int x = int( local.x ); x < k; x += MB_MOTION_GROUP ) {
+			int2 p = origin + int2( x, y );
+			float2 h = float2( 0.0f );
+			float d = far;
+
+			if ( any( p >= size ) ) {
+				continue;
+			}
+			if ( all( p >= lo ) && all( p <= hi ) ) {
+				float wz = depth.read( uint2( p ) );
+				float2 motion = velocity.read( uint2( p ) ).xy;
+				float len;
+
+				if ( wz >= 1.0f ) {
+					d = far;
+				} else if ( wz < u.depth.z ) {
+					// the view weapon (its own depth range below the floor): its own motion only
+					d = MB_MotionRangeDistance( u, wz, 0.0f, u.depth.z ) * MB_MOTION_WEAPON_SCALE;
+				} else {
+					d = min( MB_MotionRangeDistance( u, wz, u.depth.z, 1.0f ), far );
+				}
+				if ( u.params.y < 1.0f && wz >= u.depth.z ) {
+					motion -= MB_MotionCamera( u, float2( p ) + 0.5f, d ) * ( 1.0f - u.params.y );
+				}
+				h = motion * float2( u.rect.zw ) * u.params.x;
+				len = length( h );
+				if ( len > float( k ) ) {
+					h *= float( k ) / len;
+				}
+			}
+			pixelBlur.write( float4( h, 0.0f, 0.0f ), uint2( p ) );
+			samples.write( float4( length( h ), d, 0.0f, 0.0f ), uint2( p ) );
+			if ( dot( h, h ) > bestLen ) {
+				bestLen = dot( h, h );
+				best = h;
+			}
+		}
 	}
 
-	float3 c = result.read( uint2( p ) ).rgb;
+	// the longest of the threadgroup: of each SIMD group, then of those
+	float most = simd_max( bestLen );
+	uint holder = simd_min( bestLen == most ? lane : 0xffffffffu );
+	float2 simdLongest = simd_shuffle( best, ushort( holder ) );
 
-	if ( u.params.x > 0.0f ) {
-		float3 l = result.read( uint2( max( p.x - 1, lo.x ), p.y ) ).rgb;
-		float3 r = result.read( uint2( min( p.x + 1, hi.x ), p.y ) ).rgb;
-		float3 t = result.read( uint2( p.x, max( p.y - 1, lo.y ) ) ).rgb;
-		float3 b = result.read( uint2( p.x, min( p.y + 1, hi.y ) ) ).rgb;
-		float3 nmin = min( min( min( l, r ), min( t, b ) ), c );
-		float3 nmax = max( max( max( l, r ), max( t, b ) ), c );
-
-		c = clamp( c + ( c - 0.25f * ( l + r + t + b ) ) * u.params.x, nmin, nmax );
+	if ( lane == 0 ) {
+		simdBest[simd] = simdLongest;
 	}
-	return float4( c, 1.0f );
+	threadgroup_barrier( mem_flags::mem_threadgroup );
+	if ( index == 0 ) {
+		float2 t = simdBest[0];
+
+		for ( uint i = 1; i < simds; i++ ) {
+			if ( dot( simdBest[i], simdBest[i] ) > dot( t, t ) ) {
+				t = simdBest[i];
+			}
+		}
+		tiles.write( float4( t, 0.0f, 0.0f ), group );
+	}
+}
+
+kernel void mb_motion_neighbor_cs( texture2d<float, access::read> tiles [[texture(0)]],
+	texture2d<float, access::write> neighbor [[texture(1)]],
+	constant MbMotionUniforms &u [[buffer(0)]],
+	uint2 gid [[thread_position_in_grid]] )
+{
+	int2 t = int2( gid );
+	float2 best = float2( 0.0f );
+	float bestLen = 0.0f;
+
+	if ( any( t >= u.tiles.xy ) ) {
+		return;
+	}
+	for ( int y = -1; y <= 1; y++ ) {
+		for ( int x = -1; x <= 1; x++ ) {
+			float2 v = tiles.read( uint2( clamp( t + int2( x, y ), int2( 0 ), u.tiles.xy - 1 ) ) ).xy;
+
+			if ( dot( v, v ) > bestLen ) {
+				bestLen = dot( v, v );
+				best = v;
+			}
+		}
+	}
+	neighbor.write( float4( best, 0.0f, 0.0f ), gid );
+}
+
+// interleaved gradient noise (Jimenez 2014), fixed per pixel: nothing blends it over frames after this
+static float MB_MotionNoise( float2 pixel )
+{
+	return fract( 52.9829189f * fract( dot( pixel, float2( 0.06711056f, 0.00583715f ) ) ) );
+}
+
+// x: the sample is behind the center, y: in front of it
+static float2 MB_MotionDepthCompare( float center, float s )
+{
+	float extent = MB_MOTION_SOFT_DEPTH * min( center, s ) + 1.0f;
+
+	return saturate( 0.5f + float2( 1.0f, -1.0f ) * ( s - center ) / extent );
+}
+
+// whether blurs of these half lengths (the center's, the sample's) reach the offset, over half a pixel: a still pixel
+// (under half a pixel) reaches only itself, so in a tile where something moves what doesn't stays as it is
+static float2 MB_MotionSpread( float offset, float2 spread )
+{
+	return saturate( spread - offset + 0.5f );
+}
+
+static float3 MB_MotionLinear( float3 c )
+{
+	return c * c;
+}
+
+fragment float4 mb_composite_motion_fs( MbTemporalVertexOut in [[stage_in]],
+	texture2d<float, access::read> result [[texture(0)]],		// the anti-aliased scene, or the scene as drawn
+	texture2d<float, access::read> scene [[texture(1)]],		// the scene as drawn
+	texture2d<float, access::read> velocity [[texture(2)]],
+	texture2d<float, access::read> pixelBlur [[texture(3)]],
+	texture2d<float, access::read> neighbor [[texture(4)]],
+	texture2d<float, access::read> samples [[texture(5)]],
+	constant MbCompositeUniforms &u [[buffer(0)]],
+	constant MbMotionUniforms &m [[buffer(1)]] )
+{
+	int2 p = int2( in.position.xy );
+	int2 lo = u.rect.xy, hi = u.rect.xy + u.rect.zw - 1;
+	float k = float( m.tiles.z );
+
+	if ( any( p < lo ) || any( p > hi ) || u.params.y == 2.0f ) {
+		return float4( scene.read( uint2( p ) ).rgb, 1.0f );
+	}
+	if ( u.params.y == 1.0f ) {
+		return MB_ShowVelocity( velocity, p, u );
+	}
+	if ( u.params.y >= 4.0f ) {
+		// a pixel's blur or the longest around its tile, a tile's side the brightest: right red, down green
+		float2 v = ( u.params.y == 4.0f ? pixelBlur.read( uint2( p ) ).xy : neighbor.read( uint2( p / m.tiles.z ) ).xy ) / k;
+
+		return float4( saturate( 0.5f + 0.5f * v.x ), saturate( 0.5f + 0.5f * v.y ), 0.5f, 1.0f );
+	}
+
+	float3 center = MB_CompositeColor( result, p, lo, hi, u.params.x );
+	float2 vn = neighbor.read( uint2( p / m.tiles.z ) ).xy;
+	float nLen = length( vn );
+
+	if ( nLen < 0.5f ) {
+		return float4( center, 1.0f );
+	}
+
+	float2 pixel = in.position.xy;
+	float2 vc = pixelBlur.read( uint2( p ) ).xy;
+	float2 cs = samples.read( uint2( p ) ).xy;
+	float cLen = cs.x, cd = cs.y;
+	int pairs = m.tiles.w;
+	float jitter = MB_MotionNoise( pixel ) - 0.5f;
+	// its own blur differs from the tile's by more than about 25 degrees
+	bool own = cLen >= 0.5f && dot( vc, vn ) < 0.9f * cLen * nLen;
+	float4 sum = float4( 0.0f );
+
+	for ( int i = 0; i < pairs; i++ ) {
+		float2 v = own && ( i & 1 ) != 0 ? vc : vn;
+		float2 offset = v * ( ( float( i ) + 0.5f + jitter ) / float( pairs ) );
+		float offsetLen = length( offset );
+		uint2 p1 = uint2( clamp( int2( pixel + offset ), lo, hi ) );
+		uint2 p2 = uint2( clamp( int2( pixel - offset ), lo, hi ) );
+		float2 s1 = samples.read( p1 ).xy;
+		float2 s2 = samples.read( p2 ).xy;
+		float w1 = dot( MB_MotionDepthCompare( cd, s1.y ), MB_MotionSpread( offsetLen, float2( cLen, s1.x ) ) );
+		float w2 = dot( MB_MotionDepthCompare( cd, s2.y ), MB_MotionSpread( offsetLen, float2( cLen, s2.x ) ) );
+		// the mirror: the background behind what moves is estimated from the other side
+		bool2 mirror = bool2( s1.y > s2.y, s2.x > s1.x );
+
+		w1 = all( mirror ) ? w2 : w1;
+		w2 = any( mirror ) ? w2 : w1;
+		sum += w1 * float4( MB_MotionLinear( result.read( p1 ).rgb ), 1.0f );
+		sum += w2 * float4( MB_MotionLinear( result.read( p2 ).rgb ), 1.0f );
+	}
+	if ( sum.a <= 0.0f ) {
+		return float4( center, 1.0f );
+	}
+	sum /= float( 2 * pairs );
+	return float4( sqrt( max( sum.rgb + ( 1.0f - sum.a ) * MB_MotionLinear( center ), 0.0f ) ), 1.0f );
 }

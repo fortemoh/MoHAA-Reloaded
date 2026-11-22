@@ -421,8 +421,11 @@ void		mbRadarHeight( unsigned int texture, float z );
 // target readable) and frees them again, between frames. Without an effect the calls below for it do nothing.
 //  - MB_TEMPORAL_TAA (r_taa): the scene drawn with motion vectors and a jittered projection, anti-aliased before the 2D
 //  - MB_TEMPORAL_AO (r_ao): ambient occlusion, applied in the main view after its opaque surfaces (mbTemporalAo)
+//  - MB_TEMPORAL_MB (r_motionBlur): the scene drawn with motion vectors (no jitter), blurred along them before the 2D
 #define MB_TEMPORAL_TAA		1
 #define MB_TEMPORAL_AO		2
+#define MB_TEMPORAL_MB		4
+#define MB_TEMPORAL_VECTORS	( MB_TEMPORAL_TAA | MB_TEMPORAL_MB )	// the effects whose scene has the motion vectors
 
 typedef struct {
 	float		cameraDelta[16];	// the last frame's view times this frame's view's inverse; identity: no motion
@@ -438,6 +441,14 @@ typedef struct {
 	float		taaSharpen;			// r_taaSharpen
 	int			show;				// r_temporalShow
 	float		showScale;			// r_temporalShowScale
+	// the motion blur (r_motionBlur): blurs when the main view's camera has a last frame and halfExposure > 0
+	qboolean	motionBlur;
+	float		halfExposure;		// half the exposure, in frames of motion (r_motionBlurShutter, r_motionBlurFps)
+	float		cameraShare;		// r_motionBlurCamera: the share of the camera's motion in the blur
+	int			blurPairs;			// the gather's pairs of samples a pixel (r_motionBlurQuality)
+	float		projection[16];		// the main view's, GL's (without the jitter)
+	float		reproject[16];		// the last frame's projection times the camera's motion: from this frame's eye space
+	float		zFar;				// the main view's far distance
 } mbTemporalEffects_t;
 
 typedef struct {
@@ -469,7 +480,8 @@ void		mbTemporalObject( const float *m );
 // in the main view, once a frame, after its opaque surfaces and before what is blended over them: the scene pass ends
 // (its targets stored), the occlusion is computed from its depth, and a new pass goes on with it applied
 void		mbTemporalAo( const mbTemporalAo_t *ao );
-// before the 2D (or at the frame's end): the effects, then the frame goes on in a new pass, depth and stencil cleared
+// before the 2D (or at the frame's end): the anti-aliasing and the motion blur, then the frame goes on in a new pass,
+// depth and stencil cleared
 void		mbTemporalEndScene( const mbTemporalEffects_t *effects );
 
 static ID_INLINE int mbGetError( void ) { return MB_NO_ERROR; }
