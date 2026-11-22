@@ -2115,6 +2115,8 @@ enum { OC_SECTION, OC_SEG, OC_CYCLE, OC_SLIDER, OC_TOGGLE, OC_SWATCH, OC_PREVIEW
 #define OF_TURN    32  // m_turn: shows the turn distance there is (0 there: not kept), cl_mouseturn.cpp
 #define OF_NOTCS   32768 // off (greyed, no clicks) while CS Mode (m_csmode) sets it
 #define OF_CS      65536 // off while CS Mode is off
+#define OF_CSGOHUD 131072 // shown only while the HUD Style is CS:GO's (cg_hudstyle 1)
+#define OF_CS2HUD  262144 // shown only while it is CS2's (cg_hudstyle 2)
 
 typedef struct {
     int                kind, tab, flags; // the tab: a section's
@@ -2274,7 +2276,9 @@ static const rlOpt_t rl_opts[] = {
     O_TOGGLE("Radar Centers The Player", "Off: near the map's edge, more map.", "cg_hud_radar_centered", "1", 0),
     O_SWATCH("Accent Colour", "The HUD's highlight.", "cg_hud_accent", "f6f67a", rl_oAccents, 13),
     O_SLIDER("Low Health", "Health turns red below this.", "cg_hud_lowhealth", "0.4", 0, 1, 0.05f, OF_PCT),
-    O_TOGGLE("Players Alive", "A count of each side by the score, not a card each.", "cg_hud_alivecount", "0", 0),
+    // (each style its own: CS:GO's on by default, CS2's off; Classic has neither)
+    O_TOGGLE("Players Alive", "A count of each side by the score, not a card each.", "cg_hud_csgo_alivecount", "1", OF_CSGOHUD),
+    O_TOGGLE("Players Alive", "A count of each side by the score, not a card each.", "cg_hud_alivecount", "0", OF_CS2HUD),
     O_TOGGLE("Damage Indicator", "Red marks round the crosshair toward a hit.", "cg_hud_damage", "1", 0),
     O_TOGGLE("Hitmarker", "A white X round the crosshair when you hit.", "cg_hitmarker", "0", 0),
     O_SECTION(OT_HUD, "CROSSHAIR", OF_RIGHT),
@@ -2567,13 +2571,22 @@ static void RL_OptRead(void)
     }
 }
 
-// a setting shown: its tab's (an O_KEYS with actions); never one of the renderer's own it doesn't make
-static bool RL_OptShown(int i)
+// a setting shown: its tab's (an O_KEYS with actions; OF_CSGOHUD's and OF_CS2HUD's with their HUD Style, unless
+// anyStyle); never one of the renderer's own it doesn't make
+static bool RL_OptShown(int i, bool anyStyle = false)
 {
     const rlOpt_t& o = rl_opts[i];
 
     if ((o.cvar && !rl_opt.cv[i]) || (o.kind == OC_KEYS && rl_keys.from[i] >= rl_keys.to[i])) {
         return false;
+    }
+    if (!anyStyle && (o.flags & (OF_CSGOHUD | OF_CS2HUD))) {
+        cvar_t *style = RL_OptCvar("cg_hudstyle", "1", CVAR_ARCHIVE);
+
+        UI_DrawDep(style);
+        if (style->integer != ((o.flags & OF_CSGOHUD) ? 1 : 2)) {
+            return false;
+        }
     }
     return rl_opts[rl_opt.sec[i]].tab == rl_opt.tab;
 }
@@ -3014,7 +3027,7 @@ static void RL_OptDefaults(void)
     for (int i = 0; i < RL_OPTS; i++) {
         const int flags = rl_opts[i].flags;
 
-        if (!rl_opts[i].cvar || !RL_OptShown(i)) {
+        if (!rl_opts[i].cvar || !RL_OptShown(i, true)) {
             continue;
         }
         Cvar_Reset(rl_opts[i].cvar);
