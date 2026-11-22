@@ -32,11 +32,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <winsock.h>
 #endif
 
-// FPS
-#ifdef __cplusplus
-#  include <chrono>
-#endif
-
 #include <time.h>
 
 #include "../corepp/tiki.h"
@@ -75,7 +70,6 @@ fileHandle_t	com_journalDataFile;		// config files are written here
 cvar_t	*paused;
 cvar_t	*config;
 cvar_t	*fps;
-cvar_t	*fps_location;
 cvar_t	*com_speeds;
 cvar_t	*developer;
 cvar_t	*com_dedicated;
@@ -178,22 +172,12 @@ static char	*rd_buffer;
 static int	rd_buffersize;
 static void	(*rd_flush)( char *buffer );
 
-#define MAX_FPS_TIMES 16
+// The fps counter (currentfps): the frames that render a second, counted over a quarter of a second (COM_FPS_WINDOW_US:
+// a number that holds still long enough to read), from the frames' start (com_frameUs, no clock read of its own)
+#define COM_FPS_WINDOW_US 250000
 
-#ifdef __cplusplus
-using fps_clock_t = std::chrono::high_resolution_clock;
-using fps_time_t = fps_clock_t::time_point;
-using fps_delta_t = fps_clock_t::duration;
-#else
-typedef unsigned long long fps_clock_t;
-typedef unsigned long long fps_time_t;
-typedef unsigned long long fps_delta_t;
-#endif
-
-static int fpsindex;
-static fps_delta_t fpstimes[MAX_FPS_TIMES];
-static fps_delta_t fpstotal;
-static fps_time_t fpslasttime;
+static long long com_fpsStartUs;	// the frame the fps count runs from, 0: none yet
+static int com_fpsCount;			// the frames since
 float currentfps;
 
 void Com_BeginRedirect (char *buffer, int buffersize, void (*flush)( char *) )
@@ -1927,7 +1911,6 @@ void Com_Init( char *commandLine ) {
 	paused = Cvar_Get( "paused", "0", 64 );
 	autopaused = Cvar_Get( "autopaused", "1", CVAR_ARCHIVE );
 	fps = Cvar_Get( "fps", "0", CVAR_ARCHIVE );
-	fps_location = Cvar_Get( "fps_location", "0", CVAR_ARCHIVE );
 	com_timescale = Cvar_Get( "timescale", "1", CVAR_CHEAT | CVAR_SYSTEMINFO );
 	com_fixedtime = Cvar_Get( "fixedtime", "0", CVAR_CHEAT );
 	com_showtrace = Cvar_Get( "com_showtrace", "0", CVAR_CHEAT );
@@ -2558,36 +2541,18 @@ void Com_Frame( void ) {
 					 com_frameNumber, all, sv, ev, cl, time_game, time_frontend, time_backend );
 	}
 
-	if (fps->integer && com_renderFrame) {
-		fps_time_t fpstime;
-		fps_delta_t delta;
-
-#ifdef __cplusplus
-		fpstime = fps_clock_t::now();
-#else
-		fpstime = Sys_Microseconds();	// whole milliseconds read 238.8 or 242.4 at 240 (Metal port)
-#endif
-
-		delta = fpstime - fpslasttime;
-
-		fpstotal = (fpstime - fpslasttime) + (fpstotal - fpstimes[fpsindex]);
-		fpstimes[fpsindex] = fpstime - fpslasttime;
-		fpsindex = (fpsindex + 1) % MAX_FPS_TIMES;
-		fpslasttime = fpstime;
-
-#ifdef __cplusplus
-		if (fpstotal.count()) {
-			currentfps = MAX_FPS_TIMES / std::chrono::duration<long double>(fpstotal).count();
-		} else {
-			currentfps = 0.0;
+	// the fps counter (COM_FPS_WINDOW_US above)
+	if (!fps->integer) {
+		com_fpsStartUs = 0;
+	} else if (com_renderFrame) {
+		com_fpsCount++;
+		if (com_frameUs - com_fpsStartUs >= COM_FPS_WINDOW_US) {
+			if (com_fpsStartUs) {
+				currentfps = com_fpsCount * 1000000.0 / (com_frameUs - com_fpsStartUs);
+			}
+			com_fpsStartUs = com_frameUs;
+			com_fpsCount = 0;
 		}
-#else
-		if (fpstotal) {
-			currentfps = MAX_FPS_TIMES / (fpstotal / 1000000.0);
-		} else {
-			currentfps = 0.0;
-		}
-#endif
 	}
 
 	//

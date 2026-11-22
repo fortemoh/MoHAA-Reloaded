@@ -255,7 +255,6 @@ cvar_t* r_aviMotionJpegQuality;
 cvar_t* r_screenshotJpegQuality;
 
 cvar_t* r_developer;
-cvar_t* r_fps;
 
 static char infostring[8192];
 
@@ -1452,7 +1451,6 @@ void R_Register( void )
 	r_alpha_foliage2 = ri.Cvar_Get("r_alpha_foliage2", "0.75", CVAR_CHEAT);
 	r_blendtrees = ri.Cvar_Get("r_blendtrees", "0", CVAR_LATCH);
 	r_blendbushes = ri.Cvar_Get("r_blendbushes", "0", CVAR_LATCH);
-	r_fps = ri.Cvar_Get("fps", "0", 0);
 	r_loadjpg = ri.Cvar_Get("r_loadjpg", "1", CVAR_LATCH);
 	r_loadftx = ri.Cvar_Get("r_loadftx", "0", CVAR_LATCH);
 
@@ -1834,8 +1832,6 @@ refexport_t *GetRefAPI ( int apiVersion, refimport_t *rimp ) {
     re.AddTerrainMarkToScene = RE_AddTerrainMarkToScene;
 
     re.GetRenderEntity = RE_GetRenderEntity;
-
-	re.SavePerformanceCounters = R_SavePerformanceCounters;
 
 	re.R_Model_GetHandle = R_Model_GetHandle;
 	re.SetColor = Draw_SetColor;
