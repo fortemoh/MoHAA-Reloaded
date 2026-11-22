@@ -56,12 +56,18 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <tuple>
 #include <vector>
 
-// the palette's panels (Omaha's surfaces, ours)
-static const rlColor_t RL_PANEL = {10 / 255.0f, 11 / 255.0f, 12 / 255.0f, 218 / 255.0f};
+// the front end's palette (Project: Omaha's navy panels, cool greys; the
+// accent the game's, RL_BRASS; the in-game screens keep cl_uidraw.h's, the
+// Esc menu's rail its soft grey, RL_SOFT): text, softer, labels, off
+static const rlColor_t RL_FG       = {234 / 255.0f, 237 / 255.0f, 242 / 255.0f, 1};
+static const rlColor_t RL_FG_SOFT  = {194 / 255.0f, 200 / 255.0f, 210 / 255.0f, 1};
+static const rlColor_t RL_FG_MUTED = {140 / 255.0f, 148 / 255.0f, 160 / 255.0f, 1};
+static const rlColor_t RL_FG_FAINT = {96 / 255.0f, 103 / 255.0f, 114 / 255.0f, 1};
+static const rlColor_t RL_SOFT     = {200 / 255.0f, 196 / 255.0f, 186 / 255.0f, 1};
+// the panels (navy), their heads, their lines
+static const rlColor_t RL_PANEL = {10 / 255.0f, 12 / 255.0f, 17 / 255.0f, 236 / 255.0f};
 static const rlColor_t RL_HEAD  = {0, 0, 0, 70 / 255.0f};
 static const rlColor_t RL_LINE  = {1, 1, 1, 24 / 255.0f};
-static const rlColor_t RL_SOFT  = {200 / 255.0f, 196 / 255.0f, 186 / 255.0f, 1};
-static const rlColor_t RL_SEL   = {222 / 255.0f, 178 / 255.0f, 80 / 255.0f, 44 / 255.0f};
 
 #define RL_GLYPH(name) RL_OUTLINES "glyphs/" name ".svg"
 
@@ -1342,7 +1348,7 @@ void RL_Button(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, 
     const rlColor_t fill = primary ? (hot ? RL_BRASS_HOT : RL_BRASS) : RL_Rgb(255, 255, 255, hot ? 44 : 26);
 
     RL_Box(v, x, y, w, h, off ? RL_Rgb(255, 255, 255, 14) : fill);
-    RL_Text(v, x + w / 2, y + h / 2, label, 18, off ? RL_FAINT : primary ? RL_INK : RL_TEXT, true, RL_CENTER, 2, RL_MID);
+    RL_Text(v, x + w / 2, y + h / 2, label, 18, off ? RL_FG_FAINT : primary ? RL_INK : RL_FG, true, RL_CENTER, 2, RL_MID);
     m->Hit(v, x, y, w, h, id);
 }
 
@@ -1356,14 +1362,14 @@ static void RL_Field(const rlView_t& v, float x, float y, float w, float h, cons
     RL_Box(v, x, y, w, h, RL_Rgb(255, 255, 255, editing ? 70 : hot ? 48 : 30));
     RL_Box(v, x + 1, y + 1, w - 2, h - 2, RL_Rgb(0, 0, 0, 120));
     if (text.empty() && !editing) {
-        RL_Text(v, tx, y + h / 2, placeholder, 17, RL_MUTED, false, RL_LEFT, 0, RL_MID, room);
+        RL_Text(v, tx, y + h / 2, placeholder, 17, RL_FG_MUTED, false, RL_LEFT, 0, RL_MID, room);
         return;
     }
     while (editing && !shown.empty() && RL_TextW(v, shown.c_str(), 17, false) > room) {
         shown.erase(0, 1);
     }
     {
-        const float tw = shown.empty() ? 0.0f : RL_Text(v, tx, y + h / 2, shown.c_str(), 17, RL_TEXT, false, RL_LEFT, 0, RL_MID);
+        const float tw = shown.empty() ? 0.0f : RL_Text(v, tx, y + h / 2, shown.c_str(), 17, RL_FG, false, RL_LEFT, 0, RL_MID);
 
         if (editing && (cls.realtime / 530) % 2 == 0) {
             RL_Box(v, tx + tw + 2, y + h / 2 - 11, 2, 22, RL_BRASS);
@@ -1397,7 +1403,7 @@ static void RL_Photo(const rlView_t& v, qhandle_t shot, float x, float y, float 
     const float cs = k < 1.0f ? (1.0f - k) / 2 : 0.0f, ct = k > 1.0f ? (1.0f - 1.0f / k) / 2 : 0.0f;
 
     if (shot <= 0) {
-        RL_Box(v, x, y, w, h, RL_Rgb(22, 24, 26));
+        RL_Box(v, x, y, w, h, RL_Rgb(20, 24, 31));
         return;
     }
     if (!rl_bakeOnly) {
@@ -1419,7 +1425,7 @@ static float RL_Segments(UIReloadedMenu *m, const rlView_t& v, float x, float y,
         const bool  hot = !off && m->Hot(id + i), chosen = !off && i == on;
 
         RL_Box(v, x, y, w, h, chosen ? RL_BRASS : RL_Rgb(255, 255, 255, off ? 10 : hot ? 36 : 18));
-        RL_Text(v, x + w / 2, y + h / 2, labels[i], 15, chosen ? RL_INK : off ? RL_FAINT : hot ? RL_TEXT : RL_SOFT, true, RL_CENTER, 1.6f, RL_MID);
+        RL_Text(v, x + w / 2, y + h / 2, labels[i], 15, chosen ? RL_INK : off ? RL_FG_FAINT : hot ? RL_FG : RL_FG_SOFT, true, RL_CENTER, 1.6f, RL_MID);
         if (!off) {
             m->Hit(v, x, y, w, h, id + i);
         }
@@ -1441,7 +1447,7 @@ static void RL_Tabs(UIReloadedMenu *m, const rlView_t& v, float x, float y, cons
         if (i == on || hot) {
             RL_Box(v, x, y + 1, tw, 47, i == on ? RL_BRASS : RL_Rgb(255, 255, 255, 16));
         }
-        RL_Text(v, x + tw / 2, y + 24, labels[i], size, i == on ? RL_INK : hot ? RL_TEXT : RL_MUTED, true, RL_CENTER, 2, RL_MID);
+        RL_Text(v, x + tw / 2, y + 24, labels[i], size, i == on ? RL_INK : hot ? RL_FG : RL_FG_MUTED, true, RL_CENTER, 2, RL_MID);
         m->Hit(v, x, y, tw, 48, id + i);
         x += tw;
         if (i < n - 1 && i != on && i + 1 != on && !hot && !m->Hot(id + i + 1)) {
@@ -1453,14 +1459,14 @@ static void RL_Tabs(UIReloadedMenu *m, const rlView_t& v, float x, float y, cons
 // a label over its control: the label's middle at y, the control 16 under it
 static void RL_Label(const rlView_t& v, float x, float y, const char *label)
 {
-    RL_Text(v, x, y, label, 14, RL_MUTED, true, RL_LEFT, 1.6f, RL_MID);
+    RL_Text(v, x, y, label, 14, RL_FG_MUTED, true, RL_LEFT, 1.6f, RL_MID);
 }
 
 // a list's row's mark: picked brass-marked, else hot (and its hit)
 static void RL_RowMark(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, bool sel, int id)
 {
     if (sel) {
-        RL_Box(v, x + 2, y, w - 3, h, RL_SEL);
+        RL_Box(v, x + 2, y, w - 3, h, RL_Alpha(RL_BRASS, 48));
         RL_Box(v, x + 2, y, 3, h, RL_BRASS);
     } else if (m->Hot(id)) {
         RL_Box(v, x + 2, y, w - 3, h, RL_Rgb(255, 255, 255, 14));
@@ -1477,8 +1483,8 @@ static void RL_ListRow(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
 
     RL_RowMark(m, v, x, y, w, h, sel, id);
     RL_Photo(v, shot, x + RL_PAD, y + 8, tw, th, aspect);
-    RL_Text(v, tx, y + h / 2 - 11, RL_Ellipsize(v, title, 19, sel, room).c_str(), 19, RL_TEXT, sel, RL_LEFT, 0, RL_MID);
-    RL_Text(v, tx, y + h / 2 + 15, caption, 14, RL_MUTED, false, RL_LEFT, 0.6f, RL_MID, room);
+    RL_Text(v, tx, y + h / 2 - 11, RL_Ellipsize(v, title, 19, sel, room).c_str(), 19, RL_FG, sel, RL_LEFT, 0, RL_MID);
+    RL_Text(v, tx, y + h / 2 + 15, caption, 14, RL_FG_MUTED, false, RL_LEFT, 0.6f, RL_MID, room);
 }
 
 // the scroll bar of a list over y h, its right edge at x: shown of total, from at
@@ -1503,7 +1509,7 @@ static void RL_Picture(const rlView_t& v, qhandle_t shot, float aspect, float x,
         const int x0 = RL_P(v, x), y0 = RL_P(v, y + h - 72);
 
         RL_Shape(x0, y0, RL_P(v, x + w) - x0, RL_P(v, y + h) - y0, "vgradient 0 1 0 0 0 0 0 0 0 0.75", RL_Rgb(255, 255, 255), v.s);
-        RL_Text(v, x + RL_PAD, y + h - RL_PAD - 8, name, 28, RL_TEXT, true, RL_LEFT, 0, RL_BASE, w - 2 * RL_PAD);
+        RL_Text(v, x + RL_PAD, y + h - RL_PAD - 8, name, 28, RL_FG, true, RL_LEFT, 0, RL_BASE, w - 2 * RL_PAD);
     }
 }
 
@@ -1633,7 +1639,7 @@ static void RL_BgDraw(const rlView_t& v, float x, float y, float w, float h)
 static void RL_Background(const rlView_t& v)
 {
     if (!rl_bg.shader[rl_bg.cur] && !RL_BgCampaign()) {
-        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(8, 9, 10));
+        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(8, 10, 14));
     }
     RL_BgDraw(v, 0, 0, v.dw, v.dh);
 }
@@ -1762,7 +1768,7 @@ static void RL_Browser(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         if (!share[c + 1]) {
             continue;
         }
-        const float lw = RL_Text(v, cx[c + 1], hy + 20, rl_colNames[c], 14, hot ? RL_TEXT : RL_MUTED, true, RL_LEFT, 1.6f, RL_MID);
+        const float lw = RL_Text(v, cx[c + 1], hy + 20, rl_colNames[c], 14, hot ? RL_FG : RL_FG_MUTED, true, RL_LEFT, 1.6f, RL_MID);
 
         if (rl_mm.sort == c) {
             // (down: from the least, Omaha's)
@@ -1779,10 +1785,10 @@ static void RL_Browser(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         const rlServer_t& r   = rl_sv.rows[rl_vis.rows[at]];
         const bool        sel = r.addr == rl_mm.sel, fav = rl_favs.count(r.addr) > 0;
         const float       yy = ry + i * rh, mid = yy + rh / 2;
-        const rlColor_t   soft = r.otherVersion ? RL_FAINT : RL_SOFT;
+        const rlColor_t   soft = r.otherVersion ? RL_FG_FAINT : RL_FG_SOFT;
 
         if (sel) {
-            RL_Box(v, x + 2, yy, w - 4, rh, RL_SEL);
+            RL_Box(v, x + 2, yy, w - 4, rh, RL_Alpha(RL_BRASS, 48));
             RL_Box(v, x + 2, yy, 3, rh, RL_BRASS);
         } else if (m->Hot(ID_ROW + i) || m->Hot(ID_FAV + i)) {
             RL_Box(v, x + 2, yy, w - 4, rh, RL_Rgb(255, 255, 255, 14));
@@ -1791,14 +1797,14 @@ static void RL_Browser(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         }
         RL_Star(v, cx[0] + iw * 0.025f, mid, 18, fav ? RL_BRASS : m->Hot(ID_FAV + i) ? RL_Rgb(255, 255, 255, 120) : RL_Rgb(255, 255, 255, 40));
         RL_Text(v, cx[1], mid, RL_Ellipsize(v, r.name.empty() ? "?" : r.name.c_str(), 17, sel, iw * share[1] - 12).c_str(), 17,
-                r.otherVersion ? RL_FAINT : RL_TEXT, sel, RL_LEFT, 0, RL_MID);
+                r.otherVersion ? RL_FG_FAINT : RL_FG, sel, RL_LEFT, 0, RL_MID);
         RL_Text(v, cx[2], mid, RL_Ellipsize(v, r.map.c_str(), 17, false, iw * share[2] - 12).c_str(), 17, soft, false, RL_LEFT, 0, RL_MID);
         RL_Text(v, cx[3], mid, va("%d/%d", r.players, r.maxPlayers), 17, soft, false, RL_LEFT, 0, RL_MID);
         if (share[4]) {
             RL_Text(v, cx[4], mid, RL_Ellipsize(v, r.mode.c_str(), 17, false, iw * share[4] - 12).c_str(), 17, soft, false, RL_LEFT, 0, RL_MID);
         }
         RL_Text(v, cx[5], mid, va("%d", r.ping), 17,
-                r.otherVersion ? RL_FAINT
+                r.otherVersion ? RL_FG_FAINT
                 : r.ping < 60  ? RL_Rgb(150, 196, 120)
                 : r.ping < 100 ? RL_Rgb(222, 178, 80)
                                : RL_Rgb(214, 120, 100),
@@ -1812,7 +1818,7 @@ static void RL_Browser(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
                           : !rl_sv.rows.empty()    ? "No server matches."
                                                    : "No servers.";
 
-        RL_Text(v, x + w / 2, ry + 3 * rh, empty, 17, RL_MUTED, false, RL_CENTER, 0, RL_MID);
+        RL_Text(v, x + w / 2, ry + 3 * rh, empty, 17, RL_FG_MUTED, false, RL_CENTER, 0, RL_MID);
     } else if ((int)rl_vis.rows.size() > rl_mm.fit) {
         RL_ScrollBar(v, x + w, ry, y + h - foot - ry, rl_mm.top, rl_mm.fit, rl_vis.rows.size());
     }
@@ -1842,9 +1848,9 @@ static void RL_Browser(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         }
         RL_Box(v, x + 1, sy, w - 2, 40, RL_Rgb(255, 255, 255, 12));
         RL_Box(v, x, sy, w, 1, RL_LINE);
-        RL_Text(v, x + RL_PAD, sy + 20, va("%d SERVERS", (int)rl_vis.rows.size()), 15, RL_TEXT, true, RL_LEFT, 1.6f, RL_MID);
+        RL_Text(v, x + RL_PAD, sy + 20, va("%d SERVERS", (int)rl_vis.rows.size()), 15, RL_FG, true, RL_LEFT, 1.6f, RL_MID);
         RL_Text(v, x + w / 2, sy + 20, state, 15, RL_BRASS, true, RL_CENTER, 2, RL_MID);
-        RL_Text(v, x + w - RL_PAD, sy + 20, va("%d PLAYERS", rl_vis.players), 15, RL_TEXT, true, RL_RIGHT, 1.6f, RL_MID);
+        RL_Text(v, x + w - RL_PAD, sy + 20, va("%d PLAYERS", rl_vis.players), 15, RL_FG, true, RL_RIGHT, 1.6f, RL_MID);
     }
     {
         // the actions
@@ -1893,8 +1899,8 @@ static void RL_Profile(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         }
         return;
     }
-    RL_Text(v, x + RL_PAD, y + 24, "PROFILE", 20, RL_TEXT, true, RL_LEFT, 2, RL_MID);
-    RL_Text(v, x + RL_PAD, y + 76, "NAME", 14, RL_MUTED, true, RL_LEFT, 1.6f, RL_MID);
+    RL_Text(v, x + RL_PAD, y + 24, "PROFILE", 20, RL_FG, true, RL_LEFT, 2, RL_MID);
+    RL_Text(v, x + RL_PAD, y + 76, "NAME", 14, RL_FG_MUTED, true, RL_LEFT, 1.6f, RL_MID);
     RL_Field(v, x + RL_PAD, y + 92, w - 2 * RL_PAD - aw - 4, 40, rl_mm.name, "", rl_mm.edit == F_NAME, m->Hot(ID_NAME));
     m->Hit(v, x + RL_PAD, y + 92, w - 2 * RL_PAD - aw - 4, 40, ID_NAME);
     RL_Button(m, v, x + w - RL_PAD - aw, y + 92, aw, 40, "APPLY", true, ID_APPLY);
@@ -1913,8 +1919,8 @@ static void RL_Profile(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         RL_BoxPx(RL_P(v, cx + cw) - 1, RL_P(v, fy), RL_P(v, cx + cw), RL_P(v, fy + fh), edge);
         RL_Text(v, cx + 14, fy + fh / 2,
                 RL_Ellipsize(v, own >= 0 ? rl_models[t][own].name.c_str() : RL_ModelName(RL_OwnModel(t).c_str()).c_str(), 16, false, cw - 48).c_str(),
-                16, RL_TEXT, false, RL_LEFT, 0, RL_MID);
-        RL_Arrow(v, cx + cw - 26, fy + fh / 2 - 4, 12, 8, rl_mm.pick == t, hot ? RL_TEXT : RL_MUTED);
+                16, RL_FG, false, RL_LEFT, 0, RL_MID);
+        RL_Arrow(v, cx + cw - 26, fy + fh / 2 - 4, 12, 8, rl_mm.pick == t, hot ? RL_FG : RL_FG_MUTED);
         m->Hit(v, cx, fy, cw, fh, ID_SELECT + t);
     }
     if (rl_mm.pick >= 0) {
@@ -1926,19 +1932,19 @@ static void RL_Profile(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         const int                     own = RL_OwnIndex(rl_mm.pick);
 
         rl_mm.pickTop = Q_max(0, Q_min(rl_mm.pickTop, n - fit));
-        RL_Panel(v, px, ly, lw, lh, RL_Rgb(12, 13, 15, 250));
+        RL_Panel(v, px, ly, lw, lh, RL_Rgb(12, 15, 21, 250));
         for (int i = 0; i < fit && rl_mm.pickTop + i < n; i++) {
             const int   k  = rl_mm.pickTop + i;
             const float iy = ly + 4 + i * ih;
 
             if (k == own) {
-                RL_Box(v, px + 2, iy, lw - 4, ih, RL_SEL);
+                RL_Box(v, px + 2, iy, lw - 4, ih, RL_Alpha(RL_BRASS, 48));
                 RL_Box(v, px + 2, iy, 3, ih, RL_BRASS);
             } else if (m->Hot(ID_PICK + k)) {
                 RL_Box(v, px + 2, iy, lw - 4, ih, RL_Rgb(255, 255, 255, 18));
             }
             RL_Text(v, px + 14, iy + ih / 2, RL_Ellipsize(v, list[k].name.c_str(), 16, k == own, lw - 28).c_str(), 16,
-                    k == own ? RL_BRASS : RL_TEXT, k == own, RL_LEFT, 0, RL_MID);
+                    k == own ? RL_BRASS : RL_FG, k == own, RL_LEFT, 0, RL_MID);
             m->Hit(v, px + 2, iy, lw - 4, ih, ID_PICK + k);
         }
     }
@@ -1965,7 +1971,7 @@ static void RL_Host(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
 
     RL_Panel(v, x, y, w, h, RL_PANEL);
     RL_Head(v, x, y, w, 48);
-    RL_Text(v, x + RL_PAD, y + 24, "HOST A GAME", 20, RL_TEXT, true, RL_LEFT, 2, RL_MID);
+    RL_Text(v, x + RL_PAD, y + 24, "HOST A GAME", 20, RL_FG, true, RL_LEFT, 2, RL_MID);
     RL_Box(v, x + lw, y + 49, 1, foot - (y + 49), RL_LINE);
     // the maps
     RL_Label(v, x + RL_PAD, y + 76, "MAP");
@@ -1976,7 +1982,7 @@ static void RL_Host(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
         RL_ListRow(m, v, x, ly + i * rh, lw, rh, RL_Shot(map), 4.0f / 3.0f, RL_MapName(map.c_str()), map.c_str(), map == rl_host.map, ID_MAP + i);
     }
     if (!n) {
-        RL_Text(v, x + RL_PAD, ly + rh / 2, "No maps for this mode.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+        RL_Text(v, x + RL_PAD, ly + rh / 2, "No maps for this mode.", 17, RL_FG_MUTED, false, RL_LEFT, 0, RL_MID);
     } else if (n > fit) {
         RL_ScrollBar(v, x + lw, ly, foot - ly, rl_host.top, fit, n);
     }
@@ -2036,19 +2042,19 @@ static void RL_Card(UIReloadedMenu *m, const rlView_t& v, const rlCard_t& c, flo
     while (size > 20 && RL_TextW(v, c.name.c_str(), size, true) > room) {
         size--;
     }
-    RL_Text(v, x, y + 30, RL_Ellipsize(v, c.name.c_str(), size, true, room).c_str(), size, c.dim ? RL_FAINT : RL_TEXT, true, RL_LEFT, 0, RL_BASE);
-    RL_Text(v, x + w, y + 30, c.tag.c_str(), 14, c.dim ? RL_FAINT : RL_BRASS, true, RL_RIGHT, 2.6f, RL_BASE);
+    RL_Text(v, x, y + 30, RL_Ellipsize(v, c.name.c_str(), size, true, room).c_str(), size, c.dim ? RL_FG_FAINT : RL_FG, true, RL_LEFT, 0, RL_BASE);
+    RL_Text(v, x + w, y + 30, c.tag.c_str(), 14, c.dim ? RL_FG_FAINT : RL_BRASS, true, RL_RIGHT, 2.6f, RL_BASE);
     RL_Photo(v, c.photo, x, py, w, ph, c.aspect);
     if (c.locked) {
-        RL_Box(v, x, py, w, ph, RL_Rgb(8, 9, 10, 158));
-        RL_Outline(v, RL_GLYPH("lock"), x + w / 2, py + ph / 2, 34, 34, RL_Rgb(238, 234, 224, 210));
+        RL_Box(v, x, py, w, ph, RL_Rgb(8, 10, 14, 158));
+        RL_Outline(v, RL_GLYPH("lock"), x + w / 2, py + ph / 2, 34, 34, RL_Rgb(234, 237, 242, 210));
     }
     RL_Frame(v, x, py, w, ph, on ? Q_max(2, RL_P(v, 2)) : 1, on ? RL_BRASS : RL_Rgb(255, 255, 255, m->Hot(id) ? 120 : 40));
     RL_Box(v, x, by, w, 4, on ? RL_BRASS : RL_Rgb(255, 255, 255, 30));
-    RL_Text(v, x, by + 24, RL_Ellipsize(v, c.left.c_str(), 16, false, w - rw - 12).c_str(), 16, c.dim ? RL_FAINT : RL_MUTED, false, RL_LEFT, 0,
+    RL_Text(v, x, by + 24, RL_Ellipsize(v, c.left.c_str(), 16, false, w - rw - 12).c_str(), 16, c.dim ? RL_FG_FAINT : RL_FG_MUTED, false, RL_LEFT, 0,
             RL_MID);
     if (rw) {
-        RL_Text(v, x + w, by + 24, c.right.c_str(), 16, RL_TEXT, true, RL_RIGHT, 0, RL_MID);
+        RL_Text(v, x + w, by + 24, c.right.c_str(), 16, RL_FG, true, RL_RIGHT, 0, RL_MID);
     }
     if (!c.dim) {
         m->Hit(v, x, y, w, by + 36 - y, id);
@@ -2101,7 +2107,7 @@ static void RL_CampMissions(UIReloadedMenu *m, const rlView_t& v, float x, float
         const char *says = !rl_camp.card ? "The saved game keeps its own." : training ? "Training is the same for everyone." : rl_diffSays[rl_camp.diff];
 
         RL_Label(v, x + RL_PAD, foot + RL_FOOT / 2, "DIFFICULTY");
-        RL_Text(v, ex + 16, foot + RL_FOOT / 2, RL_Ellipsize(v, says, 17, false, x + w - RL_PAD - 190 - 16 - (ex + 16)).c_str(), 17, RL_SOFT,
+        RL_Text(v, ex + 16, foot + RL_FOOT / 2, RL_Ellipsize(v, says, 17, false, x + w - RL_PAD - 190 - 16 - (ex + 16)).c_str(), 17, RL_FG_SOFT,
                 false, RL_LEFT, 0, RL_MID);
         RL_Button(m, v, x + w - RL_PAD - 190, by, 190, RL_CTRL, "START", true, ID_CSTART, !rl_camp.card && rl_camp.saves.empty());
     }
@@ -2128,7 +2134,7 @@ static void RL_CampSaves(UIReloadedMenu *m, const rlView_t& v, float x, float y,
                    &r == s, ID_SAVE + i);
     }
     if (!n) {
-        RL_Text(v, x + RL_PAD, ly + rh / 2, "No saved games yet.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+        RL_Text(v, x + RL_PAD, ly + rh / 2, "No saved games yet.", 17, RL_FG_MUTED, false, RL_LEFT, 0, RL_MID);
     } else if (n > rl_camp.fit) {
         RL_ScrollBar(v, x + lw, ly, foot - ly, rl_camp.top, rl_camp.fit, n);
     }
@@ -2147,7 +2153,7 @@ static void RL_CampSaves(UIReloadedMenu *m, const rlView_t& v, float x, float y,
             const float fx = rx + (k % 2) * (col + RL_PAD);
 
             RL_Label(v, fx, fy, rows[k][0].c_str());
-            RL_Text(v, fx, fy + 34, rows[k][1].c_str(), 20, RL_TEXT, false, RL_LEFT, 0, RL_MID, col);
+            RL_Text(v, fx, fy + 34, rows[k][1].c_str(), 20, RL_FG, false, RL_LEFT, 0, RL_MID, col);
             fy += k % 2 ? 74 : 0;
         }
     } else {
@@ -2173,7 +2179,7 @@ static void RL_Campaign(UIReloadedMenu *m, const rlView_t& v, float x, float y, 
     RL_Panel(v, x, y, w, h, RL_PANEL);
     RL_Head(v, x, y, w, 48);
     RL_Tabs(m, v, x + 4, y, rl_campTabs, 2, rl_camp.tab, ID_CTAB, 17, 22);
-    RL_Text(v, x + w - RL_PAD, y + 24, RL_GAME.title, 15, RL_MUTED, true, RL_RIGHT, 2.6f, RL_MID);
+    RL_Text(v, x + w - RL_PAD, y + 24, RL_GAME.title, 15, RL_FG_MUTED, true, RL_RIGHT, 2.6f, RL_MID);
     if (rl_camp.tab == CT_MISSIONS) {
         RL_CampMissions(m, v, x, y, w, y + h - RL_FOOT);
     } else {
@@ -3077,20 +3083,20 @@ static void RL_Slider(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
     // (off: faint, no hits: neither dragged nor typed in)
     RL_Box(v, x, y + 12, tw, 4, RL_Rgb(255, 255, 255, off ? 20 : 40));
     RL_Box(v, x, y + 12, tw * frac, 4, off ? RL_Rgb(255, 255, 255, 50) : RL_BRASS);
-    RL_Round(v, x + tw * frac - 8, y + 6, 16, 16, 8, off ? RL_Rgb(255, 255, 255, 70) : hot ? RL_BRASS : RL_TEXT);
+    RL_Round(v, x + tw * frac - 8, y + 6, 16, 16, 8, off ? RL_Rgb(255, 255, 255, 70) : hot ? RL_BRASS : RL_FG);
     if (!off) {
         m->Hit(v, x, y, tw, 28, id);
     }
     // the value
     RL_Panel(v, bx, y, 56, 28, RL_Rgb(0, 0, 0, typing ? 160 : 120));
     if (typing) {
-        const float tw2 = RL_Text(v, bx + 6, y + 14, rl_opt.value.c_str(), 16, RL_TEXT, false, RL_LEFT, 0, RL_MID);
+        const float tw2 = RL_Text(v, bx + 6, y + 14, rl_opt.value.c_str(), 16, RL_FG, false, RL_LEFT, 0, RL_MID);
 
         if ((cls.realtime / 530) % 2 == 0) {
             RL_Box(v, bx + 6 + tw2 + 1, y + 4, 2, 20, RL_BRASS);
         }
     } else {
-        RL_Text(v, bx + 28, y + 14, RL_OptShow(i), 16, off ? RL_FAINT : m->Hot(id + 1) ? RL_BRASS : RL_TEXT, false, RL_CENTER, 0, RL_MID);
+        RL_Text(v, bx + 28, y + 14, RL_OptShow(i), 16, off ? RL_FG_FAINT : m->Hot(id + 1) ? RL_BRASS : RL_FG, false, RL_CENTER, 0, RL_MID);
     }
     if (!off) {
         m->Hit(v, bx, y, 56, 28, id + 1);
@@ -3109,9 +3115,9 @@ static void RL_Cycle(UIReloadedMenu *m, const rlView_t& v, float x, float y, con
             RL_Box(v, ax + 1, y + 1, 30, 30, RL_Rgb(255, 255, 255, 18));
         }
         RL_Shape(x0, y0, RL_P(v, ax + 20) - x0, RL_P(v, y + 22) - y0, k ? "poly 1 1 1 1 0 0 1 0.5 0 1" : "poly 1 1 1 1 1 0 1 1 0 0.5",
-                 m->Hot(id + k) ? RL_BRASS : RL_MUTED, v.s);
+                 m->Hot(id + k) ? RL_BRASS : RL_FG_MUTED, v.s);
     }
-    RL_Text(v, x + 130, y + 16, label, 16, RL_TEXT, false, RL_CENTER, 0, RL_MID, 260 - 72);
+    RL_Text(v, x + 130, y + 16, label, 16, RL_FG, false, RL_CENTER, 0, RL_MID, 260 - 72);
     m->Hit(v, x, y, 32, 32, id);
     m->Hit(v, x + 32, y, 228, 32, id + 1);
 }
@@ -3124,7 +3130,7 @@ static void RL_Toggle(const rlView_t& v, float x, float y, bool on, bool hot, bo
         return;
     }
     RL_Round(v, x, y, 56, 28, 14, on ? (hot ? RL_BRASS_HOT : RL_BRASS) : RL_Rgb(255, 255, 255, hot ? 64 : 40));
-    RL_Round(v, x + (on ? 31 : 3), y + 3, 22, 22, 11, on ? RL_INK : RL_Rgb(220, 216, 206));
+    RL_Round(v, x + (on ? 31 : 3), y + 3, 22, 22, 11, on ? RL_INK : RL_Rgb(214, 220, 228));
 }
 
 static void RL_Swatches(UIReloadedMenu *m, const rlView_t& v, int i, float right, float top, int id)
@@ -3142,7 +3148,7 @@ static void RL_Swatches(UIReloadedMenu *m, const rlView_t& v, int i, float right
         RL_Round(v, x, y, 28, 28, 3, RL_Rgb(rgb >> 16, (rgb >> 8) & 0xFF, rgb & 0xFF));
         RL_RoundFrame(v, x, y, 28, 28, 3, 1, RL_Rgb(255, 255, 255, 40));
         if (!Q_stricmp(set, c[k]) || m->Hot(id + k)) {
-            RL_RoundFrame(v, x - 3, y - 3, 34, 34, 5, 2, Q_stricmp(set, c[k]) ? RL_Rgb(255, 255, 255, 110) : RL_TEXT);
+            RL_RoundFrame(v, x - 3, y - 3, 34, 34, 5, 2, Q_stricmp(set, c[k]) ? RL_Rgb(255, 255, 255, 110) : RL_FG);
         }
         m->Hit(v, x, y, 28, 28, id + k);
     }
@@ -3223,10 +3229,10 @@ static void RL_KeyRow(UIReloadedMenu *m, const rlView_t& v, int a, float x, floa
     const float    mid = y + h / 2;
 
     if (rl_keys.wait >= 0 && rl_keys.wait / 2 == a) {
-        RL_Box(v, x - RL_PAD + 2, y, w + 2 * RL_PAD - 3, h - 1, RL_SEL);
+        RL_Box(v, x - RL_PAD + 2, y, w + 2 * RL_PAD - 3, h - 1, RL_Alpha(RL_BRASS, 48));
         RL_Box(v, x - RL_PAD + 2, y, 3, h - 1, RL_BRASS);
     }
-    RL_Text(v, x, mid, act.name.c_str(), 19, RL_TEXT, false, RL_LEFT, 0, RL_MID, RL_KeyX(x, w, 0) - x - 18);
+    RL_Text(v, x, mid, act.name.c_str(), 19, RL_FG, false, RL_LEFT, 0, RL_MID, RL_KeyX(x, w, 0) - x - 18);
     for (int k = 0; k < 2; k++) {
         const float bx = RL_KeyX(x, w, k);
         const int   id = ID_KEY + a * 2 + k;
@@ -3237,7 +3243,7 @@ static void RL_KeyRow(UIReloadedMenu *m, const rlView_t& v, int a, float x, floa
         if (wait) {
             RL_Text(v, bx + 55, mid, "PRESS A KEY", 13, RL_BRASS, true, RL_CENTER, 1.2f, RL_MID);
         } else {
-            RL_Text(v, bx + 55, mid, act.key[k] >= 0 ? RL_KeyName(act.key[k]) : "\x97", 16, hot ? RL_BRASS : act.key[k] >= 0 ? RL_TEXT : RL_FAINT,
+            RL_Text(v, bx + 55, mid, act.key[k] >= 0 ? RL_KeyName(act.key[k]) : "\x97", 16, hot ? RL_BRASS : act.key[k] >= 0 ? RL_FG : RL_FG_FAINT,
                     false, RL_CENTER, 0, RL_MID, 98);
         }
         m->Hit(v, bx, mid - 16, 110, 32, id);
@@ -3276,7 +3282,7 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
         // (keys: their boxes' names over them)
         RL_Text(v, x, y + 18, o.label, 15, RL_BRASS, true, RL_LEFT, 2.6f, RL_MID);
         for (int k = 0; rl_opts[i + 1].kind == OC_KEYS && k < 2; k++) {
-            RL_Text(v, RL_KeyX(x, w, k) + 55, y + 18, k ? "ALTERNATE" : "PRIMARY", 12, RL_MUTED, true, RL_CENTER, 1.4f, RL_MID);
+            RL_Text(v, RL_KeyX(x, w, k) + 55, y + 18, k ? "ALTERNATE" : "PRIMARY", 12, RL_FG_MUTED, true, RL_CENTER, 1.4f, RL_MID);
         }
         return;
     }
@@ -3297,9 +3303,9 @@ static void RL_OptRow(UIReloadedMenu *m, const rlView_t& v, int i, float x, floa
             cw += o.kind == OC_SWATCH ? 34 : RL_TextW(v, o.choices[k], 15, true, 1.6f) + 40;
         }
     }
-    RL_Text(v, x, o.desc[0] ? y + 21 : mid, o.label, 19, off ? RL_MUTED : RL_TEXT, false, RL_LEFT, 0, RL_MID, w - cw - 24);
+    RL_Text(v, x, o.desc[0] ? y + 21 : mid, o.label, 19, off ? RL_FG_MUTED : RL_FG, false, RL_LEFT, 0, RL_MID, w - cw - 24);
     if (o.desc[0]) {
-        RL_Text(v, x, y + 45, o.desc, 14, off ? RL_FAINT : RL_MUTED, false, RL_LEFT, 0, RL_MID, w - cw - 24);
+        RL_Text(v, x, y + 45, o.desc, 14, off ? RL_FG_FAINT : RL_FG_MUTED, false, RL_LEFT, 0, RL_MID, w - cw - 24);
     }
     switch (o.kind) {
     case OC_SEG:
@@ -3443,7 +3449,7 @@ static void RL_Options(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         }
     }
     if (places.empty()) {
-        RL_Text(v, x + RL_PAD, top + 20, "No setting matches.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+        RL_Text(v, x + RL_PAD, top + 20, "No setting matches.", 17, RL_FG_MUTED, false, RL_LEFT, 0, RL_MID);
     } else if (height > band) {
         RL_ScrollBar(v, x + w, top, band, scroll, band, height);
     }
@@ -3711,9 +3717,9 @@ static void RL_VoteRow(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
     if (!off) {
         RL_RowMark(m, v, x, y, w, h, sel, id);
     }
-    RL_Text(v, x + RL_PAD + 8, y + h / 2, text, 18, off ? RL_FAINT : sel ? RL_TEXT : RL_SOFT, sel, RL_LEFT, 0, RL_MID, w - 2 * RL_PAD - 8 - cw);
+    RL_Text(v, x + RL_PAD + 8, y + h / 2, text, 18, off ? RL_FG_FAINT : sel ? RL_FG : RL_FG_SOFT, sel, RL_LEFT, 0, RL_MID, w - 2 * RL_PAD - 8 - cw);
     if (caption) {
-        RL_Text(v, x + w - RL_PAD, y + h / 2, caption, 13, RL_MUTED, true, RL_RIGHT, 1.6f, RL_MID);
+        RL_Text(v, x + w - RL_PAD, y + h / 2, caption, 13, RL_FG_MUTED, true, RL_RIGHT, 1.6f, RL_MID);
     }
 }
 
@@ -3740,13 +3746,13 @@ static void RL_Vote(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
         const int   left = Q_max(0, (30000 - (cl.serverTime - at)) / 1000 + 1);
         const float lx   = RL_Text(v, cx + 24, cy + 30, "VOTE IN PROGRESS", 14, RL_BRASS, true, RL_LEFT, 1.6f, RL_MID);
 
-        RL_Box(v, cx, cy, cw, ch, RL_SEL);
+        RL_Box(v, cx, cy, cw, ch, RL_Alpha(RL_BRASS, 48));
         RL_Box(v, cx, cy, 3, ch, RL_BRASS);
-        RL_Text(v, cx + 24 + lx + 16, cy + 30, va("%d S LEFT", left), 14, RL_MUTED, true, RL_LEFT, 1.6f, RL_MID);
-        RL_Text(v, cx + 24, cy + 68, CL_ConfigString(CS_VOTE_STRING), 26, RL_TEXT, true, RL_LEFT, 0, RL_MID, cw - 24 - 360);
+        RL_Text(v, cx + 24 + lx + 16, cy + 30, va("%d S LEFT", left), 14, RL_FG_MUTED, true, RL_LEFT, 1.6f, RL_MID);
+        RL_Text(v, cx + 24, cy + 68, CL_ConfigString(CS_VOTE_STRING), 26, RL_FG, true, RL_LEFT, 0, RL_MID, cw - 24 - 360);
         RL_Text(v, cx + 24, cy + 104,
                 va("YES  %s      NO  %s      UNDECIDED  %s", CL_ConfigString(CS_VOTE_YES), CL_ConfigString(CS_VOTE_NO), CL_ConfigString(CS_VOTE_UNDECIDED)),
-                15, RL_SOFT, true, RL_LEFT, 1.6f, RL_MID);
+                15, RL_FG_SOFT, true, RL_LEFT, 1.6f, RL_MID);
         if (cl.snap.ps.voted) {
             RL_Text(v, cx + cw - 24, cy + ch / 2, "YOUR VOTE IS IN", 15, RL_BRASS, true, RL_RIGHT, 2, RL_MID);
         } else {
@@ -3758,7 +3764,7 @@ static void RL_Vote(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
         say = "ONE VOTE AT A TIME";
     }
     if (!on || !got) {
-        RL_Text(v, x + RL_PAD + 8, top + 40, !on ? "Voting is off on this server." : "Asking the server for its votes\x85", 17, RL_MUTED, false, RL_LEFT, 0,
+        RL_Text(v, x + RL_PAD + 8, top + 40, !on ? "Voting is off on this server." : "Asking the server for its votes\x85", 17, RL_FG_MUTED, false, RL_LEFT, 0,
                 RL_MID);
     } else {
         // the server's votes on the left, the one picked's choices on the right
@@ -3789,7 +3795,7 @@ static void RL_Vote(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
 
             RL_Label(v, rx + RL_PAD + 8, top + 28, RL_Upper(pick->name.c_str()).c_str());
             if (pick->type == VOTE_NO_CHOICES) {
-                RL_Text(v, rx + RL_PAD + 8, ly + rh / 2, "Nothing to choose: CALL VOTE calls it.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+                RL_Text(v, rx + RL_PAD + 8, ly + rh / 2, "Nothing to choose: CALL VOTE calls it.", 17, RL_FG_MUTED, false, RL_LEFT, 0, RL_MID);
             } else if (typed) {
                 const float fw = Q_min(360.0f, rw - 2 * RL_PAD - 16);
 
@@ -3809,13 +3815,13 @@ static void RL_Vote(UIReloadedMenu *m, const rlView_t& v, float x, float y, floa
                                NULL, rl_vote.choice == c, false, ID_VCHOICE + c);
                 }
                 if (!cn) {
-                    RL_Text(v, rx + RL_PAD + 8, ly + rh / 2, "No one to choose.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+                    RL_Text(v, rx + RL_PAD + 8, ly + rh / 2, "No one to choose.", 17, RL_FG_MUTED, false, RL_LEFT, 0, RL_MID);
                 } else if (cn > fit) {
                     RL_ScrollBar(v, x + w, ly, foot - ly, rl_vote.ctop, fit, cn);
                 }
             }
         } else if (!at) {
-            RL_Text(v, rx + RL_PAD + 8, ly + rh / 2, "Pick a vote on the left.", 17, RL_MUTED, false, RL_LEFT, 0, RL_MID);
+            RL_Text(v, rx + RL_PAD + 8, ly + rh / 2, "Pick a vote on the left.", 17, RL_FG_MUTED, false, RL_LEFT, 0, RL_MID);
         }
     }
     // the foot row: BACK, CALL VOTE
@@ -3979,10 +3985,10 @@ void UIReloadedMenu::DrawConfirm(const rlView_t& v)
         return;
     }
     RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 140));
-    RL_Panel(v, x, y, w, h, RL_Rgb(12, 13, 15, 250));
+    RL_Panel(v, x, y, w, h, RL_Rgb(12, 15, 21, 250));
     RL_Head(v, x, y, w, 56);
-    RL_Text(v, x + 24, y + 28, says[k][0], 22, RL_TEXT, true, RL_LEFT, 2, RL_MID);
-    RL_Text(v, x + 24, y + 100, k == 4 ? RL_KeyQuestion().c_str() : says[k][1], 22, RL_SOFT, false, RL_LEFT, 0, RL_MID, w - 48);
+    RL_Text(v, x + 24, y + 28, says[k][0], 22, RL_FG, true, RL_LEFT, 2, RL_MID);
+    RL_Text(v, x + 24, y + 100, k == 4 ? RL_KeyQuestion().c_str() : says[k][1], 22, RL_FG_SOFT, false, RL_LEFT, 0, RL_MID, w - 48);
     RL_Button(this, v, x + w - 24 - 328, by, 150, 48, "CANCEL", false, ID_CANCEL);
     RL_Button(this, v, x + w - 24 - 170, by, 170, 48, says[k][2], true, ID_CONFIRM);
 }
@@ -4053,19 +4059,19 @@ void UIReloadedMenu::DrawHdr(const rlView_t& v)
     if (out) {
         UI_DrawDep(out);
     }
-    RL_Box(v, 0, top, v.dw, v.dh - top, RL_Rgb(12, 13, 15));
+    RL_Box(v, 0, top, v.dw, v.dh - top, RL_Rgb(12, 15, 21));
     RL_Box(v, 0, top, v.dw, 1, RL_LINE);
-    RL_Text(v, x, y + 12, page ? "PEAK BRIGHTNESS" : "BLACK LEVEL", 24, RL_TEXT, true, RL_LEFT, 2, RL_MID);
+    RL_Text(v, x, y + 12, page ? "PEAK BRIGHTNESS" : "BLACK LEVEL", 24, RL_FG, true, RL_LEFT, 2, RL_MID);
     RL_Text(v, x + w, y + 12, va("HDR CALIBRATION  \xb7  %d OF 2", page + 1), 15, RL_BRASS, true, RL_RIGHT, 2.6f, RL_MID);
-    RL_Text(v, x, y + 46, say, 18, RL_SOFT, false, RL_LEFT, 0, RL_MID, w - 160);
-    RL_Text(v, x + w, y + 46, page ? "ESC  BACK" : "ESC  CLOSES", 15, RL_MUTED, true, RL_RIGHT, 2, RL_MID);
+    RL_Text(v, x, y + 46, say, 18, RL_FG_SOFT, false, RL_LEFT, 0, RL_MID, w - 160);
+    RL_Text(v, x + w, y + 46, page ? "ESC  BACK" : "ESC  CLOSES", 15, RL_FG_MUTED, true, RL_RIGHT, 2, RL_MID);
     // the slider, its value, the button
     RL_Box(v, x, ry + 19, tw, 4, RL_Rgb(255, 255, 255, 40));
     RL_Box(v, x, ry + 19, tw * frac, 4, RL_BRASS);
-    RL_Round(v, x + tw * frac - 10, ry + 11, 20, 20, 10, hot ? RL_BRASS : RL_TEXT);
+    RL_Round(v, x + tw * frac - 10, ry + 11, 20, 20, 10, hot ? RL_BRASS : RL_FG);
     Hit(v, x - 10, ry, tw + 20, RL_CTRL, ID_HDRSLIDE);
     RL_Panel(v, vx, ry, vw, RL_CTRL, RL_Rgb(0, 0, 0, 120));
-    RL_Text(v, vx + vw / 2, ry + RL_CTRL / 2, page ? va("%.0f", cv->value) : va("%.2f", cv->value), 18, RL_TEXT, false, RL_CENTER, 0, RL_MID);
+    RL_Text(v, vx + vw / 2, ry + RL_CTRL / 2, page ? va("%.0f", cv->value) : va("%.2f", cv->value), 18, RL_FG, false, RL_CENTER, 0, RL_MID);
     RL_Button(this, v, x + w - bw, ry, bw, RL_CTRL, page ? "FINISH" : "NEXT", true, ID_CONFIRM);
 }
 
@@ -4231,43 +4237,43 @@ void UIReloadedMenu::DrawConnect(const rlView_t& v)
     }
     RL_Background(v);
     RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 90));
-    RL_Panel(v, x, y, w, h, RL_Rgb(12, 13, 15, 250));
+    RL_Panel(v, x, y, w, h, RL_Rgb(12, 15, 21, 250));
     RL_Head(v, x, y, w, 56);
-    RL_Text(v, x + pad, y + 28, head, 22, ended && !password ? red : RL_TEXT, true, RL_LEFT, 2, RL_MID);
+    RL_Text(v, x + pad, y + 28, head, 22, ended && !password ? red : RL_FG, true, RL_LEFT, 2, RL_MID);
 
     // the server: its map's photo (none known yet: a frame), its name over its address (none: the address), its map, the rest
     if (!rl_cn.map.empty()) {
         RL_Photo(v, RL_Shot(rl_cn.map), x + pad, top, pw, ph);
     } else {
         RL_Box(v, x + pad, top, pw, ph, RL_Rgb(255, 255, 255, 10));
-        RL_Text(v, x + pad + pw / 2, top + ph / 2, ended ? "MAP NOT KNOWN" : "MAP NOT KNOWN YET", 12, RL_FAINT, true, RL_CENTER, 2, RL_MID);
+        RL_Text(v, x + pad + pw / 2, top + ph / 2, ended ? "MAP NOT KNOWN" : "MAP NOT KNOWN YET", 12, RL_FG_FAINT, true, RL_CENTER, 2, RL_MID);
     }
     RL_Frame(v, x + pad, top, pw, ph, 1, RL_Rgb(255, 255, 255, 30));
     {
         const bool named = !rl_cn.name.empty();
         float      fx    = ix;
 
-        RL_Text(v, ix, top, RL_Ellipsize(v, (named ? rl_cn.name : rl_cn.addr).c_str(), 28, true, iw).c_str(), 28, RL_TEXT, true, RL_LEFT, 0,
+        RL_Text(v, ix, top, RL_Ellipsize(v, (named ? rl_cn.name : rl_cn.addr).c_str(), 28, true, iw).c_str(), 28, RL_FG, true, RL_LEFT, 0,
                 RL_TOP);
         if (named || (rl_cn.askedAt && !ended)) {
-            RL_Text(v, ix, top + 42, named ? rl_cn.addr.c_str() : "Asking the server for its name and map\x85", 16, RL_MUTED, false,
+            RL_Text(v, ix, top + 42, named ? rl_cn.addr.c_str() : "Asking the server for its name and map\x85", 16, RL_FG_MUTED, false,
                     RL_LEFT, 0, RL_TOP, iw);
         }
         if (!rl_cn.map.empty()) {
-            RL_Text(v, ix, top + 80, RL_MapName(rl_cn.map.c_str()), 20, RL_TEXT, false, RL_LEFT, 0, RL_TOP, iw);
+            RL_Text(v, ix, top + 80, RL_MapName(rl_cn.map.c_str()), 20, RL_FG, false, RL_LEFT, 0, RL_TOP, iw);
         }
         // the mode, players and ping (a drop's: its mode, the rest of then)
         if (!rl_cn.mode.empty()) {
-            fx += RL_Text(v, fx, top + ph, RL_Upper(rl_cn.mode.c_str()).c_str(), 14, RL_MUTED, true, RL_LEFT, 1.5f, RL_BASE);
+            fx += RL_Text(v, fx, top + ph, RL_Upper(rl_cn.mode.c_str()).c_str(), 14, RL_FG_MUTED, true, RL_LEFT, 1.5f, RL_BASE);
         }
         if (!rl_cn.joined && rl_cn.maxPlayers > 0) {
-            fx += fx > ix ? RL_Text(v, fx, top + ph, "  \xb7  ", 14, RL_MUTED, true, RL_LEFT, 1.5f, RL_BASE) : 0.0f;
-            fx += RL_Text(v, fx, top + ph, va("%d / %d", rl_cn.players, rl_cn.maxPlayers), 14, rl_cn.end == CE_FULL ? red : RL_MUTED, true,
+            fx += fx > ix ? RL_Text(v, fx, top + ph, "  \xb7  ", 14, RL_FG_MUTED, true, RL_LEFT, 1.5f, RL_BASE) : 0.0f;
+            fx += RL_Text(v, fx, top + ph, va("%d / %d", rl_cn.players, rl_cn.maxPlayers), 14, rl_cn.end == CE_FULL ? red : RL_FG_MUTED, true,
                           RL_LEFT, 1.5f, RL_BASE);
         }
         if (!rl_cn.joined && rl_cn.ping >= 0) {
-            fx += fx > ix ? RL_Text(v, fx, top + ph, "  \xb7  ", 14, RL_MUTED, true, RL_LEFT, 1.5f, RL_BASE) : 0.0f;
-            RL_Text(v, fx, top + ph, va("%d MS", rl_cn.ping), 14, RL_MUTED, true, RL_LEFT, 1.5f, RL_BASE);
+            fx += fx > ix ? RL_Text(v, fx, top + ph, "  \xb7  ", 14, RL_FG_MUTED, true, RL_LEFT, 1.5f, RL_BASE) : 0.0f;
+            RL_Text(v, fx, top + ph, va("%d MS", rl_cn.ping), 14, RL_FG_MUTED, true, RL_LEFT, 1.5f, RL_BASE);
         }
     }
 
@@ -4280,7 +4286,7 @@ void UIReloadedMenu::DrawConnect(const rlView_t& v)
         for (int i = 0; i < 3; i++) {
             const float sx = x + pad + i * (sw + 8);
 
-            RL_Text(v, sx, sy, steps[i], 13, i < at ? RL_TEXT : i == at ? RL_BRASS : RL_FAINT, true, RL_LEFT, 2, RL_TOP);
+            RL_Text(v, sx, sy, steps[i], 13, i < at ? RL_FG : i == at ? RL_BRASS : RL_FG_FAINT, true, RL_LEFT, 2, RL_TOP);
             RL_Box(v, sx, sy + 26, sw, 4, RL_Rgb(255, 255, 255, 30));
             if (i < at) {
                 RL_Box(v, sx, sy + 26, sw, 4, RL_BRASS);
@@ -4294,14 +4300,14 @@ void UIReloadedMenu::DrawConnect(const rlView_t& v)
             said = at == 0 ? "Contacting the server\x85" : at == 1 ? "Asking to join\x85" : "Waiting for the server\x85";
         }
         RL_Text(v, x + pad, by + 24, RL_Ellipsize(v, said.c_str(), 18, false, w - 3 * pad - 150).c_str(), 18,
-                clc.serverMessage[0] ? RL_TEXT : RL_MUTED, false, RL_LEFT, 0, RL_MID);
+                clc.serverMessage[0] ? RL_FG : RL_FG_MUTED, false, RL_LEFT, 0, RL_MID);
         RL_Button(this, v, x + w - pad - 150, by, 150, 48, "CANCEL", false, ID_CANCEL);
         return;
     }
     // what happened, a word more; the password's field
     RL_Box(v, x + pad, sy, w - 2 * pad, 1, RL_LINE);
-    RL_Text(v, x + pad, sy + 24, RL_Ellipsize(v, what.c_str(), 24, true, w - 2 * pad).c_str(), 24, RL_TEXT, true, RL_LEFT, 0, RL_TOP);
-    RL_Text(v, x + pad, sy + 62, RL_Ellipsize(v, more.c_str(), 17, false, w - 2 * pad).c_str(), 17, RL_SOFT, false, RL_LEFT, 0, RL_TOP);
+    RL_Text(v, x + pad, sy + 24, RL_Ellipsize(v, what.c_str(), 24, true, w - 2 * pad).c_str(), 24, RL_FG, true, RL_LEFT, 0, RL_TOP);
+    RL_Text(v, x + pad, sy + 62, RL_Ellipsize(v, more.c_str(), 17, false, w - 2 * pad).c_str(), 17, RL_FG_SOFT, false, RL_LEFT, 0, RL_TOP);
     if (password) {
         RL_Field(v, x + pad, sy + 96, w - 2 * pad, 44, std::string(rl_cn.typed.size(), '\x95'), "Password", true, false);
     }
