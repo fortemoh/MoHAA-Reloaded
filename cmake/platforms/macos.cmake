@@ -23,7 +23,8 @@ endif()
 function(finish_macos_app)
     get_filename_component(MACOS_ICON_FILE ${MACOS_ICON_PATH} NAME)
 
-    set(MACOS_APP_BUNDLE_NAME ${CLIENT_NAME})
+    # the name macOS shows (the app menu, "Quit MoHAA Reloaded"): q_shared.h's PRODUCT_NAME
+    set(MACOS_APP_BUNDLE_NAME "MoHAA Reloaded")
     set(MACOS_APP_EXECUTABLE_NAME ${CLIENT_BINARY})
     set(MACOS_APP_GUI_IDENTIFIER ${MACOS_BUNDLE_ID})
     set(MACOS_APP_ICON_FILE ${MACOS_ICON_FILE})

@@ -38,7 +38,7 @@ codesign --verify --deep --strict "$APP" || die "openmohaa.app's seal doesn't ve
 # the abbreviated hash into the version string at configure time).
 git -C "$ROOT" diff --quiet HEAD -- || die "the work tree has changes: commit them and rebuild"
 COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
-BUILT="$(strings "$APP/Contents/MacOS/openmohaa" | sed -n 's/^OpenMoHAA [^ ]*+[0-9]*\.\([0-9a-f]*\) .*/\1/p')"
+BUILT="$(strings "$APP/Contents/MacOS/openmohaa" | sed -n 's/^MoHAA Reloaded [^ ]*+[0-9]*\.\([0-9a-f]*\) .*/\1/p')"
 BUILT="${BUILT%%$'\n'*}"
 [ -n "$BUILT" ] && [ "${COMMIT#"$BUILT"}" != "$COMMIT" ] || die "openmohaa.app was built from '${BUILT:-?}', not HEAD ($COMMIT): rebuild"
 

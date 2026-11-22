@@ -1057,7 +1057,7 @@ void SV_Init (void)
 	Cvar_Get( "protocol", va( "%i", PROTOCOL_VERSION ), CVAR_SERVERINFO | CVAR_ROM );
 	sv_mapname = Cvar_Get( "mapname", "nomap", CVAR_SERVERINFO | CVAR_ROM );
 	sv_privateClients = Cvar_Get( "sv_privateClients", "0", CVAR_SERVERINFO );
-	sv_hostname = Cvar_Get( "sv_hostname", "Nameless OpenMoHAA Battle", CVAR_SERVERINFO | CVAR_ARCHIVE );
+	sv_hostname = Cvar_Get( "sv_hostname", "Nameless " PRODUCT_NAME " Battle", CVAR_SERVERINFO | CVAR_ARCHIVE );
 	sv_maxclients = Cvar_Get( "sv_maxclients", "1", CVAR_SERVERINFO | CVAR_LATCH );
 
 	sv_minRate = Cvar_Get ("sv_minRate", "0", CVAR_ARCHIVE | CVAR_SERVERINFO );
