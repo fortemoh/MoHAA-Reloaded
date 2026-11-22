@@ -130,7 +130,7 @@ public:
     void DrawScoreboard(const rlView_t& v, const rlInfo_t& in);
     void DrawEnd(const rlView_t& v, const rlInfo_t& in);
 
-    // the main menu, its confirmations, the connect's box and Options over the game (cl_uimain.cpp)
+    // the main menu, its confirmations, the connect screen and Options over the game (cl_uimain.cpp)
     bool     Main(void) const { return m_screen == SCR_MAIN || m_screen == SCR_CONFIRM || m_screen == SCR_CONNECT || m_screen == SCR_OPTIONS; }
     void     DrawMain(const rlView_t& v);
     void     DrawOptions(const rlView_t& v);
@@ -213,9 +213,9 @@ byte       *RL_MenuPhoto(class Menu *stock, int *width, int *height);
 // a photo (RGBA, shown photo wide a unit high) as a screen-shaped texture rows
 // texels high, blurred, its light times dim, darker to the corners, registered as name
 qhandle_t   RL_Blur(const char *name, const byte *pic, int pw, int ph, int rows, float dim, float photo = 4.0f / 3.0f);
-// the connect's box shown for a stock error menu (its name: errormessage, servertimeout, ...)
+// the connect screen shown for a stock error menu (its name: errormessage, servertimeout, ...)
 void        RL_ConnectError(const char *stock);
 // the server's last word (its "disconnect" command's reason)
 void        RL_ConnectDropped(const char *reason);
-// a map of the server's loads (its serverinfo; the map "dm/mohdm6"): its name and map for a drop's box
-void        RL_ConnectLoaded(const char *info, const char *map);
+// a map of the server's loads (its serverinfo): its name, for the connect screen should it drop the player
+void        RL_ConnectLoaded(const char *info);

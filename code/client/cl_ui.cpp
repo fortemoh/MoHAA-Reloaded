@@ -1046,7 +1046,7 @@ void UI_Update(void)
         UI_StopBind();
 
         if (clc.connectStartTime >= cls.realtime - 1000 * cl_connect_timeout->integer) {
-            // Changed: the menu looked up now (the Reloaded connect's box shown for its name)
+            // Changed: the menu looked up now (the Reloaded connect screen shown for its name)
             if (currentMenu != menuManager.FindMenu("connecting")) {
                 UI_ForceMenuOff(true);
                 UI_DeactiveFloatingWindows();
