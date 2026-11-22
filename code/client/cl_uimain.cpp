@@ -1333,13 +1333,13 @@ static void RL_Head(const rlView_t& v, float x, float y, float w, float h)
     RL_Box(v, x, y + h, w, 1, RL_LINE);
 }
 
-// the divider between tabs: a line a pixel wide at the tabs' edge, x + 6
+// the divider between tabs: Omaha's slash, three fifths of h high, its middle at the tabs' edge, x + 6
 static void RL_Divider(const rlView_t& v, float x, float y, float h)
 {
-    const float m  = h * 0.18f;
-    const int   x0 = RL_P(v, x + 6);
+    const float m = h * 0.2f, sw = (h - 2 * m) * 0.34f;
+    const int   x0 = RL_P(v, x + 6 - sw / 2), y0 = RL_P(v, y + m);
 
-    RL_BoxPx(x0, RL_P(v, y + m), x0 + 1, RL_P(v, y + h - m), RL_Rgb(255, 255, 255, 97));
+    RL_Shape(x0, y0, RL_P(v, x + 6 + sw / 2) - x0, RL_P(v, y + h - m) - y0, "poly 1 1 1 1 0.84 0 1 0 0.16 1 0 1", RL_Rgb(255, 255, 255, 84), v.s);
 }
 
 void RL_Button(UIReloadedMenu *m, const rlView_t& v, float x, float y, float w, float h, const char *label, bool primary, int id, bool off)
@@ -1447,7 +1447,7 @@ static void RL_Tabs(UIReloadedMenu *m, const rlView_t& v, float x, float y, cons
         if (i == on || hot) {
             RL_Box(v, x, y + 1, tw, 47, i == on ? RL_BRASS : RL_Rgb(255, 255, 255, 16));
         }
-        RL_Text(v, x + tw / 2, y + 24, labels[i], size, i == on ? RL_INK : hot ? RL_FG : RL_FG_MUTED, true, RL_CENTER, 2, RL_MID);
+        RL_Text(v, x + tw / 2, y + 24, labels[i], size, i == on ? RL_INK : hot ? RL_FG : RL_FG_SOFT, true, RL_CENTER, 2, RL_MID);
         m->Hit(v, x, y, tw, 48, id + i);
         x += tw;
         if (i < n - 1 && i != on && i + 1 != on && !hot && !m->Hot(id + i + 1)) {
