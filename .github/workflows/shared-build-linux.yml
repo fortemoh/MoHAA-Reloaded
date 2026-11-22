@@ -176,8 +176,8 @@ jobs:
         # Copy libraries
         mkdir ${{github.workspace}}/package
         cp -l ${{github.workspace}}/thirdparties/SDL3/install/lib/libSDL3.so.0 '${{github.workspace}}/package/'
-        if [ -d ${{github.workspace}}/install/bin ]; then cp -r ${{github.workspace}}/install/bin/openmohaa/. '${{github.workspace}}/package'; fi
-        if [ -d ${{github.workspace}}/install/lib ]; then cp -r ${{github.workspace}}/install/lib/openmohaa/. '${{github.workspace}}/package'; fi
+        if [ -d ${{github.workspace}}/install/bin ]; then cp -r ${{github.workspace}}/install/bin/mohreloaded/. '${{github.workspace}}/package'; fi
+        if [ -d ${{github.workspace}}/install/lib ]; then cp -r ${{github.workspace}}/install/lib/mohreloaded/. '${{github.workspace}}/package'; fi
 
     # The source and the binaries, see the script
     - name: Run glcheck

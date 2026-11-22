@@ -1,7 +1,7 @@
 //! Updates: whether the project's release has a newer build of the game than the one the launcher found, and that
 //! build's files put in place of the game's. CI replaces the release's downloads with each change to the `vulkan`
 //! branch (.github/workflows/branches-build.yml) and writes their commit into its notes, so a build is told by its
-//! commit: the game's own is in its version ("0.83.0-unstable+61.c2f07c2", cmake/version.cmake), and GitHub says
+//! commit: the game's own is in its version ("1.0.0-unstable+61.c2f07c2", cmake/version.cmake), and GitHub says
 //! whether the release's comes after it.
 
 use crate::platform;
@@ -88,9 +88,9 @@ impl Flags {
     }
 }
 
-/// The commit in a build's version, as the game's program holds it: "0.83.0-unstable+61.c2f07c2" is major, minor and
-/// patch, the stage, then the CI run and the commit abbreviated (q_version.h's PRODUCT_VERSION_FULL). A build made
-/// without git's information has none.
+/// The commit in a build's version, as the game's program holds it: "1.0.0-unstable+61.c2f07c2" is major, minor and
+/// patch, the stage, then the CI run and the commit abbreviated (q_version.h's PRODUCT_VERSION_FULL); a release
+/// build has no stage ("1.0.0+61.c2f07c2"). A build made without git's information has none.
 pub fn build_commit(binary: &[u8]) -> Option<String> {
     let hex = |c: &u8| c.is_ascii_digit() || (b'a'..=b'f').contains(c);
     for plus in (0..binary.len()).filter(|&i| binary[i] == b'+') {
@@ -111,7 +111,7 @@ pub fn build_commit(binary: &[u8]) -> Option<String> {
     None
 }
 
-/// "0.83.0" or "0.83.0-unstable" at the end
+/// "1.0.0" or "1.0.0-unstable" at the end
 fn ends_with_version(text: &[u8]) -> bool {
     let mut end = text.len();
     let stage = text.iter().rev().take_while(|c| c.is_ascii_alphabetic()).count();
@@ -572,6 +572,9 @@ mod tests {
         let binary = b"\x7fELF\0x+1.abcdef0\0OpenMoHAA 0.83.0-unstable+61.c2f07c2 linux-x86_64 Nov 02 2026 UTC\0";
         assert_eq!(build_commit(binary).as_deref(), Some("c2f07c2"));
         assert_eq!(build_commit(b"\x000.83.0-unstable+0.783b7414\0").as_deref(), Some("783b7414"));
+        // a release build, and the "1.12+1.0.0" (the original game's version, then this one's) servers send
+        let release = b"\x001.12+1.0.0\0MoHAA Reloaded 1.0.0+61.c2f07c2 linux-x86_64 Nov 22 2026 UTC\0";
+        assert_eq!(build_commit(release).as_deref(), Some("c2f07c2"));
         assert_eq!(build_commit(b"\x001.2.3+5.0123456789abcdef0123456789abcdef01234567\0").as_deref(),
             Some("0123456789abcdef0123456789abcdef01234567"));
         // without git's information, too short, run on, no version before it
@@ -611,14 +614,14 @@ mod tests {
     fn keeps_paths_inside_the_top_folder() {
         let top = "openmohaa-vulkan-1.0.0-linux-amd64";
         let inner = |p: &str| inner_path(Path::new(p), top);
-        assert_eq!(inner("openmohaa-vulkan-1.0.0-linux-amd64/openmohaa"), Some(PathBuf::from("openmohaa")));
+        assert_eq!(inner("openmohaa-vulkan-1.0.0-linux-amd64/mohreloaded"), Some(PathBuf::from("mohreloaded")));
         assert_eq!(
             inner("./openmohaa-vulkan-1.0.0-linux-amd64/main/sound/x.sofa"),
             Some(PathBuf::from("main/sound/x.sofa"))
         );
         assert_eq!(inner("openmohaa-vulkan-1.0.0-linux-amd64/"), None);
-        assert_eq!(inner("openmohaa"), None);
-        assert_eq!(inner("other/openmohaa"), None);
+        assert_eq!(inner("mohreloaded"), None);
+        assert_eq!(inner("other/mohreloaded"), None);
         assert_eq!(inner("openmohaa-vulkan-1.0.0-linux-amd64/../x"), None);
         assert_eq!(inner("/openmohaa-vulkan-1.0.0-linux-amd64/x"), None);
     }
@@ -628,7 +631,7 @@ mod tests {
     fn unpacks_both_downloads() {
         let dir = temp_dir("unpack");
         let files: [(&str, &[u8], u32); 3] = [
-            ("openmohaa", b"game", 0o755),
+            ("mohreloaded", b"game", 0o755),
             ("cgame.so", b"cgame", 0o644),
             ("main/sound/prom/hrtf/README.txt", b"hrtf", 0o644),
         ];
@@ -664,7 +667,7 @@ mod tests {
         {
             use std::os::unix::fs::PermissionsExt;
             let mode = |p: &str| fs::metadata(out.join(p)).unwrap().permissions().mode() & 0o777;
-            assert_eq!((mode("openmohaa"), mode("cgame.so")), (0o755, 0o644));
+            assert_eq!((mode("mohreloaded"), mode("cgame.so")), (0o755, 0o644));
         }
 
         let top = "openmohaa-vulkan-1.0.0-windows-x64";
@@ -681,13 +684,13 @@ mod tests {
         }
         let out = dir.join("zip");
         assert_eq!(unpack(&zipped, &out).unwrap().len(), 3);
-        assert_eq!(fs::read(out.join("openmohaa")).unwrap(), b"game");
+        assert_eq!(fs::read(out.join("mohreloaded")).unwrap(), b"game");
 
         // a file outside the top folder: nothing of it is used
         let bad = dir.join(format!("{top}-bad.zip"));
         {
             let mut zip = zip::ZipWriter::new(File::create(&bad).unwrap());
-            zip.start_file("elsewhere/openmohaa", zip::write::SimpleFileOptions::default()).unwrap();
+            zip.start_file("elsewhere/mohreloaded", zip::write::SimpleFileOptions::default()).unwrap();
             zip.write_all(b"x").unwrap();
             zip.finish().unwrap();
         }

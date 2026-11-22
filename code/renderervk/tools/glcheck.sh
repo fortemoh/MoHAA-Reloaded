@@ -95,7 +95,12 @@ if [ ! -d "$BINDIR" ]; then
 	exit 1
 fi
 cd "$BINDIR" || exit 1
-bins=$(ls | grep -E '^(openmohaa|omohaaded|cgame|game|renderer_[A-Za-z0-9_]+)(\.so|\.dll|\.exe)?$')
+bins=$(ls | grep -E '^(mohreloaded|mohreloaded-server|cgame|game|renderer_[A-Za-z0-9_]+)(\.so|\.dll|\.exe)?$')
+# the game's program must be among them: a renamed one would be left out without a word
+if ! echo "$bins" | grep -qxE 'mohreloaded(\.exe)?'; then
+	echo "glcheck: no mohreloaded or mohreloaded.exe in $BINDIR"
+	status=1
+fi
 gl=$(ls | grep -iE '^renderer_.*(opengl|gl[12])')
 if [ -n "$gl" ]; then
 	echo "glcheck: OpenGL renderers in $BINDIR: $gl"

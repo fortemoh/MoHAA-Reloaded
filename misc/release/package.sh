@@ -25,13 +25,13 @@ name="openmohaa-vulkan-1.0.0-$platform"
 stage="$out/$name"
 
 [[ $commit =~ ^[0-9a-f]{40}$ ]] || die "not a full commit ID: $commit"
-[ -e "$artifact/openmohaa" ] || [ -e "$artifact/openmohaa.exe" ] || die "$artifact doesn't hold the game"
+[ -e "$artifact/mohreloaded" ] || [ -e "$artifact/mohreloaded.exe" ] || die "$artifact doesn't hold the game"
 
 rm -rf "$stage"
 mkdir -p "$stage"
 cp -R "$artifact/." "$stage/"
 # the downloads are the client only, as the release notes say: no dedicated server
-rm -f "$stage/omohaaded" "$stage/omohaaded.exe"
+rm -f "$stage/mohreloaded-server" "$stage/mohreloaded-server.exe"
 cp "$root/COPYING.txt" "$stage/"
 cp -R "$here/licenses" "$stage/"
 
@@ -56,7 +56,7 @@ diff <(cd "$stage" && find . -mindepth 1 | sed 's#^\./##' | LC_ALL=C sort) \
 find "$stage" -type d -exec chmod 755 {} +
 find "$stage" -type f -exec chmod 644 {} +
 if [ "$platform" = linux-amd64 ]; then
-	chmod 755 "$stage/openmohaa" "$stage/mohlauncher"
+	chmod 755 "$stage/mohreloaded" "$stage/mohlauncher"
 	archive="$out/$name.tar.gz"
 	rm -f "$archive"
 	tar --sort=name --owner=0 --group=0 --numeric-owner -czf "$archive" -C "$out" "$name"
