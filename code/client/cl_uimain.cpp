@@ -25,8 +25,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // Disconnect, Delete), ui/reloaded_confirm.urc, shown over it, the
 // connect's box, ui/reloaded_connect.urc (CONNECTING), and the HDR
 // calibration's screens, ui/hdr_calibrate_*.urc. Project: Omaha's
-// screens, stripped down, in our look: a side rail (the star and the
-// wordmark, MULTIPLAYER / CAMPAIGN / HOST / OPTIONS, QUIT at its foot) over
+// screens, stripped down, in our look: a top bar (the star and the
+// wordmark, MULTIPLAYER / CAMPAIGN / HOST / OPTIONS, QUIT at its right) over
 // maps' photos blurred once to the screen's shape (no map loaded behind
 // it); MULTIPLAYER is Omaha's server browser (the game's master server
 // lists, queried only while the menu is up) and its profile (the name, each
@@ -34,8 +34,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // "axis"); CAMPAIGN the single player missions and saved games.
 //
 // Sizes are design units (cl_uidraw.h): a 1080-line screen, the width what
-// the screen's shape gives; the screens beside the rail from x 480 (420
-// under 1700 units across), 48 from the edges, 1640 across at most.
+// the screen's shape gives; the screens under the top bar, 48 from it and
+// from the edges, 1824 across at most (16:9's), in the middle.
 
 #include "client.h"
 #include "cl_ui.h"
@@ -76,10 +76,11 @@ static const rlColor_t RL_DARK_HOT = {44 / 255.0f, 50 / 255.0f, 62 / 255.0f, 1};
 
 #define RL_GLYPH(name) RL_OUTLINES "glyphs/" name ".svg"
 
-// the lines things line up on: the screens 48 from the screen's edges, 16
-// inside their panels, their foot a 64-unit row of controls 42 high
-// (REFRESH, JOIN, the model pickers) whose middle the rail's foot shares;
-// the rail's buttons from x 54 (the logo's left edge too), their labels from 72
+// the lines things line up on: the screens 48 from the screen's edges (and
+// the top bar's foot), 16 inside their panels, their foot a 64-unit row of
+// controls 42 high (REFRESH, JOIN, the model pickers) whose middle the Esc
+// menu's rail's foot shares; the rail's buttons from x 54 (the logo's left
+// edge too), their labels from 72
 #define RL_EDGE   48.0f
 #define RL_PAD    16.0f
 #define RL_FOOT   64.0f
@@ -91,6 +92,10 @@ static const rlColor_t RL_DARK_HOT = {44 / 255.0f, 50 / 255.0f, 62 / 255.0f, 1};
 #define RL_LOGO     76.0f
 #define RL_RAILTEXT 22.0f
 #define RL_RAILSTEP 64.0f
+// the main menu's top bar this high, its lockup this high, its pages' labels this size
+#define RL_BAR     84.0f
+#define RL_BARLOGO 56.0f
+#define RL_BARTEXT 22.0f
 
 enum { PAGE_PLAY, PAGE_CAMPAIGN, PAGE_HOST, PAGE_OPTIONS, PAGE_VOTE }; // (the vote's only over the Esc menu)
 enum { CT_MISSIONS, CT_SAVES }; // Campaign's tabs
@@ -1654,17 +1659,17 @@ static void RL_Background(const rlView_t& v)
 
 /*
 ================
-The rail (the main menu's, the Esc menu's): 440 units, dark, fading out
+The rail (the Esc menu's): 440 units, dark, fading out
 past 400; the star and the wordmark (RL_LOGO high) at its head, level with the
 screens' top and the buttons' left edge; the Esc menu's match under them
 (the title, two lines; a title too wide on two lines), on the labels' line;
-the items from 380 down (the main menu's MULTIPLAYER / CAMPAIGN / HOST /
-OPTIONS, the page shown filled brass); the foot's up from its foot, QUIT's
+the items from 380 down (the one shown filled brass); the foot's up from its foot, QUIT's
 level with the screens' foot row, their labels under the buttons' and
 their icons ending at their edge (DISCONNECT, LEAVE MISSION in single
 player, over QUIT while in a game: level with the browser's status row)
 ================
 */
+// the main menu's pages (its top bar's)
 static const rlRailItem_t rl_pages[] = {
     {ID_PLAY,     "MULTIPLAYER", NULL},
     {ID_CAMPAIGN, "CAMPAIGN",    NULL},
@@ -3897,19 +3902,112 @@ profile's panel) or the crosshair's preview (Options' panel), the front
 the rest
 ================
 */
-// the screens beside the rail: their left edge, their width
+// the screens beside the Esc menu's rail (Options over the game): their left edge, their width
 static void RL_PageX(const rlView_t& v, float *x, float *w)
 {
     *x = v.dw >= 1700 ? 480.0f : 420.0f;
     *w = Q_min(v.dw - *x - RL_EDGE, 1640.0f);
 }
 
+// the main menu's screens: under the top bar, RL_EDGE from it and from the screen's edges, 1824 across at most (16:9's),
+// in the middle
+static void RL_PageRect(const rlView_t& v, float *x, float *y, float *w, float *h)
+{
+    *w = Q_min(v.dw - 2 * RL_EDGE, 1824.0f);
+    *x = floorf((v.dw - *w) / 2);
+    *y = RL_BAR + RL_EDGE;
+    *h = v.dh - *y - RL_EDGE;
+}
+
+/*
+================
+The main menu's top bar (Project: Omaha's, square): a band RL_BAR high
+across the screen, dark, a line under it; on the screens' edges (x, x +
+w) the game's lockup (RL_BARLOGO high: its icon, a fifth of its height,
+its wordmark) and QUIT (DISCONNECT before it while in a game, LEAVE
+MISSION in single player, red), its icon 18 before its label, 32 between
+the two; the pages 48 after the lockup, each the bar's height, its label
+28 in from its sides, the one shown filled brass. Where they don't all fit
+(4:3 in a game) the pages' sides narrow to 12, then the foot's labels go
+(their icons stay)
+================
+*/
+static void RL_TopBar(UIReloadedMenu *m, const rlView_t& v, float x, float w, int on, const rlRailItem_t *foot, int nf)
+{
+    static const char *const icons[3] = {RL_GLYPH("star"), RL_GLYPH("spearhead"), RL_GLYPH("breakthrough")};
+    static const char *const marks[3] = {RL_GLYPH("wordmark"), RL_GLYPH("wordmark-spearhead"), RL_GLYPH("wordmark-breakthrough")};
+    const int                g = Q_max(0, Q_min(2, com_target_game->integer)), n = (int)ARRAY_LEN(rl_pages);
+    const float              mid = RL_BAR / 2;
+    float                    ww = 0, sw, sh, labels = 0, fw[2], tail = 0;
+    bool                     named = true;
+
+    if (UI_OutlineSize(marks[g], &sw, &sh)) {
+        ww = RL_BARLOGO * sw / sh;
+    }
+    const float lw = RL_BARLOGO + (ww ? RL_BARLOGO * 0.2f + ww : 0.0f);
+
+    for (int i = 0; i < n; i++) {
+        labels += RL_TextW(v, rl_pages[i].label, RL_BARTEXT, true, 2.4f);
+    }
+    for (int i = 0; i < nf; i++) {
+        fw[i] = 24 + 18 + RL_TextW(v, foot[i].label, 20, true, 2.4f);
+        tail += fw[i] + (i ? 32 : 0);
+    }
+    // (the pages' room: 48 after the lockup, 32 before the foot)
+    const float room = w - lw - 48 - 32 - labels;
+    float       pad  = Q_min(28.0f, (room - tail) / (2 * n));
+
+    if (pad < 12) {
+        named = false;
+        tail  = nf * 24 + (nf - 1) * 32;
+        pad   = Q_min(28.0f, (room - tail) / (2 * n));
+    }
+    RL_Box(v, 0, 0, v.dw, RL_BAR, RL_Rgb(14, 17, 23, 242));
+    RL_Box(v, 0, RL_BAR, v.dw, 1, RL_LINE);
+    RL_Outline(v, icons[g], x + RL_BARLOGO / 2, mid, RL_BARLOGO, RL_BARLOGO, RL_Rgb(255, 255, 255));
+    if (ww) {
+        RL_Outline(v, marks[g], x + RL_BARLOGO * 1.2f + ww / 2, mid, ww, RL_BARLOGO, RL_Rgb(255, 255, 255));
+    }
+    {
+        float px = x + lw + 48;
+
+        for (int i = 0; i < n; i++) {
+            const rlRailItem_t& it  = rl_pages[i];
+            const float         tw  = RL_TextW(v, it.label, RL_BARTEXT, true, 2.4f) + 2 * pad;
+            const bool          lit = it.id == on, hot = m->Hot(it.id);
+
+            if (lit || hot) {
+                RL_Box(v, px, 0, tw, RL_BAR, lit ? RL_BRASS : RL_Rgb(255, 255, 255, 16));
+            }
+            RL_Text(v, px + tw / 2, mid, it.label, RL_BARTEXT, lit ? RL_INK : hot ? RL_FG : RL_FG_SOFT, true, RL_CENTER, 2.4f, RL_MID);
+            m->Hit(v, px, 0, tw, RL_BAR, it.id);
+            px += tw;
+        }
+    }
+    {
+        // (from the right edge: the last, QUIT, muted; the one before it red)
+        float fx = x + w;
+
+        for (int i = nf - 1; i >= 0; i--) {
+            const rlRailItem_t& f  = foot[i];
+            const float         iw = named ? fw[i] : 24;
+            const rlColor_t     c  = m->Hot(f.id) ? RL_FG : i == nf - 1 ? RL_FG_MUTED : RL_Rgb(214, 120, 100);
+
+            RL_Outline(v, f.glyph, fx - iw + 12, mid, 24, 24, c);
+            if (named) {
+                RL_Text(v, fx - iw + 42, mid, f.label, 20, c, true, RL_LEFT, 2.4f, RL_MID);
+            }
+            m->Hit(v, fx - iw - 16, 0, iw + 16, RL_BAR, f.id);
+            fx -= iw + 32;
+        }
+    }
+}
+
 void UIReloadedMenu::DrawMain(const rlView_t& v)
 {
-    const float ay = RL_EDGE, ah = v.dh - 2 * RL_EDGE;
-    float       ax, aw;
+    float ax, ay, aw, ah;
 
-    RL_PageX(v, &ax, &aw);
+    RL_PageRect(v, &ax, &ay, &aw, &ah);
     const float pw = Q_max(270.0f, floorf(aw * 0.28f + 0.5f));
 
     // (the cvars it draws from: the cache draws again when one changes)
@@ -3929,12 +4027,12 @@ void UIReloadedMenu::DrawMain(const rlView_t& v)
         return;
     }
     {
-        // (DISCONNECT over QUIT while in a game)
+        // (DISCONNECT before QUIT while in a game)
         const rlRailItem_t foot[2] = {{ID_DISCONNECT, RL_InMission() ? "LEAVE MISSION" : "DISCONNECT", RL_GLYPH("disconnect")},
                                       {ID_QUIT, "QUIT", RL_GLYPH("quit")}};
         const int          in      = clc.state > CA_PRIMED;
 
-        RL_Rail(this, v, rl_pages, (int)ARRAY_LEN(rl_pages), ID_PLAY + rl_mm.page, foot + 1 - in, 1 + in);
+        RL_TopBar(this, v, ax, aw, ID_PLAY + rl_mm.page, foot + 1 - in, 1 + in);
     }
     if (rl_mm.page == PAGE_PLAY) {
         RL_Browser(this, v, ax, ay, aw - pw - 20, ah);
