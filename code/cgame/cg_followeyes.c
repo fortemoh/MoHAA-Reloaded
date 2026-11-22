@@ -99,10 +99,15 @@ static struct {
     qboolean torsoKnown; // seen to start a first-person animation (the stock state machine's names)
     int      vmAnim; // the first-person animation made from them
     int      vmAnimChanged;
-    // the hit's view kick: their health in the last snapshot read, the kick and the damage it decays with
+    // their hits: their health in the last snapshot read, the kick and the damage it decays with, the red
+    // flash, the damage's direction for the HUD (see FE_HitFeedback)
     int      health;
     vec3_t   kick;
     float    kickCount;
+    float    flash;
+    int      damageDir;
+    qboolean airborne; // off the ground in the snapshot read (see FE_Airborne), and the last one they were in
+    int      airTime;
     // the entity the cgame draws as its first-person model, and for each player
     // what is added to their usageIndex (see FE_Salt)
     int      viewEnt;
@@ -178,6 +183,24 @@ void CG_FollowEyes_Blast(const vec3_t origin)
     VectorCopy(origin, shot->end);
     shot->time  = cgi.Milliseconds();
     shot->blast = qtrue;
+}
+
+/*
+===============
+CG_FollowEyes_PlayerState
+
+The playerstate the view is drawn from while a followed player is watched through their eyes here (the snapshot's
+as rewritten), for what the client draws of it itself: the red flash over the view, the HUD's health and damage
+arrows. NULL otherwise, a server of this code showing them itself too (the client's own snapshot has it all).
+===============
+*/
+const playerState_t *CG_FollowEyes_PlayerState(void)
+{
+    if (!cg.snap || fe.serverMode || !(cg.snap->ps.pm_flags & PMF_SPECTATING) || cg.snap->ps.clientNum == cg.clientNum) {
+        return NULL;
+    }
+
+    return &cg.snap->ps;
 }
 
 /*
@@ -708,6 +731,48 @@ FE_Camera(const playerState_t *ps, const entityState_t *pl, vec3_t viewangles, f
 
 /*
 ===============
+FE_Airborne
+
+Whether they are off the ground, from their legs' animations (the state machine's global/mike_legs.st: the
+newest "smg_jump_takeoff" or "smg_fall" in the air, "smg_land_hard" in either slot landed): the servers never
+set a player's ground in what they send (0, the first player, for each)
+===============
+*/
+static qboolean FE_Airborne(const entityState_t *pl)
+{
+    const frameInfo_t *fi = NULL;
+    dtiki_t           *tiki;
+    const char        *anim;
+    int                i;
+
+    tiki = cgi.R_Model_GetHandle(cgs.model_draw[pl->modelindex]);
+    if (!tiki) {
+        return qfalse;
+    }
+
+    for (i = 0; i < FE_TORSO_SLOT; i++) {
+        if (pl->frameInfo[i].weight <= 0) {
+            continue;
+        }
+        // landing (the fall still blending out)
+        anim = cgi.Anim_NameForNum(tiki, pl->frameInfo[i].index);
+        if (anim && strstr(anim, "_land")) {
+            return qfalse;
+        }
+        if (!fi || pl->frameInfo[i].time < fi->time) {
+            fi = &pl->frameInfo[i];
+        }
+    }
+    if (!fi) {
+        return qfalse;
+    }
+
+    anim = cgi.Anim_NameForNum(tiki, fi->index);
+    return anim && Q_stricmpn(anim, "death", 5) && (strstr(anim, "_fall") || strstr(anim, "_takeoff"));
+}
+
+/*
+===============
 FE_Shooter
 
 A player in the snapshot who has just fired facing them (their upper body's fire animation started lately),
@@ -772,12 +837,13 @@ static qboolean FE_Shooter(const snapshot_t *snap, const entityState_t *pl, cons
 FE_HitDirection
 
 Which way the hit that just took their health came: a bullet the server sent lately that was going through
-them, else an explosion near them, else a player who has just fired facing them, else from in front of them.
+them, else an explosion near them, else a fall as they land (none), else a player who has just fired facing
+them, else from in front of them (qfalse: not known).
 (A stock server sends the bullets and explosions to a follower only when the follower's own place, kept below
 the follow camera, can see them: not at all while that place is in a wall.)
 ===============
 */
-static void FE_HitDirection(const snapshot_t *snap, const entityState_t *pl, const vec3_t forward, vec3_t dir)
+static qboolean FE_HitDirection(const snapshot_t *snap, const entityState_t *pl, const vec3_t forward, vec3_t dir)
 {
     vec3_t       mins, maxs, seg, p, center;
     float        best, bestBlast, top, bottom, len, t, dist;
@@ -839,29 +905,85 @@ static void FE_HitDirection(const snapshot_t *snap, const entityState_t *pl, con
         }
     }
 
-    if (!found) {
-        FE_Shooter(snap, pl, center, dir);
+    if (found) {
+        return qtrue;
     }
+
+    // landing: a fall's (Player::ProcessPmoveEvents), which has no direction: no kick, and the arrow a world
+    // yaw of 0's, as the player's own
+    if (!fe.airborne && fe.airTime && snap->serverTime - fe.airTime <= 150) {
+        VectorClear(dir);
+        return qtrue;
+    }
+
+    return FE_Shooter(snap, pl, center, dir);
 }
 
 /*
 ===============
-FE_HitKick
+FE_AddBlend
 
-The view kick of their hits, as the server's Player::DamageFeedback makes it for them: each server frame the
-kick and the damage it's for decay to 0.8, and a hit kicks the view against the way it came, more the harder
-it was
+A color over the screen's (Player::AddBlend)
 ===============
 */
-static void FE_HitKick(playerState_t *ps, const snapshot_t *snap, const entityState_t *pl, int lastServerTime)
+static void FE_AddBlend(float *blend, float r, float g, float b, float a)
+{
+    float a2, a3;
+
+    if (a <= 0) {
+        return;
+    }
+
+    a2       = blend[3] + (1 - blend[3]) * a;
+    a3       = blend[3] / a2;
+    blend[0] = blend[0] * a3 + r * (1 - a3);
+    blend[1] = blend[1] * a3 + g * (1 - a3);
+    blend[2] = blend[2] * a3 + b * (1 - a3);
+    blend[3] = a2;
+}
+
+/*
+===============
+FE_SetDamageDir
+
+The direction of a hit for the HUD's arrows, as the server sends it (STAT_DAMAGEDIR: its yaw x 10, moved a
+tenth when the same as the last so the hit shows)
+===============
+*/
+static void FE_SetDamageDir(const vec3_t dir)
+{
+    int yaw = (int)(vectoyaw(dir) * 10);
+
+    if (yaw == fe.damageDir) {
+        yaw += yaw < 1800 ? 1 : -1;
+    }
+    fe.damageDir = Com_Clamp(0, 3600, yaw);
+}
+
+/*
+===============
+FE_HitFeedback
+
+What their hits do to their view, as the server's Player::DamageFeedback and CalcBlend make it for them, once a
+server frame: the kick and the damage it's for decay to 0.8, and a hit kicks the view against the way it came,
+more the harder it was; the red flash goes up with a hit (0.001 a point, 10 points the least, between 0.2 and
+0.6) and down 0.06; the damage's direction for the HUD's arrows, kept as it was for a hit from where isn't
+known
+===============
+*/
+static void FE_HitFeedback(playerState_t *ps, const snapshot_t *snap, const entityState_t *pl, int lastServerTime)
 {
     vec3_t axis[3], dir;
     int    frames, health, damage;
 
     health = ps->stats[STAT_INFOCLIENT_HEALTH];
+    frames = lastServerTime ? (snap->serverTime - lastServerTime + FE_KICK_FRAME / 2) / FE_KICK_FRAME : 1;
+    frames = Com_Clamp(1, 40, frames);
 
-    if (lastServerTime) {
-        for (frames = (snap->serverTime - lastServerTime + FE_KICK_FRAME / 2) / FE_KICK_FRAME; frames > 0 && fe.kickCount; frames--) {
+    // the server frames before this snapshot's
+    for (; frames > 1; frames--) {
+        fe.flash = Q_max(0, fe.flash - 0.06f);
+        if (fe.kickCount) {
             fe.kickCount *= 0.8f;
             VectorScale(fe.kick, 0.8f, fe.kick);
             if (fe.kickCount < 0.1f) {
@@ -870,19 +992,33 @@ static void FE_HitKick(playerState_t *ps, const snapshot_t *snap, const entitySt
         }
     }
 
+    // this snapshot's: the kick decays before a hit adds to it, the flash after
+    if (fe.kickCount && lastServerTime) {
+        fe.kickCount *= 0.8f;
+        VectorScale(fe.kick, 0.8f, fe.kick);
+        if (fe.kickCount < 0.1f) {
+            fe.kickCount = 0;
+        }
+    }
+
     // their health is sent as a share of 100 (STAT_INFOCLIENT_HEALTH)
-    damage = fe.health > 0 && health > 0 ? fe.health - health : 0;
+    damage    = fe.health > 0 && health > 0 ? fe.health - health : 0;
     fe.health = health;
 
     if (damage > 0) {
         AnglesToAxis(pl->angles, axis);
-        FE_HitDirection(snap, pl, axis[0], dir);
+        if (FE_HitDirection(snap, pl, axis[0], dir)) {
+            FE_SetDamageDir(dir);
+        }
 
         fe.kick[PITCH] = Com_Clamp(-30, 30, fe.kick[PITCH] - DotProduct(dir, axis[0]) * damage * FE_KICK_PITCH);
         fe.kick[YAW]   = Com_Clamp(-30, 30, fe.kick[YAW] - DotProduct(dir, axis[1]) * damage * FE_KICK_YAW);
         fe.kick[ROLL]  = Com_Clamp(-25, 25, fe.kick[ROLL] + DotProduct(dir, axis[2]) * damage * FE_KICK_ROLL);
         fe.kickCount += damage;
+
+        fe.flash = Com_Clamp(0.2f, 0.6f, Q_max(0, fe.flash) + Q_max(damage, 10) * 0.001f);
     }
+    fe.flash = Q_max(0, fe.flash - 0.06f);
 
     if (fe.kickCount) {
         VectorCopy(fe.kick, ps->damage_angles);
@@ -890,6 +1026,9 @@ static void FE_HitKick(playerState_t *ps, const snapshot_t *snap, const entitySt
         VectorClear(fe.kick);
         VectorClear(ps->damage_angles);
     }
+
+    FE_AddBlend(ps->blend, 1, 0, 0, fe.flash);
+    ps->stats[STAT_DAMAGEDIR] = fe.damageDir;
 }
 
 /*
@@ -1009,6 +1148,7 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         fe.eyeHeight = 0;
         fe.health    = -1;
         fe.kickCount = 0;
+        fe.flash     = 0;
         VectorClear(fe.kick);
         FE_Salt(snap, -1);
         return;
@@ -1026,6 +1166,9 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         fe.vmAnim           = VM_ANIM_IDLE;
         fe.health           = -1;
         fe.kickCount        = 0;
+        fe.flash            = 0;
+        fe.damageDir        = ps->stats[STAT_DAMAGEDIR];
+        fe.airTime          = 0;
         VectorClear(fe.kick);
     }
 
@@ -1041,10 +1184,13 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
 
     VectorCopy(pl->origin, ps->origin);
     VectorCopy(viewangles, ps->viewangles);
-    ps->viewheight      = (int)(viewheight + 0.5f);
-    ps->fLeanAngle      = lean;
-    ps->groundEntityNum = pl->groundEntityNum;
-    ps->walking         = pl->groundEntityNum != ENTITYNUM_NONE;
+    ps->viewheight = (int)(viewheight + 0.5f);
+    ps->fLeanAngle = lean;
+
+    // on the ground (the cgame's walking bob and weapon pose, the landing sounds) or not
+    fe.airborne         = FE_Airborne(pl);
+    ps->groundEntityNum = fe.airborne ? ENTITYNUM_NONE : ENTITYNUM_WORLD;
+    ps->walking         = !fe.airborne;
     VectorClear(ps->damage_angles);
 
     // their speed: the server's when it sends it (g_smoothClients), else from their last origin
@@ -1064,17 +1210,29 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
     VectorCopy(pl->origin, fe.origin);
 
     //
-    // their health, and the kick of their hits
+    // their health, and what their hits do to their view
     //
     ps->stats[STAT_MAXHEALTH] = 100;
     if (dead) {
-        ps->stats[STAT_HEALTH] = 0;
-        fe.health              = -1;
-        fe.kickCount           = 0;
+        vec3_t axis[3], dir;
+
+        // the hit that killed them shows where it came from (no kick nor flash once dead)
+        AnglesToAxis(pl->angles, axis);
+        if (fe.health > 0 && FE_HitDirection(snap, pl, axis[0], dir)) {
+            FE_SetDamageDir(dir);
+        }
+        ps->stats[STAT_HEALTH]    = 0;
+        ps->stats[STAT_DAMAGEDIR] = fe.damageDir;
+        fe.health                 = -1;
+        fe.kickCount              = 0;
+        fe.flash                  = 0;
         VectorClear(fe.kick);
     } else {
         ps->stats[STAT_HEALTH] = ps->stats[STAT_INFOCLIENT_HEALTH] > 0 ? ps->stats[STAT_INFOCLIENT_HEALTH] : 1;
-        FE_HitKick(ps, snap, pl, lastServerTime);
+        FE_HitFeedback(ps, snap, pl, lastServerTime);
+    }
+    if (fe.airborne) {
+        fe.airTime = snap->serverTime;
     }
 
     //

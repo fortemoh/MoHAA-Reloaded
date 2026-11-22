@@ -709,6 +709,8 @@ void CL_SetCGameTime( void );
 void CL_FirstSnapshot( void );
 void CL_ShaderStateChanged( void );
 baseshader_t *CL_GetShaderPointer( int iShaderNum );
+// Added in Reloaded
+const playerState_t *CL_FollowEyesPlayerState( void );
 
 //
 // cl_ui.c
