@@ -593,12 +593,7 @@ typedef struct {
 	VkFramebuffer		framebuffer;
 	VkRenderPass		depthResolvePass;	// multisampling: resolves the depth/stencil buffer for readbacks
 	VkFramebuffer		depthResolveFramebuffer;
-	// the frame blurred (vk_frame_blur): the color target halved down its mip
-	// levels; made at its first use, its contents only the blur's
-	VkImage				blurImage;
-	VkDeviceMemory		blurMemory;
-	VkImageView			blurView;
-	uint64_t			blurSerial;		// the frame it was last blurred in
+	uint64_t			blurSerial;		// the frame last blurred in (vk_frame_blur)
 
 	// shared objects
 	VkDescriptorSetLayout textureSetLayout;
@@ -833,6 +828,11 @@ void		VK_RadarInit( void );
 void		VK_RadarShutdown( void );
 void		VK_RadarShutdownObjects( void );
 
+// vk_blur.c
+void		VK_FrameBlurInit( void );
+void		VK_FrameBlurShutdown( void );	// the device idle
+void		VK_FrameBlurRecord( VkCommandBuffer cmd, VkImage target, const vkTexture_t *dst );
+
 // vk_framelog.c
 extern qboolean	vk_frameLog;	// r_vkFrameLog: the frame log records
 void		VK_FrameLogGpu( uint64_t serial, uint64_t mainStart, uint64_t mainEnd, uint64_t frameEnd, uint64_t mask, double usPerTick );
@@ -961,6 +961,12 @@ extern const uint32_t	vk_spirv_radar_comp[];
 extern const size_t		vk_spirv_radar_comp_size;
 extern const uint32_t	vk_spirv_radar_changing_comp[];
 extern const size_t		vk_spirv_radar_changing_comp_size;
+
+// vk_shaders_blur.c
+extern const uint32_t	vk_spirv_frame_blur_comp[];
+extern const size_t		vk_spirv_frame_blur_comp_size;
+extern const uint32_t	vk_spirv_frame_blur_vertical_comp[];
+extern const size_t		vk_spirv_frame_blur_vertical_comp_size;
 
 // vk_shaders_temporal.c
 extern const uint32_t	vk_spirv_generic_temporal_vert[];
