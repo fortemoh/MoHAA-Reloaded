@@ -63,6 +63,8 @@ static const rlColor_t RL_FG_SOFT  = {194 / 255.0f, 200 / 255.0f, 210 / 255.0f, 
 static const rlColor_t RL_FG_MUTED = {140 / 255.0f, 148 / 255.0f, 160 / 255.0f, 1};
 static const rlColor_t RL_FG_FAINT = {96 / 255.0f, 103 / 255.0f, 114 / 255.0f, 1};
 static const rlColor_t RL_SOFT     = {200 / 255.0f, 196 / 255.0f, 186 / 255.0f, 1};
+// the favourites' star (Omaha's gold, whatever the game's accent)
+static const rlColor_t RL_GOLD = {228 / 255.0f, 182 / 255.0f, 47 / 255.0f, 1};
 // the panels (navy), their heads, their lines
 static const rlColor_t RL_PANEL = {10 / 255.0f, 12 / 255.0f, 17 / 255.0f, 236 / 255.0f};
 static const rlColor_t RL_HEAD  = {0, 0, 0, 70 / 255.0f};
@@ -1489,10 +1491,12 @@ static void RL_ListRow(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
     RL_Text(v, tx, y + h / 2 + 15, caption, 14, RL_FG_MUTED, false, RL_LEFT, 0.6f, RL_MID, room);
 }
 
-// the scroll bar of a list over y h, its right edge at x: shown of total, from at
+// the scroll bar of a list over y h, its right edge at x (a panel's edge or a divider: its line's left): Omaha's, a
+// dark track 4 wide, the part shown (shown of total, from at) in the accent
 static void RL_ScrollBar(const rlView_t& v, float x, float y, float h, float at, float shown, float total)
 {
-    RL_Box(v, x - 8, y + 4 + (h - 8) * at / total, 3, Q_max(24.0f, (h - 8) * shown / total), RL_Rgb(255, 255, 255, 60));
+    RL_Box(v, x - 5, y, 4, h, RL_Rgb(0, 0, 0, 90));
+    RL_Box(v, x - 5, y + h * at / total, 4, Q_max(24.0f, h * shown / total), RL_BRASS);
 }
 
 // a panel's foot row (its top at foot): its band, a line over it; its controls' top
@@ -1797,7 +1801,7 @@ static void RL_Browser(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         } else if (at % 2) {
             RL_Box(v, x + 2, yy, w - 4, rh, RL_Rgb(255, 255, 255, 6));
         }
-        RL_Star(v, cx[0] + iw * 0.025f, mid, 18, fav ? RL_BRASS : m->Hot(ID_FAV + i) ? RL_Rgb(255, 255, 255, 120) : RL_Rgb(255, 255, 255, 40));
+        RL_Star(v, cx[0] + iw * 0.025f, mid, 18, fav ? RL_GOLD : m->Hot(ID_FAV + i) ? RL_Rgb(255, 255, 255, 120) : RL_Rgb(255, 255, 255, 40));
         RL_Text(v, cx[1], mid, RL_Ellipsize(v, r.name.empty() ? "?" : r.name.c_str(), 17, sel, iw * share[1] - 12).c_str(), 17,
                 r.otherVersion ? RL_FG_FAINT : RL_FG, sel, RL_LEFT, 0, RL_MID);
         RL_Text(v, cx[2], mid, RL_Ellipsize(v, r.map.c_str(), 17, false, iw * share[2] - 12).c_str(), 17, soft, false, RL_LEFT, 0, RL_MID);
@@ -1848,11 +1852,11 @@ static void RL_Browser(UIReloadedMenu *m, const rlView_t& v, float x, float y, f
         } else {
             state = "READY";
         }
-        RL_Box(v, x + 1, sy, w - 2, 40, RL_Rgb(255, 255, 255, 12));
-        RL_Box(v, x, sy, w, 1, RL_LINE);
-        RL_Text(v, x + RL_PAD, sy + 20, va("%d SERVERS", (int)rl_vis.rows.size()), 15, RL_FG, true, RL_LEFT, 1.6f, RL_MID);
-        RL_Text(v, x + w / 2, sy + 20, state, 15, RL_BRASS, true, RL_CENTER, 2, RL_MID);
-        RL_Text(v, x + w - RL_PAD, sy + 20, va("%d PLAYERS", rl_vis.players), 15, RL_FG, true, RL_RIGHT, 1.6f, RL_MID);
+        // (Omaha's: a strip in the accent, the panel's width, over its edges)
+        RL_Box(v, x, sy, w, 40, RL_BRASS);
+        RL_Text(v, x + RL_PAD, sy + 20, va("%d SERVERS", (int)rl_vis.rows.size()), 15, RL_INK, true, RL_LEFT, 1.6f, RL_MID);
+        RL_Text(v, x + w / 2, sy + 20, state, 15, RL_INK, true, RL_CENTER, 2, RL_MID);
+        RL_Text(v, x + w - RL_PAD, sy + 20, va("%d PLAYERS", rl_vis.players), 15, RL_INK, true, RL_RIGHT, 1.6f, RL_MID);
     }
     {
         // the actions
