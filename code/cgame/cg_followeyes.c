@@ -1170,6 +1170,8 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         fe.damageDir        = ps->stats[STAT_DAMAGEDIR];
         fe.airTime          = 0;
         VectorClear(fe.kick);
+        // their eye height at once (the first-person view eases changes of it in)
+        cg.fCurrentViewHeight = 0;
     }
 
     //
@@ -1183,8 +1185,13 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
     }
 
     VectorCopy(pl->origin, ps->origin);
-    VectorCopy(viewangles, ps->viewangles);
-    ps->viewheight = (int)(viewheight + 0.5f);
+    // in the range the player's own are (PM_UpdateViewAngles: the pitch between -90 and 90): the camera's come in
+    // 0 to 360, and the first-person view tilts the eye and the gun by a share of the pitch (CG_OffsetFirstPersonView),
+    // looking up as 355 put the eye on the floor and the gun upside down
+    ps->viewangles[PITCH] = AngleNormalize180(viewangles[PITCH]);
+    ps->viewangles[YAW]   = AngleNormalize180(viewangles[YAW]);
+    ps->viewangles[ROLL]  = 0;
+    ps->viewheight        = (int)(viewheight + 0.5f);
     ps->fLeanAngle = lean;
 
     // on the ground (the cgame's walking bob and weapon pose, the landing sounds) or not
