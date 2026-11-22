@@ -78,6 +78,14 @@ cvar_t *cg_spectatefirstperson;
 #define FE_MAX_SHOTS 32
 #define FE_SHOT_TIME 300 // ms
 
+// the turrets seen, as last sent (see FE_KeepTurrets)
+#define FE_MAX_TURRETS 16
+
+// a turret not sent (see FE_Turret): the bullets that start this near it are its shots, and each one's "fire"
+// lasts this long
+#define FE_TURRET_MUZZLE 64
+#define FE_TURRET_FIRE   100 // ms
+
 typedef struct {
     int   index;
     float time;
@@ -115,10 +123,13 @@ static struct {
     qboolean airborne; // off the ground in the snapshot read (see FE_Airborne), and the last one they were in
     int      airTime;
     // the turret they are on: its animation and the slot it is in, and the shake its shots give their view
-    // (see FE_Turret)
-    feAnim_t turretAnim;
-    int      turretSlot;
-    float    turretJitter;
+    // (see FE_Turret); for one not sent, the bullets read (fe_numShots then) and its last shot's slot and time
+    feAnim_t     turretAnim;
+    int          turretSlot;
+    float        turretJitter;
+    unsigned int turretShots;
+    int          turretFireSlot;
+    int          turretFireTime;
     // the entity the cgame draws as its first-person model, and for each player
     // what is added to their usageIndex (see FE_Salt)
     int      viewEnt;
@@ -131,6 +142,9 @@ static struct {
 
 static feShot_t     fe_shots[FE_MAX_SHOTS];
 static unsigned int fe_numShots;
+
+static entityState_t fe_turrets[FE_MAX_TURRETS];
+static int           fe_numTurrets;
 
 /*
 ===============
@@ -150,6 +164,9 @@ void CG_FollowEyes_Init(void)
 
     memset(fe_shots, 0, sizeof(fe_shots));
     fe_numShots = 0;
+
+    memset(fe_turrets, 0, sizeof(fe_turrets));
+    fe_numTurrets = 0;
 }
 
 /*
@@ -539,9 +556,24 @@ static int FE_FrameVMAnim(dtiki_t *tiki, int anim, float from, float to)
 
 /*
 ===============
+FE_IsClass
+
+Whether a model's server class is the one named
+===============
+*/
+static qboolean FE_IsClass(dtiki_t *tiki, const char *classname)
+{
+    const char *arg = FE_ServerInitArg(tiki, "classname");
+
+    return arg && !Q_stricmp(arg, classname);
+}
+
+/*
+===============
 FE_FindWeapon
 
-The gun in the player's hands: an entity on them whose model is a weapon
+The gun in the player's hands: an entity on them whose model is a weapon, or Spearhead's packed MG42
+(CarryableTurret, an item with no weapon type)
 ===============
 */
 static const entityState_t *FE_FindWeapon(const snapshot_t *snap, int follow, dtiki_t **tikiOut)
@@ -557,7 +589,8 @@ static const entityState_t *FE_FindWeapon(const snapshot_t *snap, int follow, dt
         }
 
         tiki = cgi.R_Model_GetHandle(cgs.model_draw[es->modelindex]);
-        if (FE_ServerInitArg(tiki, "weapontype") && FE_ServerInitArg(tiki, "name")) {
+        if (FE_ServerInitArg(tiki, "name")
+            && (FE_ServerInitArg(tiki, "weapontype") || FE_IsClass(tiki, "CarryableTurret"))) {
             *tikiOut = tiki;
             return es;
         }
@@ -1158,27 +1191,117 @@ static qboolean FE_OnTurret(const entityState_t *pl)
 
 /*
 ===============
+FE_IsTurret
+
+A turret a player takes: TurretGun, or Spearhead's portable MG42 set up (PortableTurret)
+===============
+*/
+static qboolean FE_IsTurret(dtiki_t *tiki)
+{
+    return FE_IsClass(tiki, "TurretGun") || FE_IsClass(tiki, "PortableTurret");
+}
+
+/*
+===============
+FE_KeepTurrets
+
+The turrets in a snapshot, kept as sent: the servers stop sending one to someone while a player is on it. They hide
+the turret from its user (TurretGun::P_CreateViewModel), but with the user's number ORed into the one they hid it
+from before, never cleared: from the second user on, the turret is hidden from whoever has that number, perhaps a
+follower, and not from its user
+===============
+*/
+static void FE_KeepTurrets(const snapshot_t *snap)
+{
+    int i, j;
+
+    for (i = 0; i < snap->numEntities; i++) {
+        const entityState_t *es = &snap->entities[i];
+
+        if (!es->modelindex || es->number == FE_TURRET_VIEWMODEL
+            || !FE_IsTurret(cgi.R_Model_GetHandle(cgs.model_draw[es->modelindex]))) {
+            continue;
+        }
+
+        for (j = 0; j < fe_numTurrets && fe_turrets[j].number != es->number; j++) {}
+        if (j == FE_MAX_TURRETS) {
+            // more than a map has: the first kept goes
+            memmove(&fe_turrets[0], &fe_turrets[1], (FE_MAX_TURRETS - 1) * sizeof(entityState_t));
+            j = FE_MAX_TURRETS - 1;
+        } else if (j == fe_numTurrets) {
+            fe_numTurrets++;
+        }
+        fe_turrets[j] = *es;
+    }
+}
+
+/*
+===============
+FE_TurretFire
+
+The animation of a turret not sent, from the bullets the server sent from it since the last snapshot read: a
+"fire" for them in the next slot, as the server starts each shot (TurretGun::P_SetWeaponAnim), then idle
+===============
+*/
+static void FE_TurretFire(entityState_t *turret, dtiki_t *tiki, int serverTime)
+{
+    const int fire = cgi.Anim_NumForName(tiki, "fire");
+    const int idle = cgi.Anim_NumForName(tiki, "idle");
+    qboolean  shot = qfalse;
+    int       elapsed;
+
+    if (fe_numShots - fe.turretShots > FE_MAX_SHOTS) {
+        fe.turretShots = fe_numShots - FE_MAX_SHOTS;
+    }
+    for (; fe.turretShots != fe_numShots; fe.turretShots++) {
+        const feShot_t *s = &fe_shots[fe.turretShots % FE_MAX_SHOTS];
+
+        if (!s->blast && DistanceSquared(s->start, turret->origin) < Square(FE_TURRET_MUZZLE)) {
+            shot = qtrue;
+        }
+    }
+    if (shot && fire >= 0) {
+        fe.turretFireSlot = (fe.turretFireSlot + 1) % MAX_FRAMEINFOS;
+        fe.turretFireTime = serverTime;
+    }
+
+    memset(turret->frameInfo, 0, sizeof(turret->frameInfo));
+    elapsed = fe.turretFireTime ? serverTime - fe.turretFireTime : FE_TURRET_FIRE;
+    if (elapsed >= FE_TURRET_FIRE) {
+        turret->frameInfo[fe.turretFireSlot].index = idle;
+        elapsed -= FE_TURRET_FIRE;
+    } else {
+        turret->frameInfo[fe.turretFireSlot].index = fire;
+    }
+    // the time as the snapshots show it: one server frame on (see FE_FrameVMAnim)
+    turret->frameInfo[fe.turretFireSlot].time   = (elapsed + FE_SERVER_FRAME) / 1000.0f;
+    turret->frameInfo[fe.turretFireSlot].weight = 1;
+}
+
+/*
+===============
 FE_Turret
 
 A followed player on a turret (see FE_OnTurret): the server shows them the turret's view model on their eyes
 instead of the turret (TurretGun::P_CreateViewModel: "<its model>_viewmodel.tik", playing the turret's
 animation, sent to them only, the turret left out of their snapshots), with the turret their item and a
 crosshair (Player::UpdateStats), and their view the turret's camera. The same made here from the turret in the
-snapshot: its view model taken from the models the server registered for it; with none (not registered) the
-turret stays as it is.
+snapshot, or when the server didn't send it (see FE_KeepTurrets) the one kept, its shots from the bullets: its
+view model taken from the models the server registered for it; with none (not registered) the turret stays as
+it is.
 ===============
 */
 static void FE_Turret(snapshot_t *snap, playerState_t *ps, int follow, int playerModel, const vec3_t eye)
 {
     const entityState_t *turret = NULL;
     const frameInfo_t   *fi     = NULL;
-    entityState_t        vm;
+    entityState_t        vm, kept;
     dtiki_t             *tiki, *vmTiki, *ptiki;
     char                 name[MAX_QPATH];
     const char          *arg, *anim;
     float                best = Square(96);
     vec3_t               ofs;
-    qboolean             shot;
+    qboolean             shot, sent = qtrue;
     int                  i, item, vmIndex = 0, slot, fiSlot = -1, idle;
 
     for (i = 0; i < snap->numEntities; i++) {
@@ -1188,15 +1311,28 @@ static void FE_Turret(snapshot_t *snap, playerState_t *ps, int follow, int playe
             continue;
         }
         tiki = cgi.R_Model_GetHandle(cgs.model_draw[es->modelindex]);
-        arg  = FE_ServerInitArg(tiki, "classname");
-        if (arg && !Q_stricmp(arg, "TurretGun") && DistanceSquared(es->origin, eye) < best) {
+        if (FE_IsTurret(tiki) && DistanceSquared(es->origin, eye) < best) {
             best   = DistanceSquared(es->origin, eye);
             turret = es;
         }
     }
     if (!turret) {
-        return;
+        for (i = 0; i < fe_numTurrets; i++) {
+            if (DistanceSquared(fe_turrets[i].origin, eye) < best) {
+                best   = DistanceSquared(fe_turrets[i].origin, eye);
+                turret = &fe_turrets[i];
+            }
+        }
+        if (!turret) {
+            fe.turretShots = fe_numShots;
+            return;
+        }
+        kept = *turret;
+        FE_TurretFire(&kept, cgi.R_Model_GetHandle(cgs.model_draw[kept.modelindex]), snap->serverTime);
+        turret = &kept;
+        sent   = qfalse;
     }
+    fe.turretShots = fe_numShots;
 
     tiki = cgi.R_Model_GetHandle(cgs.model_draw[turret->modelindex]);
     item = FE_ItemIndex(FE_ServerInitArg(tiki, "name"));
@@ -1294,9 +1430,12 @@ static void FE_Turret(snapshot_t *snap, playerState_t *ps, int follow, int playe
     }
 
     // the turret out of the snapshot (as from theirs), the view model at its end (the numbers go up)
-    i = turret - snap->entities;
-    memmove(&snap->entities[i], &snap->entities[i + 1], (snap->numEntities - i - 1) * sizeof(entityState_t));
-    snap->entities[snap->numEntities - 1] = vm;
+    if (sent) {
+        i = turret - snap->entities;
+        memmove(&snap->entities[i], &snap->entities[i + 1], (snap->numEntities - i - 1) * sizeof(entityState_t));
+        snap->numEntities--;
+    }
+    snap->entities[snap->numEntities++] = vm;
 }
 
 /*
@@ -1363,6 +1502,10 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         }
     }
 
+    if (cg_spectatefirstperson->integer) {
+        FE_KeepTurrets(snap);
+    }
+
     follow = -1;
     if (cg_spectatefirstperson->integer && !fe.serverMode && (ps->pm_flags & PMF_SPECTATING)
         && (ps->pm_flags & PMF_CAMERA_VIEW) && !(ps->pm_flags & PMF_INTERMISSION) && ps->clientNum == cg.clientNum) {
@@ -1418,6 +1561,7 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         fe.kickCount = 0;
         fe.flash     = 0;
         VectorClear(fe.kick);
+        fe.turretShots = fe_numShots;
         FE_Salt(snap, -1);
         return;
     }
@@ -1440,6 +1584,7 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         fe.turretAnim.index = -1;
         fe.turretSlot       = -1;
         fe.turretJitter     = 0;
+        fe.turretFireTime   = 0;
         VectorClear(fe.kick);
         // their eye height at once (the first-person view eases changes of it in)
         cg.fCurrentViewHeight = 0;
@@ -1533,8 +1678,14 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         if (item > 0) {
             ps->activeItems[1] = item;
         }
-        ps->stats[STAT_EQUIPPED_WEAPON] = FE_WeaponClass(FE_ServerInitArg(tiki, "weapontype"));
-        ps->stats[STAT_CROSSHAIR]       = FE_Crosshair(tiki, ps);
+        if (FE_ServerInitArg(tiki, "weapontype")) {
+            ps->stats[STAT_EQUIPPED_WEAPON] = FE_WeaponClass(FE_ServerInitArg(tiki, "weapontype"));
+        } else {
+            // an item (the packed MG42): its class is its place among their items (Player::UpdateStats, ITEM1 on),
+            // not sent; any item's gives the same first-person animations (CG_GetVMAnimPrefixIndex)
+            ps->stats[STAT_EQUIPPED_WEAPON] = WEAPON_CLASS_ITEM1;
+        }
+        ps->stats[STAT_CROSSHAIR] = FE_Crosshair(tiki, ps);
 
         // the gun's own animation, its heaviest
         for (i = 0; i < MAX_FRAMEINFOS; i++) {
@@ -1623,6 +1774,8 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         fe.turretAnim.index = -1;
         fe.turretSlot       = -1;
         fe.turretJitter     = 0;
+        fe.turretFireTime   = 0;
+        fe.turretShots      = fe_numShots;
     }
 
     FE_Salt(snap, follow);
