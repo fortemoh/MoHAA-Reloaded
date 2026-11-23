@@ -58,6 +58,9 @@ cvar_t *cg_spectatefirstperson;
 #define FE_CAM_PITCH   2.0f
 #define FE_CAM_LEAN    0.65f
 
+// a lean worked back from the camera under this (degrees) is none: see CG_FollowEyes_Snapshot
+#define FE_LEAN_NONE 0.5f
+
 // the player's model's animation slots: the legs in 0 and 1, the upper body in 2 and 3
 #define FE_TORSO_SLOT 2
 
@@ -1588,6 +1591,13 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         VectorClear(fe.kick);
         // their eye height at once (the first-person view eases changes of it in)
         cg.fCurrentViewHeight = 0;
+    }
+
+    // no lean: one worked back from the camera while they stand straight is a residue hundredths of a degree off 0,
+    // and the cgame's bob takes a quarter off for any lean (CG_OffsetFirstPersonView); a real one (to 45) passes this
+    // only for a moment as it starts and ends
+    if (fabs(lean) < FE_LEAN_NONE) {
+        lean = 0;
     }
 
     //
