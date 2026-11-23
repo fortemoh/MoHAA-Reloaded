@@ -117,6 +117,7 @@ static struct {
     int      vmAnim; // the first-person animation made from them
     int      vmAnimChanged;
     float    vmAnimStart[4]; // how far in each one made started, by its vmAnimChanged (see CG_FollowEyes_VMAnimStart)
+    qboolean vmAnimNew[4]; // and whether it is the first for someone newly watched
     // their hits: their health in the last snapshot read, the kick and the damage it decays with, the red
     // flash, the damage's direction for the HUD (see FE_HitFeedback)
     int      health;
@@ -241,15 +242,18 @@ CG_FollowEyes_VMAnimStart
 
 How far into it (seconds) to start the first-person animation of this iViewModelAnimChanged while a followed
 player is watched through their eyes here: one of theirs seen first part way through starts there (see
-FE_VMAnimStart). 0 otherwise.
+FE_VMAnimStart). 0 otherwise. newView: whether it is the first for someone newly watched, whose arms take it
+at once, not blended from the last one's, and their gun where it sits for them.
 ===============
 */
-float CG_FollowEyes_VMAnimStart(int changed)
+float CG_FollowEyes_VMAnimStart(int changed, qboolean *newView)
 {
+    *newView = qfalse;
     if (fe.follow < 0 || !CG_FollowEyes_PlayerState()) {
         return 0;
     }
 
+    *newView = fe.vmAnimNew[changed & 3];
     return fe.vmAnimStart[changed & 3];
 }
 
@@ -1522,7 +1526,7 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
     vec3_t               viewangles;
     float                viewheight, lean, dt, vmStart;
     int                  follow, i, item, vmAnim, lastServerTime;
-    qboolean             dead, ok;
+    qboolean             dead, ok, newView;
 
     // A server of this code shows a follower the player's own view itself (g_spectatefollow_firstperson 1:
     // the snapshot under their number), with their ammo: one seen doing it is asked for the view set here
@@ -1604,7 +1608,8 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
     }
 
     lastServerTime = fe.serverTime;
-    if (follow != fe.follow) {
+    newView        = follow != fe.follow;
+    if (newView) {
         // someone new: no speed or kick from the last one, and their animations as they are now
         lastServerTime      = 0;
         fe.serverTime       = 0;
@@ -1625,8 +1630,6 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         VectorClear(fe.kick);
         // their eye height at once (the first-person view eases changes of it in)
         cg.fCurrentViewHeight = 0;
-        // idle from its start, should the arms start it for them (see CG_FollowEyes_VMAnimStart)
-        fe.vmAnimStart[fe.vmAnimChanged] = 0;
     }
 
     // no lean: one worked back from the camera while they stand straight is a residue hundredths of a degree off 0,
@@ -1805,10 +1808,16 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         }
     }
 
-    if (vmAnim != -1) {
-        fe.vmAnim                        = vmAnim;
+    // a first-person animation made from theirs, and for someone new one at once (idle, or theirs under way): the
+    // arms start it afresh instead of keeping the last one's, or replaying it on the new gun (CG_ViewModelAnimation
+    // goes by the change count alone)
+    if (vmAnim != -1 || newView) {
+        if (vmAnim != -1) {
+            fe.vmAnim = vmAnim;
+        }
         fe.vmAnimChanged                 = (fe.vmAnimChanged + 1) & 3;
         fe.vmAnimStart[fe.vmAnimChanged] = vmStart;
+        fe.vmAnimNew[fe.vmAnimChanged]   = newView;
     }
     ps->iViewModelAnim        = fe.vmAnim;
     ps->iViewModelAnimChanged = fe.vmAnimChanged;

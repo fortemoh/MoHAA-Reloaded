@@ -134,6 +134,11 @@ enum animPrefix_e {
     WPREFIX_PIAT
 };
 
+// Added in Reloaded
+//  the gun's offset (crouched, in the air, moving) put where it sits at once, not eased there: someone
+//  newly watched through their eyes (see CG_ViewModelAnimation)
+static qboolean vm_bSnapPosOffset;
+
 int CG_GetVMAnimPrefixIndex()
 {
     const char *szWeaponName;
@@ -340,6 +345,7 @@ void CG_ViewModelAnimation(refEntity_t *pModel)
     qboolean    bAnimChanged;
     qboolean    bWeaponChanged;
     float       fAnimStart; // Added in Reloaded
+    qboolean    bNewView; // Added in Reloaded
 
     fCrossblendFrac = 0.0;
     bAnimChanged    = qfalse;
@@ -381,8 +387,14 @@ void CG_ViewModelAnimation(refEntity_t *pModel)
 
         // Added in Reloaded
         //  a followed player watched through their eyes: one of their animations seen first part way
-        //  through (just started watching them) starts there, in step with their gun and what they hold
-        fAnimStart = CG_FollowEyes_VMAnimStart(cg.snap->ps.iViewModelAnimChanged);
+        //  through (just started watching them) starts there, in step with their gun and what they hold;
+        //  someone newly watched takes theirs at once, as for a new weapon (no blend from the last one's
+        //  pose), and their gun where it sits for them (see CG_CalcViewModelMovement)
+        fAnimStart = CG_FollowEyes_VMAnimStart(cg.snap->ps.iViewModelAnimChanged, &bNewView);
+        if (bNewView) {
+            bWeaponChanged    = qtrue;
+            vm_bSnapPosOffset = qtrue;
+        }
     }
 
     if (bAnimChanged) {
@@ -611,6 +623,13 @@ void CG_CalcViewModelMovement(float fViewBobPhase, float fViewBobAmp, vec_t *vVe
         }
     } else if (vVelocity[2]) {
         vTargOfs[2] -= vVelocity[2] * vm_offset_upvel->value;
+    }
+
+    // Added in Reloaded
+    //  someone newly watched through their eyes: their gun where it sits for them at once
+    if (vm_bSnapPosOffset) {
+        VectorCopy(vTargOfs, cgi.anim->g_vCurrentVMPosOffset);
+        vm_bSnapPosOffset = qfalse;
     }
 
     for (i = 0; i < 3; i++) {
