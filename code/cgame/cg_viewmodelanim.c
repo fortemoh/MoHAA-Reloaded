@@ -339,10 +339,12 @@ void CG_ViewModelAnimation(refEntity_t *pModel)
     dtiki_t    *pTiki;
     qboolean    bAnimChanged;
     qboolean    bWeaponChanged;
+    float       fAnimStart; // Added in Reloaded
 
     fCrossblendFrac = 0.0;
     bAnimChanged    = qfalse;
     bWeaponChanged  = qfalse; // Added in OPM
+    fAnimStart      = 0;
     pTiki           = pModel->tiki;
 
     if (cgi.anim->g_iLastEquippedWeaponStat == cg.snap->ps.stats[STAT_EQUIPPED_WEAPON]
@@ -376,6 +378,11 @@ void CG_ViewModelAnimation(refEntity_t *pModel)
         bAnimChanged                   = qtrue;
         cgi.anim->g_iLastVMAnim        = cg.snap->ps.iViewModelAnim;
         cgi.anim->g_iLastVMAnimChanged = cg.snap->ps.iViewModelAnimChanged;
+
+        // Added in Reloaded
+        //  a followed player watched through their eyes: one of their animations seen first part way
+        //  through (just started watching them) starts there, in step with their gun and what they hold
+        fAnimStart = CG_FollowEyes_VMAnimStart(cg.snap->ps.iViewModelAnimChanged);
     }
 
     if (bAnimChanged) {
@@ -460,7 +467,7 @@ void CG_ViewModelAnimation(refEntity_t *pModel)
             cgi.DPrintf("Warning: Couldn't find view model animation %s\n", szAnimName);
         }
 
-        cgi.anim->g_VMFrameInfo[cgi.anim->g_iCurrentVMAnimSlot].time   = 0.0;
+        cgi.anim->g_VMFrameInfo[cgi.anim->g_iCurrentVMAnimSlot].time   = fAnimStart;
         cgi.anim->g_VMFrameInfo[cgi.anim->g_iCurrentVMAnimSlot].weight = 1.0;
         cgi.anim->g_iCurrentVMDuration                                 = 0;
 
