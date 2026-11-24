@@ -51,6 +51,7 @@ static cvar_t *cg_remotePrediction;
 static cvar_t *cg_remotePredictionMaxLead;
 static cvar_t *cg_remotePredictionPush;
 static cvar_t *cg_remotePredictionSmooth;
+static cvar_t *cl_movesubgrid;
 
 #define RP_MAX_ENTS  MAX_CLIENTS // players are entities 0..MAX_CLIENTS-1
 #define RP_DRAWN     16          // server frames of where a player was drawn (800 ms at 20 Hz)
@@ -97,6 +98,8 @@ static rpLearn_t  s_learn;
 static rpLead_t   s_lead;
 static byte       s_isWeapon[MAX_MODELS]; // 0 unknown, 1 weapon, 2 not
 
+static rpClickLead_t s_clickLead;
+
 // legs animation classes, cached per (model, anim)
 #define RP_ANIM_CACHE 4096
 static uint32_t s_animKey[RP_ANIM_CACHE];
@@ -123,6 +126,7 @@ void CG_RP_RegisterCvars(void)
     cg_remotePredictionPush = cgi.Cvar_Get("cg_remotePredictionPush", "1", CVAR_ARCHIVE);
     // a new snapshot's correction fades out: a third of it left after that many ms (0: none)
     cg_remotePredictionSmooth = cgi.Cvar_Get("cg_remotePredictionSmooth", "15", CVAR_ARCHIVE);
+    cl_movesubgrid = cgi.Cvar_Get("cl_movesubgrid", "1", 0);
 }
 
 void CG_RP_Init(void)
@@ -134,6 +138,7 @@ void CG_RP_Init(void)
     memset(s_animKey, 0, sizeof(s_animKey));
     RP_LearnReset(&s_learn);
     RP_LeadReset(&s_lead);
+    RP_ClickReset(&s_clickLead);
     s_server.oldCmdScale = 0;
     s_server.frameMsec   = fps > 0 ? 1000 / fps : 50;
 
@@ -340,6 +345,7 @@ static void CG_RP_Ingest(const snapshot_t *snap)
     // our own lead: which of our commands this snapshot had run
     if (!cg.demoPlayback && snap->ps.clientNum == cg.clientNum) {
         RP_LeadPush(&s_lead, snap->serverTime, snap->ps.commandTime, CG_RP_NextCmdTime(snap->ps.commandTime));
+        RP_ClickAck(&s_clickLead, snap->serverTime, snap->ps.commandTime);
     }
 
     for (int i = 0; i < snap->numEntities; i++) {
@@ -411,7 +417,11 @@ Drawing
 static float CG_RP_Lead(void)
 {
     const int max  = cg_remotePredictionMaxLead->integer;
-    float     lead = RP_LeadMean(&s_lead, s_server.frameMsec);
+    float     lead = RP_ClickMean(&s_clickLead);
+
+    if (lead < 0) {
+        lead = RP_LeadMean(&s_lead, s_server.frameMsec);
+    }
 
     if (lead < 0) {
         // until our commands have been acked a few times: the snapshot round trip,
@@ -609,6 +619,40 @@ void CG_RP_UpdateEntity(centity_t *cent)
     }
 }
 
+// The shooter's lead from our own commands: a click read in this frame was made
+// looking at the picture of the frame before, and goes out in the first command
+// of this frame or, if it makes none, the next one (the sub-grid's, sooner).
+static void CG_RP_ClickFrame(void)
+{
+    const int cur = cgi.GetCurrentCmdNumber();
+    usercmd_t cmd;
+    rpClick_t c;
+
+    if (s_clickLead.lastCmd >= 0 && cur >= s_clickLead.lastCmd && cg.time > s_clickLead.lastPicture
+        && cg.time - s_clickLead.lastPicture <= 100 && cgi.GetUserCmd(s_clickLead.lastCmd, &cmd)) {
+        const int fps      = cl_movefps->integer;
+        const int interval = fps > 0 ? 1000 / (int)Com_Clamp(85, 125, fps) : 0;
+
+        c.picture = s_clickLead.lastPicture;
+        c.msec    = cg.time - s_clickLead.lastPicture;
+        c.early   = 0;
+        c.stamp   = 0;
+        if (cur != s_clickLead.lastCmd) {
+            if (cgi.GetUserCmd(s_clickLead.lastCmd + 1, &cmd)) {
+                c.stamp = cmd.serverTime;
+            }
+        } else if (interval) {
+            c.stamp = cmd.serverTime + interval;
+            if (cl_movesubgrid->integer > 0 && c.picture - cmd.serverTime < interval / 2) {
+                c.early = interval - interval / 2;
+            }
+        }
+        RP_ClickPush(&s_clickLead, &c);
+    }
+    s_clickLead.lastCmd     = cur;
+    s_clickLead.lastPicture = cg.time;
+}
+
 void CG_RP_BeginFrame(void)
 {
     int latest, n;
@@ -640,12 +684,14 @@ void CG_RP_BeginFrame(void)
             // the histories and our lead are from before the gap
             memset(s_ents, 0, sizeof(s_ents));
             RP_LeadReset(&s_lead);
+            RP_ClickReset(&s_clickLead);
             s_readGap = qfalse;
         }
         CG_RP_Ingest(&s_snap);
     }
     s_lastSnapNum = latest;
 
+    CG_RP_ClickFrame();
     s_frameActive = CG_RP_Active();
     s_frameLead   = s_frameActive ? CG_RP_Lead() : -1;
 }
