@@ -337,6 +337,121 @@ static void test_lead(void)
     expect_near(RP_LeadMean(&l, 50), 90 + 25, 0.01, "lead = arrival delay + half a frame");
 }
 
+// the lead from our own commands against what clicks at every moment of a
+// frame really wait: frames of frameMs, commands of 10 ms made in the first
+// frame at or after their time, uplink ms to the server, server frames of 50 ms
+static void check_click_lead(double frameMs, double uplink, double lossEvery)
+{
+    static rpClickLead_t l;
+    static double        arrival[60000]; // by command number: time it is at the server
+    static int           stamp[60000];
+    static double        made[60000];
+    int                  cmds = 1, lastCmd = 0;
+    double               prev = 0, truth = 0, weight = 0;
+    const int            total = 20000;
+    int                  serverFrame = 50, acked = 0;
+
+    RP_ClickReset(&l);
+    stamp[0]   = 0;
+    arrival[0] = 0;
+    made[0]    = 0;
+    for (double t = frameMs; t < total; t += frameMs) {
+        rpClick_t c;
+
+        // the commands due are made in this frame, with a 10 ms grid
+        while (t - stamp[cmds - 1] >= 10) {
+            stamp[cmds]   = stamp[cmds - 1] + 10;
+            made[cmds]    = t;
+            arrival[cmds] = t + uplink;
+            if (lossEvery > 0 && (int)(cmds / lossEvery) != (int)((cmds - 1) / lossEvery)) {
+                arrival[cmds] += 60; // held up
+            }
+            if (arrival[cmds] < arrival[cmds - 1]) {
+                arrival[cmds] = arrival[cmds - 1];
+            }
+            cmds++;
+        }
+        // the click read in this frame, seen from the cgame
+        memset(&c, 0, sizeof(c));
+        c.picture = (int)prev;
+        c.msec    = (int)(t) - (int)prev;
+        c.stamp   = cmds - 1 > lastCmd ? stamp[lastCmd + 1] : stamp[cmds - 1] + 10;
+        RP_ClickPush(&l, &c);
+        lastCmd = cmds - 1;
+        prev    = t;
+
+        // server frames that came by now
+        while (serverFrame + uplink <= t) {
+            while (acked + 1 < cmds && arrival[acked + 1] <= serverFrame) {
+                acked++;
+            }
+            RP_ClickAck(&l, serverFrame, stamp[acked]);
+            serverFrame += 50;
+        }
+    }
+    // the same clicks by hand: for each frame the click's command and the first
+    // server frame at or after it has arrived
+    prev    = 0;
+    lastCmd = 0;
+    int k   = 1;
+    for (double t = frameMs; t < total - 2000; t += frameMs) {
+        while (k < cmds && made[k] < t - 0.0001) {
+            k++; // made before this frame: not this frame's
+        }
+        if (t > total - 8000 && k < cmds) {
+            double S = 50.0 * ceil(arrival[k] / 50.0);
+            truth += (S - prev) * (t - prev);
+            weight += t - prev;
+        }
+        prev = t;
+    }
+    expect_true(RP_ClickMean(&l) > 0, "a lead from our own commands");
+    expect_near(RP_ClickMean(&l), truth / weight, 2.5, "the lead of our own commands is what clicks wait");
+}
+
+static void test_click_lead(void)
+{
+    static rpClickLead_t l;
+    rpClick_t            c;
+
+    RP_ClickReset(&l);
+    expect_true(RP_ClickMean(&l) < 0, "no lead before any ack");
+    check_click_lead(1000.0 / 60, 70, 0);
+    check_click_lead(8, 71, 0);
+    check_click_lead(7, 73, 0);
+    check_click_lead(4, 70, 0);
+    check_click_lead(2, 72, 0);
+    check_click_lead(4, 40, 100);
+
+    // a map change: what waits from before it goes
+    RP_ClickReset(&l);
+    memset(&c, 0, sizeof(c));
+    c.msec = 4;
+    for (int i = 0; i < 50; i++) {
+        c.picture = 100000 + i * 4;
+        c.stamp   = c.picture + 5;
+        RP_ClickPush(&l, &c);
+    }
+    c.picture = 500;
+    c.stamp   = 505;
+    RP_ClickPush(&l, &c);
+    expect_true((l.head - l.tail + RP_CLICKS) % RP_CLICKS == 1, "only the new game's click waits");
+    for (int s = 0; s < 8; s++) {
+        RP_ClickAck(&l, 550 + s * 50, 505 + s * 50);
+    }
+    expect_true(l.head != l.tail || l.count > 0, "clicks of the new game are measured");
+    expect_true(l.count == 1, "one click, one snapshot of it");
+
+    // more clicks than there is room for, none acked: the oldest go
+    RP_ClickReset(&l);
+    for (int i = 0; i < RP_CLICKS * 3; i++) {
+        c.picture = 1000 + i;
+        c.stamp   = c.picture + 5;
+        RP_ClickPush(&l, &c);
+    }
+    expect_true((l.head - l.tail + RP_CLICKS) % RP_CLICKS == RP_CLICKS - 1, "a full queue keeps the newest");
+}
+
 static void test_learn(void)
 {
     rpLearn_t  l;
@@ -363,6 +478,7 @@ int main(void)
     test_reset_on_teleport();
     test_stall();
     test_lead();
+    test_click_lead();
     test_learn();
 
     if (g_failures != 0) {

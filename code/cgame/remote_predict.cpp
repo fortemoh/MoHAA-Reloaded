@@ -799,3 +799,97 @@ float RP_LeadMean(const rpLead_t *l, int frameMsec)
     // a command fires on the frame after it arrives: on average half a frame later
     return v[n / 2] + 0.5f * frameMsec;
 }
+
+/*
+==================
+Shooter lead from our own commands
+==================
+*/
+
+void RP_ClickReset(rpClickLead_t *l)
+{
+    memset(l, 0, sizeof(*l));
+    l->lastCmd = -1;
+}
+
+int RP_ClickPush(rpClickLead_t *l, const rpClick_t *c)
+{
+    int next;
+
+    if (c->msec <= 0 || c->stamp <= 0) {
+        return 0;
+    }
+    // time went back (a map change or restart): what waits is from before it
+    if (l->head != l->tail && c->picture < l->clicks[(l->head + RP_CLICKS - 1) % RP_CLICKS].picture) {
+        RP_ClickReset(l);
+    }
+    next = (l->head + 1) % RP_CLICKS;
+    if (next == l->tail) {
+        l->tail = (l->tail + 1) % RP_CLICKS;
+    }
+    l->clicks[l->head] = *c;
+    l->head            = next;
+    return 1;
+}
+
+void RP_ClickAck(rpClickLead_t *l, int serverTime, int commandTime)
+{
+    float sum = 0, weight = 0;
+
+    while (l->tail != l->head) {
+        const rpClick_t *c    = &l->clicks[l->tail];
+        const float      lead = (float)(serverTime - c->picture - c->early);
+
+        if (c->stamp > commandTime) {
+            if (c->stamp > commandTime + 5000) {
+                // not from this game's time
+                RP_ClickReset(l);
+                return;
+            }
+            break;
+        }
+        if (lead > 0 && lead < 1000) {
+            sum += lead * c->msec;
+            weight += c->msec;
+        }
+        l->tail = (l->tail + 1) % RP_CLICKS;
+    }
+    if (weight > 0) {
+        l->mean[l->next]   = sum / weight;
+        l->weight[l->next] = weight;
+        l->next            = (l->next + 1) % 64;
+        if (l->count < 64) {
+            l->count++;
+        }
+    }
+}
+
+float RP_ClickMean(const rpClickLead_t *l)
+{
+    float v[64], median;
+    float sum = 0, weight = 0;
+    int   n   = l->count;
+
+    if (n < 4) {
+        return -1;
+    }
+    memcpy(v, l->mean, sizeof(float) * n);
+    for (int i = 1; i < n; i++) {
+        float x = v[i];
+        int   j = i - 1;
+        while (j >= 0 && v[j] > x) {
+            v[j + 1] = v[j];
+            j--;
+        }
+        v[j + 1] = x;
+    }
+    median = v[n / 2];
+    // commands that were held up (a hitch, lost packets) are not what the next ones are
+    for (int i = 0; i < n; i++) {
+        if (fabsf(l->mean[i] - median) <= 60) {
+            sum += l->mean[i] * l->weight[i];
+            weight += l->weight[i];
+        }
+    }
+    return weight > 0 ? sum / weight : -1;
+}

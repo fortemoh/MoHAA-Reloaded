@@ -148,6 +148,36 @@ void RP_LeadPush(rpLead_t *l, int serverTime, int commandTime, int nextCmdTime);
 // the mean time from a command's serverTime to the frame that runs it, or -1
 float RP_LeadMean(const rpLead_t *l, int frameMsec);
 
+// The shooter's lead measured on commands that really went out: for each drawn
+// frame, the picture that was on screen when a click could have been read and
+// the command that would have carried it. The snapshot that first shows that
+// command run is when such a click fires.
+#define RP_CLICKS 2048
+
+typedef struct {
+    int picture; // the time of the picture on screen
+    int stamp;   // the serverTime of the command that carries the click
+    int early;   // how much sooner than that command the sub-grid's goes out (ms)
+    int msec;    // how long the picture was on screen: its weight
+} rpClick_t;
+
+typedef struct {
+    rpClick_t clicks[RP_CLICKS];
+    int       head, tail;
+    int       lastPicture, lastCmd; // of the frame before, RP_ClickFrame's caller's
+    float     mean[64];             // a snapshot's clicks
+    float     weight[64];
+    int       count, next;
+} rpClickLead_t;
+
+void RP_ClickReset(rpClickLead_t *l);
+// a frame: a click read in it is stamped so; returns 0 when it is refused
+int RP_ClickPush(rpClickLead_t *l, const rpClick_t *c);
+// a snapshot of serverTime that has run our commands up to commandTime
+void RP_ClickAck(rpClickLead_t *l, int serverTime, int commandTime);
+// the time from the picture to the frame that fires, the mean of the recent snapshots, or -1
+float RP_ClickMean(const rpClickLead_t *l);
+
 #ifdef __cplusplus
 }
 #endif
