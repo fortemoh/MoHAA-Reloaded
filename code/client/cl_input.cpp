@@ -1110,25 +1110,27 @@ void CL_GetViewUserCmd( usercmd_t *ucmd ) {
 =================
 CL_LiveKeyFraction
 
-The share of this cl_movefps interval CL_KeyMove will store if the key stays
-as it is until the command is sealed. Does not touch key->msec or downtime
-(CL_KeyState does, and the real command still needs them).
+The share of the next usercmd's window CL_KeyMove will store if the key stays
+as it is until the command is sealed. The window runs from the newest
+command's frame, gone ms ago, as CL_KeyState's: not from that command's
+server time, which is up to a frame and a step older (the frame that seals a
+command draws a later server time, CL_SendCmd comes before CL_SetCGameTime).
+Does not touch key->msec or downtime (CL_KeyState does, and the real command
+still needs them).
 
-projectHold counts the rest of the interval while the key is down. Turn
+projectHold counts the rest of the window while the key is down. Turn
 keys are sampled by CL_AdjustAngles earlier in this frame, so the sealed
 command gets about none of them; projecting those would move the picture
 and the replay would take it back.
 =================
 */
-static float CL_LiveKeyFraction( const kbutton_t *key, int interval, int elapsed, qboolean projectHold ) {
-	int		msec, remain;
-
-	remain = interval - elapsed;
+static float CL_LiveKeyFraction( const kbutton_t *key, int window, int gone, qboolean projectHold ) {
+	int		msec;
 
 	msec = (int)key->msec;
 	if ( key->active ) {
 		if ( !key->downtime ) {
-			msec = interval;
+			msec = window;
 		} else {
 			msec += (int)( com_frameTime - key->downtime );
 		}
@@ -1136,18 +1138,18 @@ static float CL_LiveKeyFraction( const kbutton_t *key, int interval, int elapsed
 			msec = 0;
 		}
 		if ( projectHold ) {
-			msec += remain;
+			msec += window - gone;
 		}
 	}
 
 	if ( msec < 0 ) {
 		msec = 0;
 	}
-	if ( msec > interval ) {
-		msec = interval;
+	if ( msec > window ) {
+		msec = window;
 	}
 
-	return (float)msec / (float)interval;
+	return (float)msec / (float)window;
 }
 
 /*
@@ -1163,7 +1165,7 @@ view.
 =================
 */
 void CL_GetLiveUserCmd( usercmd_t *ucmd ) {
-	int			i, interval, elapsed, movespeed;
+	int			i, interval, gone, window, movespeed;
 	int			forward, side, up;
 
 	interval = CL_MoveInterval();
@@ -1177,28 +1179,28 @@ void CL_GetLiveUserCmd( usercmd_t *ucmd ) {
 
 	*ucmd = cl.cmds[cl.cmdNumber & CMD_MASK];
 
-	elapsed = cl.serverTime - ucmd->serverTime;
-	if ( elapsed < 0 ) {
-		elapsed = 0;
+	// the keys' window: from the newest command's frame to the next one's,
+	// the interval in all, or longer with frames longer than it
+	gone = com_frameTime - old_com_frameTime;
+	if ( gone < 0 ) {
+		gone = 0;
 	}
-	if ( elapsed > interval ) {
-		elapsed = interval;
-	}
+	window = gone > interval ? gone : interval;
 
 	movespeed = 127;
 	forward = 0;
 	side = 0;
 	up = 0;
 	if ( in_strafe.active ) {
-		side += movespeed * CL_LiveKeyFraction( &in_right, interval, elapsed, qfalse );
-		side -= movespeed * CL_LiveKeyFraction( &in_left, interval, elapsed, qfalse );
+		side += movespeed * CL_LiveKeyFraction( &in_right, window, gone, qfalse );
+		side -= movespeed * CL_LiveKeyFraction( &in_left, window, gone, qfalse );
 	}
-	side += movespeed * CL_LiveKeyFraction( &in_moveright, interval, elapsed, qtrue );
-	side -= movespeed * CL_LiveKeyFraction( &in_moveleft, interval, elapsed, qtrue );
-	up += movespeed * CL_LiveKeyFraction( &in_up, interval, elapsed, qtrue );
-	up -= movespeed * CL_LiveKeyFraction( &in_down, interval, elapsed, qtrue );
-	forward += movespeed * CL_LiveKeyFraction( &in_forward, interval, elapsed, qtrue );
-	forward -= movespeed * CL_LiveKeyFraction( &in_back, interval, elapsed, qtrue );
+	side += movespeed * CL_LiveKeyFraction( &in_moveright, window, gone, qtrue );
+	side -= movespeed * CL_LiveKeyFraction( &in_moveleft, window, gone, qtrue );
+	up += movespeed * CL_LiveKeyFraction( &in_up, window, gone, qtrue );
+	up -= movespeed * CL_LiveKeyFraction( &in_down, window, gone, qtrue );
+	forward += movespeed * CL_LiveKeyFraction( &in_forward, window, gone, qtrue );
+	forward -= movespeed * CL_LiveKeyFraction( &in_back, window, gone, qtrue );
 
 	ucmd->forwardmove = ClampChar( forward );
 	ucmd->rightmove = ClampChar( side );
