@@ -687,6 +687,7 @@ qboolean CL_GameCommand( void );
 void CL_CGameRendering( stereoFrame_t stereo );
 void CL_CGame2D( stereoFrame_t stereo );
 void CL_UpdateSnapFlags( void );
+int CL_ServerTimeNow( void );
 void CL_SetCGameTime( void );
 void CL_FirstSnapshot( void );
 void CL_ShaderStateChanged( void );

@@ -1262,6 +1262,38 @@ void CL_UpdateSnapFlags( void ) {
 
 /*
 ==================
+CL_ServerTimeNow
+
+The server time of this frame, as CL_SetCGameTime takes it (which comes after
+CL_SendCmd): the cl_movefps grid's clock, so that no usercmd waits for the
+frame after the one it is due in
+==================
+*/
+int CL_ServerTimeNow( void ) {
+	// cl_timeNudge is a user adjustable cvar that allows more
+	// or less latency to be added in the interest of better
+	// smoothness or better responsiveness.
+	int tn, time;
+
+	tn = cl_timeNudge->integer;
+	if (tn<-30) {
+		tn = -30;
+	} else if (tn>30) {
+		tn = 30;
+	}
+
+	time = cls.realtime + cl.serverTimeDelta - tn;
+
+	// guarantee that time will never flow backwards, even if
+	// serverTimeDelta made an adjustment or cl_timeNudge was changed
+	if ( time < cl.oldServerTime ) {
+		time = cl.oldServerTime;
+	}
+	return time;
+}
+
+/*
+==================
 CL_SetCGameTime
 ==================
 */
@@ -1325,25 +1357,7 @@ void CL_SetCGameTime( void ) {
 		// cl_freezeDemo is used to lock a demo in place for single frame advances
 
 	} else {
-		// cl_timeNudge is a user adjustable cvar that allows more
-		// or less latency to be added in the interest of better
-		// smoothness or better responsiveness.
-		int tn;
-
-		tn = cl_timeNudge->integer;
-		if (tn<-30) {
-			tn = -30;
-		} else if (tn>30) {
-			tn = 30;
-		}
-
-		cl.serverTime = cls.realtime + cl.serverTimeDelta - tn;
-
-		// guarantee that time will never flow backwards, even if
-		// serverTimeDelta made an adjustment or cl_timeNudge was changed
-		if ( cl.serverTime < cl.oldServerTime ) {
-			cl.serverTime = cl.oldServerTime;
-		}
+		cl.serverTime = CL_ServerTimeNow();
 
 		// note if we are almost past the latest frame (without timeNudge),
 		// so we will try and adjust back a bit when the next snapshot arrives

@@ -963,12 +963,12 @@ takes the event. Use and the movement keys stay on the grid. notuern's
 idea, as on the metal branch.
 =================
 */
-static int CL_SubGridStep( int interval, int elapsed ) {
+static int CL_SubGridStep( int interval, int elapsed, int now ) {
 	int		half = interval / 2;
-	int		before = cmd_sub.prevNow - ( cl.serverTime - elapsed );	// the frame before's elapsed
+	int		before = cmd_sub.prevNow - ( now - elapsed );	// the frame before's elapsed
 	int		seen = half;
 
-	cmd_sub.prevNow = cl.serverTime;
+	cmd_sub.prevNow = now;
 	if ( cmd_sub.early && elapsed >= interval ) {
 		cmd_sub.step = 0;
 		cmd_sub.early = qfalse;
@@ -1004,7 +1004,7 @@ cl_movefps 0 is stock: one per frame, each step as long as its frame.
 */
 void CL_CreateNewCommands( void ) {
 	usercmd_t	cmd;
-	int			interval, elapsed, step, cmdTime, count, i;
+	int			interval, elapsed, step, cmdTime, count, i, now;
 	qboolean	upNow;
 
 	// before the first snapshot cl.serverTime doesn't run, and cl_movefps 0
@@ -1016,21 +1016,25 @@ void CL_CreateNewCommands( void ) {
 		cmd_sub.prevNow = cl.serverTime;
 	}
 
+	// the frame's own time, not yet cl.serverTime's (a demo's is)
+	now = interval && !clc.demoplaying ? CL_ServerTimeNow() : cl.serverTime;
+
 	// no need to create usercmds until we have a gamestate
 	if ( clc.state < CA_PRIMED ) {
 		return;
 	}
 
 	count = 1;
-	cmdTime = cl.serverTime;
+	cmdTime = now;
 	if ( interval ) {
-		elapsed = cl.serverTime - cl.cmds[cl.cmdNumber & CMD_MASK].serverTime;
+		elapsed = now - cl.cmds[cl.cmdNumber & CMD_MASK].serverTime;
 		// else the first one, or the time went back (map_restart) or jumped
 		// (a hitch, or under 10 frames a second: one step of all of it, as
 		// before, so that a packet with the last one's usercmds
-		// (cl_packetdup) stays within MAX_PACKET_USERCMDS): from now on
-		if ( elapsed >= 0 && elapsed <= 100 ) {
-			step = CL_SubGridStep( interval, elapsed );
+		// (cl_packetdup) stays within MAX_PACKET_USERCMDS): from now on.
+		// The time delta's own steps back (2 ms) wait
+		if ( elapsed >= -100 && elapsed <= 100 ) {
+			step = CL_SubGridStep( interval, elapsed, now );
 			if ( elapsed < step ) {
 				return;
 			}
@@ -1039,7 +1043,7 @@ void CL_CreateNewCommands( void ) {
 		} else {
 			cmd_sub.step = 0;
 			cmd_sub.early = qfalse;
-			cmd_sub.prevNow = cl.serverTime;
+			cmd_sub.prevNow = now;
 		}
 	}
 
