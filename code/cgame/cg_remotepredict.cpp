@@ -345,6 +345,7 @@ static void CG_RP_Ingest(const snapshot_t *snap)
     // our own lead: which of our commands this snapshot had run
     if (!cg.demoPlayback && snap->ps.clientNum == cg.clientNum) {
         RP_LeadPush(&s_lead, snap->serverTime, snap->ps.commandTime, CG_RP_NextCmdTime(snap->ps.commandTime));
+        s_clickLead.frameMsec = s_server.frameMsec;
         RP_ClickAck(&s_clickLead, snap->serverTime, snap->ps.commandTime);
     }
 

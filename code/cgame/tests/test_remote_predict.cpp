@@ -409,6 +409,56 @@ static void check_click_lead(double frameMs, double uplink, double lossEvery)
     expect_near(RP_ClickMean(&l), truth / weight, 2.5, "the lead of our own commands is what clicks wait");
 }
 
+// snapshots lost on the way: a picture every 10 ms, its click in the command
+// 10 ms after it, server frames of 50 ms that have run the commands up to
+// 40 ms before them. A snapshot that follows the one before has five clicks,
+// which waited 90, 80, 70, 60 and 50 ms: 70. The one after `lost` lost ones
+// has theirs too, which fired a frame or more before it
+static float click_lead_with_lost(int frameMsec, int lost, int *measured)
+{
+    static rpClickLead_t l;
+    rpClick_t            c;
+    int                  picture = 1010;
+
+    RP_ClickReset(&l);
+    memset(&c, 0, sizeof(c));
+    c.msec = 10;
+    for (int s = 0; s < 40; s++) {
+        const int S = 1100 + s * 50;
+
+        for (; picture < S + 20; picture += 10) {
+            c.picture = picture;
+            c.stamp   = picture + 10;
+            RP_ClickPush(&l, &c);
+        }
+        if (s >= 20 && s < 20 + lost) {
+            continue;
+        }
+        l.frameMsec = frameMsec;
+        RP_ClickAck(&l, S, S - 40);
+    }
+    *measured = l.count;
+    return RP_ClickMean(&l);
+}
+
+static void test_click_lead_lost_snapshots(void)
+{
+    int n;
+
+    expect_near(click_lead_with_lost(50, 0, &n), 70, 0.01, "no snapshot lost: what the clicks wait");
+    expect_true(n == 40, "no snapshot lost: every one is measured");
+    // on the next one's time they would be 71.25 and 73.75
+    expect_near(click_lead_with_lost(50, 1, &n), 70, 0.01, "a lost snapshot's clicks are not timed by the next one");
+    expect_true(n == 38, "the snapshot after a lost one measures nothing");
+    expect_near(click_lead_with_lost(50, 2, &n), 70, 0.01, "two lost snapshots' clicks are not timed by the next one");
+    expect_true(n == 37, "the snapshot after two lost ones measures nothing");
+    // the server's frame unknown: as before
+    expect_near(click_lead_with_lost(0, 1, &n), 71.25, 0.01, "no server frame known: every snapshot is measured");
+    expect_true(n == 39, "no server frame known: every snapshot is measured");
+    // a server that sends one frame in two: which frame ran a command is never known
+    expect_true(click_lead_with_lost(25, 0, &n) < 0 && n == 1, "a snapshot every other server frame: only the first is measured");
+}
+
 static void test_click_lead(void)
 {
     static rpClickLead_t l;
@@ -479,6 +529,7 @@ int main(void)
     test_stall();
     test_lead();
     test_click_lead();
+    test_click_lead_lost_snapshots();
     test_learn();
 
     if (g_failures != 0) {
