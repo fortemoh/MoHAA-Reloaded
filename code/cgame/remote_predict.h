@@ -165,6 +165,8 @@ typedef struct {
     rpClick_t clicks[RP_CLICKS];
     int       head, tail;
     int       lastPicture, lastCmd; // of the frame before, RP_ClickFrame's caller's
+    int       frameMsec;            // the server's frame, RP_ClickAck's caller's; 0 unknown
+    int       lastAck;              // the serverTime of the snapshot before
     float     mean[64];             // a snapshot's clicks
     float     weight[64];
     int       count, next;
@@ -173,7 +175,9 @@ typedef struct {
 void RP_ClickReset(rpClickLead_t *l);
 // a frame: a click read in it is stamped so; returns 0 when it is refused
 int RP_ClickPush(rpClickLead_t *l, const rpClick_t *c);
-// a snapshot of serverTime that has run our commands up to commandTime
+// a snapshot of serverTime that has run our commands up to commandTime. One
+// that comes more than a server frame (l->frameMsec) after the one before
+// measures nothing: a frame between them ran some of these commands
 void RP_ClickAck(rpClickLead_t *l, int serverTime, int commandTime);
 // the time from the picture to the frame that fires, the mean of the recent snapshots, or -1
 float RP_ClickMean(const rpClickLead_t *l);

@@ -835,7 +835,12 @@ int RP_ClickPush(rpClickLead_t *l, const rpClick_t *c)
 void RP_ClickAck(rpClickLead_t *l, int serverTime, int commandTime)
 {
     float sum = 0, weight = 0;
+    // a snapshot between the one before and this one was lost or not sent: each
+    // of these commands was run in this one's server frame or in one before it,
+    // and which is not known. This one's time would be too long for some
+    const int gap = l->frameMsec > 0 && l->lastAck > 0 && serverTime - l->lastAck > l->frameMsec;
 
+    l->lastAck = serverTime;
     while (l->tail != l->head) {
         const rpClick_t *c    = &l->clicks[l->tail];
         const float      lead = (float)(serverTime - c->picture - c->early);
@@ -848,7 +853,7 @@ void RP_ClickAck(rpClickLead_t *l, int serverTime, int commandTime)
             }
             break;
         }
-        if (lead > 0 && lead < 1000) {
+        if (!gap && lead > 0 && lead < 1000) {
             sum += lead * c->msec;
             weight += c->msec;
         }
