@@ -51,6 +51,7 @@ static cvar_t *cg_remotePrediction;
 static cvar_t *cg_remotePredictionMaxLead;
 static cvar_t *cg_remotePredictionPush;
 static cvar_t *cg_remotePredictionSmooth;
+static cvar_t *cl_movefps; // the client registers it; cgame reads it here (the vulkan branch keeps it in cg_main.c)
 static cvar_t *cl_movesubgrid;
 
 #define RP_MAX_ENTS  MAX_CLIENTS // players are entities 0..MAX_CLIENTS-1
@@ -126,6 +127,7 @@ void CG_RP_RegisterCvars(void)
     cg_remotePredictionPush = cgi.Cvar_Get("cg_remotePredictionPush", "1", CVAR_ARCHIVE);
     // a new snapshot's correction fades out: a third of it left after that many ms (0: none)
     cg_remotePredictionSmooth = cgi.Cvar_Get("cg_remotePredictionSmooth", "15", CVAR_ARCHIVE);
+    cl_movefps     = cgi.Cvar_Get("cl_movefps", "100", 0);
     cl_movesubgrid = cgi.Cvar_Get("cl_movesubgrid", "1", 0);
 }
 
