@@ -105,6 +105,11 @@ int CL_GetCurrentCmdNumber( void ) {
 	return cl.cmdNumber;
 }
 
+// the server time of the frame that made a usercmd CL_GetUserCmd returns (Metal port)
+static double CL_GetUserCmdFrameTime( int cmdNumber ) {
+	return cl.cmdFrameTime[ cmdNumber & CMD_MASK ];
+}
+
 
 /*
 ====================
@@ -874,6 +879,7 @@ void CL_InitCGameDLL( clientGameImport_t *cgi, clientGameExport_t **cge ) {
 	cgi->stopWatch					= &cls.stopwatch;
 	cgi->GetLiveUserCmd				= CL_GetLiveUserCmd;
 	cgi->GetRenderTimeFraction		= CL_RenderTimeFraction;
+	cgi->GetUserCmdFrameTime		= CL_GetUserCmdFrameTime;
 	cgi->R_DrawBoxes				= re.DrawBoxes;
 	cgi->UI_DrawZoomOverlay			= UI_DrawZoomOverlay;
 	cgi->UI_DrawInstaMessage		= UI_DrawInstaMessage;

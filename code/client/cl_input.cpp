@@ -1653,7 +1653,7 @@ Called every frame to builds and sends a command packet to the server.
 =================
 */
 void CL_SendCmd( void ) {
-	int		wait;
+	int		wait, made;
 	qboolean	upNow = qfalse;
 
 	// don't send any message if not connected
@@ -1717,7 +1717,13 @@ void CL_SendCmd( void ) {
 	}
 
 	// we create commands even if a demo is playing,
+	made = cl.cmdNumber;
 	CL_CreateNewCommands();
+
+	// the frame that made them read their clicks: its time, for cgame's click lead (Metal port)
+	while ( made < cl.cmdNumber ) {
+		cl.cmdFrameTime[ ++made & CMD_MASK ] = CL_CmdServerTime() + CL_FrameFraction();
+	}
 
 	// the sub-grid (cl_movesubgrid): an early usercmd's packet and the split's
 	// rest's go at once (CL_ReadyToSendPacket); after an early usercmd the

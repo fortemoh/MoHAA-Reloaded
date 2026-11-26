@@ -460,6 +460,10 @@ functions exported to the main executable
         // the part of cg.time's millisecond the frame shows (0 to 1, 0 in the
         // stock mode), for the interpolation
         float (*GetRenderTimeFraction)(void);
+        // the server time, with the part of its millisecond, of the frame that made
+        // a usercmd GetUserCmd returns: the frame that read the clicks it carries,
+        // drawn or not (Metal port)
+        double (*GetUserCmdFrameTime)(int cmdNumber);
         // R_DrawBox for count boxes (x, y, width, height) in one draw (Metal port)
         void (*R_DrawBoxes)(const float (*boxes)[4], int count, const float *color);
 

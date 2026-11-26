@@ -832,6 +832,38 @@ int RP_ClickPush(rpClickLead_t *l, const rpClick_t *c)
     return 1;
 }
 
+// the picture's clicks from the frame before to the one at until go with the command of stamp
+static void RP_ClickSpan(rpClickLead_t *l, double until, int stamp, float early)
+{
+    const rpClick_t c = {l->lastPicture, stamp, early, (float)(until - l->from)};
+
+    // not from before the first picture, nor across a hitch
+    if (l->lastPicture > 0 && until - l->lastPicture <= 100 && RP_ClickPush(l, &c)) {
+        l->from = until;
+    }
+}
+
+void RP_ClickCmd(rpClickLead_t *l, int stamp, double made)
+{
+    RP_ClickSpan(l, made, stamp, 0);
+    l->lastStamp = stamp;
+}
+
+void RP_ClickFrame(rpClickLead_t *l, int time, float fraction, int interval, int subGrid)
+{
+    const double now   = time + fraction;
+    const int    stamp = l->lastStamp + interval;
+
+    if (interval > 0 && l->lastStamp > 0) {
+        // the sub-grid's command comes at the half step, made by the first frame there: this one when it is past it
+        const float early = subGrid && l->from - l->lastStamp < interval / 2 ? interval - interval / 2 : 0;
+
+        RP_ClickSpan(l, now, stamp, early < stamp - now ? early : (float)(stamp - now));
+    }
+    l->lastPicture = time;
+    l->from        = now;
+}
+
 void RP_ClickAck(rpClickLead_t *l, int serverTime, int commandTime)
 {
     float sum = 0, weight = 0;

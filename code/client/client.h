@@ -127,6 +127,7 @@ typedef struct {
 	usercmd_t	cmds[CMD_BACKUP];	// each mesage will send several old cmds
 	int			cmdNumber;			// incremented each frame, because multiple
 									// frames may need to be packed into a single packet
+	double		cmdFrameTime[CMD_BACKUP];	// the server time of the frame that made each (Metal port)
 
 	outPacket_t	outPackets[PACKET_BACKUP];	// information about each packet we have sent out
 

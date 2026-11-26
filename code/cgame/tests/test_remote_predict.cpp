@@ -337,16 +337,21 @@ static void test_lead(void)
     expect_near(RP_LeadMean(&l, 50), 90 + 25, 0.01, "lead = arrival delay + half a frame");
 }
 
-// the lead from our own commands against what clicks at every moment of a
-// frame really wait: frames of frameMs, commands of 10 ms made in the first
-// frame at or after their time, uplink ms to the server, server frames of 50 ms
-static void check_click_lead(double frameMs, double uplink, double lossEvery)
+// the lead from our own commands against what clicks at every moment really
+// wait: a picture every frameMs, commands of 10 ms, uplink ms to the server,
+// server frames of 50 ms. cmdFrames 0: a command is made by the first
+// picture's frame at or after its time (every frame draws); 1: by a frame of
+// its own at its time, or as soon as the picture's frame, which takes work
+// ms, is done (cl_movefps on the metal branch)
+static void check_click_lead(double frameMs, double uplink, double lossEvery, int cmdFrames, double work, double tolerance)
 {
     static rpClickLead_t l;
     static double        arrival[60000]; // by command number: time it is at the server
     static int           stamp[60000];
     static double        made[60000];
-    int                  cmds = 1, lastCmd = 0;
+    static double        frame[120000];   // every client frame, drawn or not
+    static int           picture[120000]; // the picture on screen after it
+    int                  cmds = 1, given = 1, frames = 0, shown = 0, k = 1;
     double               prev = 0, truth = 0, weight = 0;
     const int            total = 20000;
     int                  serverFrame = 50, acked = 0;
@@ -356,13 +361,27 @@ static void check_click_lead(double frameMs, double uplink, double lossEvery)
     arrival[0] = 0;
     made[0]    = 0;
     for (double t = frameMs; t < total; t += frameMs) {
-        rpClick_t c;
+        // the frame's time as the client has it: a millisecond and its part
+        const float  part = Q_min((float)(t - (int)t), 0.999f);
+        const double now  = (int)t + part;
 
-        // the commands due are made in this frame, with a 10 ms grid
-        while (t - stamp[cmds - 1] >= 10) {
+        // the commands due, with a 10 ms grid
+        while (now - stamp[cmds - 1] >= 10) {
+            double m = stamp[cmds - 1] + 10;
+
+            if (m < prev + work) {
+                m = prev + work;
+            }
+            if (!cmdFrames || m >= now) {
+                m = now; // this frame makes it
+            } else if (!frames || frame[frames - 1] != m) {
+                frame[frames]   = m;
+                picture[frames] = shown;
+                frames++;
+            }
             stamp[cmds]   = stamp[cmds - 1] + 10;
-            made[cmds]    = t;
-            arrival[cmds] = t + uplink;
+            made[cmds]    = m;
+            arrival[cmds] = m + uplink;
             if (lossEvery > 0 && (int)(cmds / lossEvery) != (int)((cmds - 1) / lossEvery)) {
                 arrival[cmds] += 60; // held up
             }
@@ -371,14 +390,15 @@ static void check_click_lead(double frameMs, double uplink, double lossEvery)
             }
             cmds++;
         }
-        // the click read in this frame, seen from the cgame
-        memset(&c, 0, sizeof(c));
-        c.picture = (int)prev;
-        c.msec    = (int)(t) - (int)prev;
-        c.stamp   = cmds - 1 > lastCmd ? stamp[lastCmd + 1] : stamp[cmds - 1] + 10;
-        RP_ClickPush(&l, &c);
-        lastCmd = cmds - 1;
-        prev    = t;
+        // the cgame's frame
+        for (; given < cmds; given++) {
+            RP_ClickCmd(&l, stamp[given], made[given]);
+        }
+        RP_ClickFrame(&l, (int)t, part, 10, 0);
+        frame[frames]   = now;
+        picture[frames] = shown = (int)t;
+        frames++;
+        prev = now;
 
         // server frames that came by now
         while (serverFrame + uplink <= t) {
@@ -389,24 +409,27 @@ static void check_click_lead(double frameMs, double uplink, double lossEvery)
             serverFrame += 50;
         }
     }
-    // the same clicks by hand: for each frame the click's command and the first
-    // server frame at or after it has arrived
-    prev    = 0;
-    lastCmd = 0;
-    int k   = 1;
-    for (double t = frameMs; t < total - 2000; t += frameMs) {
-        while (k < cmds && made[k] < t - 0.0001) {
+    // the same clicks by hand: one made between two client frames is read by
+    // the second, goes in the first command made from then on and fires on the
+    // first server frame at or after it has arrived; those of the 64 server
+    // frames the mean is of
+    for (int g = 1; g < frames; g++) {
+        double S;
+
+        while (k < cmds && made[k] < frame[g] - 0.0001) {
             k++; // made before this frame: not this frame's
         }
-        if (t > total - 8000 && k < cmds) {
-            double S = 50.0 * ceil(arrival[k] / 50.0);
-            truth += (S - prev) * (t - prev);
-            weight += t - prev;
+        if (k == cmds) {
+            break;
         }
-        prev = t;
+        S = 50.0 * ceil(arrival[k] / 50.0);
+        if (S > serverFrame - 50 - 64 * 50 && S <= serverFrame - 50) {
+            truth += (S - picture[g - 1]) * (frame[g] - frame[g - 1]);
+            weight += frame[g] - frame[g - 1];
+        }
     }
     expect_true(RP_ClickMean(&l) > 0, "a lead from our own commands");
-    expect_near(RP_ClickMean(&l), truth / weight, 2.5, "the lead of our own commands is what clicks wait");
+    expect_near(RP_ClickMean(&l), truth / weight, tolerance, "the lead of our own commands is what clicks wait");
 }
 
 // snapshots lost on the way: a picture every 10 ms, its click in the command
@@ -466,12 +489,34 @@ static void test_click_lead(void)
 
     RP_ClickReset(&l);
     expect_true(RP_ClickMean(&l) < 0, "no lead before any ack");
-    check_click_lead(1000.0 / 60, 70, 0);
-    check_click_lead(8, 71, 0);
-    check_click_lead(7, 73, 0);
-    check_click_lead(4, 70, 0);
-    check_click_lead(2, 72, 0);
-    check_click_lead(4, 40, 100);
+    for (int cmdFrames = 0; cmdFrames <= 1; cmdFrames++) {
+        check_click_lead(1000.0 / 30, 70, 0, cmdFrames, 0.3, 0.05);
+        check_click_lead(1000.0 / 60, 70, 0, cmdFrames, 0.3, 0.05);
+        check_click_lead(8, 71, 0, cmdFrames, 0.3, 0.05);
+        check_click_lead(7, 73, 0, cmdFrames, 0.3, 0.05);
+        check_click_lead(1000.0 / 240, 70, 0, cmdFrames, 0.3, 0.05);
+        check_click_lead(2, 72, 0, cmdFrames, 0.3, 0.05);
+        // a picture's frame that is still at work when a command is due
+        check_click_lead(1000.0 / 60, 77, 0, cmdFrames, 12, 0.05);
+        check_click_lead(7, 73, 0, cmdFrames, 6.5, 0.05);
+        // commands held up on the way are left out of the mean
+        check_click_lead(4, 40, 100, cmdFrames, 0.3, 2.5);
+    }
+
+    // the sub-grid: a click read by a picture's frame that makes no command, the
+    // frame before in the first half of the step, goes half a step sooner, or
+    // in that frame when it is past the half
+    RP_ClickReset(&l);
+    RP_ClickFrame(&l, 995, 0, 10, 1);
+    RP_ClickCmd(&l, 1000, 1000);
+    RP_ClickFrame(&l, 1003, 0.25f, 10, 1);
+    expect_near(l.clicks[l.head - 1].early, 5, 0.001, "a click before the half step: half a step sooner");
+    expect_near(l.clicks[l.head - 1].msec, 3.25, 0.001, "the picture's clicks since the command's frame");
+    RP_ClickFrame(&l, 1007, 0.5f, 10, 1);
+    expect_near(l.clicks[l.head - 1].early, 2.5, 0.001, "a click read past the half step: sent by that frame");
+    expect_true(l.clicks[l.head - 1].picture == 1003 && l.clicks[l.head - 1].stamp == 1010, "on the picture it saw, for the next command");
+    RP_ClickFrame(&l, 1009, 0, 10, 1);
+    expect_near(l.clicks[l.head - 1].early, 0, 0.001, "a click after a frame past the half step waits for the grid");
 
     // a map change: what waits from before it goes
     RP_ClickReset(&l);

@@ -622,38 +622,30 @@ void CG_RP_UpdateEntity(centity_t *cent)
     }
 }
 
-// The shooter's lead from our own commands: a click read in this frame was made
-// looking at the picture of the frame before, and goes out in the first command
-// of this frame or, if it makes none, the next one (the sub-grid's, sooner).
+// The shooter's lead from our own commands: each one made since the last
+// picture with the time of the frame that made it (cl_movefps makes commands
+// in frames of their own between pictures; a late frame makes them itself),
+// then this picture's time. The step is the client's (CL_CmdInterval).
 static void CG_RP_ClickFrame(void)
 {
-    const int cur = cgi.GetCurrentCmdNumber();
+    const int cur  = cgi.GetCurrentCmdNumber();
+    const int rate = (int)Com_Clamp(85, 125, cl_movefps->integer);
     usercmd_t cmd;
-    rpClick_t c;
 
-    if (s_clickLead.lastCmd >= 0 && cur >= s_clickLead.lastCmd && cg.time > s_clickLead.lastPicture
-        && cg.time - s_clickLead.lastPicture <= 100 && cgi.GetUserCmd(s_clickLead.lastCmd, &cmd)) {
-        const int fps      = cl_movefps->integer;
-        const int interval = fps > 0 ? 1000 / (int)Com_Clamp(85, 125, fps) : 0;
-
-        c.picture = s_clickLead.lastPicture;
-        c.msec    = cg.time - s_clickLead.lastPicture;
-        c.early   = 0;
-        c.stamp   = 0;
-        if (cur != s_clickLead.lastCmd) {
-            if (cgi.GetUserCmd(s_clickLead.lastCmd + 1, &cmd)) {
-                c.stamp = cmd.serverTime;
-            }
-        } else if (interval) {
-            c.stamp = cmd.serverTime + interval;
-            if (cl_movesubgrid->integer > 0 && c.picture - cmd.serverTime < interval / 2) {
-                c.early = interval - interval / 2;
-            }
+    // 100 ms of pictures have 13 commands at most: past that is a hitch, which measures nothing
+    for (int n = Q_max(s_clickLead.lastCmd + 1, cur - 15); n <= cur; n++) {
+        if (cgi.GetUserCmd(n, &cmd)) {
+            RP_ClickCmd(&s_clickLead, cmd.serverTime, cgi.GetUserCmdFrameTime(n));
         }
-        RP_ClickPush(&s_clickLead, &c);
     }
-    s_clickLead.lastCmd     = cur;
-    s_clickLead.lastPicture = cg.time;
+    RP_ClickFrame(
+        &s_clickLead,
+        cg.time,
+        cgi.GetRenderTimeFraction(),
+        cl_movefps->integer > 0 ? (1000 + rate - 1) / rate : 0,
+        cl_movesubgrid->integer > 0
+    );
+    s_clickLead.lastCmd = cur;
 }
 
 void CG_RP_BeginFrame(void)
