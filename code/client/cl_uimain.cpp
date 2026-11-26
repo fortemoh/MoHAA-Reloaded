@@ -2190,6 +2190,8 @@ static const char *const rl_oMoveValues[]  = {"0", "100", "125", NULL};
 static const char *const rl_oHudStyles[]   = {"CS:GO", "CS2", "CLASSIC", NULL};
 static const char *const rl_oHudValues[]   = {"1", "2", "3", NULL};
 static const char *const rl_oClassicKills[] = {"CHAT", "BESIDE", "UNDER", NULL}; // cg_hud_classic_kills 0, 1, 2
+static const char *const rl_oTopLeft[]       = {"MINIMAP", "COMPASS", NULL};
+static const char *const rl_oTopLeftValues[] = {"1", "0", NULL}; // cg_hud_radar 1, 0 (the compass: cg_hud_compass_style's)
 static const char *const rl_oLagometer[]   = {"OFF", "GRAPH", "COMPACT", NULL};
 // the accent's: 12 hues (red to pink) and a grey across, pastel, vivid and deep down; with the five before
 // (f6f67a, deb250, 78c8f0, 96dc8c, f0f0f0) in their places
@@ -2298,6 +2300,7 @@ static const rlOpt_t rl_opts[] = {
     O_SEG("Classic Kills", "Classic only: in the chat, or beside or under the timer.", "cg_hud_classic_kills", "0", rl_oClassicKills, NULL, 0),
     O_CYCLE("HUD Font", "Chat, messages, kill feed and names.", "cg_hud_font", "oswald", NULL, NULL, OF_FONT),
     O_SLIDER("HUD Scale", "Bigger or smaller, the whole HUD.", "cg_hud_scale", "1", 0.25f, 2, 0.05f, 0),
+    O_SEG("Radar", "Top left: the minimap, or the compass pointing at your nearest teammate.", "cg_hud_radar", "1", rl_oTopLeft, rl_oTopLeftValues, 0),
     O_SLIDER("Radar Size", "Bigger or smaller, the radar alone.", "cg_hud_radar_size", "1", 0.5f, 1.5f, 0.05f, OF_PCT),
     O_SLIDER("Radar Map Zoom", "Lower shows more of the map.", "cg_hud_radar_zoom", "0.5", 0.25f, 1, 0.05f, 0),
     O_TOGGLE("Radar Centers The Player", "Off: near the map's edge, more map.", "cg_hud_radar_centered", "1", 0),

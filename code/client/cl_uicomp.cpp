@@ -85,10 +85,10 @@ static const char *const comp_toggles[] = {
 
 // what the menus (ui/hud_comp_*.urc) read and this file sets
 static const char *const comp_menuCvars[] = {
-    "ui_hud_acc", "ui_hud_acc_line", "ui_hud_acc_radar", "ui_hud_acc_ring",
+    "ui_hud_acc", "ui_hud_acc_line", "ui_hud_acc_ring",
     "ui_hud_allies", "ui_hud_ammo", "ui_hud_ammo_on", "ui_hud_arc0_alpha", "ui_hud_arc0_angle", "ui_hud_arc1_alpha",
     "ui_hud_arc1_angle", "ui_hud_arc2_alpha", "ui_hud_arc2_angle", "ui_hud_axis", "ui_hud_badge_on", "ui_hud_charge",
-    "ui_hud_charge_on", "ui_hud_clip", "ui_hud_compass_on", "ui_hud_corners", "ui_hud_count_allies",
+    "ui_hud_charge_on", "ui_hud_clip", "ui_hud_compass_on", "ui_hud_compass_ring", "ui_hud_corners", "ui_hud_count_allies",
     "ui_hud_count_axis", "ui_hud_count_on", "ui_hud_dmg_alpha", "ui_hud_dmg_angle", "ui_hud_follow",
     "ui_hud_follow_col", "ui_hud_follow_on", "ui_hud_health", "ui_hud_health_col", "ui_hud_health_frac",
     "ui_hud_health_on", "ui_hud_hurt", "ui_hud_hurt_col", "ui_hud_hurt_on", "ui_hud_jail_allies", "ui_hud_jail_axis",
@@ -106,7 +106,7 @@ static const char *const comp_menuCvars[] = {
 // (its spread between its brightest and darkest channel against the
 // accent's), so a paler shade stays a paler shade of a new accent. The menus
 // read them as ui_hud_acc* (a shape's $cvar, colorcvar)
-enum { ACC_MAIN, ACC_LINE, ACC_RING, ACC_RADAR, ACC_WEAPON };
+enum { ACC_MAIN, ACC_LINE, ACC_RING, ACC_WEAPON };
 
 static const struct {
     const char *cvar;
@@ -115,7 +115,6 @@ static const struct {
     {"ui_hud_acc",        {0.965f, 0.965f, 0.478f}}, // health, ammo, the bullet, the grenades' counts, the weapon's name
     {"ui_hud_acc_line",   {0.933f, 0.941f, 0.659f}}, // the badge's lines, the ammo's separator
     {"ui_hud_acc_ring",   {0.91f, 0.922f, 0.643f} }, // the badge's ring
-    {"ui_hud_acc_radar",  {0.863f, 0.894f, 0.643f}}, // the tracker's ring (the radar has none)
     {NULL,                {0.98f, 0.98f, 0.565f}  }, // the weapons carried
 };
 
@@ -1191,8 +1190,30 @@ static struct {
     qboolean on, objective;
     qboolean close;  // 4.3 m or nearer (the compass's least)
     qboolean behind; // within 15 degrees of straight behind the view
+    float    half;   // its balls each side of it (degrees): 60 less atan(300 / distance), 7 at the least
     float    at[2], units;
 } comp_mate;
+
+// the stock compass redrawn (HudNeedle), in units: the disc's radius (hud_comp_topleft_compass: 112 across) and
+// the width of its edge, its ring, with that style (ui_hud_compass_ring; the tracker's 1.127): the line is that
+// ring's part, on its pixels; the bead's size; the box (the tracker's, 140 across)
+#define NEEDLE_DISC   56.0f
+#define NEEDLE_RING   2.0f
+#define NEEDLE_BEAD   7.6f
+#define NEEDLE_LINE_R (NEEDLE_DISC - NEEDLE_RING * 0.5f)
+#define NEEDLE_BOX    140.0f
+
+// cg_hud_compass_style: the compass (no radar) the stock compass redrawn (1, the
+// default: HudNeedle) or a tracker (0: HudMates)
+static int Comp_CompassStyle(void)
+{
+    static cvar_t *style;
+
+    if (!style) {
+        style = Cvar_Get("cg_hud_compass_style", "1", CVAR_ARCHIVE);
+    }
+    return style->integer;
+}
 
 // the compass's least distance: 300 / tan(60 - 7 degrees) units, 4.3 m
 #define COMP_NEEDLE_LEAST 226.1f
@@ -1588,6 +1609,8 @@ void UI_CompHud_Frame(void)
 
         flag("ui_hud_radar_on", radar && show);
         flag("ui_hud_compass_on", !radar && Comp_Int("ui_compass") && show);
+        // the compass's edge (its disc's ring): the stock compass redrawn's wider, its line that ring's part (HudNeedle)
+        Comp_Set("ui_hud_compass_ring", Comp_CompassStyle() == 1 ? va("%g", NEEDLE_RING) : "1.127");
         flag("ui_hud_msgs_r", msgs && radar);
         flag("ui_hud_msgs_c", msgs && !radar);
         flag("ui_hud_score_on", Comp_Int("cg_hud_score") && gametype != GT_SINGLE_PLAYER);
@@ -1649,6 +1672,7 @@ void UI_CompHud_Frame(void)
             comp_mate.units     = units;
             comp_mate.close     = half < 7.05f;
             comp_mate.behind    = abs(center - 1800) > 1650;
+            comp_mate.half      = half;
             comp_mate.objective = com_target_game->integer >= TG_MOHTA
                                || (obj >= 0 && obj < MAX_OBJECTIVES && !VectorCompare(cs.objLoc[obj], vec3_origin));
         }
@@ -1859,6 +1883,9 @@ void UI_CompHud_Init(void)
     Cvar_CheckRange(Cvar_Get("cg_hud_radar_size", "1", CVAR_ARCHIVE), 0.5f, 1.5f, qfalse);
     // how much of the map the radar shows: its reach RM_RANGE over this (RM_Range; CS2's Radar Map Zoom, 0.25 to 1)
     Cvar_CheckRange(Cvar_Get("cg_hud_radar_zoom", "0.5", CVAR_ARCHIVE), 0.25f, 1.0f, qfalse);
+    // the compass with the radar off (the options' Radar: COMPASS): 1 the stock compass redrawn (HudNeedle), 0 the
+    // tracker (HudMates, the console's alone)
+    Cvar_CheckRange(Cvar_Get("cg_hud_compass_style", "1", CVAR_ARCHIVE), 0, 1, qtrue);
     // the radar's middle the player (CS2's Radar Centers The Player), else moved in from the map's edges
     // (RM_View)
     Cvar_Get("cg_hud_radar_centered", "1", CVAR_ARCHIVE);
@@ -4000,7 +4027,7 @@ void UIHudMates::Draw(void)
     qboolean     shown = qfalse; // the compass's teammate among them (Comp_NeedleSeen)
     int          d;
 
-    if (!cl.snap.valid) {
+    if (!cl.snap.valid || Comp_CompassStyle() == 1) {
         return;
     }
     cge->CG_EyeAngles(&angles);
@@ -4035,6 +4062,102 @@ void UIHudMates::Draw(void)
 
         mark(dx * sn - dy * cn, dx * cn + dy * sn, sh);
     }
+}
+
+/*
+================
+UIHudNeedle
+
+With no radar and cg_hud_compass_style 1, the stock compass redrawn as
+little as it can be, on the compass's disc: what it points at, the
+nearest living teammate or an objective (comp_mate), as a line in the
+HUD's accent along the disc's own edge, as long as the stock compass's
+two balls are apart (comp_mate.half each side: 60 degrees less
+atan(300 / distance), 7 at 4.3 m and nearer: long far away, short
+near), its ends round, and a bead on the edge at its middle, toward it
+(the stock compass's arrow). No face, no north. The way from the eye as
+it looks now (cge->CG_EyeAngles), to the needle's place. Its box is the
+tracker's (the disc and 14 units round it: the bead half out of the
+disc); the disc, the white dot in its middle and the damage wedge are
+the menu's own
+================
+*/
+class UIHudNeedle : public UIWidget
+{
+public:
+    CLASS_PROTOTYPE(UIHudNeedle);
+    void Draw(void) override;
+};
+
+CLASS_DECLARATION(UIWidget, UIHudNeedle, NULL) {
+    {NULL, NULL}
+};
+
+
+// the line: the disc's edge ring, half degrees each side of the top (a whole number of them, 7 to 60), its
+// ends round, the accent, in a box d pixels square: one shape, turned to the way as one (each length baked once)
+static qhandle_t Needle_LineShader(int half, float s, int d)
+{
+    static compMark_t kept[61];
+    static int        accent[61];
+    int               kd;
+
+    half = Com_Clamp(1, 60, half);
+    if (accent[half] == comp_accentStamp + 1 && Comp_MarkKept(&kept[half], 1.0f, s, &kd) && kd == d) {
+        return kept[half].h;
+    }
+    const float *c = comp_accent[ACC_MAIN];
+    char         line[128];
+    const char  *layers[1] = {line};
+
+    Com_sprintf(line, sizeof(line), "arc %g %g %g 1 %g %g %d", c[0], c[1], c[2], NEEDLE_DISC / (NEEDLE_BOX * 0.5f), NEEDLE_RING, half);
+    accent[half] = comp_accentStamp + 1;
+    return Comp_MarkKeep(&kept[half], 1.0f, s, d, UI_BakeShape("comp_ndl_line", layers, 1, d, d, s));
+}
+
+// the bead: the accent, a fine dark edge (half of it is out of the disc), NEEDLE_BEAD units across
+static qhandle_t Needle_BeadShader(float s, int *d)
+{
+    static compMark_t kept;
+    static int        accent = -1;
+
+    if (accent == comp_accentStamp && Comp_MarkKept(&kept, 1.0f, s, d)) {
+        return kept.h;
+    }
+    char        bead[64];
+    const char *layers[2] = {"circle 0.047 0.055 0.071 0.6 1", bead};
+
+    Com_sprintf(bead, sizeof(bead), "circle %g %g %g 1 0.84", comp_accent[ACC_MAIN][0], comp_accent[ACC_MAIN][1], comp_accent[ACC_MAIN][2]);
+    accent = comp_accentStamp;
+    *d     = (int)((NEEDLE_BEAD + 1.4f) * s + 0.5f);
+    return Comp_MarkKeep(&kept, 1.0f, s, *d, UI_BakeShape("comp_ndl_bead", layers, 2, *d, *d, s));
+}
+
+void UIHudNeedle::Draw(void)
+{
+    const float  s = m_vVirtualScale[0], r = m_frame.size.width * 0.5f, line = NEEDLE_LINE_R * s;
+    const int    d = (int)(m_frame.size.width + 0.5f);
+    const vec4_t white = {1, 1, 1, 1};
+    vec3_t       angles, eye;
+    int          b;
+
+    if (!cl.snap.valid || Comp_CompassStyle() != 1 || !comp_mate.on || d <= 0) {
+        return;
+    }
+    cge->CG_EyeAngles(&angles);
+    cge->CG_EyePosition(&eye);
+    uii.Rend_SetColor(white);
+    // the needle's way from the eye, clockwise from the top (HudMates' right and ahead)
+    const float dx = comp_mate.at[0] - eye[0], dy = comp_mate.at[1] - eye[1];
+    const float sn = sinf(DEG2RAD(angles[YAW])), cn = cosf(DEG2RAD(angles[YAW]));
+    const float way = atan2f(dx * sn - dy * cn, dx * cn + dy * sn);
+
+    // the line, turned to the way; the bead at its middle, toward it
+    uii.Rend_DrawPicStretched2(0, 0, d, d, 0, 0, 1, 1, cosf(way), sinf(way), Needle_LineShader((int)(comp_mate.half + 0.5f), s, d));
+    const qhandle_t bead = Needle_BeadShader(s, &b);
+
+    uii.Rend_DrawPicStretched(floorf(r + sinf(way) * line - b * 0.5f + 0.5f), floorf(r - cosf(way) * line - b * 0.5f + 0.5f), b, b, 0, 0, 1, 1,
+                              bead);
 }
 
 // a menu's widgets: their shapes and faces (the widgets' own faces too)

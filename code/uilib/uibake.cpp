@@ -1488,6 +1488,17 @@ static void Bake_Layer(uiCanvas_t *cv, const char *text)
             Bake_MoveTo(num(i) * w, num(i + 1) * h, i == a ? STBTT_vmove : STBTT_vline);
         }
         Bake_MoveTo(num(a) * w, num(a + 1) * h, STBTT_vline);
+    } else if (t[0] == "arc") {
+        // RADIUS WIDTH HALF: a ring's part, HALF degrees each side of the top, its ends round: inside RADIUS of
+        // half the box, WIDTH units wide on whole pixels (a pixel at the least), as a ring of that width there
+        const float pw = Q_max(1.0f, floorf(num(a + 1) * cv->scale + 0.5f)), hw = pw * 0.5f, rm = r * num(a) - hw;
+        const float hl = DEG2RAD(num(a + 2));
+        const float a0 = -0.5f * (float)M_PI - hl, a1 = -0.5f * (float)M_PI + hl;
+
+        Bake_Arc(cx, cy, rm + hw, a0, a1, qtrue);
+        Bake_Arc(cx + rm * cosf(a1), cy + rm * sinf(a1), hw, a1, a1 + (float)M_PI, qfalse);
+        Bake_Arc(cx, cy, rm - hw, a1, a0, qfalse);
+        Bake_Arc(cx + rm * cosf(a0), cy + rm * sinf(a0), hw, a0 + (float)M_PI, a0 + 2.0f * (float)M_PI, qfalse);
     } else if (t[0] == "crescent") {
         const float x0 = num(a) * w, y0 = num(a + 1) * w, rf = num(a + 2) * w;
         const float hh = sqrtf(rf * rf - (cx - x0) * (cx - x0)), fcy = y0 + hh;
@@ -1614,7 +1625,7 @@ static void Bake_ShapeTexels(const std::vector<std::string>& layers, int w, int 
 static void Bake_Prepare(const char *text)
 {
     static const char *const kinds[] = {
-        "fill", "vgradient", "hgradient", "circle", "ring", "frame", "roundframe", "roundbox", "poly", "crescent", "text", "picture", "svg",
+        "fill", "vgradient", "hgradient", "circle", "ring", "frame", "roundframe", "roundbox", "poly", "arc", "crescent", "text", "picture", "svg",
         "shadow"
     };
     std::vector<std::string> t;
