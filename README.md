@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo/mohreloaded.svg" alt="Medal of Honor Reloaded" width="460">
+</p>
+
 # MoHAA Reloaded: native Vulkan
 
 **MoHAA Reloaded** brings [OpenMoHAA](https://github.com/openmoh/openmohaa) natively to modern hardware. This is its `vulkan` branch: OpenMoHAA with a Vulkan renderer of its own, for 64-bit Linux and Windows. It plays Medal of Honor: Allied Assault, Spearhead and Breakthrough with your retail game data, on existing MOHAA and OpenMoHAA servers.
