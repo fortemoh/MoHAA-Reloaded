@@ -1229,6 +1229,10 @@ static void EX_TypingLine(void)
     left  = chat && feed ? chat->getFrame().pos.x + feed->getFrame().pos.x : 25.0f * s;
     top   = chat && feed ? chat->getFrame().pos.y + feed->getFrame().pos.y : uid.vidHeight - 256.0f * s;
     width = feed ? feed->getFrame().size.width : 520.0f * s;
+    if (high) {
+        // (Classic's chat as wide as the room along the top: the line the file's 520 of it)
+        width = Q_min(width, 520.0f * s);
+    }
     if (high && feed) {
         // (the line's bottom 32 + 8 under the chat's box: EX's y1)
         top += feed->getFrame().size.height + 72.0f * s;

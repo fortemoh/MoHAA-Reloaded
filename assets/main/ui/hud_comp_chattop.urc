@@ -1,6 +1,7 @@
 // The Competitive HUD as Classic (cg_hudstyle 3): the chat along the top, as
 // the stock HUD's beside its compass: 25 right of the radar or the compass
-// (cl_uicomp.cpp, Comp_ClassicPlace, moves it there), its lines from the top
+// (cl_uicomp.cpp, Comp_ClassicPlace, moves it there and widens it to the
+// room up to the top bar, or the kill feed by it), its lines from the top
 // down, the newest last, the first level with the top bar's timer; the
 // kills among them as the stock HUD's (cg_hud_classic_kills 0); the line
 // typed under it (cl_uiextras.cpp)
