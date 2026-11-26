@@ -2,10 +2,10 @@
 //   xcrun swiftc -O -o build.noindex/makeicon port/makeicon.swift
 //   build.noindex/makeicon misc/macos/mohreloaded.svg build.noindex/icon.iconset
 //   iconutil -c icns -o misc/macos/mohreloaded.icns build.noindex/icon.iconset
-// The artwork is the user's (pstngh/moh-icons, mohaa-transparent.svg, byte for byte: its content credentials
-// sign the file): the gold star with no background, which macOS 26 scales down onto a plate of its own. So it
-// fills the canvas, as moh-launcher's icon does, and not Apple's 824/1024 rounded square, which would shrink the
-// star a second time on the plate (the star was 80% of the canvas until session 66).
+// The artwork is the user's (fortemoh/moh-icons, icons/mohaa-transparent.svg, byte for byte; 0e8f1cb8's has no
+// content credentials, the earlier one's signed its bytes): the gold star with no background, which macOS 26 scales
+// down onto a plate of its own. So it fills the canvas, as moh-launcher's icon does, and not Apple's 824/1024 rounded
+// square, which would shrink the star a second time on the plate (the star was 80% of the canvas until session 66).
 import AppKit
 
 let args = CommandLine.arguments
