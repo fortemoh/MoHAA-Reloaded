@@ -10,10 +10,12 @@ align left top
 bgcolor 0 0 0 0
 borderstyle NONE
 
-// the compass (no radar): a tracker, a radar with no map (HudMates): you a
-// white dot in the middle, each teammate a gold dot in its direction, the
-// nearer the middle the nearer (the ring at 60 m and on), the nearest out of
-// sight too (the stock compass's); the damage wedge
+// the compass (no radar): a tracker, a radar with no map (HudMates), its
+// disc the radar's (no accent ring: the disc's own edge): you a white dot in
+// the middle, each teammate a gold dot in its direction, the nearer the
+// middle the nearer (the edge at 60 m and on), the nearest out of sight too
+// (the stock compass's); the damage wedge. Its edge ui_hud_compass_ring wide:
+// 1.127, 2 with the stock compass redrawn (cg_hud_compass_style 1)
 resource
 Label
 {
@@ -23,7 +25,7 @@ bgcolor 0 0 0 0
 borderstyle NONE
 enabledcvar ui_hud_compass_on
 shape circle 0.047 0.055 0.071 0.45
-shape ring 2 $ui_hud_acc_radar 0.6
+shape ring $ui_hud_compass_ring 1 1 1 0.102
 shadow
 }
 
@@ -43,6 +45,20 @@ resource
 HudMates
 {
 name "mates"
+rect 15 15 140 140
+bgcolor 0 0 0 0
+borderstyle NONE
+enabledcvar ui_hud_compass_on
+}
+
+// or (cg_hud_compass_style 1) the stock compass redrawn as little as it
+// can be (HudNeedle): toward what it points at, the nearest teammate, a
+// line in the accent along the disc's edge (long far away, short near)
+// and a bead on the edge at its middle; its box the tracker's
+resource
+HudNeedle
+{
+name "needle"
 rect 15 15 140 140
 bgcolor 0 0 0 0
 borderstyle NONE
