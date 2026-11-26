@@ -1162,8 +1162,9 @@ static const char *const comp_arcAngle[3] = {"ui_hud_arc0_angle", "ui_hud_arc1_a
 // ahead: STAT_INFOCLIENT, which playing is the player aimed at), not the
 // dead, not a place no longer sent. The cgame's entries are of the snapshot
 // (0-1 snapshots old) or, on Spearhead's and Breakthrough's protocol, also
-// of the server's radar (a teammate out of sight a snapshot in turn); it
-// keeps a last seen place 5 s
+// of the server's radar (a teammate out of sight a snapshot in turn); a
+// last seen place is kept 250 ms on Allied Assault's protocol, 2 s on
+// Spearhead's and Breakthrough's (Comp_Mates)
 typedef struct {
     int followed, fresh;
 } compMates_t;
@@ -1188,9 +1189,13 @@ static bool Comp_MateShown(const compMates_t& m, int i)
 // place in the world (x and y) and its distance from the player
 static struct {
     qboolean on, objective;
-    qboolean close; // 4.3 m or nearer (the compass's least)
+    qboolean close;  // 4.3 m or nearer (the compass's least)
+    qboolean behind; // within 15 degrees of straight behind the view
     float    at[2], units;
 } comp_mate;
+
+// the compass's least distance: 300 / tan(60 - 7 degrees) units, 4.3 m
+#define COMP_NEEDLE_LEAST 226.1f
 
 // a teammate's place (x, y) is where the stock compass points: within 5 m
 // of it (the compass says 4.3 m for any nearer) or 30% of its distance
@@ -1200,13 +1205,66 @@ static bool Comp_AtNeedle(float x, float y)
         && Square(x - comp_mate.at[0]) + Square(y - comp_mate.at[1]) < Square(Q_max(260.0f, 0.3f * comp_mate.units));
 }
 
-// the stock compass points at a teammate the radar and the tracker show
-// (where none of the snapshot's is at it): not at 4.3 m or nearer, where a
-// teammate is nearly always in the snapshot and a stock Freeze-Tag server's
-// needle points 4.3 m behind one whichever way one looks, nobody there
+// the stock compass points at a teammate the radar and the tracker show:
+// the nearest living one wherever they are, 4.3 m or nearer too (a teammate
+// behind a closed door or a floor isn't in the snapshot). Not a reading of
+// 4.3 m or nearer straight behind the view: a stock Freeze-Tag server's
+// needle points there whichever way one looks, nobody there
 static bool Comp_NeedleMate(void)
 {
-    return comp_mate.on && !comp_mate.objective && !comp_mate.close;
+    return comp_mate.on && !comp_mate.objective && !(comp_mate.close && comp_mate.behind);
+}
+
+// the teammate the stock compass points at is one the radar and the tracker
+// already show: a teammate of the snapshot (the needle's own moment) the
+// server would read so, the bearing to them at their distance in 3D (the
+// server's, centroid to centroid: the origins', a centroid straight over its
+// origin; 4.3 m at the least), within the reading's error (a tenth of a
+// degree each side: 2.9e-6 (d^2 + 300^2) units in distance, 290 at the
+// server's 9999) and a crouch's height; or one shown but no longer in the
+// snapshot (Comp_Mates' last seen place) where the needle's place is near
+// theirs. A teammate shown elsewhere, farther, leaves the nearest drawn
+static bool Comp_NeedleSeen(const compMates_t& m)
+{
+    const playerState_t *ps     = &cl.snap.ps;
+    const float          tol    = 48.0f + 0.045f * comp_mate.units;
+    uint64_t             inSnap = 0;
+
+    if (!g_radarClients) {
+        return false;
+    }
+    for (int n = 0; n < cl.snap.numEntities; n++) {
+        const entityState_t *e = &cl.parseEntities[(cl.snap.parseEntitiesNum + n) & (MAX_PARSE_ENTITIES - 1)];
+
+        if (e->eType != ET_PLAYER || e->number < 0 || e->number >= MAX_CLIENTS) {
+            continue;
+        }
+        inSnap |= 1ull << e->number;
+        if (!Comp_MateShown(m, e->number)) {
+            continue;
+        }
+        const float dx = e->origin[0] - ps->origin[0], dy = e->origin[1] - ps->origin[1], dz = e->origin[2] - ps->origin[2];
+        const float flat  = sqrtf(dx * dx + dy * dy);
+        const float units = Q_max(COMP_NEEDLE_LEAST, sqrtf(flat * flat + dz * dz));
+
+        if (flat < 1.0f) {
+            // straight over or under: no bearing, the distance alone
+            if (fabsf(units - comp_mate.units) < tol) {
+                return true;
+            }
+            continue;
+        }
+        if (Square(ps->origin[0] + dx / flat * units - comp_mate.at[0]) + Square(ps->origin[1] + dy / flat * units - comp_mate.at[1])
+            < Square(tol)) {
+            return true;
+        }
+    }
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (!(inSnap >> i & 1) && Comp_MateShown(m, i) && Comp_AtNeedle(g_radarClients[i].origin[0], g_radarClients[i].origin[1])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void UI_CompHud_Frame(void)
@@ -1590,6 +1648,7 @@ void UI_CompHud_Frame(void)
             comp_mate.at[1]     = ps->origin[1] + sinf(yaw) * units;
             comp_mate.units     = units;
             comp_mate.close     = half < 7.05f;
+            comp_mate.behind    = abs(center - 1800) > 1650;
             comp_mate.objective = com_target_game->integer >= TG_MOHTA
                                || (obj >= 0 && obj < MAX_OBJECTIVES && !VectorCompare(cs.objLoc[obj], vec3_origin));
         }
@@ -3820,14 +3879,15 @@ void UIHudRadar::Draw(void)
     // com_radar_range away, is beyond the reach). On Allied Assault's protocol
     // (no radar: the snapshot's teammates alone, those in sight roughly) also
     // the one the stock compass points at, the nearest living teammate
-    // wherever they are, where none of these is: its dot with no pointer
+    // wherever they are, where it isn't one of these (Comp_NeedleSeen): its
+    // dot with no pointer
     if (g_radarClients && g_radarClientNum >= 0) {
         const int         axis  = cl.snap.ps.stats[STAT_TEAM] == TEAM_AXIS;
         const compMates_t mates = Comp_Mates();
         const qboolean    ways  = com_target_game->integer >= TG_MOHTA && range > RM_RANGE;
         uint64_t          sent  = 0;
         qboolean          read  = qfalse;
-        qboolean          needle = Comp_NeedleMate();
+        const qboolean    needle = Comp_NeedleMate() && !Comp_NeedleSeen(mates);
 
         for (int i = 0; i < MAX_CLIENTS; i++) {
             const radarClient_t *c = &g_radarClients[i];
@@ -3837,7 +3897,6 @@ void UIHudRadar::Draw(void)
             if (!Comp_MateShown(mates, i)) {
                 continue;
             }
-            needle = needle && !Comp_AtNeedle(c->origin[0], c->origin[1]);
             place(c->origin[0], c->origin[1], &x, &y);
             dist    = sqrtf(x * x + y * y);
             clamped = dist > r - 7.0f * k * s;
@@ -3938,7 +3997,7 @@ void UIHudMates::Draw(void)
     const float  s = m_vVirtualScale[0], r = m_frame.size.width * 0.5f, reach = r - 19.0f * s;
     const vec4_t white = {1, 1, 1, 1};
     vec3_t       angles, eye;
-    qboolean     shown = qfalse; // the compass's teammate among them
+    qboolean     shown = qfalse; // the compass's teammate among them (Comp_NeedleSeen)
     int          d;
 
     if (!cl.snap.valid) {
@@ -3966,9 +4025,9 @@ void UIHudMates::Draw(void)
             }
             const float dx = g_radarClients[i].origin[0] - eye[0], dy = g_radarClients[i].origin[1] - eye[1];
 
-            shown |= Comp_AtNeedle(g_radarClients[i].origin[0], g_radarClients[i].origin[1]);
             mark(dx * sn - dy * cn, dx * cn + dy * sn, dot);
         }
+        shown = Comp_NeedleMate() && Comp_NeedleSeen(mates);
     }
     if (comp_mate.on && !shown && (comp_mate.objective || Comp_NeedleMate())) {
         const qhandle_t sh = comp_mate.objective ? Comp_ObjectiveShader(qtrue, 0.85f, s, &d) : dot;
