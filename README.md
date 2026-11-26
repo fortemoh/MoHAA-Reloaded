@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo/mohreloaded.svg" alt="Medal of Honor Reloaded" width="460">
+</p>
+
 # MoHAA Reloaded: native Metal for Apple Silicon
 
 **MoHAA Reloaded** brings [OpenMoHAA](https://github.com/openmoh/openmohaa) natively to modern hardware. This is its `metal` branch: a native macOS port for Apple Silicon Macs. It plays Medal of Honor: Allied Assault, Spearhead and Breakthrough with your retail game data, on existing MOHAA and OpenMoHAA servers.
