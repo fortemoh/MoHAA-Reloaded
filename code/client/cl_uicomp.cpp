@@ -1082,19 +1082,26 @@ static void Comp_RadarSize(void)
 // chat (hud_comp_chattop) along the top right of the radar or the compass,
 // as the stock HUD's beside its compass, as wide as the room there: to 25
 // short of the bar, or of the kill feed beside or under it (a kill's line
-// whole, its two names on one row, as the stock HUD's run across the top)
+// whole, its two names on one row, as the stock HUD's run across the top).
+// The bar's menu is the file's 1920 wide, its middle the screen's: in
+// Classic, where the screen is wider (a HUD scale under 1, a screen wider
+// than 16:9), the menu is made as wide as the screen, else the bar moved to
+// the screen's right was past the menu's and cut off
 #define COMP_CLASSIC_MARGIN 25.0f
 static void Comp_ClassicPlace(void)
 {
     static int                     generation = -1;
     static std::vector<UIWidget *> widgets;
     static std::vector<UIRect2D>   urc;
-    static UIWidget               *chat;
-    static UIRect2D                chatUrc;
-    // the bar's shift across and down, the chat's left and width
-    static float                   placed[4] = {-1.0f, -1.0f, -1.0f, -1.0f};
+    static UIWidget               *bar, *chat;
+    static UIRect2D                barUrc, chatUrc;
+    // the bar's shift across and down, the chat's left and width, the bar's menu's width
+    static float                   placed[5] = {-1.0f, -1.0f, -1.0f, -1.0f, -1.0f};
     const bool                     classic   = Comp_Int("ui_hud_classic") != 0;
     const float                    screenW   = uid.vidWidth / UI_DesignScale(1920.0f, 1080.0f);
+    // the bar's menu's width, and its left on the screen (its middle the screen's: align centerx)
+    const float                    menuW     = classic ? Q_max(1920.0f, screenW) : 1920.0f;
+    const float                    left      = (screenW - menuW) * 0.5f;
     float                          dx, dy, x, width;
 
     if (generation != menuManager.Generation()) {
@@ -1103,6 +1110,10 @@ static void Comp_ClassicPlace(void)
         UIWidget *c     = score ? score->GetContainerWidget() : NULL;
 
         generation = menuManager.Generation();
+        bar        = c;
+        if (bar) {
+            barUrc = bar->DesignRect();
+        }
         widgets.clear();
         urc.clear();
         for (UIWidget *w = c ? c->getFirstChild() : NULL; w; w = c->getNextChild(w)) {
@@ -1113,10 +1124,18 @@ static void Comp_ClassicPlace(void)
         if (chat) {
             chatUrc = chat->DesignRect();
         }
-        placed[0] = placed[1] = placed[2] = placed[3] = -1.0f;
+        placed[0] = placed[1] = placed[2] = placed[3] = placed[4] = -1.0f;
     }
-    // the bar: the box's right edge (the file's 997, the menu's middle 960) and its top (0) the margin from the screen's
-    dx = classic ? floorf(960.0f + screenW * 0.5f - COMP_CLASSIC_MARGIN - 997.0f) : 0.0f;
+    // the bar's menu as wide as menuW, its middle the screen's; the files' places in it moved by half what it
+    // grew, so they stay where they were on the screen
+    if (bar && menuW != placed[4]) {
+        placed[4] = menuW;
+        placed[0] = -1.0f;
+        bar->SetDesignRect(UIRect2D(left, barUrc.pos.y, menuW, barUrc.size.height));
+    }
+    // the bar: the box's right edge (the file's 997, from the menu's left) and its top (0) the margin from the
+    // screen's
+    dx = classic ? floorf(screenW - left - COMP_CLASSIC_MARGIN - 997.0f) : (menuW - 1920.0f) * 0.5f;
     dy = classic ? COMP_CLASSIC_MARGIN : 0.0f;
     if (dx != placed[0] || dy != placed[1]) {
         placed[0] = dx;
@@ -1133,14 +1152,15 @@ static void Comp_ClassicPlace(void)
     } else {
         x = Comp_Int("ui_hud_compass_on") ? 141.0f + 25.0f : 25.0f;
     }
-    // its right 25 short of the bar's left (the file's 923, moved), or of the kill feed's box shown by it
+    // its right 25 short of the bar's left (the file's 923, moved, from its menu's left on the screen: the chat's
+    // menu's left is the screen's), or of the kill feed's box shown by it
     // (hud_comp_killfeed.urc: its menu 560 wide at the screen's right, the box's left 115 in it, moved 87 left
     // beside the bar, 9 under it); no narrower than half the file's, nor past its menu's right (1920)
     if (classic) {
         const qboolean feed  = Comp_Int("cg_hud_killfeed") != 0;
         const float    right = feed && Comp_Int("ui_hud_kf_beside") ? screenW - 560.0f + 115.0f - 87.0f
                              : feed && Comp_Int("ui_hud_kf_low")    ? screenW - 560.0f + 115.0f - 9.0f
-                                                                    : 923.0f + dx;
+                                                                    : left + 923.0f + dx;
 
         width = floorf(Q_min(1920.0f - x, Q_max(chatUrc.size.width * 0.5f, right - COMP_CLASSIC_MARGIN - x)));
     } else {
