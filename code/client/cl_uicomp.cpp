@@ -1081,7 +1081,9 @@ static void Comp_RadarSize(void)
 // the top right corner, 25 from the screen's top and right as the radar
 // from its top and left (the kill feed by it: hud_comp_killfeed.urc); the
 // chat (hud_comp_chattop) along the top right of the radar or the compass,
-// as the stock HUD's beside its compass
+// as the stock HUD's beside its compass, as wide as the room there: to 25
+// short of the bar, or of the kill feed beside or under it (a kill's line
+// whole, its two names on one row, as the stock HUD's run across the top)
 #define COMP_CLASSIC_MARGIN 25.0f
 static void Comp_ClassicPlace(void)
 {
@@ -1090,10 +1092,11 @@ static void Comp_ClassicPlace(void)
     static std::vector<UIRect2D>   urc;
     static UIWidget               *chat;
     static UIRect2D                chatUrc;
-    static float                   placed[3] = {-1.0f, -1.0f, -1.0f}; // the bar's shift across and down, the chat's left
+    // the bar's shift across and down, the chat's left and width
+    static float                   placed[4] = {-1.0f, -1.0f, -1.0f, -1.0f};
     const bool                     classic   = Comp_Int("ui_hud_classic") != 0;
     const float                    screenW   = uid.vidWidth / UI_DesignScale(1920.0f, 1080.0f);
-    float                          dx, dy, x;
+    float                          dx, dy, x, width;
 
     if (generation != menuManager.Generation()) {
         Menu     *score = menuManager.FindMenu("hud_comp_score");
@@ -1111,7 +1114,7 @@ static void Comp_ClassicPlace(void)
         if (chat) {
             chatUrc = chat->DesignRect();
         }
-        placed[0] = placed[1] = placed[2] = -1.0f;
+        placed[0] = placed[1] = placed[2] = placed[3] = -1.0f;
     }
     // the bar: the box's right edge (the file's 997, the menu's middle 960) and its top (0) the margin from the screen's
     dx = classic ? floorf(960.0f + screenW * 0.5f - COMP_CLASSIC_MARGIN - 997.0f) : 0.0f;
@@ -1131,9 +1134,23 @@ static void Comp_ClassicPlace(void)
     } else {
         x = Comp_Int("ui_hud_compass_on") ? 141.0f + 25.0f : 25.0f;
     }
-    if (chat && x != placed[2]) {
+    // its right 25 short of the bar's left (the file's 923, moved), or of the kill feed's box shown by it
+    // (hud_comp_killfeed.urc: its menu 560 wide at the screen's right, the box's left 115 in it, moved 87 left
+    // beside the bar, 9 under it); no narrower than half the file's, nor past its menu's right (1920)
+    if (classic) {
+        const qboolean feed  = Comp_Int("cg_hud_killfeed") != 0;
+        const float    right = feed && Comp_Int("ui_hud_kf_beside") ? screenW - 560.0f + 115.0f - 87.0f
+                             : feed && Comp_Int("ui_hud_kf_low")    ? screenW - 560.0f + 115.0f - 9.0f
+                                                                    : 923.0f + dx;
+
+        width = floorf(Q_min(1920.0f - x, Q_max(chatUrc.size.width * 0.5f, right - COMP_CLASSIC_MARGIN - x)));
+    } else {
+        width = chatUrc.size.width;
+    }
+    if (chat && (x != placed[2] || width != placed[3])) {
         placed[2] = x;
-        chat->SetDesignRect(UIRect2D(x, chatUrc.pos.y, chatUrc.size.width, chatUrc.size.height));
+        placed[3] = width;
+        chat->SetDesignRect(UIRect2D(x, chatUrc.pos.y, width, chatUrc.size.height));
     }
 }
 
