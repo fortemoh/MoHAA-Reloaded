@@ -2230,7 +2230,8 @@ int UIReloadedMenu::DrawKey(void)
 }
 
 // the in-game pages' backdrop (the weapon page's, the team page's, the Esc menu's: their back layer): the game
-// blurred (the renderer's "*frameblur": none on the Metal renderer for now, the dim alone) and dimmed by a black of 47%
+// blurred (the renderer's "*frameblur", the Vulkan and Metal renderers'; without one the dim alone) and dimmed by a
+// black of 47%
 static void RL_BlurredGame(const rlView_t& v)
 {
     static qhandle_t blur;
