@@ -1706,6 +1706,126 @@ void UI_StartDMMap_f(void)
 
 /*
 ====================
+UI_MapList_f
+
+Added: maplist, a floating window of every map (as map's completion lists
+them); a double-click loads one with map (which checks the server has it),
+through rcon on another's server (the stock maplist, a developer's file
+picker, went with the others)
+====================
+*/
+class UIMapList : public UIWidget
+{
+public:
+    CLASS_PROTOTYPE(UIMapList);
+
+    std::vector<str> maps;
+    int              top = 0, clicked = -1, clickedAt = 0;
+
+    ~UIMapList() override;
+    void     Draw(void) override;
+    qboolean KeyEvent(int key, unsigned int time) override;
+    void     Pressed(Event *ev);
+    void     WindowGone(Event *ev);
+};
+
+CLASS_DECLARATION(UIWidget, UIMapList, NULL) {
+    {&W_LeftMouseDown, &UIMapList::Pressed   },
+    {&W_Destroyed,     &UIMapList::WindowGone},
+    {NULL,             NULL                  }
+};
+
+static UIMapList *s_maplist;
+
+// (the UI's shutdown deletes it before its window)
+UIMapList::~UIMapList()
+{
+    if (s_maplist == this) {
+        s_maplist = NULL;
+    }
+}
+
+void UIMapList::Draw(void)
+{
+    const int h = m_font->getHeight(getHighResScale());
+
+    // (gone once the mouse is the game's again: the console or a menu under it closed)
+    if (!uid.uiHasMouse) {
+        getParent()->getParent()->PostEvent(EV_Remove, 0);
+        return;
+    }
+    m_font->setColor(m_foreground_color);
+    for (int i = top; i < (int)maps.size() && (i - top) * h < m_frame.size.height; i++) {
+        m_font->Print(4, (i - top) * h / getHighResScale()[1], maps[i].c_str(), -1, getHighResScale());
+    }
+}
+
+qboolean UIMapList::KeyEvent(int key, unsigned int time)
+{
+    const int page = m_frame.size.height / m_font->getHeight(getHighResScale());
+
+    if (key != K_MWHEELDOWN && key != K_MWHEELUP) {
+        return qfalse;
+    }
+    top = Q_max(0, Q_min(top + (key == K_MWHEELDOWN ? 3 : -3), (int)maps.size() - page));
+    return qtrue;
+}
+
+void UIMapList::Pressed(Event *ev)
+{
+    const int i = top + (int)(MouseEventToClientPoint(ev).y / m_font->getHeight(getHighResScale()));
+
+    if (i != clicked || uid.time - clickedAt > 500) {
+        clicked   = i;
+        clickedAt = uid.time;
+    } else if (i < (int)maps.size()) {
+        Cbuf_AddText(va("%smap \"%s\"\n", clc.state >= CA_CONNECTED && !com_sv_running->integer ? "rcon " : "", maps[i].c_str()));
+        getParent()->getParent()->PostEvent(EV_Remove, 0);
+    }
+}
+
+// (its window closed or a map picked: the keys and the mouse back where they were)
+void UIMapList::WindowGone(Event *ev)
+{
+    s_maplist = NULL;
+    PostEvent(EV_Remove, 0);
+    if (UI_ConsoleIsVisible()) {
+        UI_OpenConsole();
+    } else {
+        UI_FocusMenuIfExists();
+    }
+}
+
+// (not the smaller lightmaps' copies: map picks them)
+static void UI_MapListAdd(const char *map)
+{
+    if (!strstr(map, "_sml")) {
+        s_maplist->maps.push_back(map);
+    }
+}
+
+static void UI_MapList_f(void)
+{
+    if (!s_maplist) {
+        UIFloatingWindow *window = new UIFloatingWindow();
+
+        s_maplist = new UIMapList();
+        window->Create(
+            NULL, UIRect2D(uid.vidWidth / 3, uid.vidHeight / 4, uid.vidWidth / 3, uid.vidHeight / 2), "maplist", UWindowColor, UHudColor
+        );
+        s_maplist->InitFrame(window->getChildSpace(), window->getChildSpace()->getClientFrame(), 0);
+        s_maplist->setBackgroundColor(UColor(0.04f, 0.05f, 0.07f), true);
+        s_maplist->setForegroundColor(UHudColor);
+        s_maplist->AllowActivate(true);
+        window->Connect(s_maplist, W_Destroyed, W_Destroyed);
+        FS_FilenameCompletion("maps", "bsp", qtrue, UI_MapListAdd, qfalse, qtrue);
+    }
+    uWinMan.ActivateControl(s_maplist);
+    IN_MouseOn();
+}
+
+/*
+====================
 UI_GetPlayerModel_f
 ====================
 */
@@ -2640,6 +2760,7 @@ void CL_ShutdownUI(void)
     Cmd_RemoveCommand("togglemenu");
     Cmd_RemoveCommand("loadmenu");
     Cmd_RemoveCommand("ui_startdmmap");
+    Cmd_RemoveCommand("maplist");
     Cmd_RemoveCommand("ui_showmouse");
     Cmd_RemoveCommand("ui_hidemouse");
     Cmd_RemoveCommand("ui_saveconsolepos");
@@ -2836,6 +2957,7 @@ void CL_InitializeUI(void)
     Cmd_AddCommand("togglemenu", UI_ToggleMenu_f);
     Cmd_AddCommand("loadmenu", UI_LoadMenu_f);
     Cmd_AddCommand("ui_startdmmap", UI_StartDMMap_f);
+    Cmd_AddCommand("maplist", UI_MapList_f);
     Cmd_AddCommand("ui_showmouse", UI_ShowMouse_f);
     Cmd_AddCommand("ui_hidemouse", UI_HideMouse_f);
     Cmd_AddCommand("ui_saveconsolepos", SaveConsoleRectangle);
