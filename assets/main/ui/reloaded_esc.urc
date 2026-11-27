@@ -1,4 +1,4 @@
-// The Reloaded Esc menu, shown for dm_main (cl_uimenus.cpp)
+// The Reloaded Esc menu, shown for dm_main (cl_uimenus.cpp): the game blurred and dimmed behind (the back layer, as the team and weapon pages'), the in-game block in front
 menu "reloaded_esc" 640 480 NONE 0
 align left top
 fgcolor 1.00 1.00 1.00 1.00
@@ -10,12 +10,25 @@ drawcache 1
 resource
 ReloadedMenu
 {
+name "back"
+rect 0 0 640 480
+fgcolor 1.00 1.00 1.00 1.00
+bgcolor 0.00 0.00 0.00 0.00
+borderstyle "NONE"
+screen esc
+layer back
+}
+
+resource
+ReloadedMenu
+{
 name "front"
 rect 0 0 640 480
 fgcolor 1.00 1.00 1.00 1.00
 bgcolor 0.00 0.00 0.00 0.00
 borderstyle "NONE"
 screen esc
+layer front
 }
 
 end.
