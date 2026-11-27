@@ -7252,6 +7252,12 @@ void Player::CopyStats(Player *player)
     client->ps.pm_flags |= PMF_NO_PREDICTION;
 
     // Added in Reloaded
+    //  On a ladder, the ladder's move type, as in their own snapshot: the cgame's ladder view goes by it
+    //  (the eye's pivot and the arms on the rungs: CG_OffsetFirstPersonView, PmoveAdjustAngleSettings_Client).
+    //  Only that one: this spectator's own moves set theirs back first thing (ClientMove)
+    client->ps.pm_type = player->client->ps.pm_type == PM_CLIMBWALL ? PM_CLIMBWALL : GetMovePlayerMoveType();
+
+    // Added in Reloaded
     //  Show who is being watched, through the HUD's player info (name and health)
     client->ps.stats[STAT_INFOCLIENT] = player->edict - g_entities;
     if (player->max_health > 0) {

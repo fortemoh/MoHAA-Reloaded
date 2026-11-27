@@ -1676,6 +1676,18 @@ void CG_FollowEyes_Snapshot(snapshot_t *snap)
         VectorClear(ps->velocity);
     }
 
+    // on a ladder: as their own snapshot has it (Player::ClientMove under MOVECONTROL_CLIMBWALL): the ladder's
+    // move type, no ground and no speed. Their legs' climbing animations aren't a fall, so they read as on the
+    // ground above, and each rung's rise as a run: the walking bob swayed and dipped the view with every step and
+    // the eye height eased in at half its pace. The cgame's ladder view (the eye's pivot, the arms on the rungs,
+    // CG_OffsetFirstPersonView and PmoveAdjustAngleSettings_Client) goes by the move type
+    if (pl->eFlags & EF_CLIMBWALL) {
+        ps->pm_type         = PM_CLIMBWALL;
+        ps->groundEntityNum = ENTITYNUM_NONE;
+        ps->walking         = qfalse;
+        VectorClear(ps->velocity);
+    }
+
     fe.follow     = follow;
     fe.serverTime = snap->serverTime;
     fe.lean       = lean;
