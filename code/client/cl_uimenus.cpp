@@ -2227,6 +2227,26 @@ int UIReloadedMenu::DrawKey(void)
     return h;
 }
 
+// the in-game pages' backdrop (the weapon page's, the team page's, the Esc menu's: their back layer): the game
+// blurred (the renderer's "*frameblur", the Vulkan and Metal renderers'; without one the dim alone) and dimmed by a
+// black of 47%
+static void RL_BlurredGame(const rlView_t& v)
+{
+    static qhandle_t blur;
+    static int       stamp = -1, refSeq = -1;
+
+    if (stamp != UI_BakeStamp() || refSeq != uii.GetRefSequence()) {
+        stamp  = UI_BakeStamp();
+        refSeq = uii.GetRefSequence();
+        blur   = uii.Rend_ImageExists("*frameblur.tga") ? uii.Rend_RegisterMaterial("*frameblur") : 0;
+    }
+    if (blur && !rl_bakeOnly) {
+        RL_SetColor(RL_Rgb(255, 255, 255));
+        uii.Rend_DrawPicStretched(0, 0, uid.vidWidth, uid.vidHeight, 0, 0, 1, 1, blur);
+    }
+    RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, 120));
+}
+
 void UIReloadedMenu::Draw(void)
 {
     const rlView_t v = RL_View();
@@ -2249,6 +2269,9 @@ void UIReloadedMenu::Draw(void)
     m_hits.clear();
     m_order.clear();
     m_cols = 1;
+    if (m_back && (m_screen == SCR_WEAPON || m_screen == SCR_TEAM || m_screen == SCR_ESC)) {
+        RL_BlurredGame(v);
+    }
     switch (m_screen) {
     case SCR_MAIN:
         DrawMain(v);
@@ -2469,13 +2492,15 @@ static bool RL_SetModels(void)
 
 /*
 ================
-The weapon page: the in-game block, the side's emblem, SELECT YOUR WEAPON
-over the side and the nation; two tiles a row (rifle and sniper, SMG and
-MG, anti-tank and shotgun; Breakthrough's mine detector a row of its own),
-each its class in the corner, the nation's outline, the weapon's name
-under it, the last pick marked, a banned class dimmed in its place; the
-side's model beside it from the knees up, at the other menus' size (the
-block as it was there: his head where its header's top would be)
+The weapon page: the in-game block over the game blurred and dimmed (as
+the team page and the Esc menu: RL_BlurredGame), the side's emblem,
+SELECT YOUR WEAPON over the side and the nation; two tiles a row (rifle
+and sniper, SMG and MG, anti-tank and shotgun; Breakthrough's mine
+detector a row of its own), each its class in the corner, the nation's
+outline, the weapon's name under it, the last pick marked, a banned class
+dimmed in its place; the side's model beside it from the knees up, at the
+other menus' size (the block as it was there: his head where its header's
+top would be)
 ================
 */
 
@@ -2523,8 +2548,6 @@ void UIReloadedMenu::DrawWeapon(const rlView_t& v, const rlInfo_t& in)
         const float       cx     = (x0 + gw + modelGap + modelW / 2) * RL_WSCALE;
         const float       headY  = (full.dh - height(full.dh, figFoot)) / 2 - 6;
 
-        // the scene under a warm haze (one layer, CS2's)
-        RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(58, 48, 30, 195));
         // the figure beside, from the knees up (the view's foot on the screen's); his view as wide as an arm's
         // reach, on screen (he stays in its middle)
         if (Q_stricmp(ui_reloaded_figure->string, figure.c_str())) {
@@ -2593,32 +2616,6 @@ screen is
 
 enum { ID_TJOIN = 30, ID_TPREV = 32, ID_TNEXT = 34, ID_TAUTO = 36, ID_TSPEC };
 
-// the game under it blurred: the renderer's "*frameblur" (the Vulkan and Metal renderers'), 0 without one (the dim alone)
-static qhandle_t RL_FrameBlur(void)
-{
-    static qhandle_t shader;
-    static int       stamp = -1, refSeq = -1;
-
-    if (stamp != UI_BakeStamp() || refSeq != uii.GetRefSequence()) {
-        stamp  = UI_BakeStamp();
-        refSeq = uii.GetRefSequence();
-        shader = uii.Rend_ImageExists("*frameblur.tga") ? uii.Rend_RegisterMaterial("*frameblur") : 0;
-    }
-    return shader;
-}
-
-// the game blurred (the renderer's "*frameblur") and dimmed by a black of alpha dim
-static void RL_BlurredGame(const rlView_t& v, int dim)
-{
-    const qhandle_t blur = RL_FrameBlur();
-
-    if (blur && !rl_bakeOnly) {
-        RL_SetColor(RL_Rgb(255, 255, 255));
-        uii.Rend_DrawPicStretched(0, 0, uid.vidWidth, uid.vidHeight, 0, 0, 1, 1, blur);
-    }
-    RL_Box(v, 0, 0, v.dw, v.dh, RL_Rgb(0, 0, 0, dim));
-}
-
 static bool RL_IsBot(int client)
 {
     const rlScore_t *r = RL_Score(client);
@@ -2639,8 +2636,7 @@ void UIReloadedMenu::DrawTeam(const rlView_t& v, const rlInfo_t& in)
     UI_DrawDep(Cvar_Get("dm_playermodel", "", 0));
     UI_DrawDep(Cvar_Get("dm_playergermanmodel", "", 0));
     if (m_back) {
-        // the game blurred; each side's medallion (its disc and emblem lighter under the mouse) and its figure in front
-        RL_BlurredGame(v, 120);
+        // each side's medallion (its disc and emblem lighter under the mouse) and its figure in front
         for (int t = 0; t < 2; t++) {
             const rlTeam_t&   T      = rl_teams[t];
             const bool        hot    = Hot(ID_TJOIN + t);
@@ -2815,8 +2811,7 @@ void UIReloadedMenu::DrawEsc(const rlView_t& v, const rlInfo_t& in)
     if (m_back) {
         return;
     }
-    RL_BlurredGame(v, 120);
-    // (Options or CALL A VOTE's page over it: the game blurred alone)
+    // (Options or CALL A VOTE's page over it: the block hidden, the game blurred alone)
     if (RL_OverPage() >= 0) {
         return;
     }
